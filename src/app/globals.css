@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 222 47% 5%;
+  --foreground: 210 40% 96%;
+  --panel: 222 44% 8%;
+  --muted: 217 33% 14%;
+  --muted-foreground: 215 20% 62%;
+  --accent: 190 95% 55%;
+  --accent-foreground: 222 47% 6%;
+  --border: 217 33% 17%;
+  --input: 217 33% 15%;
+  --ring: 190 95% 55%;
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 210 40% 98%;
+  --success: 152 65% 45%;
+  --warning: 38 92% 55%;
+  --radius: 0.85rem;
+}
+
+:root.light {
+  --background: 210 40% 97%;
+  --foreground: 222 47% 11%;
+  --panel: 0 0% 100%;
+  --muted: 210 40% 92%;
+  --muted-foreground: 215 16% 40%;
+  --border: 214 32% 85%;
+  --input: 214 32% 88%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+/* Ambient background: subtle radial glows, futuristic depth. */
+.jarvis-bg {
+  background-image:
+    radial-gradient(60rem 60rem at 15% -10%, hsl(200 90% 30% / 0.18), transparent 60%),
+    radial-gradient(50rem 50rem at 110% 10%, hsl(265 80% 45% / 0.14), transparent 55%),
+    radial-gradient(40rem 40rem at 50% 120%, hsl(190 90% 40% / 0.1), transparent 60%);
+}
+
+.glass {
+  background: hsl(var(--panel) / 0.6);
+  backdrop-filter: blur(14px);
+  border: 1px solid hsl(var(--border) / 0.7);
+}
+
+.glow-ring {
+  box-shadow:
+    0 0 0 1px hsl(var(--accent) / 0.25),
+    0 0 30px -4px hsl(var(--accent) / 0.5),
+    inset 0 0 24px -8px hsl(var(--accent) / 0.4);
+}
+
+/* Thin, unobtrusive scrollbars */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Focus visibility for accessibility */
+:focus-visible {
+  outline: 2px solid hsl(var(--accent));
+  outline-offset: 2px;
+}
