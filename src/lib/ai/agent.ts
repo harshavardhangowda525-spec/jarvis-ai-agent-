@@ -1,9 +1,10 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
-import { getAiClient, AI_MODEL } from "./client";
+import type OpenAI from "openai";
+import { getAiConfig, getAnthropicClient, getOpenAiClient } from "./client";
 import { buildSystemPrompt } from "./prompt";
 import { availableTools, getTool } from "@/lib/tools/registry";
-import type { ToolContext } from "@/lib/tools/types";
+import type { ToolContext, ToolDefinition } from "@/lib/tools/types";
 import { ToolError } from "@/lib/tools/types";
 import { getDb } from "@/lib/db";
 
@@ -20,26 +21,23 @@ export interface AgentInput {
   timezone: string;
   assistantName: string;
   displayName: string | null;
-  /** Prior conversation turns, oldest first. */
   history: { role: "user" | "assistant"; content: string }[];
-  /** The new user message. */
   message: string;
 }
 
 const MAX_STEPS = 8;
 
 /**
- * The JARVIS agent loop. Yields streaming events. The model chooses tools
- * dynamically from the registry — no command matching here. Tool results are
- * fed back until the model produces a final answer or we hit MAX_STEPS.
+ * The JARVIS agent loop. Provider-agnostic: it loads memory, builds the system
+ * prompt, and hands the tool registry to whichever model is configured. The
+ * model chooses tools dynamically — no command matching here.
  */
 export async function* runAgent(
   input: AgentInput,
 ): AsyncGenerator<AgentEvent, void, unknown> {
-  const client = getAiClient();
+  const cfg = getAiConfig();
   const db = getDb();
 
-  // Load long-term memory to personalize the system prompt.
   const memories = await db.memory.findMany({
     where: { userId: input.userId },
     orderBy: { updatedAt: "desc" },
@@ -55,7 +53,78 @@ export async function* runAgent(
   });
 
   const tools = availableTools();
-  const anthropicTools: Anthropic.Tool[] = tools.map((t) => ({
+  const activityQueue: string[] = [];
+  const ctx: ToolContext = {
+    userId: input.userId,
+    timezone: input.timezone,
+    activity: (label) => activityQueue.push(label),
+  };
+
+  const shared = { system, tools, ctx, activityQueue, model: cfg.model };
+
+  if (cfg.kind === "anthropic") {
+    yield* anthropicLoop(getAnthropicClient(cfg), input, shared);
+  } else {
+    yield* openaiLoop(getOpenAiClient(cfg), input, shared);
+  }
+}
+
+interface SharedCtx {
+  system: string;
+  tools: ToolDefinition[];
+  ctx: ToolContext;
+  activityQueue: string[];
+  model: string;
+}
+
+/** Runs one tool call and yields the corresponding events; returns the result string for the model. */
+async function* runOneTool(
+  name: string,
+  rawInput: unknown,
+  s: SharedCtx,
+  userId: string,
+): AsyncGenerator<AgentEvent, { content: string; isError: boolean }, unknown> {
+  const tool = getTool(name);
+  if (!tool) {
+    return { content: `Unknown tool: ${name}`, isError: true };
+  }
+  yield { type: "activity", label: tool.activityLabel };
+  const started = Date.now();
+  try {
+    const parsed = tool.schema.parse(rawInput);
+    const result = await tool.execute(parsed, s.ctx);
+
+    while (s.activityQueue.length) {
+      yield { type: "activity", label: s.activityQueue.shift()! };
+    }
+    const data = result.data as Record<string, unknown> | undefined;
+    if (data && typeof data.navigate === "string") {
+      yield { type: "navigate", path: data.navigate };
+    }
+    yield {
+      type: "tool",
+      name: tool.name,
+      status: "ok",
+      summary: result.summary ?? `${tool.name} completed.`,
+    };
+    await logTool(userId, tool.name, rawInput, result.data, "ok", null, Date.now() - started);
+    return { content: JSON.stringify(result.data).slice(0, 12000), isError: false };
+  } catch (err) {
+    const message =
+      err instanceof ToolError ? err.message : "The tool encountered an unexpected error.";
+    yield { type: "tool", name: tool.name, status: "error", summary: message };
+    await logTool(userId, tool.name, rawInput, null, "error", message, Date.now() - started);
+    return { content: message, isError: true };
+  }
+}
+
+// --- Anthropic provider --------------------------------------------------
+async function* anthropicLoop(
+  client: Anthropic,
+  input: AgentInput,
+  s: SharedCtx,
+): AsyncGenerator<AgentEvent, void, unknown> {
+  const anthropicTools: Anthropic.Tool[] = s.tools.map((t) => ({
     name: t.name,
     description: t.description,
     input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
@@ -66,131 +135,149 @@ export async function* runAgent(
     { role: "user" as const, content: input.message },
   ];
 
-  const activityQueue: string[] = [];
-  const ctx: ToolContext = {
-    userId: input.userId,
-    timezone: input.timezone,
-    activity: (label) => activityQueue.push(label),
-  };
-
   let finalText = "";
 
   for (let step = 0; step < MAX_STEPS; step++) {
     let assistantMessage: Anthropic.Message;
-    let turnText = "";
     try {
       const stream = client.messages.stream({
-        model: AI_MODEL,
+        model: s.model,
         max_tokens: 1500,
-        system,
+        system: s.system,
         tools: anthropicTools,
         messages,
       });
-
       for await (const ev of stream) {
-        if (
-          ev.type === "content_block_delta" &&
-          ev.delta.type === "text_delta"
-        ) {
-          turnText += ev.delta.text;
+        if (ev.type === "content_block_delta" && ev.delta.type === "text_delta") {
           finalText += ev.delta.text;
           yield { type: "text", delta: ev.delta.text };
         }
       }
       assistantMessage = await stream.finalMessage();
     } catch (err) {
-      console.error("[agent] model error:", err);
+      console.error("[agent] anthropic error:", err);
       yield { type: "error", message: "The AI service failed to respond. Please try again." };
       return;
     }
 
-    // Record the assistant turn (tool_use blocks included) for the next round.
     messages.push({ role: "assistant", content: assistantMessage.content });
-
     const toolUses = assistantMessage.content.filter(
       (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
     );
-
     if (toolUses.length === 0) {
-      // No tools requested — this is the final answer.
       yield { type: "done", text: finalText };
       return;
     }
 
-    // Execute each requested tool and feed results back.
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const use of toolUses) {
-      const tool = getTool(use.name);
-      if (!tool) {
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: use.id,
-          content: `Unknown tool: ${use.name}`,
-          is_error: true,
-        });
-        continue;
-      }
+      const res = yield* runOneTool(use.name, use.input, s, input.userId);
+      toolResults.push({
+        type: "tool_result",
+        tool_use_id: use.id,
+        content: res.content,
+        is_error: res.isError,
+      });
+    }
+    messages.push({ role: "user", content: toolResults });
+  }
+  yield { type: "done", text: finalText || "I couldn't complete that in the available steps." };
+}
 
-      yield { type: "activity", label: tool.activityLabel };
-      const started = Date.now();
-      try {
-        const parsed = tool.schema.parse(use.input);
-        const result = await tool.execute(parsed, ctx);
+// --- OpenAI-compatible provider (Gemini / Groq / OpenAI) -----------------
+async function* openaiLoop(
+  client: OpenAI,
+  input: AgentInput,
+  s: SharedCtx,
+): AsyncGenerator<AgentEvent, void, unknown> {
+  const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = s.tools.map((t) => ({
+    type: "function",
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.inputSchema as Record<string, unknown>,
+    },
+  }));
 
-        // Drain any fine-grained activity the tool emitted.
-        while (activityQueue.length) {
-          yield { type: "activity", label: activityQueue.shift()! };
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: s.system },
+    ...input.history.map((m) => ({ role: m.role, content: m.content }) as any),
+    { role: "user", content: input.message },
+  ];
+
+  let finalText = "";
+
+  for (let step = 0; step < MAX_STEPS; step++) {
+    let content = "";
+    // Accumulate streamed tool calls by index.
+    const toolCalls: { id: string; name: string; args: string }[] = [];
+
+    try {
+      const stream = await client.chat.completions.create({
+        model: s.model,
+        max_tokens: 1500,
+        tools,
+        messages,
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta;
+        if (!delta) continue;
+        if (delta.content) {
+          content += delta.content;
+          finalText += delta.content;
+          yield { type: "text", delta: delta.content };
         }
-
-        // Surface navigation as a first-class client action.
-        const data = result.data as Record<string, unknown> | undefined;
-        if (data && typeof data.navigate === "string") {
-          yield { type: "navigate", path: data.navigate };
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0;
+            if (!toolCalls[idx]) toolCalls[idx] = { id: "", name: "", args: "" };
+            if (tc.id) toolCalls[idx].id = tc.id;
+            if (tc.function?.name) toolCalls[idx].name += tc.function.name;
+            if (tc.function?.arguments) toolCalls[idx].args += tc.function.arguments;
+          }
         }
-
-        yield {
-          type: "tool",
-          name: tool.name,
-          status: "ok",
-          summary: result.summary ?? `${tool.name} completed.`,
-        };
-
-        await logTool(input.userId, tool.name, use.input, result.data, "ok", null, Date.now() - started);
-
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: use.id,
-          content: JSON.stringify(result.data).slice(0, 12000),
-        });
-      } catch (err) {
-        const message =
-          err instanceof ToolError
-            ? err.message
-            : "The tool encountered an unexpected error.";
-        yield { type: "tool", name: tool.name, status: "error", summary: message };
-        await logTool(input.userId, tool.name, use.input, null, "error", message, Date.now() - started);
-        toolResults.push({
-          type: "tool_result",
-          tool_use_id: use.id,
-          content: message,
-          is_error: true,
-        });
       }
+    } catch (err) {
+      console.error("[agent] openai-compatible error:", err);
+      yield { type: "error", message: "The AI service failed to respond. Please try again." };
+      return;
     }
 
-    messages.push({ role: "user", content: toolResults });
-    // Loop continues: model sees tool results and produces the next step.
-  }
+    const calls = toolCalls.filter((c) => c && c.name);
+    if (calls.length === 0) {
+      yield { type: "done", text: finalText };
+      return;
+    }
 
-  // Safety valve: too many steps.
-  if (finalText) {
-    yield { type: "done", text: finalText };
-  } else {
-    yield {
-      type: "done",
-      text: "I wasn't able to fully complete that in the available steps.",
-    };
+    // Record the assistant turn with its tool calls.
+    messages.push({
+      role: "assistant",
+      content: content || null,
+      tool_calls: calls.map((c) => ({
+        id: c.id || c.name,
+        type: "function",
+        function: { name: c.name, arguments: c.args || "{}" },
+      })),
+    });
+
+    for (const c of calls) {
+      let parsedArgs: unknown = {};
+      try {
+        parsedArgs = c.args ? JSON.parse(c.args) : {};
+      } catch {
+        parsedArgs = {};
+      }
+      const res = yield* runOneTool(c.name, parsedArgs, s, input.userId);
+      messages.push({
+        role: "tool",
+        tool_call_id: c.id || c.name,
+        content: res.content,
+      });
+    }
   }
+  yield { type: "done", text: finalText || "I couldn't complete that in the available steps." };
 }
 
 async function logTool(
@@ -215,6 +302,6 @@ async function logTool(
       },
     });
   } catch {
-    // logging must never break the request
+    /* logging must never break the request */
   }
 }

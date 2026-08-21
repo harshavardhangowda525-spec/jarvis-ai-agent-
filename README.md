@@ -132,8 +132,12 @@ See [`.env.example`](./.env.example). Summary:
 | `DATABASE_URL` | ✅ | PostgreSQL connection string |
 | `AUTH_SECRET` | ✅ | Signs session JWTs (≥ 32 chars) |
 | `APP_URL` | ✅ | Public base URL (OAuth callbacks) |
-| `AI_API_KEY` | for reasoning | Anthropic API key |
-| `AI_MODEL` | optional | Claude model id (default `claude-sonnet-5`) |
+| `AI_PROVIDER` | optional | `gemini` \| `groq` \| `openai` \| `anthropic` (inferred if blank) |
+| `GEMINI_API_KEY` | for reasoning | Google Gemini key — **free** at aistudio.google.com |
+| `GROQ_API_KEY` | alt | Groq key — free, very fast |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` | alt | OpenAI or any compatible endpoint |
+| `AI_API_KEY` | alt | Anthropic key (paid; native PDF/vision) |
+| `AI_MODEL` | optional | Model override; sensible per-provider default if blank |
 | `ELEVENLABS_API_KEY` | for voice | ElevenLabs key (server-only) |
 | `ELEVENLABS_VOICE_ID` | for voice | Voice used for speech |
 | `ELEVENLABS_MODEL_ID` | optional | Default `eleven_turbo_v2_5` (low latency) |
@@ -146,11 +150,24 @@ See [`.env.example`](./.env.example). Summary:
 
 ## AI configuration
 
-The agent uses Anthropic's tool-calling API. Set `AI_API_KEY` and optionally
-`AI_MODEL`. Tools are defined in `src/lib/tools/` and registered in
+The agent is **provider-agnostic**. Choose one via `AI_PROVIDER` (or just set a
+key and it's inferred):
+
+- **Gemini** (`AI_PROVIDER=gemini`, `GEMINI_API_KEY`) — **free**, recommended.
+  Uses Google's OpenAI-compatible endpoint.
+- **Groq** (`AI_PROVIDER=groq`, `GROQ_API_KEY`) — free, very low latency.
+- **OpenAI / compatible** (`AI_PROVIDER=openai`, `OPENAI_API_KEY`, optional
+  `OPENAI_BASE_URL`).
+- **Anthropic** (`AI_PROVIDER=anthropic`, `AI_API_KEY`) — paid; native PDF +
+  vision.
+
+Provider resolution lives in `src/lib/env.ts` (`resolveAiConfig`) and the loop
+in `src/lib/ai/agent.ts` dispatches to the Anthropic or OpenAI-compatible path.
+Tools are defined in `src/lib/tools/` and registered in
 `src/lib/tools/registry.ts`. To add a capability, implement a `ToolDefinition`
 (name, description, Zod schema + JSON `inputSchema`, `execute`) and add it to
-the registry — the model will discover and use it automatically.
+the registry — the model discovers and uses it automatically, regardless of
+provider.
 
 ## Realtime voice (ElevenLabs)
 
