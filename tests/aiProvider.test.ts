@@ -33,7 +33,7 @@ describe("resolveAiConfig", () => {
     expect(cfg!.provider).toBe("gemini");
     expect(cfg!.kind).toBe("openai");
     expect(cfg!.baseUrl).toContain("generativelanguage.googleapis.com");
-    expect(cfg!.model).toBe("gemini-2.0-flash");
+    expect(cfg!.model).toBe("gemini-3.6-flash");
   });
 
   it("returns null when the selected provider has no key (graceful degradation)", async () => {

@@ -64,8 +64,9 @@ export function resolveAiConfig(): AiConfig | null {
       provider: "gemini",
       kind: "openai",
       apiKey: env.geminiApiKey,
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
-      model: env.aiModel || "gemini-2.0-flash",
+      // No trailing slash: the OpenAI SDK appends "/chat/completions".
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+      model: env.aiModel || "gemini-3.6-flash",
     };
   }
   if (explicit === "groq" || (!explicit && env.groqApiKey)) {

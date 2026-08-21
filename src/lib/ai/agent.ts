@@ -142,7 +142,7 @@ async function* anthropicLoop(
     try {
       const stream = client.messages.stream({
         model: s.model,
-        max_tokens: 1500,
+        max_tokens: 2048,
         system: s.system,
         tools: anthropicTools,
         messages,
@@ -156,7 +156,7 @@ async function* anthropicLoop(
       assistantMessage = await stream.finalMessage();
     } catch (err) {
       console.error("[agent] anthropic error:", err);
-      yield { type: "error", message: "The AI service failed to respond. Please try again." };
+      yield { type: "error", message: aiErrorMessage(err) };
       return;
     }
 
@@ -209,13 +209,15 @@ async function* openaiLoop(
 
   for (let step = 0; step < MAX_STEPS; step++) {
     let content = "";
-    // Accumulate streamed tool calls by index.
-    const toolCalls: { id: string; name: string; args: string }[] = [];
+    // Accumulate streamed tool calls by index. `extra` carries provider-specific
+    // metadata (e.g. Gemini's thought_signature) that MUST be echoed back on the
+    // follow-up turn or reasoning models reject the request.
+    const toolCalls: { id: string; name: string; args: string; extra?: unknown }[] = [];
 
     try {
       const stream = await client.chat.completions.create({
         model: s.model,
-        max_tokens: 1500,
+        max_tokens: 2048,
         tools,
         messages,
         stream: true,
@@ -236,12 +238,14 @@ async function* openaiLoop(
             if (tc.id) toolCalls[idx].id = tc.id;
             if (tc.function?.name) toolCalls[idx].name += tc.function.name;
             if (tc.function?.arguments) toolCalls[idx].args += tc.function.arguments;
+            const extra = (tc as any).extra_content;
+            if (extra) toolCalls[idx].extra = extra;
           }
         }
       }
     } catch (err) {
       console.error("[agent] openai-compatible error:", err);
-      yield { type: "error", message: "The AI service failed to respond. Please try again." };
+      yield { type: "error", message: aiErrorMessage(err) };
       return;
     }
 
@@ -259,8 +263,10 @@ async function* openaiLoop(
         id: c.id || c.name,
         type: "function",
         function: { name: c.name, arguments: c.args || "{}" },
+        // Preserve provider metadata (Gemini thought_signature) when present.
+        ...(c.extra ? { extra_content: c.extra } : {}),
       })),
-    });
+    } as any);
 
     for (const c of calls) {
       let parsedArgs: unknown = {};
@@ -278,6 +284,21 @@ async function* openaiLoop(
     }
   }
   yield { type: "done", text: finalText || "I couldn't complete that in the available steps." };
+}
+
+/** Maps provider SDK errors to honest, user-facing messages. */
+function aiErrorMessage(err: unknown): string {
+  const status = (err as { status?: number })?.status;
+  if (status === 429) {
+    return "The AI provider is rate-limiting requests (free-tier limit reached). Please wait a moment and try again.";
+  }
+  if (status === 401 || status === 403) {
+    return "The AI provider rejected the API key. Check your configuration.";
+  }
+  if (status === 400) {
+    return "The AI provider rejected the request. Please try again.";
+  }
+  return "The AI service failed to respond. Please try again.";
 }
 
 async function logTool(
