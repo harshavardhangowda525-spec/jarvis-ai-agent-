@@ -36,6 +36,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProvider> = {
       "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/gmail.send",
       "https://www.googleapis.com/auth/calendar",
+      "https://www.googleapis.com/auth/analytics.readonly",
     ],
     clientId: read("GOOGLE_CLIENT_ID"),
     clientSecret: read("GOOGLE_CLIENT_SECRET"),
