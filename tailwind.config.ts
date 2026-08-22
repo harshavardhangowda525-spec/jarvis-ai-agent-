@@ -23,11 +23,13 @@ const config: Config = {
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
+          bright: "hsl(var(--accent-bright))",
+          deep: "hsl(var(--accent-deep))",
         },
         jarvis: {
-          cyan: "#38e8ff",
-          blue: "#2b8cff",
-          deep: "#0a1628",
+          steel: "#94bce3",
+          bright: "#b5d9fd",
+          deep: "#5980a6",
         },
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
@@ -42,8 +44,9 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
-        mono: ["var(--font-mono)", "ui-monospace", "monospace"],
+        sans: ["var(--font-body)", "Barlow", "system-ui", "sans-serif"],
+        heading: ["var(--font-heading)", "Barlow Condensed", "sans-serif"],
+        mono: ["ui-monospace", "SFMono-Regular", "monospace"],
       },
       keyframes: {
         "pulse-ring": {

@@ -9,5 +9,11 @@ export default async function DashboardPage() {
   const profile = user
     ? await getDb().profile.findUnique({ where: { userId: user.id } })
     : null;
-  return <JarvisConsole assistantName={profile?.assistantName ?? "JARVIS"} />;
+  const userName = profile?.displayName || user?.email.split("@")[0] || "there";
+  return (
+    <JarvisConsole
+      assistantName={profile?.assistantName ?? "JARVIS"}
+      userName={userName}
+    />
+  );
 }
