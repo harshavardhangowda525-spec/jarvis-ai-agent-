@@ -15,6 +15,7 @@ import { memoryTool } from "./memory";
 import { tasksTool } from "./tasks";
 import { notesTool } from "./notes";
 import { navigationTool } from "./navigation";
+import { openLinkTool } from "./openLink";
 import { gmailTool } from "./gmail";
 import { calendarTool } from "./calendar";
 
@@ -27,6 +28,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   tasksTool as ToolDefinition,
   notesTool as ToolDefinition,
   navigationTool as ToolDefinition,
+  openLinkTool as ToolDefinition,
   gmailTool as ToolDefinition,
   calendarTool as ToolDefinition,
 ];

@@ -7,6 +7,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   tools?: { name: string; status: string; summary: string }[];
+  links?: { url: string; label: string }[];
 }
 
 export interface ActivityItem {
@@ -19,6 +20,7 @@ export interface ActivityItem {
 interface UseAgentOptions {
   onAssistantComplete?: (text: string) => void;
   onNavigate?: (path: string) => void;
+  onOpen?: (url: string) => void;
 }
 
 let idc = 0;
@@ -29,7 +31,7 @@ const nextId = () => `m${Date.now()}_${idc++}`;
  * and exposes messages, the live-activity feed, and the currently streaming
  * assistant text. Voice and text share this same flow.
  */
-export function useAgent({ onAssistantComplete, onNavigate }: UseAgentOptions = {}) {
+export function useAgent({ onAssistantComplete, onNavigate, onOpen }: UseAgentOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -163,6 +165,16 @@ export function useAgent({ onAssistantComplete, onNavigate }: UseAgentOptions = 
               case "navigate":
                 onNavigate?.(ev.path);
                 break;
+              case "open":
+                onOpen?.(ev.url);
+                setMessages((m) =>
+                  m.map((x) =>
+                    x.id === assistantId
+                      ? { ...x, links: [...(x.links ?? []), { url: ev.url, label: ev.label }] }
+                      : x,
+                  ),
+                );
+                break;
               case "error":
                 pushActivity({ label: ev.message, kind: "error" });
                 if (!finalText) {
@@ -196,7 +208,7 @@ export function useAgent({ onAssistantComplete, onNavigate }: UseAgentOptions = 
         abortRef.current = null;
       }
     },
-    [onAssistantComplete, onNavigate, pushActivity, setConversation, streaming],
+    [onAssistantComplete, onNavigate, onOpen, pushActivity, setConversation, streaming],
   );
 
   return {

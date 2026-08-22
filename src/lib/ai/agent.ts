@@ -13,6 +13,7 @@ export type AgentEvent =
   | { type: "text"; delta: string }
   | { type: "tool"; name: string; status: "ok" | "error"; summary: string }
   | { type: "navigate"; path: string }
+  | { type: "open"; url: string; label: string }
   | { type: "done"; text: string }
   | { type: "error"; message: string };
 
@@ -100,6 +101,9 @@ async function* runOneTool(
     const data = result.data as Record<string, unknown> | undefined;
     if (data && typeof data.navigate === "string") {
       yield { type: "navigate", path: data.navigate };
+    }
+    if (data && typeof data.openUrl === "string") {
+      yield { type: "open", url: data.openUrl, label: String(data.label ?? "link") };
     }
     yield {
       type: "tool",

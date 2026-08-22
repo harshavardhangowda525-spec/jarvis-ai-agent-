@@ -6,7 +6,7 @@ import Link from "next/link";
 import {
   Mic, MicOff, Send, Paperclip, Volume2, VolumeX, Loader2,
   ListChecks, StickyNote, Brain, Settings as SettingsIcon,
-  ArrowRight, Check, AlertTriangle, Calendar,
+  ArrowRight, Check, AlertTriangle, Calendar, ExternalLink,
 } from "lucide-react";
 import { Orb, type OrbState, orbStateLabel } from "@/components/orb";
 import { HudPanel, StatusDot } from "@/components/hud/panel";
@@ -42,6 +42,11 @@ export function JarvisConsole({ assistantName, userName }: { assistantName: stri
   const agent = useAgent({
     onAssistantComplete: (text) => { if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text); },
     onNavigate,
+    onOpen: (url) => {
+      // Try to open a new tab (may be blocked by the popup blocker — a
+      // clickable link is also rendered in the message as a reliable fallback).
+      try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* fallback link shown */ }
+    },
   });
   useEffect(() => { sendRef.current = agent.send; }, [agent.send]);
 
@@ -184,6 +189,21 @@ export function JarvisConsole({ assistantName, userName }: { assistantName: stri
                               "hud-label rounded px-1.5 py-0.5 text-[9px]",
                               t.status === "error" ? "bg-destructive/15 text-destructive" : "bg-accent/10 text-accent",
                             )}>{t.name}</span>
+                          ))}
+                        </div>
+                      )}
+                      {m.links && m.links.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {m.links.map((l, i) => (
+                            <a
+                              key={i}
+                              href={l.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded border border-accent/30 bg-accent/10 px-2.5 py-1 text-xs text-accent transition hover:bg-accent/20"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" /> Open {l.label}
+                            </a>
                           ))}
                         </div>
                       )}
