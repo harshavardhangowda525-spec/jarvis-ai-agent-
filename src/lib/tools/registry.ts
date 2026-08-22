@@ -5,6 +5,7 @@
  */
 import type { ToolDefinition } from "./types";
 import { capabilities } from "@/lib/env";
+import { isProviderConfigured } from "@/lib/integrations/providers";
 
 import { calculatorTool } from "./calculator";
 import { timeTool } from "./time";
@@ -14,6 +15,8 @@ import { memoryTool } from "./memory";
 import { tasksTool } from "./tasks";
 import { notesTool } from "./notes";
 import { navigationTool } from "./navigation";
+import { gmailTool } from "./gmail";
+import { calendarTool } from "./calendar";
 
 const ALL_TOOLS: ToolDefinition[] = [
   calculatorTool as ToolDefinition,
@@ -24,13 +27,18 @@ const ALL_TOOLS: ToolDefinition[] = [
   tasksTool as ToolDefinition,
   notesTool as ToolDefinition,
   navigationTool as ToolDefinition,
+  gmailTool as ToolDefinition,
+  calendarTool as ToolDefinition,
 ];
 
-/** Tools available given the current capability configuration. */
+/** Tools available given the current capability + integration configuration. */
 export function availableTools(): ToolDefinition[] {
+  const googleReady = isProviderConfigured("google");
   return ALL_TOOLS.filter((t) => {
     if (t.requiresCapability === "search") return capabilities.search;
     if (t.requiresCapability === "weather") return capabilities.weather;
+    // Google tools only appear once the OAuth client is configured.
+    if (t.name === "gmail" || t.name === "google_calendar") return googleReady;
     return true;
   });
 }

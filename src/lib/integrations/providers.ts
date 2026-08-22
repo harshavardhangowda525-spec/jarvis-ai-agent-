@@ -33,7 +33,9 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProvider> = {
     tokenUrl: "https://oauth2.googleapis.com/token",
     scopes: [
       "https://www.googleapis.com/auth/userinfo.email",
-      "https://www.googleapis.com/auth/calendar.readonly",
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/calendar",
     ],
     clientId: read("GOOGLE_CLIENT_ID"),
     clientSecret: read("GOOGLE_CLIENT_SECRET"),
