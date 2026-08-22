@@ -32,19 +32,29 @@ export function ReactorLogo({ size = 56, className }: { size?: number; className
   );
 }
 
-/** Geometric robot/helmet face for the sidebar header. */
+/** Geometric robot/helmet face with glowing eyes for the sidebar header. */
 export function RobotFace({ size = 96, className }: { size?: number; className?: string }) {
   return (
     <svg viewBox="0 0 120 120" width={size} height={size} className={cn("drop-glow", className)} aria-hidden>
-      <g fill="none" stroke={A} strokeWidth="1.4" strokeLinejoin="round">
-        <path d="M35 18 L85 18 L96 34 L96 74 L78 96 L42 96 L24 74 L24 34 Z" opacity="0.5" />
-        <path d="M40 30 L80 30 L88 42 L88 70 L72 88 L48 88 L32 70 L32 42 Z" opacity="0.85" />
-        <line x1="60" y1="8" x2="60" y2="18" opacity="0.6" />
-        <circle cx="60" cy="6" r="2.5" fill={AB} stroke="none" className="animate-hud-pulse" />
-        <path d="M40 58 L52 58 L48 66 L36 66 Z" fill={AB} stroke="none" className="animate-glow-pulse" />
-        <path d="M80 58 L68 58 L72 66 L84 66 Z" fill={AB} stroke="none" className="animate-glow-pulse" />
-        <line x1="50" y1="78" x2="70" y2="78" opacity="0.7" />
-        <line x1="53" y1="82" x2="67" y2="82" opacity="0.5" />
+      {/* wireframe facets */}
+      <g fill="none" stroke={A} strokeWidth="1.2" strokeLinejoin="round" opacity="0.9">
+        <path d="M35 16 L85 16 L98 34 L98 74 L78 98 L42 98 L22 74 L22 34 Z" opacity="0.4" />
+        <path d="M40 28 L80 28 L90 42 L90 70 L72 90 L48 90 L30 70 L30 42 Z" />
+        <path d="M40 28 L60 40 L80 28 M30 42 L60 40 L90 42 M48 90 L60 74 L72 90 M60 40 L60 74" opacity="0.35" />
+        {/* antenna */}
+        <line x1="60" y1="6" x2="60" y2="16" opacity="0.6" />
+      </g>
+      <circle cx="60" cy="4" r="2.5" fill={AB} stroke="none" className="animate-hud-pulse" />
+      {/* glowing eyes */}
+      <g style={{ filter: `drop-shadow(0 0 6px ${AB})` }} className="animate-glow-pulse">
+        <path d="M38 56 L54 54 L50 66 L36 66 Z" fill={AB} />
+        <path d="M82 56 L66 54 L70 66 L84 66 Z" fill={AB} />
+      </g>
+      {/* mouth grille */}
+      <g stroke={A} strokeWidth="1.2" opacity="0.7">
+        <line x1="50" y1="78" x2="70" y2="78" />
+        <line x1="53" y1="82" x2="67" y2="82" opacity="0.6" />
+        <line x1="56" y1="86" x2="64" y2="86" opacity="0.4" />
       </g>
     </svg>
   );
@@ -58,13 +68,17 @@ export function HumanFigure({ className }: { className?: string }) {
       <g fill="none" stroke={A} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round">
         <ellipse cx="60" cy="34" rx="18" ry="21" opacity="0.9" />
         <path d="M46 30 Q60 24 74 30" opacity="0.5" />
-        <circle cx="52" cy="34" r="2.5" fill={AB} stroke="none" className="animate-hud-pulse" />
-        <circle cx="68" cy="34" r="2.5" fill={AB} stroke="none" className="animate-hud-pulse" />
+        <path d="M44 34 Q60 46 76 34" opacity="0.3" />
         <line x1="60" y1="55" x2="60" y2="62" opacity="0.6" />
         <path d="M30 96 Q30 66 60 64 Q90 66 90 96" opacity="0.9" />
         <path d="M38 90 Q60 80 82 90" opacity="0.4" />
-        <line x1="60" y1="66" x2="60" y2="92" opacity="0.4" />
+        <path d="M60 66 L60 92 M44 72 L60 70 L76 72" opacity="0.4" />
         <path d="M30 96 L24 120 M90 96 L96 120" opacity="0.6" />
+      </g>
+      {/* glowing eyes */}
+      <g style={{ filter: `drop-shadow(0 0 5px ${AB})` }} className="animate-glow-pulse">
+        <circle cx="52" cy="34" r="3" fill={AB} stroke="none" />
+        <circle cx="68" cy="34" r="3" fill={AB} stroke="none" />
       </g>
       {/* base ring */}
       <ellipse cx="60" cy="132" rx="46" ry="9" fill="none" stroke={AB} strokeWidth="1.5" opacity="0.7" className="animate-glow-pulse" />

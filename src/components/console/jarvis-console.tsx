@@ -7,7 +7,7 @@ import {
   Mic, MicOff, Send, Paperclip, Volume2, VolumeX, Loader2,
   Terminal, ScanLine, BarChart3, Search, FileText, Lock,
   ArrowRight, Check, AlertTriangle, Calendar, ExternalLink,
-  Wifi, ShieldCheck, ShieldAlert, Cpu, ChevronRight, Radio,
+  Wifi, ShieldCheck, ShieldAlert, ChevronRight, Radio, Plus,
 } from "lucide-react";
 import { Orb, type OrbState, orbStateLabel } from "@/components/orb";
 import { HudPanel } from "@/components/hud/panel";
@@ -176,9 +176,9 @@ export function JarvisConsole({ assistantName, userName }: { assistantName: stri
           <HudPanel label="JARVIS Core" className="flex min-h-[46vh] flex-1 flex-col" bodyClassName="flex flex-1 flex-col p-0">
             <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
               {!hasMessages ? (
-                <div className="flex min-h-[40vh] flex-col items-center justify-center py-6">
-                  <Orb state={orbState} level={voice.level} size={300} showLabel />
-                  <div className="mt-4 hud-label text-[11px] text-accent-bright text-glow">{statusLabel}</div>
+                <div className="flex min-h-[40vh] flex-col items-center justify-center py-8">
+                  <Orb state={orbState} level={voice.level} size={320} beam />
+                  <div className="mt-8 hud-label text-[11px] text-accent-bright text-glow">{statusLabel}</div>
                   {voice.error && <div className="mt-1 text-xs text-destructive">{voice.error}</div>}
                   {!voiceStarted && (
                     <div className="mt-4">
@@ -385,10 +385,16 @@ function SystemOverviewPanel({ pct, metrics, services }: { pct: number | null; m
     <HudPanel label="System Overview">
       <div className="flex items-center gap-4">
         <svg viewBox="0 0 100 100" className="h-24 w-24 shrink-0 -rotate-90">
-          <circle cx="50" cy="50" r={r} fill="none" stroke="hsl(var(--accent) / 0.14)" strokeWidth="6" />
-          <circle cx="50" cy="50" r={r} fill="none" stroke="hsl(var(--accent))" strokeWidth="6"
+          <defs>
+            <linearGradient id="donutGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="hsl(var(--accent-bright))" />
+              <stop offset="100%" stopColor="hsl(var(--accent-deep))" />
+            </linearGradient>
+          </defs>
+          <circle cx="50" cy="50" r={r} fill="none" stroke="hsl(var(--accent) / 0.12)" strokeWidth="7" />
+          <circle cx="50" cy="50" r={r} fill="none" stroke="url(#donutGrad)" strokeWidth="7"
             strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
-            style={{ transition: "stroke-dasharray 700ms ease-out", filter: "drop-shadow(0 0 6px hsl(var(--accent)))" }} />
+            style={{ transition: "stroke-dasharray 700ms ease-out", filter: "drop-shadow(0 0 7px hsl(var(--accent)))" }} />
           <text x="50" y="46" transform="rotate(90 50 50)" textAnchor="middle" className="fill-foreground" style={{ fontSize: 17 }}>{pct == null ? "—" : `${pct}%`}</text>
           <text x="50" y="60" transform="rotate(90 50 50)" textAnchor="middle" style={{ fontSize: 7, fill: "hsl(var(--muted-foreground))", letterSpacing: "0.15em" }}>
             {optimal ? "OPTIMAL" : "STATUS"}
@@ -450,7 +456,12 @@ function QuickCommands({ commands }: { commands: { icon: React.ComponentType<{ c
 
 function Reminders({ upcoming }: { upcoming: Stats["upcoming"] | null }) {
   return (
-    <HudPanel label="Reminders" action={<Link href="/dashboard/tasks" className="text-accent"><ArrowRight className="h-3.5 w-3.5" /></Link>}>
+    <HudPanel label="Reminders" action={
+      <Link href="/dashboard/tasks" aria-label="Add reminder"
+        className="flex h-5 w-5 items-center justify-center rounded border border-accent/30 text-accent transition hover:bg-accent/15">
+        <Plus className="h-3.5 w-3.5" />
+      </Link>
+    }>
       {upcoming == null ? <Skeleton /> : upcoming.length === 0 ? (
         <p className="text-xs text-muted-foreground">No upcoming reminders.</p>
       ) : (

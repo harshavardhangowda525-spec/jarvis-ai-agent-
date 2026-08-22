@@ -5,10 +5,17 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
+  Terminal,
+  Bot,
   ListChecks,
+  Server,
+  FolderOpen,
+  Database,
+  CalendarDays,
+  Share2,
+  Settings,
   StickyNote,
   Brain,
-  Settings,
   LogOut,
   Maximize2,
 } from "lucide-react";
@@ -16,8 +23,25 @@ import { cn } from "@/lib/utils";
 import { ReactorLogo, RobotFace, Chevrons, Waveform } from "@/components/hud/visuals";
 import { useClock } from "@/hooks/useDeviceMetrics";
 
+// Full mission-control nav. Every item routes to a real page (several are
+// conceptual aliases of the same working page — e.g. Command Center is the
+// console) so nothing 404s.
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard", label: "Command Center", icon: Terminal },
+  { href: "/dashboard/memory", label: "AI Agents", icon: Bot },
+  { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },
+  { href: "/dashboard/settings", label: "Systems", icon: Server },
+  { href: "/dashboard/notes", label: "Files", icon: FolderOpen },
+  { href: "/dashboard/memory", label: "Database", icon: Database },
+  { href: "/dashboard/tasks", label: "Calendar", icon: CalendarDays },
+  { href: "/dashboard/settings", label: "Network", icon: Share2 },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
+];
+
+// Compact nav for the mobile bottom bar (real, distinct pages only).
+const MOBILE_NAV = [
+  { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },
   { href: "/dashboard/notes", label: "Notes", icon: StickyNote },
   { href: "/dashboard/memory", label: "Memory", icon: Brain },
@@ -56,8 +80,13 @@ export function AppShell({
     router.refresh();
   }
 
-  const isActive = (href: string) =>
+  // Only the first nav item for a given href is "active-eligible", so duplicate
+  // aliases (Dashboard/Command Center) never both light up.
+  const primaryIndexForHref = new Map<string, number>();
+  NAV.forEach((n, i) => { if (!primaryIndexForHref.has(n.href)) primaryIndexForHref.set(n.href, i); });
+  const matchesPath = (href: string) =>
     href === "/dashboard" ? pathname === href : pathname.startsWith(href);
+  const isActive = (href: string) => href === "/dashboard" ? pathname === href : pathname.startsWith(href);
 
   const weekday = now.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
   const date = now
@@ -116,21 +145,21 @@ export function AppShell({
 
       <div className="flex min-h-0 flex-1">
         {/* Left nav rail — desktop */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-accent/15 p-3 md:flex">
+        <aside className="hidden w-56 shrink-0 flex-col overflow-y-auto border-r border-accent/15 p-3 md:flex">
           {/* robot face */}
-          <div className="mb-4 flex justify-center pt-1">
-            <RobotFace size={92} />
+          <div className="mb-3 flex justify-center pt-1">
+            <RobotFace size={84} />
           </div>
 
-          <nav className="flex flex-col gap-1.5">
-            {NAV.map(({ href, label, icon: Icon }) => {
-              const activeItem = isActive(href);
+          <nav className="flex flex-col gap-1">
+            {NAV.map(({ href, label, icon: Icon }, i) => {
+              const activeItem = matchesPath(href) && primaryIndexForHref.get(href) === i;
               return (
                 <Link
-                  key={href}
+                  key={label}
                   href={href}
                   className={cn(
-                    "group relative flex items-center gap-3 overflow-hidden rounded px-3 py-2.5 text-sm transition",
+                    "group relative flex items-center gap-3 overflow-hidden rounded px-3 py-2 text-sm transition",
                     activeItem
                       ? "bg-accent/12 text-accent-bright box-glow-soft"
                       : "text-muted-foreground hover:bg-accent/[0.07] hover:text-foreground",
@@ -145,7 +174,7 @@ export function AppShell({
           </nav>
 
           {/* version + status block */}
-          <div className="mt-auto rounded border border-accent/15 p-3 box-glow-soft">
+          <div className="mt-4 rounded border border-accent/15 p-3 box-glow-soft">
             <div className="hud-label text-[11px] text-accent-bright">JARVIS v2.0.1</div>
             <div className="hud-label mt-0.5 text-[8px] text-muted-foreground">Premium AI Assistant</div>
             <div className="mt-2 flex items-center gap-2">
@@ -167,9 +196,9 @@ export function AppShell({
 
       {/* Bottom nav — mobile */}
       <nav className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-accent/20 bg-panel/95 backdrop-blur md:hidden">
-        {NAV.map(({ href, label, icon: Icon }) => (
+        {MOBILE_NAV.map(({ href, label, icon: Icon }) => (
           <Link
-            key={href}
+            key={label}
             href={href}
             className={cn(
               "flex flex-1 flex-col items-center gap-0.5 py-2 text-[9px] uppercase tracking-wider",
