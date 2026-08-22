@@ -37,7 +37,7 @@ const QUOTES = [
   "Progress is impossible without change.",
 ];
 
-export function JarvisConsole({ assistantName, userName }: { assistantName: string; userName: string }) {
+export function JarvisConsole({ userName }: { assistantName: string; userName: string }) {
   const router = useRouter();
   const [voiceConfigured, setVoiceConfigured] = useState<boolean | null>(null);
   const [voiceStarted, setVoiceStarted] = useState(false);
@@ -45,7 +45,6 @@ export function JarvisConsole({ assistantName, userName }: { assistantName: stri
   const [stats, setStats] = useState<Stats | null>(null);
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sendRef = useRef<(t: string) => void>(() => {});
@@ -78,10 +77,6 @@ export function JarvisConsole({ assistantName, userName }: { assistantName: stri
       .catch(() => setVoiceConfigured(false));
     loadPanels();
   }, [loadPanels]);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [agent.messages]);
 
   const wasStreaming = useRef(false);
   useEffect(() => {
@@ -147,6 +142,11 @@ export function JarvisConsole({ assistantName, userName }: { assistantName: stri
   ], [agent, focusCommand, loadPanels, router, voice, voiceStarted]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasMessages = agent.messages.length > 0;
+  // Latest turn — rendered as a caption/subtitle under the reactor, not a chat log.
+  const lastAssistant = [...agent.messages].reverse().find((m) => m.role === "assistant");
+  const lastUserMsg = [...agent.messages].reverse().find((m) => m.role === "user");
+  const subtitle = lastAssistant?.content ?? "";
+  const subtitleLinks = lastAssistant?.links ?? [];
   const servicesOnlinePct = services
     ? Math.round((Object.values(services).filter(Boolean).length / Object.values(services).length) * 100)
     : null;
@@ -172,85 +172,67 @@ export function JarvisConsole({ assistantName, userName }: { assistantName: stri
             <AICorePanel online={!!services?.ai} />
           </div>
 
-          {/* Reactor core + transcript */}
+          {/* Reactor core — replies render as a subtitle beneath it, not a chat log */}
           <HudPanel label="JARVIS Core" className="flex min-h-[46vh] flex-1 flex-col" bodyClassName="flex flex-1 flex-col p-0">
-            <div ref={scrollRef} className="relative flex-1 overflow-y-auto">
-              {!hasMessages ? (
-                <div className="flex min-h-[40vh] flex-col items-center justify-center py-8">
-                  <Orb state={orbState} level={voice.level} size={320} beam />
-                  <div className="mt-8 hud-label text-[11px] text-accent-bright text-glow">{statusLabel}</div>
-                  {voice.error && <div className="mt-1 text-xs text-destructive">{voice.error}</div>}
-                  {!voiceStarted && (
-                    <div className="mt-4">
-                      {voiceConfigured === null ? (
-                        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Initializing voice…
-                        </p>
-                      ) : voiceConfigured ? (
-                        <button onClick={enableVoice}
-                          className="flex items-center gap-2 rounded border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm text-accent-bright transition hover:bg-accent/20 box-glow-soft">
-                          <Mic className="h-4 w-4" /> Enable JARVIS Voice
-                        </button>
-                      ) : (
-                        <p className="max-w-xs text-center text-[11px] text-muted-foreground">
-                          Voice is not configured — you can still chat by text.
-                        </p>
-                      )}
-                      {voice.status === "denied" && (
-                        <button onClick={enableVoice} className="mt-2 block w-full text-center text-[11px] text-accent hover:underline">
-                          Microphone blocked — grant permission and retry
-                        </button>
-                      )}
-                    </div>
+            <div className="relative flex flex-1 flex-col items-center justify-center px-6 py-8">
+              <Orb state={orbState} level={voice.level} size={300} beam />
+              <div className="mt-6 hud-label text-[11px] text-accent-bright text-glow">{statusLabel}</div>
+              {voice.error && <div className="mt-1 text-xs text-destructive">{voice.error}</div>}
+
+              {/* Enable-voice prompt (before the mic is started) */}
+              {!voiceStarted && (
+                <div className="mt-4">
+                  {voiceConfigured === null ? (
+                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Initializing voice…
+                    </p>
+                  ) : voiceConfigured ? (
+                    <button onClick={enableVoice}
+                      className="flex items-center gap-2 rounded border border-accent/40 bg-accent/10 px-5 py-2.5 text-sm text-accent-bright transition hover:bg-accent/20 box-glow-soft">
+                      <Mic className="h-4 w-4" /> Enable JARVIS Voice
+                    </button>
+                  ) : (
+                    <p className="max-w-xs text-center text-[11px] text-muted-foreground">
+                      Voice is not configured — you can still chat by text.
+                    </p>
+                  )}
+                  {voice.status === "denied" && (
+                    <button onClick={enableVoice} className="mt-2 block w-full text-center text-[11px] text-accent hover:underline">
+                      Microphone blocked — grant permission and retry
+                    </button>
                   )}
                 </div>
-              ) : (
-                <div className="space-y-3 p-4">
-                  <div className="mb-2 flex items-center gap-3 border-b border-accent/10 pb-3">
-                    <Orb state={orbState} level={voice.level} size={54} />
-                    <div>
-                      <div className="hud-label text-[10px] text-accent-bright">{statusLabel}</div>
-                      <div className="text-xs text-muted-foreground">{assistantName} online</div>
-                    </div>
-                  </div>
-                  {agent.messages.map((m) => (
-                    <div key={m.id} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-                      <div className={cn(
-                        "max-w-[85%] rounded px-3.5 py-2 text-sm animate-fade-in",
-                        m.role === "user" ? "border border-accent/25 bg-accent/10" : "border border-accent/12 bg-panel/60",
-                      )}>
-                        {m.content ? (
-                          <p className="whitespace-pre-wrap leading-relaxed">{m.content}</p>
-                        ) : (
-                          <span className="flex items-center gap-2 text-muted-foreground">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> thinking…
-                          </span>
-                        )}
-                        {m.tools && m.tools.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1.5">
-                            {m.tools.map((t, i) => (
-                              <span key={i} className={cn(
-                                "hud-label rounded px-1.5 py-0.5 text-[9px]",
-                                t.status === "error" ? "bg-destructive/15 text-destructive" : "bg-accent/10 text-accent",
-                              )}>{t.name}</span>
-                            ))}
-                          </div>
-                        )}
-                        {m.links && m.links.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {m.links.map((l, i) => (
-                              <a key={i} href={l.url} target="_blank" rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1.5 rounded border border-accent/30 bg-accent/10 px-2.5 py-1 text-xs text-accent transition hover:bg-accent/20">
-                                <ExternalLink className="h-3.5 w-3.5" /> Open {l.label}
-                              </a>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
               )}
+
+              {/* Subtitle caption: last user line (small) + JARVIS reply (streaming) */}
+              <div className="mt-5 w-full max-w-2xl text-center">
+                {hasMessages && lastUserMsg?.content && (
+                  <p className="mb-1.5 truncate text-[11px] text-accent/70">“{lastUserMsg.content}”</p>
+                )}
+                <div className="max-h-32 overflow-y-auto">
+                  {subtitle ? (
+                    <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-foreground/95 [text-shadow:0_0_12px_hsl(var(--accent)/0.35)]">
+                      {subtitle}
+                    </p>
+                  ) : agent.streaming ? (
+                    <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> thinking…
+                    </p>
+                  ) : !hasMessages ? (
+                    <p className="text-sm text-muted-foreground">How can I help you today, {userName}?</p>
+                  ) : null}
+                </div>
+                {subtitleLinks.length > 0 && (
+                  <div className="mt-3 flex flex-wrap justify-center gap-2">
+                    {subtitleLinks.map((l, i) => (
+                      <a key={i} href={l.url} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded border border-accent/30 bg-accent/10 px-2.5 py-1 text-xs text-accent transition hover:bg-accent/20">
+                        <ExternalLink className="h-3.5 w-3.5" /> Open {l.label}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </HudPanel>
         </div>
