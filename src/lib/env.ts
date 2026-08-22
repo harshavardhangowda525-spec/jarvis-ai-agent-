@@ -37,6 +37,12 @@ export const env = {
 
   searchApiKey: read("SEARCH_API_KEY"),
   weatherApiKey: read("WEATHER_API_KEY"),
+
+  // Infinity Web & Apps (Supabase) — read-only analysis of the site's own data
+  // (leads, visitors, signups, …). The service_role key is server-side ONLY and
+  // is never sent to the browser. Only GET queries are ever issued.
+  supabaseUrl: read("SUPABASE_URL"),
+  supabaseServiceRoleKey: read("SUPABASE_SERVICE_ROLE_KEY"),
 };
 
 /**
@@ -120,6 +126,9 @@ export const capabilities = {
   },
   get weather() {
     return env.weatherApiKey.length > 0;
+  },
+  get websiteData() {
+    return env.supabaseUrl.length > 0 && env.supabaseServiceRoleKey.length > 0;
   },
 };
 

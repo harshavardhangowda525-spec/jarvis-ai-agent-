@@ -19,6 +19,7 @@ import { openLinkTool } from "./openLink";
 import { gmailTool } from "./gmail";
 import { calendarTool } from "./calendar";
 import { analyticsTool } from "./analytics";
+import { websiteDataTool } from "./websiteData";
 
 const ALL_TOOLS: ToolDefinition[] = [
   calculatorTool as ToolDefinition,
@@ -33,6 +34,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   gmailTool as ToolDefinition,
   calendarTool as ToolDefinition,
   analyticsTool as ToolDefinition,
+  websiteDataTool as ToolDefinition,
 ];
 
 /** Tools available given the current capability + integration configuration. */
@@ -41,6 +43,7 @@ export function availableTools(): ToolDefinition[] {
   return ALL_TOOLS.filter((t) => {
     if (t.requiresCapability === "search") return capabilities.search;
     if (t.requiresCapability === "weather") return capabilities.weather;
+    if (t.requiresCapability === "websiteData") return capabilities.websiteData;
     // Google tools only appear once the OAuth client is configured.
     if (t.name === "gmail" || t.name === "google_calendar" || t.name === "google_analytics")
       return googleReady;
