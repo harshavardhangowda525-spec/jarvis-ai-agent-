@@ -292,6 +292,28 @@ export function JarvisConsole({ assistantName, userName }: { assistantName: stri
 
 // ---- Panels ------------------------------------------------------------
 
+/**
+ * The greeting-panel hologram. Prefers a real image at /hologram-human.png
+ * (drop your rendered figure there and it appears automatically, with a screen
+ * blend so a dark background disappears against the panel). Falls back to the
+ * built-in SVG hologram if the image isn't present.
+ */
+function HeroHuman() {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <HumanFigure />;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/hologram-human.png"
+      alt=""
+      aria-hidden
+      onError={() => setFailed(true)}
+      className="h-full w-full object-contain animate-hud-float"
+      style={{ mixBlendMode: "screen" }}
+    />
+  );
+}
+
 function GreetingPanel({ greeting, name, quote }: { greeting: string; name: string; quote: string }) {
   return (
     <HudPanel bodyClassName="p-0">
@@ -302,7 +324,7 @@ function GreetingPanel({ greeting, name, quote }: { greeting: string; name: stri
           <p className="mt-3 max-w-[22ch] text-xs italic leading-relaxed text-muted-foreground">“{quote}”</p>
         </div>
         <div className="w-28 shrink-0 self-stretch py-2 pr-2 sm:w-32">
-          <HumanFigure />
+          <HeroHuman />
         </div>
       </div>
     </HudPanel>
