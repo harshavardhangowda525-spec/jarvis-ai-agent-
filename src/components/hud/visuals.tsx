@@ -60,29 +60,86 @@ export function RobotFace({ size = 96, className }: { size?: number; className?:
   );
 }
 
-/** Wireframe humanoid bust — the "assistant presence" in the greeting panel. */
+/**
+ * Holographic humanoid bust — the glowing "assistant presence" from the JARVIS
+ * mockup. Front-facing head + shoulders + torso, translucent cyan body fill,
+ * contour + horizontal scan lines, glowing eyes, and a projector base.
+ */
 export function HumanFigure({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 120 150" className={cn("h-full w-full drop-glow animate-hud-float", className)}
+    <svg viewBox="0 0 140 180" className={cn("h-full w-full drop-glow animate-hud-float", className)}
       preserveAspectRatio="xMidYMid meet" aria-hidden>
-      <g fill="none" stroke={A} strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round">
-        <ellipse cx="60" cy="34" rx="18" ry="21" opacity="0.9" />
-        <path d="M46 30 Q60 24 74 30" opacity="0.5" />
-        <path d="M44 34 Q60 46 76 34" opacity="0.3" />
-        <line x1="60" y1="55" x2="60" y2="62" opacity="0.6" />
-        <path d="M30 96 Q30 66 60 64 Q90 66 90 96" opacity="0.9" />
-        <path d="M38 90 Q60 80 82 90" opacity="0.4" />
-        <path d="M60 66 L60 92 M44 72 L60 70 L76 72" opacity="0.4" />
-        <path d="M30 96 L24 120 M90 96 L96 120" opacity="0.6" />
+      <defs>
+        <radialGradient id="humanBody" cx="50%" cy="30%" r="80%">
+          <stop offset="0%" stopColor={`rgba(120,190,255,0.34)`} />
+          <stop offset="55%" stopColor={`rgba(120,190,255,0.14)`} />
+          <stop offset="100%" stopColor={`rgba(120,190,255,0.03)`} />
+        </radialGradient>
+        <linearGradient id="humanBeam" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0%" stopColor="hsl(var(--accent) / 0.28)" />
+          <stop offset="100%" stopColor="hsl(var(--accent) / 0)" />
+        </linearGradient>
+        <clipPath id="humanClip">
+          {/* head + neck + shoulders bust (union of shapes) */}
+          <ellipse cx="70" cy="42" rx="20" ry="23" />
+          <rect x="60" y="58" width="20" height="22" rx="6" />
+          <path d="M20 150 C20 106 42 82 70 82 C98 82 120 106 120 150 Z" />
+        </clipPath>
+      </defs>
+
+      {/* upward hologram beam */}
+      <polygon points="44,150 96,150 110,178 30,178" fill="url(#humanBeam)" opacity="0.55" />
+
+      {/* translucent body fill + holographic scan lines */}
+      <g clipPath="url(#humanClip)">
+        <rect x="0" y="0" width="140" height="152" fill="url(#humanBody)" />
+        {Array.from({ length: 14 }).map((_, i) => (
+          <line key={i} x1="0" x2="140" y1={22 + i * 9} y2={22 + i * 9}
+            stroke={A} strokeWidth="0.6" opacity="0.18" />
+        ))}
+      </g>
+
+      {/* glowing outlines: head, neck, shoulders */}
+      <g fill="none" stroke={A} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round"
+        style={{ filter: `drop-shadow(0 0 3px ${A})` }}>
+        <ellipse cx="70" cy="42" rx="20" ry="23" />
+        <path d="M62 62 L61 80 M78 62 L79 80" opacity="0.75" />
+        {/* shoulders (fade at the bottom, no baseline) */}
+        <path d="M20 150 C20 106 42 82 70 82 C98 82 120 106 120 150" />
+      </g>
+
+      {/* contour detail (thin) */}
+      <g fill="none" stroke={AB} strokeWidth="0.9" strokeLinecap="round" opacity="0.5">
+        <path d="M50 94 Q70 102 90 94" />                 {/* collar */}
+        <path d="M50 94 Q56 110 58 126 M90 94 Q84 110 82 126" /> {/* chest */}
+        <line x1="70" y1="84" x2="70" y2="150" opacity="0.4" /> {/* center */}
+        <path d="M60 118 Q70 122 80 118 M61 132 Q70 136 79 132" opacity="0.5" /> {/* torso */}
+        <path d="M30 100 Q25 126 34 148 M110 100 Q115 126 106 148" opacity="0.5" /> {/* arms */}
+      </g>
+
+      {/* face */}
+      <g fill="none" stroke={A} strokeWidth="1" opacity="0.6">
+        <path d="M58 38 Q62 35 67 37 M73 37 Q78 35 82 38" /> {/* brows */}
+        <path d="M70 43 L70 49 M65 52 Q70 55 75 52" />        {/* nose + mouth */}
       </g>
       {/* glowing eyes */}
-      <g style={{ filter: `drop-shadow(0 0 5px ${AB})` }} className="animate-glow-pulse">
-        <circle cx="52" cy="34" r="3" fill={AB} stroke="none" />
-        <circle cx="68" cy="34" r="3" fill={AB} stroke="none" />
+      <g style={{ filter: `drop-shadow(0 0 6px ${AB})` }} className="animate-glow-pulse">
+        <ellipse cx="62" cy="42" rx="3.4" ry="2.4" fill={AB} />
+        <ellipse cx="78" cy="42" rx="3.4" ry="2.4" fill={AB} />
       </g>
-      {/* base ring */}
-      <ellipse cx="60" cy="132" rx="46" ry="9" fill="none" stroke={AB} strokeWidth="1.5" opacity="0.7" className="animate-glow-pulse" />
-      <ellipse cx="60" cy="132" rx="30" ry="6" fill="none" stroke={A} strokeWidth="1" opacity="0.4" />
+
+      {/* projector base */}
+      <ellipse cx="70" cy="152" rx="54" ry="11" fill="none" stroke={AB} strokeWidth="1.6" opacity="0.75" className="animate-glow-pulse" />
+      <ellipse cx="70" cy="157" rx="40" ry="8" fill="none" stroke={A} strokeWidth="1" opacity="0.45" />
+      <ellipse cx="70" cy="161" rx="26" ry="5" fill="none" stroke={A} strokeWidth="1" opacity="0.3" />
+
+      {/* floating particles */}
+      <g fill={AB}>
+        <circle cx="30" cy="74" r="1.4" opacity="0.7" className="animate-hud-pulse" />
+        <circle cx="112" cy="90" r="1.4" opacity="0.6" className="animate-glow-pulse" />
+        <circle cx="26" cy="118" r="1.2" opacity="0.5" className="animate-hud-pulse" />
+        <circle cx="116" cy="126" r="1.2" opacity="0.6" className="animate-glow-pulse" />
+      </g>
     </svg>
   );
 }

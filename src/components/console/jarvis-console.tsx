@@ -296,12 +296,12 @@ function GreetingPanel({ greeting, name, quote }: { greeting: string; name: stri
   return (
     <HudPanel bodyClassName="p-0">
       <div className="flex items-stretch">
-        <div className="flex-1 p-4">
+        <div className="flex min-w-0 flex-1 flex-col justify-center p-4">
           <div className="hud-label text-[11px] text-accent">{greeting},</div>
-          <div className="hud-display mt-1 text-2xl text-foreground text-glow">{name.toUpperCase()}</div>
+          <div className="hud-display mt-1 text-2xl leading-tight text-foreground text-glow">{name.toUpperCase()}</div>
           <p className="mt-3 max-w-[22ch] text-xs italic leading-relaxed text-muted-foreground">“{quote}”</p>
         </div>
-        <div className="w-24 shrink-0 py-3 pr-3">
+        <div className="w-28 shrink-0 self-stretch py-2 pr-2 sm:w-32">
           <HumanFigure />
         </div>
       </div>
