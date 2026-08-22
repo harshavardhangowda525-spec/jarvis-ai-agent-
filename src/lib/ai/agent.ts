@@ -293,11 +293,18 @@ function aiErrorMessage(err: unknown): string {
     return "The AI provider is rate-limiting requests (free-tier limit reached). Please wait a moment and try again.";
   }
   if (status === 401 || status === 403) {
-    return "The AI provider rejected the API key. Check your configuration.";
+    return "The AI provider rejected the API key. Check your API key configuration.";
+  }
+  // Try to extract the provider's own error message for clearer diagnostics.
+  const anyErr = err as { message?: string; error?: { message?: string } };
+  const detail = (anyErr?.error?.message || anyErr?.message || "").toString().slice(0, 200);
+  if (status === 404) {
+    return `The AI model wasn't found — check AI_MODEL / provider. ${detail}`.trim();
   }
   if (status === 400) {
-    return "The AI provider rejected the request. Please try again.";
+    return `The AI provider rejected the request. ${detail}`.trim();
   }
+  if (detail) return `AI error${status ? ` (HTTP ${status})` : ""}: ${detail}`;
   return "The AI service failed to respond. Please try again.";
 }
 
