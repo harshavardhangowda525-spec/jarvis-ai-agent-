@@ -15,7 +15,7 @@ export async function GET() {
     const user = await requireUser();
     const db = getDb();
 
-    const [all, done, high, recentLogs, upcoming, counts] = await Promise.all([
+    const [all, done, high, recentLogs, upcoming, activeTasks, counts] = await Promise.all([
       db.task.count({ where: { userId: user.id } }),
       db.task.count({ where: { userId: user.id, status: "done" } }),
       db.task.count({ where: { userId: user.id, status: "pending", priority: "high" } }),
@@ -30,6 +30,12 @@ export async function GET() {
         orderBy: { dueAt: "asc" },
         take: 5,
         select: { id: true, title: true, dueAt: true, priority: true },
+      }),
+      db.task.findMany({
+        where: { userId: user.id, status: "pending" },
+        orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+        take: 5,
+        select: { id: true, title: true, priority: true, dueAt: true },
       }),
       db.$transaction([
         db.note.count({ where: { userId: user.id } }),
@@ -48,6 +54,7 @@ export async function GET() {
         at: l.createdAt,
       })),
       upcoming,
+      activeTasks,
     });
   } catch (err) {
     return handleError(err);

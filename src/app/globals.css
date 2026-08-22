@@ -9,22 +9,23 @@
  * theme tokens are always defined.
  */
 :root {
-  --background: 222 60% 4%;
-  --foreground: 210 20% 96%;
-  --panel: 220 45% 7%;
-  --muted: 216 30% 16%;
-  --muted-foreground: 210 22% 62%;
-  --accent: 205 62% 74%; /* #94bce3 steel blue */
-  --accent-bright: 210 96% 85%; /* #b5d9fd */
-  --accent-deep: 210 31% 50%; /* #5980a6 */
-  --accent-foreground: 222 47% 6%;
-  --border: 205 55% 74%; /* used at low opacity for hairlines */
-  --input: 216 30% 18%;
-  --ring: 205 62% 74%;
-  --destructive: 0 72% 62%;
+  --background: 210 65% 3%;
+  --foreground: 195 40% 96%;
+  --panel: 208 60% 6%;
+  --muted: 208 40% 14%;
+  --muted-foreground: 200 30% 62%;
+  --accent: 197 96% 56%; /* electric blue */
+  --accent-bright: 187 98% 70%; /* cyan highlight */
+  --accent-deep: 205 80% 42%;
+  --accent-foreground: 210 65% 4%;
+  --cyan: 186 100% 60%;
+  --border: 197 90% 60%; /* used at low opacity for hairlines */
+  --input: 208 40% 16%;
+  --ring: 197 96% 56%;
+  --destructive: 0 80% 64%;
   --destructive-foreground: 210 40% 98%;
-  --success: 158 64% 52%;
-  --warning: 38 92% 62%;
+  --success: 152 70% 50%;
+  --warning: 38 96% 60%;
   --radius: 4px;
 }
 
@@ -47,13 +48,34 @@ body {
 
 /* Ambient mission-control field: faint grid + corner glows. */
 .jarvis-bg {
-  background-color: hsl(222 60% 4%);
+  background-color: hsl(210 65% 3%);
   background-image:
-    linear-gradient(hsl(var(--accent) / 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, hsl(var(--accent) / 0.045) 1px, transparent 1px),
-    radial-gradient(60rem 40rem at 50% -10%, hsl(205 80% 40% / 0.14), transparent 60%),
-    radial-gradient(50rem 40rem at 100% 100%, hsl(230 80% 40% / 0.1), transparent 55%);
-  background-size: 44px 44px, 44px 44px, 100% 100%, 100% 100%;
+    linear-gradient(hsl(var(--accent) / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--accent) / 0.05) 1px, transparent 1px),
+    radial-gradient(70rem 46rem at 50% -12%, hsl(197 90% 45% / 0.16), transparent 60%),
+    radial-gradient(50rem 40rem at 0% 100%, hsl(190 90% 45% / 0.1), transparent 55%),
+    radial-gradient(50rem 40rem at 100% 100%, hsl(215 90% 45% / 0.1), transparent 55%);
+  background-size: 46px 46px, 46px 46px, 100% 100%, 100% 100%, 100% 100%;
+}
+
+/* Glow helpers */
+.text-glow { text-shadow: 0 0 10px hsl(var(--accent) / 0.75), 0 0 24px hsl(var(--accent) / 0.35); }
+.text-glow-cyan { text-shadow: 0 0 10px hsl(var(--cyan) / 0.8), 0 0 26px hsl(var(--cyan) / 0.4); }
+.box-glow { box-shadow: 0 0 0 1px hsl(var(--accent) / 0.28), 0 0 26px -8px hsl(var(--accent) / 0.55); }
+.box-glow-soft { box-shadow: 0 0 24px -10px hsl(var(--accent) / 0.5); }
+.drop-glow { filter: drop-shadow(0 0 6px hsl(var(--accent) / 0.7)); }
+.drop-glow-cyan { filter: drop-shadow(0 0 6px hsl(var(--cyan) / 0.8)); }
+
+/* Chip / clickable HUD row */
+.hud-row {
+  border: 1px solid hsl(var(--accent) / 0.14);
+  background: hsl(var(--accent) / 0.04);
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+.hud-row:hover {
+  background: hsl(var(--accent) / 0.1);
+  border-color: hsl(var(--accent) / 0.4);
+  box-shadow: 0 0 18px -8px hsl(var(--accent) / 0.7);
 }
 
 /* HUD panel: hairline frame + drawn corner brackets. */
@@ -141,10 +163,26 @@ body {
 @keyframes hud-spin-rev { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
 @keyframes hud-pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }
 @keyframes fade-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes hud-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes hud-glow-pulse {
+  0%,100% { opacity: 0.55; filter: drop-shadow(0 0 4px hsl(var(--accent) / 0.5)); }
+  50% { opacity: 1; filter: drop-shadow(0 0 14px hsl(var(--accent) / 0.9)); }
+}
+@keyframes chev-flow { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
+@keyframes dash-flow { to { stroke-dashoffset: -1000; } }
 .animate-fade-in { animation: fade-in 0.35s ease-out; }
 .animate-hud-spin { animation: hud-spin 18s linear infinite; }
 .animate-hud-spin-rev { animation: hud-spin-rev 24s linear infinite; }
+.animate-hud-spin-slow { animation: hud-spin 40s linear infinite; }
 .animate-hud-pulse { animation: hud-pulse 2.4s ease-in-out infinite; }
+.animate-hud-float { animation: hud-float 6s ease-in-out infinite; }
+.animate-glow-pulse { animation: hud-glow-pulse 3s ease-in-out infinite; }
+.animate-dash-flow { animation: dash-flow 20s linear infinite; }
+
+/* Flowing chevrons (>> SYSTEM ONLINE >>) */
+.chev > * { animation: chev-flow 1.6s ease-in-out infinite; }
+.chev > *:nth-child(2) { animation-delay: 0.2s; }
+.chev > *:nth-child(3) { animation-delay: 0.4s; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

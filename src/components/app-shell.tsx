@@ -11,9 +11,10 @@ import {
   Settings,
   LogOut,
   Maximize2,
-  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ReactorLogo, RobotFace, Chevrons, Waveform } from "@/components/hud/visuals";
+import { useClock } from "@/hooks/useDeviceMetrics";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -33,6 +34,7 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const [online, setOnline] = useState<number | null>(null);
+  const now = useClock();
 
   const name = user.displayName || user.email.split("@")[0];
 
@@ -57,50 +59,70 @@ export function AppShell({
   const isActive = (href: string) =>
     href === "/dashboard" ? pathname === href : pathname.startsWith(href);
 
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
+  const date = now
+    .toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+    .toUpperCase();
+  const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+
   return (
     <div className="flex min-h-screen flex-col">
       {/* Top bar */}
-      <header className="flex h-14 shrink-0 items-center gap-4 border-b border-accent/12 px-4">
-        <Link href="/dashboard" className="flex items-baseline gap-3">
-          <span className="hud-display text-2xl text-foreground">JARVIS</span>
-          <span className="hidden text-[9px] uppercase leading-tight tracking-[0.2em] text-muted-foreground sm:block">
-            Just a really very
-            <br />
-            intelligent system
-          </span>
+      <header className="relative flex h-16 shrink-0 items-center gap-4 border-b border-accent/15 px-4">
+        <Link href="/dashboard" className="flex items-center gap-3">
+          <div className="leading-none">
+            <span className="hud-display text-2xl text-foreground text-glow sm:text-3xl">JARVIS</span>
+            <span className="mt-0.5 hidden text-[8px] uppercase tracking-[0.28em] text-muted-foreground sm:block">
+              Just a rather very intelligent system
+            </span>
+          </div>
         </Link>
 
-        <div className="mx-auto hidden items-center gap-2 md:flex">
-          <span className="hud-label text-[10px] text-muted-foreground">System</span>
-          <span className="hud-label text-[10px] text-accent">Online</span>
-          <span className="h-2 w-2 animate-hud-pulse bg-success shadow-[0_0_8px_hsl(var(--success))]" />
+        {/* center: SYSTEM ONLINE */}
+        <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-2 md:flex">
+          <Chevrons />
+          <span className="hud-label text-[11px] text-accent-bright text-glow">System Online</span>
+          <Chevrons dir="left" />
         </div>
 
-        <div className="ml-auto flex items-center gap-1.5">
+        {/* right: clock + reactor + user */}
+        <div className="ml-auto flex items-center gap-3">
+          <div className="hidden text-right leading-tight sm:block">
+            <div className="hud-label text-[9px] text-muted-foreground">{weekday}</div>
+            <div className="flex items-baseline justify-end gap-2">
+              <span className="hud-label text-[10px] text-accent">{date}</span>
+              <span className="hud-display text-lg text-foreground text-glow tabular-nums">{time}</span>
+            </div>
+          </div>
+          <ReactorLogo size={44} className="hidden sm:block" />
           <button
             onClick={() => document.documentElement.requestFullscreen?.().catch(() => {})}
-            className="hidden h-9 w-9 items-center justify-center rounded text-muted-foreground transition hover:bg-accent/10 hover:text-accent sm:flex"
+            className="hidden h-9 w-9 items-center justify-center rounded text-muted-foreground transition hover:bg-accent/10 hover:text-accent lg:flex"
             aria-label="Fullscreen"
           >
             <Maximize2 className="h-4 w-4" />
           </button>
-          <div className="flex items-center gap-2 rounded border border-accent/15 px-2.5 py-1.5">
+          <div className="flex items-center gap-2 rounded border border-accent/20 px-2.5 py-1.5 box-glow-soft">
             <span className="flex h-6 w-6 items-center justify-center rounded bg-accent/15 text-xs font-semibold text-accent">
               {name[0]?.toUpperCase()}
             </span>
-            <span className="hidden text-sm text-foreground/90 sm:block">Hello, {name}!</span>
+            <span className="hidden text-sm text-foreground/90 md:block">{name}</span>
             <button onClick={logout} aria-label="Log out" title="Log out">
               <LogOut className="h-4 w-4 text-muted-foreground transition hover:text-destructive" />
             </button>
-            <ChevronDown className="hidden h-3.5 w-3.5 text-muted-foreground sm:block" />
           </div>
         </div>
       </header>
 
       <div className="flex min-h-0 flex-1">
         {/* Left nav rail — desktop */}
-        <aside className="hidden w-56 shrink-0 flex-col border-r border-accent/12 p-3 md:flex">
-          <nav className="flex flex-col gap-1">
+        <aside className="hidden w-56 shrink-0 flex-col border-r border-accent/15 p-3 md:flex">
+          {/* robot face */}
+          <div className="mb-4 flex justify-center pt-1">
+            <RobotFace size={92} />
+          </div>
+
+          <nav className="flex flex-col gap-1.5">
             {NAV.map(({ href, label, icon: Icon }) => {
               const activeItem = isActive(href);
               return (
@@ -108,26 +130,33 @@ export function AppShell({
                   key={href}
                   href={href}
                   className={cn(
-                    "relative flex items-center gap-3 rounded px-3 py-2.5 text-sm transition",
+                    "group relative flex items-center gap-3 overflow-hidden rounded px-3 py-2.5 text-sm transition",
                     activeItem
-                      ? "bg-accent/12 text-accent"
-                      : "text-muted-foreground hover:bg-accent/[0.06] hover:text-foreground",
+                      ? "bg-accent/12 text-accent-bright box-glow-soft"
+                      : "text-muted-foreground hover:bg-accent/[0.07] hover:text-foreground",
                   )}
                 >
-                  {activeItem && <span className="absolute inset-y-1 left-0 w-0.5 bg-accent" />}
-                  <Icon className="h-4 w-4" />
+                  {activeItem && <span className="absolute inset-y-1 left-0 w-[3px] bg-accent-bright shadow-[0_0_10px_hsl(var(--accent))]" />}
+                  <Icon className={cn("h-4 w-4 transition", activeItem && "drop-glow")} />
                   <span className="hud-label text-[11px]">{label}</span>
                 </Link>
               );
             })}
           </nav>
 
-          {/* System status gauge */}
-          <div className="mt-auto flex flex-col items-center gap-2 pb-2 pt-6">
-            <Gauge value={online ?? 0} loading={online === null} />
-            <div className="hud-label text-[9px] text-muted-foreground">System Status</div>
-            <div className="hud-display text-2xl text-accent">
-              {online === null ? "—" : `${online}%`}
+          {/* version + status block */}
+          <div className="mt-auto rounded border border-accent/15 p-3 box-glow-soft">
+            <div className="hud-label text-[11px] text-accent-bright">JARVIS v2.0.1</div>
+            <div className="hud-label mt-0.5 text-[8px] text-muted-foreground">Premium AI Assistant</div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="hud-label text-[8px] text-muted-foreground">Status</span>
+              <span className="h-1.5 w-1.5 animate-hud-pulse rounded-full bg-success shadow-[0_0_8px_hsl(var(--success))]" />
+              <span className="hud-label text-[9px] text-success">
+                {online === null ? "Online" : `Online · ${online}%`}
+              </span>
+            </div>
+            <div className="mt-2 h-6">
+              <Waveform bars={26} active className="opacity-70" />
             </div>
           </div>
         </aside>
@@ -137,14 +166,14 @@ export function AppShell({
       </div>
 
       {/* Bottom nav — mobile */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-accent/15 bg-panel/95 backdrop-blur md:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-accent/20 bg-panel/95 backdrop-blur md:hidden">
         {NAV.map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
             href={href}
             className={cn(
               "flex flex-1 flex-col items-center gap-0.5 py-2 text-[9px] uppercase tracking-wider",
-              isActive(href) ? "text-accent" : "text-muted-foreground",
+              isActive(href) ? "text-accent-bright" : "text-muted-foreground",
             )}
           >
             <Icon className="h-5 w-5" />
@@ -153,24 +182,5 @@ export function AppShell({
         ))}
       </nav>
     </div>
-  );
-}
-
-function Gauge({ value, loading }: { value: number; loading: boolean }) {
-  const r = 26;
-  const circ = 2 * Math.PI * r;
-  const dash = (value / 100) * circ;
-  return (
-    <svg viewBox="0 0 64 64" className="h-16 w-16 -rotate-90">
-      <circle cx="32" cy="32" r={r} fill="none" stroke="hsl(var(--accent) / 0.15)" strokeWidth="3" />
-      {!loading && (
-        <circle
-          cx="32" cy="32" r={r} fill="none" stroke="hsl(var(--accent))" strokeWidth="3"
-          strokeDasharray={`${dash} ${circ}`} strokeLinecap="round"
-          style={{ transition: "stroke-dasharray 600ms ease-out" }}
-        />
-      )}
-      <circle cx="32" cy="6" r="2" fill="hsl(var(--accent))" className="animate-hud-pulse" />
-    </svg>
   );
 }
