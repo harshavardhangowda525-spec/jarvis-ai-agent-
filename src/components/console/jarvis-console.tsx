@@ -43,9 +43,14 @@ export function JarvisConsole({ assistantName, userName }: { assistantName: stri
     onAssistantComplete: (text) => { if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text); },
     onNavigate,
     onOpen: (url) => {
-      // Try to open a new tab (may be blocked by the popup blocker — a
-      // clickable link is also rendered in the message as a reliable fallback).
-      try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* fallback link shown */ }
+      // Open automatically. Try a new tab first; if the pop-up blocker stops it
+      // (common when not triggered by a direct click), fall back to navigating
+      // the current tab — that is never blocked, so the site always opens.
+      let win: Window | null = null;
+      try { win = window.open(url, "_blank", "noopener,noreferrer"); } catch { win = null; }
+      if (!win || win.closed || typeof win.closed === "undefined") {
+        window.location.href = url;
+      }
     },
   });
   useEffect(() => { sendRef.current = agent.send; }, [agent.send]);
