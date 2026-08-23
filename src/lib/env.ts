@@ -29,6 +29,8 @@ export const env = {
   groqApiKey: read("GROQ_API_KEY"),
   openaiApiKey: read("OPENAI_API_KEY"),
   openaiBaseUrl: read("OPENAI_BASE_URL"),
+  // Ollama (local, OpenAI-compatible). Default endpoint is localhost:11434.
+  ollamaBaseUrl: read("OLLAMA_BASE_URL"),
 
   elevenLabsApiKey: read("ELEVENLABS_API_KEY"),
   elevenLabsVoiceId: read("ELEVENLABS_VOICE_ID"),
@@ -83,6 +85,19 @@ export function resolveAiConfig(): AiConfig | null {
       apiKey: env.groqApiKey,
       baseUrl: "https://api.groq.com/openai/v1",
       model: env.aiModel || "llama-3.3-70b-versatile",
+    };
+  }
+  if (explicit === "ollama" || (!explicit && env.ollamaBaseUrl)) {
+    // Ollama's OpenAI-compatible API. No real key needed — the SDK just
+    // requires a non-empty string. Use a tool-capable model (llama3.1,
+    // qwen2.5, mistral-nemo, …) so JARVIS can call its tools.
+    const base = env.ollamaBaseUrl || "http://localhost:11434/v1";
+    return {
+      provider: "ollama",
+      kind: "openai",
+      apiKey: env.openaiApiKey || "ollama",
+      baseUrl: base.replace(/\/$/, ""),
+      model: env.aiModel || "llama3.1",
     };
   }
   if (explicit === "openai" || (!explicit && env.openaiApiKey)) {
