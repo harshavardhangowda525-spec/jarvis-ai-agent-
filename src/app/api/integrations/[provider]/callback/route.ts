@@ -52,7 +52,13 @@ export async function GET(req: NextRequest, { params }: { params: { provider: st
   } catch {
     return fail("token_unreachable");
   }
-  if (!tokenRes.ok) return fail("token_exchange_failed");
+  if (!tokenRes.ok) {
+    const body = await tokenRes.text().catch(() => "");
+    console.error("[oauth] token exchange failed", provider.id, tokenRes.status, body);
+    let detail = "";
+    try { detail = JSON.parse(body).error || ""; } catch { /* non-JSON */ }
+    return fail(detail ? `token_exchange_failed:${detail}` : "token_exchange_failed");
+  }
 
   const token: any = await tokenRes.json();
   const accessToken = token.access_token ?? token.authed_user?.access_token;

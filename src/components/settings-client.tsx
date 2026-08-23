@@ -64,7 +64,11 @@ export function SettingsClient() {
     if (p.get("connected")) {
       setNotice({ ok: true, text: `${cap} connected successfully.` });
     } else if (p.get("error")) {
-      setNotice({ ok: false, text: `${cap}: ${OAUTH_ERRORS[p.get("error")!] ?? `connection failed (${p.get("error")}).`}` });
+      const raw = p.get("error")!;
+      const [code, ...rest] = raw.split(":");
+      const detail = rest.join(":");
+      const base = OAUTH_ERRORS[code] ?? `connection failed (${code}).`;
+      setNotice({ ok: false, text: `${cap}: ${base}${detail ? ` [Google said: ${detail}]` : ""}` });
     }
     if (p.get("connected") || p.get("error")) {
       window.history.replaceState({}, "", "/dashboard/settings#integrations");
