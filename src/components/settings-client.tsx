@@ -31,18 +31,44 @@ interface SessionRow {
   createdAt: string;
 }
 
+const OAUTH_ERRORS: Record<string, string> = {
+  token_exchange_failed:
+    "Google rejected the token exchange — your GOOGLE_CLIENT_SECRET is likely wrong. Re-copy it into Vercel and redeploy.",
+  no_token: "Google didn't return an access token — check the OAuth client type and secret.",
+  store_failed: "Couldn't save the connection (database error). Check DATABASE_URL.",
+  bad_state: "Sign-in session expired. Try again in the same browser (not incognito), and ensure AUTH_SECRET is set.",
+  missing_code: "Google didn't return an authorization code. Try connecting again.",
+  token_unreachable: "Couldn't reach Google's token endpoint. Try again.",
+  denied: "You cancelled the Google authorization.",
+  unavailable: "Google isn't configured — set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel.",
+};
+
 export function SettingsClient() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [voice, setVoice] = useState<VoiceCfg | null>(null);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [saved, setSaved] = useState(false);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     fetch("/api/profile").then((r) => r.json()).then((j) => j.data?.profile && setProfile(j.data.profile));
     fetch("/api/voice/config").then((r) => r.json()).then((j) => j.data && setVoice(j.data));
     fetch("/api/integrations").then((r) => r.json()).then((j) => j.data && setIntegrations(j.data.integrations));
     fetch("/api/sessions").then((r) => r.json()).then((j) => j.data && setSessions(j.data.sessions));
+
+    // Surface the OAuth callback result (connected=1 or error=<reason>).
+    const p = new URLSearchParams(window.location.search);
+    const provider = p.get("integration") ?? "Provider";
+    const cap = provider.charAt(0).toUpperCase() + provider.slice(1);
+    if (p.get("connected")) {
+      setNotice({ ok: true, text: `${cap} connected successfully.` });
+    } else if (p.get("error")) {
+      setNotice({ ok: false, text: `${cap}: ${OAUTH_ERRORS[p.get("error")!] ?? `connection failed (${p.get("error")}).`}` });
+    }
+    if (p.get("connected") || p.get("error")) {
+      window.history.replaceState({}, "", "/dashboard/settings#integrations");
+    }
   }, []);
 
   async function saveProfile() {
@@ -170,6 +196,18 @@ export function SettingsClient() {
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Integrations
         </h2>
+        {notice && (
+          <div
+            className={cn(
+              "mb-4 rounded-xl border px-3 py-2.5 text-xs",
+              notice.ok
+                ? "border-success/40 bg-success/10 text-success"
+                : "border-destructive/40 bg-destructive/10 text-destructive",
+            )}
+          >
+            {notice.text}
+          </div>
+        )}
         <div className="grid gap-2 sm:grid-cols-2">
           {integrations.map((it) => (
             <div key={it.id} className="flex items-center gap-3 rounded-xl bg-muted/40 px-3 py-2.5">

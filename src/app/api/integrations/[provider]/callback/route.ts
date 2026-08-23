@@ -12,11 +12,13 @@ export const runtime = "nodejs";
  * integration marked "connected".
  */
 export async function GET(req: NextRequest, { params }: { params: { provider: string } }) {
-  const settingsUrl = `${env.appUrl}/dashboard/settings#integrations`;
+  // Query params must come BEFORE the hash, or the browser treats them as part
+  // of the fragment and the page can't read them.
+  const base = `${env.appUrl}/dashboard/settings`;
   const provider = getProvider(params.provider);
 
   const fail = (reason: string) =>
-    NextResponse.redirect(`${settingsUrl}?integration=${params.provider}&error=${encodeURIComponent(reason)}`);
+    NextResponse.redirect(`${base}?integration=${params.provider}&error=${encodeURIComponent(reason)}#integrations`);
 
   if (!provider || !isProviderConfigured(provider.id)) return fail("unavailable");
 
@@ -80,5 +82,5 @@ export async function GET(req: NextRequest, { params }: { params: { provider: st
     return fail("store_failed");
   }
 
-  return NextResponse.redirect(`${settingsUrl}?integration=${provider.id}&connected=1`);
+  return NextResponse.redirect(`${base}?integration=${provider.id}&connected=1#integrations`);
 }
