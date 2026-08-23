@@ -17,6 +17,7 @@ import {
 import { useVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import { useDeviceMetrics, type Metric } from "@/hooks/useDeviceMetrics";
+import { useWakeWord } from "@/hooks/useWakeWord";
 import { cn } from "@/lib/utils";
 
 interface Services { [k: string]: boolean }
@@ -65,6 +66,12 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     },
   });
   useEffect(() => { sendRef.current = agent.send; }, [agent.send]);
+
+  // Wake JARVIS by two claps or the phrase "Jarvis wake up" while it's asleep.
+  const wake = useWakeWord({
+    enabled: !voiceStarted,
+    onWake: () => { void enableVoice(); },
+  });
 
   const loadPanels = useCallback(() => {
     fetch("/api/status").then((r) => (r.ok ? r.json() : null)).then((j) => j?.data && setServices(j.data.services)).catch(() => {});
@@ -201,6 +208,23 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                       Microphone blocked — grant permission and retry
                     </button>
                   )}
+                  {/* Wake status */}
+                  <div className="mt-3 flex items-center justify-center gap-2 text-center text-[11px]">
+                    {wake.armed ? (
+                      <>
+                        <span className="h-1.5 w-1.5 rounded-full bg-success shadow-[0_0_8px_hsl(var(--success))] animate-hud-pulse" />
+                        <span className="text-muted-foreground">
+                          Wake ready — clap twice{wake.speechSupported ? " or say “Jarvis wake up”" : ""}
+                        </span>
+                      </>
+                    ) : wake.micGranted ? (
+                      <span className="text-muted-foreground">Arming wake detection…</span>
+                    ) : (
+                      <button onClick={wake.requestPermission} className="text-accent hover:underline">
+                        Enable clap / “Jarvis wake up” to open hands-free
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
