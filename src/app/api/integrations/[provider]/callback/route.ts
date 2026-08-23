@@ -56,7 +56,10 @@ export async function GET(req: NextRequest, { params }: { params: { provider: st
     const body = await tokenRes.text().catch(() => "");
     console.error("[oauth] token exchange failed", provider.id, tokenRes.status, body);
     let detail = "";
-    try { detail = JSON.parse(body).error || ""; } catch { /* non-JSON */ }
+    try {
+      const j = JSON.parse(body);
+      detail = [j.error, j.error_description].filter(Boolean).join(" — ");
+    } catch { /* non-JSON */ }
     return fail(detail ? `token_exchange_failed:${detail}` : "token_exchange_failed");
   }
 
