@@ -29,6 +29,9 @@ export const env = {
   groqApiKey: read("GROQ_API_KEY"),
   openaiApiKey: read("OPENAI_API_KEY"),
   openaiBaseUrl: read("OPENAI_BASE_URL"),
+  // OpenRouter (OpenAI-compatible aggregator; has free models).
+  openrouterApiKey: read("OPENROUTER_API_KEY"),
+  openrouterModel: read("OPENROUTER_MODEL"),
   // Ollama (local, OpenAI-compatible). Default endpoint is localhost:11434.
   ollamaBaseUrl: read("OLLAMA_BASE_URL"),
 
@@ -62,64 +65,88 @@ export interface AiConfig {
   model: string;
 }
 
-export function resolveAiConfig(): AiConfig | null {
-  const explicit = env.aiProvider;
+const AI_DEFAULT_MODEL: Record<string, string> = {
+  gemini: "gemini-3.6-flash",
+  groq: "llama-3.3-70b-versatile",
+  openrouter: "meta-llama/llama-3.3-70b-instruct:free",
+  openai: "gpt-4o-mini",
+  anthropic: "claude-sonnet-5",
+  ollama: "llama3.1",
+};
 
-  // Explicit provider wins.
-  if (explicit === "gemini" || (!explicit && env.geminiApiKey)) {
-    if (!env.geminiApiKey) return null;
-    return {
-      provider: "gemini",
-      kind: "openai",
-      apiKey: env.geminiApiKey,
-      // No trailing slash: the OpenAI SDK appends "/chat/completions".
-      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-      model: env.aiModel || "gemini-3.6-flash",
-    };
+/** Order tried when falling back (a provider is skipped if not configured). */
+const AI_FALLBACK_ORDER = ["groq", "gemini", "openrouter", "openai", "anthropic", "ollama"];
+
+/** Build a single provider's config, or null if its credentials aren't set. */
+function buildAiConfig(provider: string): AiConfig | null {
+  switch (provider) {
+    case "gemini":
+      return env.geminiApiKey
+        ? { provider, kind: "openai", apiKey: env.geminiApiKey,
+            // No trailing slash: the OpenAI SDK appends "/chat/completions".
+            baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+            model: AI_DEFAULT_MODEL.gemini }
+        : null;
+    case "groq":
+      return env.groqApiKey
+        ? { provider, kind: "openai", apiKey: env.groqApiKey,
+            baseUrl: "https://api.groq.com/openai/v1", model: AI_DEFAULT_MODEL.groq }
+        : null;
+    case "openrouter":
+      return env.openrouterApiKey
+        ? { provider, kind: "openai", apiKey: env.openrouterApiKey,
+            baseUrl: "https://openrouter.ai/api/v1",
+            model: env.openrouterModel || AI_DEFAULT_MODEL.openrouter }
+        : null;
+    case "openai":
+      return env.openaiApiKey
+        ? { provider, kind: "openai", apiKey: env.openaiApiKey,
+            baseUrl: env.openaiBaseUrl || undefined, model: AI_DEFAULT_MODEL.openai }
+        : null;
+    case "ollama":
+      // Local, OpenAI-compatible. Only joins the chain when a base URL is set
+      // (won't be reachable from Vercel unless exposed via a tunnel).
+      return env.ollamaBaseUrl
+        ? { provider, kind: "openai", apiKey: env.openaiApiKey || "ollama",
+            baseUrl: env.ollamaBaseUrl.replace(/\/$/, ""), model: AI_DEFAULT_MODEL.ollama }
+        : null;
+    case "anthropic":
+      return env.aiApiKey
+        ? { provider, kind: "anthropic", apiKey: env.aiApiKey, model: AI_DEFAULT_MODEL.anthropic }
+        : null;
+    default:
+      return null;
   }
-  if (explicit === "groq" || (!explicit && env.groqApiKey)) {
-    if (!env.groqApiKey) return null;
-    return {
-      provider: "groq",
-      kind: "openai",
-      apiKey: env.groqApiKey,
-      baseUrl: "https://api.groq.com/openai/v1",
-      model: env.aiModel || "llama-3.3-70b-versatile",
-    };
+}
+
+/**
+ * The ordered provider chain. The chosen AI_PROVIDER (or, if blank, the first
+ * configured provider) is primary; every other configured provider follows as
+ * an automatic fallback. AI_MODEL overrides only the primary provider's model.
+ */
+export function resolveAiConfigs(): AiConfig[] {
+  const primary = env.aiProvider;
+  const order = [
+    ...(primary && AI_FALLBACK_ORDER.includes(primary) ? [primary] : []),
+    ...AI_FALLBACK_ORDER.filter((p) => p !== primary),
+  ];
+  const seen = new Set<string>();
+  const configs: AiConfig[] = [];
+  for (const p of order) {
+    if (seen.has(p)) continue;
+    seen.add(p);
+    const cfg = buildAiConfig(p);
+    if (cfg) configs.push(cfg);
   }
-  if (explicit === "ollama" || (!explicit && env.ollamaBaseUrl)) {
-    // Ollama's OpenAI-compatible API. No real key needed — the SDK just
-    // requires a non-empty string. Use a tool-capable model (llama3.1,
-    // qwen2.5, mistral-nemo, …) so JARVIS can call its tools.
-    const base = env.ollamaBaseUrl || "http://localhost:11434/v1";
-    return {
-      provider: "ollama",
-      kind: "openai",
-      apiKey: env.openaiApiKey || "ollama",
-      baseUrl: base.replace(/\/$/, ""),
-      model: env.aiModel || "llama3.1",
-    };
+  if (configs.length && env.aiModel) {
+    configs[0] = { ...configs[0], model: env.aiModel };
   }
-  if (explicit === "openai" || (!explicit && env.openaiApiKey)) {
-    if (!env.openaiApiKey) return null;
-    return {
-      provider: "openai",
-      kind: "openai",
-      apiKey: env.openaiApiKey,
-      baseUrl: env.openaiBaseUrl || undefined,
-      model: env.aiModel || "gpt-4o-mini",
-    };
-  }
-  // Default: Anthropic.
-  if (env.aiApiKey) {
-    return {
-      provider: "anthropic",
-      kind: "anthropic",
-      apiKey: env.aiApiKey,
-      model: env.aiModel || "claude-sonnet-5",
-    };
-  }
-  return null;
+  return configs;
+}
+
+/** The primary (first) provider, or null if none is configured. */
+export function resolveAiConfig(): AiConfig | null {
+  return resolveAiConfigs()[0] ?? null;
 }
 
 /** High-level capability matrix used by /api/status and the UI. */

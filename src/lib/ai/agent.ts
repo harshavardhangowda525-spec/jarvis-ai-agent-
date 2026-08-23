@@ -1,7 +1,7 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
-import { getAiConfig, getAnthropicClient, getOpenAiClient } from "./client";
+import { getAiConfigs, getAnthropicClient, getOpenAiClient } from "./client";
 import { buildSystemPrompt } from "./prompt";
 import { availableTools, getTool } from "@/lib/tools/registry";
 import type { ToolContext, ToolDefinition } from "@/lib/tools/types";
@@ -36,7 +36,7 @@ const MAX_STEPS = 8;
 export async function* runAgent(
   input: AgentInput,
 ): AsyncGenerator<AgentEvent, void, unknown> {
-  const cfg = getAiConfig();
+  const configs = getAiConfigs();
   const db = getDb();
 
   const memories = await db.memory.findMany({
@@ -61,13 +61,41 @@ export async function* runAgent(
     activity: (label) => activityQueue.push(label),
   };
 
-  const shared = { system, tools, ctx, activityQueue, model: cfg.model };
-
-  if (cfg.kind === "anthropic") {
-    yield* anthropicLoop(getAnthropicClient(cfg), input, shared);
-  } else {
-    yield* openaiLoop(getOpenAiClient(cfg), input, shared);
+  // Try each configured provider in order. If one fails BEFORE producing any
+  // output (e.g. rate-limited), fall back to the next — but never re-run after
+  // text or a tool has already been committed (avoids duplicate side effects).
+  for (let i = 0; i < configs.length; i++) {
+    const cfg = configs[i];
+    const s: SharedCtx = { system, tools, ctx, activityQueue, model: cfg.model };
+    let committed = false;
+    const gen =
+      cfg.kind === "anthropic"
+        ? anthropicLoop(getAnthropicClient(cfg), input, s)
+        : openaiLoop(getOpenAiClient(cfg), input, s);
+    try {
+      for await (const ev of gen) {
+        if (ev.type === "text" || ev.type === "tool" || ev.type === "navigate" || ev.type === "open") {
+          committed = true;
+        }
+        yield ev;
+        if (ev.type === "done") return;
+      }
+      return;
+    } catch (err) {
+      console.error(`[agent] provider ${cfg.provider} failed:`, err);
+      const next = configs[i + 1];
+      if (!committed && next) {
+        yield { type: "activity", label: `${label(cfg.provider)} unavailable — switching to ${label(next.provider)}…` };
+        continue;
+      }
+      yield { type: "error", message: aiErrorMessage(err) };
+      return;
+    }
   }
+}
+
+function label(provider: string): string {
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
 interface SharedCtx {
@@ -159,9 +187,8 @@ async function* anthropicLoop(
       }
       assistantMessage = await stream.finalMessage();
     } catch (err) {
-      console.error("[agent] anthropic error:", err);
-      yield { type: "error", message: aiErrorMessage(err) };
-      return;
+      // Propagate to runAgent so it can fall back to the next provider.
+      throw err;
     }
 
     messages.push({ role: "assistant", content: assistantMessage.content });
@@ -248,9 +275,8 @@ async function* openaiLoop(
         }
       }
     } catch (err) {
-      console.error("[agent] openai-compatible error:", err);
-      yield { type: "error", message: aiErrorMessage(err) };
-      return;
+      // Propagate to runAgent so it can fall back to the next provider.
+      throw err;
     }
 
     const calls = toolCalls.filter((c) => c && c.name);

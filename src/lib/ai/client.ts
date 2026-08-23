@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { resolveAiConfig, type AiConfig } from "@/lib/env";
+import { resolveAiConfig, resolveAiConfigs, type AiConfig } from "@/lib/env";
 
 export class AiNotConfiguredError extends Error {
   constructor() {
@@ -17,24 +17,29 @@ export function getAiConfig(): AiConfig {
   return cfg;
 }
 
-let anthropicClient: Anthropic | null = null;
-let openaiClient: OpenAI | null = null;
-let openaiClientKey = "";
+/** The full provider fallback chain (primary first). Throws if none configured. */
+export function getAiConfigs(): AiConfig[] {
+  const configs = resolveAiConfigs();
+  if (configs.length === 0) throw new AiNotConfiguredError();
+  return configs;
+}
+
+const anthropicClients = new Map<string, Anthropic>();
+const openaiClients = new Map<string, OpenAI>();
 
 export function getAnthropicClient(cfg: AiConfig): Anthropic {
-  if (!anthropicClient) anthropicClient = new Anthropic({ apiKey: cfg.apiKey });
-  return anthropicClient;
+  let c = anthropicClients.get(cfg.apiKey);
+  if (!c) { c = new Anthropic({ apiKey: cfg.apiKey }); anthropicClients.set(cfg.apiKey, c); }
+  return c;
 }
 
 /**
- * OpenAI-compatible client (used for Gemini, Groq, OpenAI, …). Cached per
- * apiKey+baseUrl so a config change is picked up.
+ * OpenAI-compatible client (used for Gemini, Groq, OpenRouter, Ollama, …).
+ * Cached per apiKey+baseUrl so multiple providers can be used in one turn.
  */
 export function getOpenAiClient(cfg: AiConfig): OpenAI {
   const cacheKey = `${cfg.apiKey}::${cfg.baseUrl ?? ""}`;
-  if (!openaiClient || openaiClientKey !== cacheKey) {
-    openaiClient = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl });
-    openaiClientKey = cacheKey;
-  }
-  return openaiClient;
+  let c = openaiClients.get(cacheKey);
+  if (!c) { c = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl }); openaiClients.set(cacheKey, c); }
+  return c;
 }
