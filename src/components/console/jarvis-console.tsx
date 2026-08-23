@@ -7,7 +7,7 @@ import {
   Mic, MicOff, Send, Paperclip, Volume2, VolumeX, Loader2,
   Terminal, ScanLine, BarChart3, Search, FileText, Lock,
   ArrowRight, Check, AlertTriangle, Calendar, ExternalLink,
-  Wifi, ShieldCheck, ShieldAlert, ChevronRight, Radio, Plus,
+  Wifi, ShieldCheck, ShieldAlert, ChevronRight, Radio, Plus, Power,
 } from "lucide-react";
 import { Orb, type OrbState, orbStateLabel } from "@/components/orb";
 import { HudPanel } from "@/components/hud/panel";
@@ -65,12 +65,32 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       if (!win || win.closed || typeof win.closed === "undefined") window.location.href = url;
     },
   });
-  useEffect(() => { sendRef.current = agent.send; }, [agent.send]);
+  // Put JARVIS to sleep: release the mic and re-arm wake detection.
+  const sleep = useCallback(() => {
+    voice.stop();
+    setVoiceStarted(false);
+  }, [voice]);
+
+  // Route spoken transcripts: a "sleep" phrase powers down; everything else
+  // goes to the agent.
+  useEffect(() => {
+    sendRef.current = (t: string) => {
+      const low = t.toLowerCase().trim();
+      if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) {
+        sleep();
+        return;
+      }
+      agent.send(t);
+    };
+  }, [agent, sleep]);
 
   // Wake JARVIS by two claps or the phrase "Jarvis wake up" while it's asleep.
   const wake = useWakeWord({
     enabled: !voiceStarted,
-    onWake: () => { void enableVoice(); },
+    onWake: async () => {
+      const ok = await enableVoice();
+      if (ok && voiceConfigured) setTimeout(() => voice.speak("Yes?"), 350);
+    },
   });
 
   const loadPanels = useCallback(() => {
@@ -104,7 +124,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     ? orbState === "executing" ? "Executing" : "Thinking"
     : orbStateLabel(orbState);
 
-  async function enableVoice() { if (await voice.init()) setVoiceStarted(true); }
+  async function enableVoice() {
+    const ok = await voice.init();
+    if (ok) setVoiceStarted(true);
+    return ok;
+  }
   const focusCommand = useCallback((prefill?: string) => {
     if (prefill != null) setInput(prefill);
     requestAnimationFrame(() => {
@@ -289,6 +313,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         voiceStarted={voiceStarted} muted={voice.muted} enabled={voice.enabled} level={voice.level}
         active={voice.status === "recording" || voice.status === "listening"}
         onMute={voice.toggleMute} onToggleVoice={() => voice.setEnabled(!voice.enabled)}
+        onSleep={sleep}
         userName={userName}
       />
       <input ref={fileRef} type="file" hidden onChange={onFile} accept="image/*,.pdf,.txt,.md,.json,.csv" />
@@ -627,12 +652,12 @@ function NetworkStatus({ metrics }: { metrics: ReturnType<typeof useDeviceMetric
 
 function CommandBar({
   input, setInput, onSubmit, inputRef, streaming, uploading, onFileClick,
-  voiceStarted, muted, enabled, level, active, onMute, onToggleVoice, userName,
+  voiceStarted, muted, enabled, level, active, onMute, onToggleVoice, onSleep, userName,
 }: {
   input: string; setInput: (v: string) => void; onSubmit: (e?: React.FormEvent) => void;
   inputRef: React.RefObject<HTMLTextAreaElement>; streaming: boolean; uploading: boolean; onFileClick: () => void;
   voiceStarted: boolean; muted: boolean; enabled: boolean; level: number; active: boolean;
-  onMute: () => void; onToggleVoice: () => void; userName: string;
+  onMute: () => void; onToggleVoice: () => void; onSleep: () => void; userName: string;
 }) {
   return (
     <form onSubmit={onSubmit} className="hud-panel box-glow-soft relative">
@@ -676,6 +701,9 @@ function CommandBar({
               </IconBtn>
               <IconBtn onClick={onToggleVoice} label={enabled ? "Voice on" : "Voice off"}>
                 {enabled ? <Volume2 className="h-4 w-4 text-accent" /> : <VolumeX className="h-4 w-4 text-muted-foreground" />}
+              </IconBtn>
+              <IconBtn onClick={onSleep} label="Sleep (say “Jarvis sleep”)">
+                <Power className="h-4 w-4 text-muted-foreground" />
               </IconBtn>
             </>
           )}

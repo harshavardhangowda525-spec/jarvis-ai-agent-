@@ -327,6 +327,23 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
     [setStatusBoth, stopCapture, stopSpeaking],
   );
 
+  // --- Public: stop (put JARVIS to sleep, release the mic) ---------------
+  const stop = useCallback(() => {
+    if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    stopCapture();
+    stopSpeaking();
+    capturingRef.current = false;
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    audioCtxRef.current?.close().catch(() => {});
+    audioCtxRef.current = null;
+    analyserRef.current = null;
+    setLevel(0);
+    setMuted(false); mutedRef.current = false;
+    enabledRef.current = true; setEnabledState(true);
+    setStatusBoth("uninitialized");
+  }, [setStatusBoth, stopCapture, stopSpeaking]);
+
   // Cleanup on unmount.
   useEffect(() => {
     return () => {
@@ -348,6 +365,7 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
     init,
     speak,
     stopSpeaking,
+    stop,
     toggleMute,
     setEnabled,
   };
