@@ -81,6 +81,24 @@ const AI_DEFAULT_MODEL: Record<string, string> = {
 /** Order tried when falling back (a provider is skipped if not configured). */
 const AI_FALLBACK_ORDER = ["groq", "gemini", "cerebras", "openrouter", "openai", "anthropic", "ollama"];
 
+/** Human labels for the provider picker. */
+export const AI_PROVIDER_LABELS: Record<string, string> = {
+  groq: "Groq (fast, free)",
+  gemini: "Google Gemini (free)",
+  cerebras: "Cerebras (very fast, free)",
+  openrouter: "OpenRouter",
+  openai: "OpenAI",
+  anthropic: "Anthropic (Claude)",
+  ollama: "Ollama (local)",
+};
+
+/** Providers that actually have credentials configured, in fallback order. */
+export function listConfiguredProviders(): { id: string; label: string }[] {
+  return AI_FALLBACK_ORDER
+    .filter((p) => buildAiConfig(p) !== null)
+    .map((p) => ({ id: p, label: AI_PROVIDER_LABELS[p] ?? p }));
+}
+
 /** Build a single provider's config, or null if its credentials aren't set. */
 function buildAiConfig(provider: string): AiConfig | null {
   switch (provider) {
@@ -134,8 +152,11 @@ function buildAiConfig(provider: string): AiConfig | null {
  * configured provider) is primary; every other configured provider follows as
  * an automatic fallback. AI_MODEL overrides only the primary provider's model.
  */
-export function resolveAiConfigs(): AiConfig[] {
-  const primary = env.aiProvider;
+export function resolveAiConfigs(primaryOverride?: string): AiConfig[] {
+  // A per-user pick (from Settings) wins over the env default, as long as it's
+  // actually configured; otherwise fall back to the env AI_PROVIDER.
+  const override = (primaryOverride ?? "").toLowerCase();
+  const primary = override && buildAiConfig(override) ? override : env.aiProvider;
   const order = [
     ...(primary && AI_FALLBACK_ORDER.includes(primary) ? [primary] : []),
     ...AI_FALLBACK_ORDER.filter((p) => p !== primary),
@@ -148,7 +169,11 @@ export function resolveAiConfigs(): AiConfig[] {
     const cfg = buildAiConfig(p);
     if (cfg) configs.push(cfg);
   }
-  if (configs.length && env.aiModel) {
+  // AI_MODEL overrides the primary provider's model — but only when we're using
+  // the env default (no per-user override, or the override matches AI_PROVIDER).
+  // An AI_MODEL meant for Groq must not be forced onto a UI-picked Cerebras/Gemini.
+  const usingEnvPrimary = !override || override === env.aiProvider;
+  if (configs.length && env.aiModel && usingEnvPrimary) {
     configs[0] = { ...configs[0], model: env.aiModel };
   }
   return configs;

@@ -50,12 +50,14 @@ export function SettingsClient() {
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [saved, setSaved] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const [ai, setAi] = useState<{ providers: { id: string; label: string }[]; selected: string | null } | null>(null);
 
   useEffect(() => {
     fetch("/api/profile").then((r) => r.json()).then((j) => j.data?.profile && setProfile(j.data.profile));
     fetch("/api/voice/config").then((r) => r.json()).then((j) => j.data && setVoice(j.data));
     fetch("/api/integrations").then((r) => r.json()).then((j) => j.data && setIntegrations(j.data.integrations));
     fetch("/api/sessions").then((r) => r.json()).then((j) => j.data && setSessions(j.data.sessions));
+    fetch("/api/ai/config").then((r) => r.json()).then((j) => j.data && setAi(j.data));
 
     // Surface the OAuth callback result (connected=1 or error=<reason>).
     const p = new URLSearchParams(window.location.search);
@@ -98,6 +100,15 @@ export function SettingsClient() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
+    });
+  }
+
+  async function saveAiProvider(provider: string) {
+    setAi((a) => (a ? { ...a, selected: provider || null } : a));
+    await fetch("/api/ai/config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: provider || "default" }),
     });
   }
 
@@ -148,6 +159,39 @@ export function SettingsClient() {
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">Loading…</p>
+        )}
+      </section>
+
+      {/* AI Brain */}
+      <section className="glass rounded-2xl p-5">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          AI Brain
+        </h2>
+        {ai == null ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : ai.providers.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No AI provider is configured. Add a provider key (e.g.{" "}
+            <code className="text-accent">GROQ_API_KEY</code> or{" "}
+            <code className="text-accent">GEMINI_API_KEY</code>) in your deployment.
+          </p>
+        ) : (
+          <Field label="Primary model provider">
+            <select
+              value={ai.selected ?? ""}
+              onChange={(e) => saveAiProvider(e.target.value)}
+              className="h-10 w-full rounded-lg border border-input bg-background/60 px-3 text-sm"
+            >
+              <option value="">Default (automatic)</option>
+              {ai.providers.map((p) => (
+                <option key={p.id} value={p.id}>{p.label}</option>
+              ))}
+            </select>
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              JARVIS uses this provider first, then automatically falls back to the
+              others if it’s rate-limited. Only providers with keys configured are shown.
+            </p>
+          </Field>
         )}
       </section>
 

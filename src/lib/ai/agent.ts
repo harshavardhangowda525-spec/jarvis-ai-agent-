@@ -24,6 +24,8 @@ export interface AgentInput {
   displayName: string | null;
   history: { role: "user" | "assistant"; content: string }[];
   message: string;
+  /** Per-user preferred primary AI provider (from Settings); overrides env default. */
+  preferredProvider?: string | null;
 }
 
 const MAX_STEPS = 8;
@@ -36,7 +38,7 @@ const MAX_STEPS = 8;
 export async function* runAgent(
   input: AgentInput,
 ): AsyncGenerator<AgentEvent, void, unknown> {
-  const configs = getAiConfigs();
+  const configs = getAiConfigs(input.preferredProvider ?? undefined);
   const db = getDb();
 
   const memories = await db.memory.findMany({

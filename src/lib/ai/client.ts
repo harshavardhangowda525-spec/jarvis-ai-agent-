@@ -18,8 +18,8 @@ export function getAiConfig(): AiConfig {
 }
 
 /** The full provider fallback chain (primary first). Throws if none configured. */
-export function getAiConfigs(): AiConfig[] {
-  const configs = resolveAiConfigs();
+export function getAiConfigs(primaryOverride?: string): AiConfig[] {
+  const configs = resolveAiConfigs(primaryOverride);
   if (configs.length === 0) throw new AiNotConfiguredError();
   return configs;
 }

@@ -40,6 +40,7 @@ model Profile {
   timezone    String   @default("UTC")
   language    String   @default("en")
   theme       String   @default("dark")
+  aiProvider  String?  // preferred primary AI brain (e.g. groq, gemini, cerebras); null = use env default
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

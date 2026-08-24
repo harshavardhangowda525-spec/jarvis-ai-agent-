@@ -86,6 +86,7 @@ export async function POST(req: NextRequest) {
             displayName: profile?.displayName ?? null,
             history,
             message,
+            preferredProvider: (profile as { aiProvider?: string | null } | null)?.aiProvider ?? null,
           })) {
             if (event.type === "done") finalText = event.text;
             if (event.type === "tool") {
