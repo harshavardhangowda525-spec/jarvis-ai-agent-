@@ -83,6 +83,21 @@ export function Orb({ state, level = 0, size = 320, showLabel = false, beam = fa
           </g>
         )}
 
+        {/* tilted orbital ring (Saturn-style) — a flattened circle carrying an
+            orbiting particle, so the dot traces an ellipse around the core */}
+        {beam && (
+          <g transform="rotate(-24) scale(1, 0.34)" style={{ transformOrigin: "center" }}>
+            <circle cx="0" cy="0" r="132" fill="none" stroke={`rgba(${c},0.45)`} strokeWidth="2.5" />
+            <circle cx="0" cy="0" r="118" fill="none" stroke={`rgba(${c},0.2)`} strokeWidth="1.5" />
+            <g className={spinning ? "animate-hud-spin" : undefined} style={{ transformOrigin: "center" }}>
+              <circle cx="132" cy="0" r="5" fill={`rgb(${c})`} style={{ filter: `drop-shadow(0 0 6px rgb(${c}))` }} />
+            </g>
+            <g className={spinning ? "animate-hud-spin-rev" : undefined} style={{ transformOrigin: "center" }}>
+              <circle cx="-118" cy="0" r="3" fill={`rgba(${c},0.85)`} />
+            </g>
+          </g>
+        )}
+
         {/* cardinal crosshairs */}
         {[0, 90, 180, 270].map((deg) => (
           <g key={deg} transform={`rotate(${deg})`} opacity={0.7}>
