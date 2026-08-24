@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Mic, MicOff, Send, Paperclip, Volume2, VolumeX, Loader2,
   Terminal, ScanLine, BarChart3, Search, FileText, Lock,
-  ExternalLink, Power, Check, AlertTriangle,
+  ExternalLink, Power, Check, AlertTriangle, Monitor,
 } from "lucide-react";
 import { Orb, type OrbState, orbStateLabel } from "@/components/orb";
 import { HudPanel } from "@/components/hud/panel";
@@ -14,6 +14,7 @@ import { useVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import { useDeviceMetrics } from "@/hooks/useDeviceMetrics";
 import { useWakeWord } from "@/hooks/useWakeWord";
+import { useScreenVision } from "@/hooks/useScreenVision";
 import { cn, timeAgo } from "@/lib/utils";
 
 interface Services { [k: string]: boolean }
@@ -41,7 +42,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const sendRef = useRef<(t: string) => void>(() => {});
+  const readScreenRef = useRef<(prompt?: string) => void>(() => {});
   const metrics = useDeviceMetrics();
+  const screen = useScreenVision();
 
   const onNavigate = useCallback((path: string) => {
     if (path.startsWith("/dashboard") && path !== "/dashboard") router.push(path);
@@ -63,6 +66,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     sendRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
       if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) { sleep(); return; }
+      // "read my screen", "what's on my screen", "look at my screen"…
+      if (/\b(read|look at|see|analyz|check|what('?s| is) on).{0,20}\b(screen|display|monitor)\b/.test(low)) {
+        readScreenRef.current(t);
+        return;
+      }
       agent.send(t);
     };
   }, [agent, sleep]);
@@ -128,13 +136,29 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     } finally { setUploading(false); }
   }
 
+  const readScreen = useCallback(async (prompt?: string) => {
+    if (!screen.supported) {
+      agent.appendLocalExchange("🖥️ Read my screen", "Screen reading isn't supported in this browser. Try Chrome or Edge on desktop.");
+      return;
+    }
+    try {
+      const result = await screen.readScreen(prompt);
+      if (!result) return; // user cancelled the picker
+      agent.appendLocalExchange(prompt || "🖥️ Read my screen", result.answer);
+      if (voiceStarted && !voice.muted && voice.enabled) voice.speak(result.answer);
+    } catch (e: any) {
+      agent.appendLocalExchange("🖥️ Read my screen", e?.message || "JARVIS couldn't read the screen.");
+    }
+  }, [screen, agent, voice, voiceStarted]);
+  readScreenRef.current = readScreen;
+
   const dock = useMemo(() => [
     { icon: Terminal, label: "Command", run: () => focusCommand("") },
     { icon: ScanLine, label: "Scan", run: () => { loadPanels(); agent.send("Run a status check: summarize which systems and tools are online."); } },
     { icon: Mic, label: "Voice", center: true, run: () => (voiceStarted ? voice.toggleMute() : enableVoice()) },
-    { icon: BarChart3, label: "Analyze", run: () => agent.send("Analyze my data — summarize my tasks, notes and recent activity.") },
+    { icon: Monitor, label: screen.reading ? "Reading…" : "Screen", run: () => readScreen(input.trim() || undefined) },
     { icon: FileText, label: "Note", run: () => focusCommand("Create a note: ") },
-  ], [agent, focusCommand, loadPanels, voice, voiceStarted]); // eslint-disable-line react-hooks/exhaustive-deps
+  ], [agent, focusCommand, loadPanels, voice, voiceStarted, screen.reading, readScreen, input]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lastAssistant = [...agent.messages].reverse().find((m) => m.role === "assistant");
   const lastUserMsg = [...agent.messages].reverse().find((m) => m.role === "user");

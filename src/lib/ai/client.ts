@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { resolveAiConfig, resolveAiConfigs, type AiConfig } from "@/lib/env";
+import { resolveAiConfig, resolveAiConfigs, resolveVisionConfigs, type AiConfig } from "@/lib/env";
 
 export class AiNotConfiguredError extends Error {
   constructor() {
@@ -20,6 +20,13 @@ export function getAiConfig(): AiConfig {
 /** The full provider fallback chain (primary first). Throws if none configured. */
 export function getAiConfigs(primaryOverride?: string): AiConfig[] {
   const configs = resolveAiConfigs(primaryOverride);
+  if (configs.length === 0) throw new AiNotConfiguredError();
+  return configs;
+}
+
+/** Vision provider chain (multimodal only). Throws if none can see images. */
+export function getVisionConfigs(): AiConfig[] {
+  const configs = resolveVisionConfigs();
   if (configs.length === 0) throw new AiNotConfiguredError();
   return configs;
 }

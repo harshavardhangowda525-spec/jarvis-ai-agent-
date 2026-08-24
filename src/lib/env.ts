@@ -188,6 +188,46 @@ export function resolveAiConfig(): AiConfig | null {
   return resolveAiConfigs()[0] ?? null;
 }
 
+/**
+ * Vision (screen / image reading) needs a MULTIMODAL model. Several configured
+ * providers are text-only on their default models (Groq gpt-oss, Cerebras
+ * gpt-oss), so we resolve a separate chain that only includes providers whose
+ * model can actually see an image — swapping in a known vision model where the
+ * provider's text default wouldn't work.
+ */
+const VISION_PRIORITY = ["gemini", "openai", "anthropic", "openrouter"];
+
+/** Known vision-capable model per provider (overrides the text default). */
+const VISION_MODEL: Record<string, string> = {
+  gemini: "gemini-3.6-flash", // multimodal
+  openai: "gpt-4o-mini", // multimodal
+  anthropic: "claude-sonnet-5", // multimodal
+  // OpenRouter: only used if the user pointed OPENROUTER_MODEL at a vision model.
+  openrouter: "meta-llama/llama-3.2-90b-vision-instruct:free",
+};
+
+/**
+ * Resolve the vision provider chain (best first). Each entry is a normal
+ * AiConfig but guaranteed to use a vision-capable model. Returns [] if no
+ * configured provider can see images.
+ */
+export function resolveVisionConfigs(): AiConfig[] {
+  const configs: AiConfig[] = [];
+  for (const p of VISION_PRIORITY) {
+    const base = buildAiConfig(p);
+    if (!base) continue;
+    // OpenRouter only joins if the user explicitly set a (vision) model.
+    const model = p === "openrouter" ? (env.openrouterModel || VISION_MODEL.openrouter) : VISION_MODEL[p];
+    configs.push({ ...base, model });
+  }
+  return configs;
+}
+
+/** True when at least one configured provider can read images/screens. */
+export function hasVision(): boolean {
+  return resolveVisionConfigs().length > 0;
+}
+
 /** High-level capability matrix used by /api/status and the UI. */
 export const capabilities = {
   get database() {
@@ -198,6 +238,9 @@ export const capabilities = {
   },
   get ai() {
     return resolveAiConfig() !== null;
+  },
+  get vision() {
+    return hasVision();
   },
   get voice() {
     return env.elevenLabsApiKey.length > 0;
