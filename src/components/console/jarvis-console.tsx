@@ -47,9 +47,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     onAssistantComplete: (text) => { if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text); },
     onNavigate,
     onOpen: (url) => {
-      let win: Window | null = null;
-      try { win = window.open(url, "_blank", "noopener,noreferrer"); } catch { win = null; }
-      if (!win || win.closed || typeof win.closed === "undefined") window.location.href = url;
+      // Always open in a NEW tab, never hijack the current one. If the pop-up
+      // blocker stops it, the "Open X" button in the reply is the fallback.
+      try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* blocked — use the link button */ }
     },
   });
 
