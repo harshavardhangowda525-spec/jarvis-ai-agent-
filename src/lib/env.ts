@@ -71,7 +71,7 @@ export interface AiConfig {
 const AI_DEFAULT_MODEL: Record<string, string> = {
   gemini: "gemini-3.6-flash",
   groq: "llama-3.3-70b-versatile",
-  cerebras: "llama-3.3-70b",
+  cerebras: "gpt-oss-120b",
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-4o-mini",
   anthropic: "claude-sonnet-5",
