@@ -27,6 +27,7 @@ export const env = {
   aiProvider: read("AI_PROVIDER").toLowerCase(),
   geminiApiKey: read("GEMINI_API_KEY"),
   groqApiKey: read("GROQ_API_KEY"),
+  groqModel: read("GROQ_MODEL"),
   openaiApiKey: read("OPENAI_API_KEY"),
   openaiBaseUrl: read("OPENAI_BASE_URL"),
   // OpenRouter (OpenAI-compatible aggregator; has free models).
@@ -70,7 +71,9 @@ export interface AiConfig {
 
 const AI_DEFAULT_MODEL: Record<string, string> = {
   gemini: "gemini-3.6-flash",
-  groq: "llama-3.3-70b-versatile",
+  // Groq decommissioned llama-3.3-70b-versatile (2026-08-16). GPT-OSS 120B is
+  // Groq's recommended replacement. Override with GROQ_MODEL / AI_MODEL if needed.
+  groq: "openai/gpt-oss-120b",
   cerebras: "gpt-oss-120b",
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-4o-mini",
@@ -112,7 +115,8 @@ function buildAiConfig(provider: string): AiConfig | null {
     case "groq":
       return env.groqApiKey
         ? { provider, kind: "openai", apiKey: env.groqApiKey,
-            baseUrl: "https://api.groq.com/openai/v1", model: AI_DEFAULT_MODEL.groq }
+            baseUrl: "https://api.groq.com/openai/v1",
+            model: env.groqModel || AI_DEFAULT_MODEL.groq }
         : null;
     case "cerebras":
       return env.cerebrasApiKey
