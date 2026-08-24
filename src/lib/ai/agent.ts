@@ -285,10 +285,12 @@ async function* openaiLoop(
       return;
     }
 
-    // Record the assistant turn with its tool calls.
+    // Record the assistant turn with its tool calls. Use "" not null — some
+    // OpenAI-compatible providers (e.g. Gemini's compat endpoint) reject an
+    // assistant message with null content on a tool-call turn (400).
     messages.push({
       role: "assistant",
-      content: content || null,
+      content: content || "",
       tool_calls: calls.map((c) => ({
         id: c.id || c.name,
         type: "function",
