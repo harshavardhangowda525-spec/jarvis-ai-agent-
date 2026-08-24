@@ -32,6 +32,9 @@ export const env = {
   // OpenRouter (OpenAI-compatible aggregator; has free models).
   openrouterApiKey: read("OPENROUTER_API_KEY"),
   openrouterModel: read("OPENROUTER_MODEL"),
+  // Cerebras (OpenAI-compatible, very fast, free tier).
+  cerebrasApiKey: read("CEREBRAS_API_KEY"),
+  cerebrasModel: read("CEREBRAS_MODEL"),
   // Ollama (local, OpenAI-compatible). Default endpoint is localhost:11434.
   ollamaBaseUrl: read("OLLAMA_BASE_URL"),
 
@@ -68,6 +71,7 @@ export interface AiConfig {
 const AI_DEFAULT_MODEL: Record<string, string> = {
   gemini: "gemini-3.6-flash",
   groq: "llama-3.3-70b-versatile",
+  cerebras: "llama-3.3-70b",
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-4o-mini",
   anthropic: "claude-sonnet-5",
@@ -75,7 +79,7 @@ const AI_DEFAULT_MODEL: Record<string, string> = {
 };
 
 /** Order tried when falling back (a provider is skipped if not configured). */
-const AI_FALLBACK_ORDER = ["groq", "gemini", "openrouter", "openai", "anthropic", "ollama"];
+const AI_FALLBACK_ORDER = ["groq", "gemini", "cerebras", "openrouter", "openai", "anthropic", "ollama"];
 
 /** Build a single provider's config, or null if its credentials aren't set. */
 function buildAiConfig(provider: string): AiConfig | null {
@@ -91,6 +95,12 @@ function buildAiConfig(provider: string): AiConfig | null {
       return env.groqApiKey
         ? { provider, kind: "openai", apiKey: env.groqApiKey,
             baseUrl: "https://api.groq.com/openai/v1", model: AI_DEFAULT_MODEL.groq }
+        : null;
+    case "cerebras":
+      return env.cerebrasApiKey
+        ? { provider, kind: "openai", apiKey: env.cerebrasApiKey,
+            baseUrl: "https://api.cerebras.ai/v1",
+            model: env.cerebrasModel || AI_DEFAULT_MODEL.cerebras }
         : null;
     case "openrouter":
       return env.openrouterApiKey
