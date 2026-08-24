@@ -52,6 +52,12 @@ export const env = {
   // is never sent to the browser. Only GET queries are ever issued.
   supabaseUrl: read("SUPABASE_URL"),
   supabaseServiceRoleKey: read("SUPABASE_SERVICE_ROLE_KEY"),
+
+  // Infinity Compass (Lovable app on Supabase) — read-only follow-ups / CRM data.
+  // Separate project from Infinity Web & Apps, so it has its own credentials.
+  // The service_role key is server-side ONLY and never sent to the browser.
+  compassSupabaseUrl: read("COMPASS_SUPABASE_URL"),
+  compassSupabaseServiceRoleKey: read("COMPASS_SUPABASE_SERVICE_ROLE_KEY"),
 };
 
 /**
@@ -253,6 +259,9 @@ export const capabilities = {
   },
   get websiteData() {
     return env.supabaseUrl.length > 0 && env.supabaseServiceRoleKey.length > 0;
+  },
+  get compass() {
+    return env.compassSupabaseUrl.length > 0 && env.compassSupabaseServiceRoleKey.length > 0;
   },
 };
 
