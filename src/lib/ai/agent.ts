@@ -14,6 +14,7 @@ export type AgentEvent =
   | { type: "tool"; name: string; status: "ok" | "error"; summary: string }
   | { type: "navigate"; path: string }
   | { type: "open"; url: string; label: string }
+  | { type: "provider"; name: string }
   | { type: "done"; text: string }
   | { type: "error"; message: string };
 
@@ -70,6 +71,7 @@ export async function* runAgent(
     const cfg = configs[i];
     const s: SharedCtx = { system, tools, ctx, activityQueue, model: cfg.model };
     let committed = false;
+    yield { type: "provider", name: cfg.provider };
     const gen =
       cfg.kind === "anthropic"
         ? anthropicLoop(getAnthropicClient(cfg), input, s)

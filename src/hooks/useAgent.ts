@@ -35,6 +35,7 @@ export function useAgent({ onAssistantComplete, onNavigate, onOpen }: UseAgentOp
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [activeProvider, setActiveProvider] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const conversationIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -162,6 +163,9 @@ export function useAgent({ onAssistantComplete, onNavigate, onOpen }: UseAgentOp
                   ),
                 );
                 break;
+              case "provider":
+                setActiveProvider(ev.name);
+                break;
               case "navigate":
                 onNavigate?.(ev.path);
                 break;
@@ -215,6 +219,7 @@ export function useAgent({ onAssistantComplete, onNavigate, onOpen }: UseAgentOp
     messages,
     activity,
     streaming,
+    activeProvider,
     conversationId,
     send,
     reset,

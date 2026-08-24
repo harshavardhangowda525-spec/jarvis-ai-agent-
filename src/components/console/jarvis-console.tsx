@@ -25,6 +25,11 @@ interface Stats {
   activeTasks: { id: string; title: string; priority: string }[];
 }
 
+const PROVIDER_LABELS: Record<string, string> = {
+  groq: "Groq", gemini: "Gemini", cerebras: "Cerebras",
+  openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude", ollama: "Ollama",
+};
+
 export function JarvisConsole({ userName }: { assistantName: string; userName: string }) {
   const router = useRouter();
   const [voiceConfigured, setVoiceConfigured] = useState<boolean | null>(null);
@@ -179,7 +184,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         {/* CENTER — reactor core */}
         <HudPanel label="JARVIS Core" className="flex flex-col" bodyClassName="flex flex-1 flex-col items-center justify-center p-4">
           <Orb state={orbState} level={voice.level} size={300} beam />
-          <div className="mt-6 hud-label text-[11px] text-accent-bright text-glow">{statusLabel}</div>
+          <div className="mt-6 flex items-center gap-2">
+            <span className="hud-label text-[11px] text-accent-bright text-glow">{statusLabel}</span>
+            {agent.activeProvider && (
+              <span className="hud-label rounded-full border border-accent/25 bg-accent/8 px-2 py-0.5 text-[8px] text-accent">
+                {PROVIDER_LABELS[agent.activeProvider] ?? agent.activeProvider}
+              </span>
+            )}
+          </div>
           {voice.error && <div className="mt-1 text-xs text-destructive">{voice.error}</div>}
 
           {!voiceStarted && (
