@@ -1,0 +1,59 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#0b2440"/>
+      <stop offset="55%" stop-color="#071a30"/>
+      <stop offset="100%" stop-color="#030c18"/>
+    </radialGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#dffaff"/>
+      <stop offset="35%" stop-color="#7fe9ff"/>
+      <stop offset="100%" stop-color="#1aa8e6"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8be9ff"/>
+      <stop offset="100%" stop-color="#2aa4e0"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="14" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <rect x="8" y="8" width="1008" height="1008" rx="216" fill="none" stroke="#1e5f86" stroke-width="4" opacity="0.5"/>
+
+  <g transform="translate(512,512)">
+    <!-- outer tick ring -->
+    <g stroke="#57c7f0" stroke-width="6" opacity="0.55">
+      <circle r="360" fill="none" stroke="#2b6f95" stroke-width="3" opacity="0.6"/>
+    </g>
+    <!-- tick marks -->
+    <g stroke="#7fe0ff" stroke-width="7" opacity="0.75">
+      <!-- 24 ticks -->
+      <g id="ticks"></g>
+    </g>
+
+    <!-- segmented arc reactor ring -->
+    <g fill="none" stroke="url(#ring)" stroke-width="34" filter="url(#glow)">
+      <circle r="300" opacity="0.28"/>
+    </g>
+    <g fill="none" stroke="url(#ring)" stroke-width="30" stroke-linecap="round" filter="url(#glow)">
+      <path d="M 0 -300 A 300 300 0 0 1 259.8 150" opacity="0.95"/>
+      <path d="M -259.8 150 A 300 300 0 0 1 -150 -259.8" opacity="0.7"/>
+    </g>
+
+    <!-- inner triangle reactor -->
+    <g filter="url(#glow)">
+      <circle r="150" fill="#04263c" stroke="#3aa6d6" stroke-width="6"/>
+      <polygon points="0,-96 83,54 -83,54" fill="none" stroke="#9ff0ff" stroke-width="16" stroke-linejoin="round"/>
+      <polygon points="0,-58 50,32 -50,32" fill="url(#core)"/>
+      <circle r="24" fill="#eafcff"/>
+    </g>
+
+    <!-- JARVIS wordmark -->
+    <text x="0" y="392" text-anchor="middle" font-family="Arial, Helvetica, sans-serif"
+      font-size="96" font-weight="700" letter-spacing="26" fill="#bff0ff">JARVIS</text>
+  </g>
+</svg>
