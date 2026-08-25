@@ -60,6 +60,11 @@ export const env = {
   pluslideExportPath: read("PLUSLIDE_EXPORT_PATH") || "/v1/project/export",
   // Default project to export into when the user doesn't name one.
   pluslideProjectId: read("PLUSLIDE_PROJECT_ID"),
+  // Freeform description of THIS project's templates (keys + fields) so the
+  // agent composes slides with valid templateKeys. Templates are custom per
+  // project, so this can't be hard-coded. Example:
+  //   business-report-title: companyLogo, staticTitle, reportTitle, reportDate
+  pluslideTemplates: read("PLUSLIDE_TEMPLATES"),
 
   // Infinity Compass (Lovable app on Supabase) — read-only follow-ups / CRM data.
   // Separate project from Infinity Web & Apps, so it has its own credentials.

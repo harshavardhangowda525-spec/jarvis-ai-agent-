@@ -49,14 +49,30 @@ const schema = z.object({
     .describe("Pluslide project to export into. Omit to use the default (PLUSLIDE_PROJECT_ID)."),
 });
 
+/**
+ * Pluslide templates are CUSTOM per project, so the valid templateKeys and their
+ * content fields differ per account. The catalog below is injected into the tool
+ * description so the model only uses templateKeys that actually exist. It comes
+ * from PLUSLIDE_TEMPLATES if set; otherwise a sensible default derived from the
+ * stock "Business Report" project.
+ */
+const DEFAULT_TEMPLATE_CATALOG =
+  'business-report-title — fields: companyLogo (image url), staticTitle (e.g. "BUSINESS REPORT"), reportTitle (the main title), reportDate.';
+
+function templateCatalog(): string {
+  return env.pluslideTemplates?.trim() || DEFAULT_TEMPLATE_CATALOG;
+}
+
 export const pluslideTool: ToolDefinition<z.infer<typeof schema>> = {
   name: "pluslide",
   description:
-    "Build a slide presentation in the user's Pluslide account. Compose a slideList — " +
-    "one entry per slide, each with a templateKey (e.g. \"title-slide\") and a content object " +
-    "holding that slide's fields (title, subtitle, bullets, body, etc.). Use this when the user " +
-    "asks to create/make a presentation or deck. Returns a link to open the result. Requires a " +
-    "Pluslide project id (from input or PLUSLIDE_PROJECT_ID).",
+    "Build a slide presentation in the user's Pluslide account. Compose a slideList — one entry " +
+    "per slide, each with a templateKey and a content object holding that template's fields. " +
+    "IMPORTANT: templateKey MUST be one of this project's templates listed here (do not invent keys):\n" +
+    templateCatalog() +
+    "\nMap each field name exactly as listed. Use this when the user asks to create/make a " +
+    "presentation or deck. Returns a link to open the result. Requires a Pluslide project id " +
+    "(from input or PLUSLIDE_PROJECT_ID).",
   schema,
   inputSchema: {
     type: "object",
