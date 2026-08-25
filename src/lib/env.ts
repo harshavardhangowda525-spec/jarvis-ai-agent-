@@ -53,6 +53,14 @@ export const env = {
   supabaseUrl: read("SUPABASE_URL"),
   supabaseServiceRoleKey: read("SUPABASE_SERVICE_ROLE_KEY"),
 
+  // Pluslide (AI slide/presentation generator) — Bearer API token.
+  // Base URL + paths are overridable so the exact API contract can be pinned
+  // without a code change once confirmed from pluslide's Documents page.
+  pluslideApiKey: read("PLUSLIDE_API_KEY"),
+  pluslideBaseUrl: read("PLUSLIDE_BASE_URL") || "https://api.pluslide.com",
+  pluslideCreatePath: read("PLUSLIDE_CREATE_PATH") || "/v1/presentations",
+  pluslideListPath: read("PLUSLIDE_LIST_PATH") || "/v1/presentations",
+
   // Infinity Compass (Lovable app on Supabase) — read-only follow-ups / CRM data.
   // Separate project from Infinity Web & Apps, so it has its own credentials.
   // The service_role key is server-side ONLY and never sent to the browser.
@@ -262,6 +270,9 @@ export const capabilities = {
   },
   get compass() {
     return env.compassSupabaseUrl.length > 0 && env.compassSupabaseServiceRoleKey.length > 0;
+  },
+  get pluslide() {
+    return env.pluslideApiKey.length > 0;
   },
 };
 

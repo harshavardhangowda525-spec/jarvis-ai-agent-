@@ -21,6 +21,7 @@ import { calendarTool } from "./calendar";
 import { analyticsTool } from "./analytics";
 import { websiteDataTool } from "./websiteData";
 import { compassTool } from "./compass";
+import { pluslideTool } from "./pluslide";
 
 const ALL_TOOLS: ToolDefinition[] = [
   calculatorTool as ToolDefinition,
@@ -37,6 +38,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   analyticsTool as ToolDefinition,
   websiteDataTool as ToolDefinition,
   compassTool as ToolDefinition,
+  pluslideTool as ToolDefinition,
 ];
 
 /** Tools available given the current capability + integration configuration. */
@@ -47,6 +49,7 @@ export function availableTools(): ToolDefinition[] {
     if (t.requiresCapability === "weather") return capabilities.weather;
     if (t.requiresCapability === "websiteData") return capabilities.websiteData;
     if (t.requiresCapability === "compass") return capabilities.compass;
+    if (t.requiresCapability === "pluslide") return capabilities.pluslide;
     // Google tools only appear once the OAuth client is configured.
     if (t.name === "gmail" || t.name === "google_calendar" || t.name === "google_analytics")
       return googleReady;

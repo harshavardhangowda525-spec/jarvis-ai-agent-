@@ -23,6 +23,7 @@ interface Integration {
   label: string;
   available: boolean;
   status: string;
+  kind?: "oauth" | "key";
 }
 interface SessionRow {
   id: string;
@@ -261,7 +262,15 @@ export function SettingsClient() {
             <div key={it.id} className="flex items-center gap-3 rounded-xl bg-muted/40 px-3 py-2.5">
               <span className="text-sm font-medium">{it.label}</span>
               <div className="ml-auto">
-                {!it.available ? (
+                {it.kind === "key" ? (
+                  it.available ? (
+                    <span className="flex items-center gap-1 text-[11px] text-success">
+                      <Link2 className="h-3 w-3" /> Connected
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">Add API key</span>
+                  )
+                ) : !it.available ? (
                   <span className="text-[11px] text-muted-foreground">Not configured</span>
                 ) : it.status === "connected" ? (
                   <button

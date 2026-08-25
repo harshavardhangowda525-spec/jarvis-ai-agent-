@@ -72,15 +72,30 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProvider> = {
   },
 };
 
-/** Providers exposed in the UI, including those requiring OAuth we can't yet do. */
-export const DISPLAY_INTEGRATIONS = [
-  { id: "google", label: "Google Workspace", oauth: true },
-  { id: "github", label: "GitHub", oauth: true },
-  { id: "slack", label: "Slack", oauth: true },
-  { id: "notion", label: "Notion", oauth: true },
-  { id: "instagram", label: "Instagram", oauth: true },
-  { id: "whatsapp", label: "WhatsApp", oauth: true },
+export interface DisplayIntegration {
+  id: string;
+  label: string;
+  /** "oauth" = client id/secret + OAuth flow; "key" = a single API key in env. */
+  kind: "oauth" | "key";
+}
+
+/** Providers exposed in the UI. OAuth ones connect via a flow; key ones are
+ *  connected simply by having their API key set in the environment. */
+export const DISPLAY_INTEGRATIONS: DisplayIntegration[] = [
+  { id: "google", label: "Google Workspace", kind: "oauth" },
+  { id: "github", label: "GitHub", kind: "oauth" },
+  { id: "slack", label: "Slack", kind: "oauth" },
+  { id: "notion", label: "Notion", kind: "oauth" },
+  { id: "instagram", label: "Instagram", kind: "oauth" },
+  { id: "whatsapp", label: "WhatsApp", kind: "oauth" },
+  { id: "pluslide", label: "Pluslide (AI Slides)", kind: "key" },
 ];
+
+/** True when a KEY-based integration has its credentials set in env. */
+export function isKeyIntegrationConfigured(id: string): boolean {
+  if (id === "pluslide") return env.pluslideApiKey.length > 0;
+  return false;
+}
 
 export function getProvider(id: string): OAuthProvider | undefined {
   return OAUTH_PROVIDERS[id];
