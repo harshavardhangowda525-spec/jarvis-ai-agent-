@@ -56,8 +56,12 @@ const schema = z.object({
  * from PLUSLIDE_TEMPLATES if set; otherwise a sensible default derived from the
  * stock "Business Report" project.
  */
-const DEFAULT_TEMPLATE_CATALOG =
-  'business-report-title — fields: companyLogo (image url), staticTitle (e.g. "BUSINESS REPORT"), reportTitle (the main title), reportDate.';
+const DEFAULT_TEMPLATE_CATALOG = [
+  'business-report-title — Title slide. fields: companyLogo (image url), staticTitle (e.g. "BUSINESS REPORT"), reportTitle (the main title), reportDate.',
+  'business-report-kpi — Key metrics / KPI grid. Put the headline numbers here (e.g. revenue, active users, conversion rate, growth), each as a metric with a label, value and optional change.',
+  'business-report-chart-bar — Bar chart slide. Use for quarterly/period comparisons: a title, a short description, and chart data (categories + numeric values).',
+  'business-report-comparison — Comparison slide. Use to compare two or more options/items side by side.',
+].join("\n");
 
 function templateCatalog(): string {
   return env.pluslideTemplates?.trim() || DEFAULT_TEMPLATE_CATALOG;
