@@ -59,7 +59,8 @@ export const env = {
   pluslideBaseUrl: read("PLUSLIDE_BASE_URL") || "https://api.pluslide.com",
   pluslideExportPath: read("PLUSLIDE_EXPORT_PATH") || "/v1/project/export",
   // Default project to export into when the user doesn't name one.
-  pluslideProjectId: read("PLUSLIDE_PROJECT_ID"),
+  // Defaults to the user's "My First Project"; override with PLUSLIDE_PROJECT_ID.
+  pluslideProjectId: read("PLUSLIDE_PROJECT_ID") || "0b5ab46f-b1a9-4e64-977e-1c0c94a615fd",
   // Freeform description of THIS project's templates (keys + fields) so the
   // agent composes slides with valid templateKeys. Templates are custom per
   // project, so this can't be hard-coded. Example:
