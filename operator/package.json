@@ -1,0 +1,16 @@
+{
+  "name": "jarvis-operator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "JARVIS Operator — local companion service that controls a real, visible browser on the user's machine for the JARVIS web app.",
+  "bin": { "jarvis-operator": "run.mjs" },
+  "scripts": {
+    "start": "node run.mjs",
+    "operator": "node run.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0",
+    "ws": "^8.18.0"
+  }
+}
