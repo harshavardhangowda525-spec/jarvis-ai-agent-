@@ -54,12 +54,12 @@ export const env = {
   supabaseServiceRoleKey: read("SUPABASE_SERVICE_ROLE_KEY"),
 
   // Pluslide (AI slide/presentation generator) — Bearer API token.
-  // Base URL + paths are overridable so the exact API contract can be pinned
-  // without a code change once confirmed from pluslide's Documents page.
+  // Builds a presentation into an existing project via /v1/project/export.
   pluslideApiKey: read("PLUSLIDE_API_KEY"),
   pluslideBaseUrl: read("PLUSLIDE_BASE_URL") || "https://api.pluslide.com",
-  pluslideCreatePath: read("PLUSLIDE_CREATE_PATH") || "/v1/presentations",
-  pluslideListPath: read("PLUSLIDE_LIST_PATH") || "/v1/presentations",
+  pluslideExportPath: read("PLUSLIDE_EXPORT_PATH") || "/v1/project/export",
+  // Default project to export into when the user doesn't name one.
+  pluslideProjectId: read("PLUSLIDE_PROJECT_ID"),
 
   // Infinity Compass (Lovable app on Supabase) — read-only follow-ups / CRM data.
   // Separate project from Infinity Web & Apps, so it has its own credentials.

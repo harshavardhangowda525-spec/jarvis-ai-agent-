@@ -5,16 +5,22 @@ import { ToolError } from "./types";
 import { env } from "@/lib/env";
 
 /**
- * Pluslide tool — generate and list AI slide decks / presentations via the
- * Pluslide API (Bearer token). The base URL and endpoint paths are read from
- * env so the exact contract can be pinned without a code change:
- *   PLUSLIDE_API_KEY       (required)
- *   PLUSLIDE_BASE_URL      (default https://api.pluslide.com)
- *   PLUSLIDE_CREATE_PATH   (default /v1/presentations)
- *   PLUSLIDE_LIST_PATH     (default /v1/presentations)
+ * Pluslide tool — builds a presentation into an existing Pluslide project via
+ * POST /v1/project/export (Bearer token).
  *
- * Read/write to the user's own Pluslide account only. Creating a deck is an
- * external action, so it's marked requiresConfirmation.
+ * Contract (from Pluslide API docs):
+ *   POST {base}/v1/project/export
+ *   { "projectId": "...", "presentation": { "slideList": [
+ *       { "templateKey": "title-slide", "content": { "title": "...", "subtitle": "..." } },
+ *       ...
+ *   ] } }
+ *
+ * JARVIS's model composes the slideList (choosing a templateKey and filling the
+ * content per slide) from the user's request; this tool posts it to the user's
+ * project. The projectId comes from the tool input or PLUSLIDE_PROJECT_ID.
+ *
+ * Env: PLUSLIDE_API_KEY (required), PLUSLIDE_BASE_URL, PLUSLIDE_EXPORT_PATH,
+ *      PLUSLIDE_PROJECT_ID (default project).
  */
 
 function auth(): { base: string; headers: Record<string, string> } {
@@ -31,110 +37,113 @@ function auth(): { base: string; headers: Record<string, string> } {
   };
 }
 
-/** Pull the most useful fields out of whatever shape the API returns. */
-function summarizePresentation(p: any): Record<string, unknown> {
-  if (!p || typeof p !== "object") return { raw: p };
-  const pick = (...keys: string[]) => keys.map((k) => p[k]).find((v) => v != null);
-  return {
-    id: pick("id", "presentationId", "projectId", "uuid"),
-    title: pick("title", "name", "prompt"),
-    status: pick("status", "state"),
-    url: pick("url", "shareUrl", "editUrl", "viewUrl", "link", "webUrl"),
-    createdAt: pick("createdAt", "created_at", "updatedAt"),
-  };
-}
-
-async function call(url: string, init: RequestInit): Promise<any> {
-  let res: Response;
-  try {
-    res = await fetch(url, { ...init, signal: AbortSignal.timeout(30_000) });
-  } catch {
-    throw new ToolError("Couldn't reach Pluslide. Check PLUSLIDE_BASE_URL / your connection.");
-  }
-  if (res.status === 401 || res.status === 403) {
-    throw new ToolError("Pluslide rejected the API key. Check PLUSLIDE_API_KEY (a valid API token).");
-  }
-  if (res.status === 404) {
-    throw new ToolError(
-      "Pluslide endpoint not found (404). The API path may differ — set PLUSLIDE_CREATE_PATH / PLUSLIDE_LIST_PATH to the exact paths from Pluslide's API docs.",
-    );
-  }
-  if (res.status === 402 || res.status === 429) {
-    throw new ToolError("Pluslide couldn't process this (plan limit or rate limit reached).");
-  }
-  const text = await res.text();
-  const data = text ? safeJson(text) : {};
-  if (!res.ok) {
-    const msg = (data?.error?.message || data?.message || text || "").toString().slice(0, 200);
-    throw new ToolError(`Pluslide error (HTTP ${res.status})${msg ? `: ${msg}` : ""}.`);
-  }
-  return data;
-}
-
-function safeJson(t: string): any {
-  try { return JSON.parse(t); } catch { return { raw: t.slice(0, 500) }; }
-}
+const slideSchema = z.object({
+  templateKey: z.string().describe('Slide template, e.g. "title-slide". Use "title-slide" for the opening slide.'),
+  content: z.record(z.any()).describe('Fields for the template, e.g. { "title": "...", "subtitle": "..." } or { "title": "...", "bullets": ["..."] }.'),
+});
 
 const schema = z.object({
-  action: z.enum(["create", "list"]).describe("create a new presentation, or list existing ones."),
-  prompt: z.string().max(4000).optional().describe("For 'create': what the presentation should be about."),
-  title: z.string().max(300).optional().describe("Optional title for the presentation."),
+  slideList: z.array(slideSchema).min(1).max(40)
+    .describe("The slides to build, each with a templateKey and its content fields."),
+  projectId: z.string().optional()
+    .describe("Pluslide project to export into. Omit to use the default (PLUSLIDE_PROJECT_ID)."),
 });
 
 export const pluslideTool: ToolDefinition<z.infer<typeof schema>> = {
   name: "pluslide",
   description:
-    "Generate AI slide decks / presentations with the user's Pluslide account. " +
-    "action 'create' makes a new presentation from a prompt (e.g. 'a 10-slide deck on our Q4 results'); " +
-    "action 'list' shows the user's existing presentations. Returns links to open them.",
+    "Build a slide presentation in the user's Pluslide account. Compose a slideList — " +
+    "one entry per slide, each with a templateKey (e.g. \"title-slide\") and a content object " +
+    "holding that slide's fields (title, subtitle, bullets, body, etc.). Use this when the user " +
+    "asks to create/make a presentation or deck. Returns a link to open the result. Requires a " +
+    "Pluslide project id (from input or PLUSLIDE_PROJECT_ID).",
   schema,
   inputSchema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["create", "list"] },
-      prompt: { type: "string", description: "What the deck should be about (for create)." },
-      title: { type: "string", description: "Optional presentation title." },
+      slideList: {
+        type: "array",
+        description: "Slides to build, in order.",
+        items: {
+          type: "object",
+          properties: {
+            templateKey: { type: "string", description: 'Slide template, e.g. "title-slide".' },
+            content: { type: "object", description: 'Template fields, e.g. { "title": "...", "subtitle": "..." }.' },
+          },
+          required: ["templateKey", "content"],
+        },
+      },
+      projectId: { type: "string", description: "Project to export into (defaults to PLUSLIDE_PROJECT_ID)." },
     },
-    required: ["action"],
+    required: ["slideList"],
   },
   requiresCapability: "pluslide",
-  requiresConfirmation: true, // creating a deck is an external write
-  activityLabel: "Working with Pluslide",
+  requiresConfirmation: true, // creating/exporting a deck is an external write
+  activityLabel: "Building a Pluslide presentation",
   async execute(input, ctx) {
     const { base, headers } = auth();
-
-    if (input.action === "list") {
-      ctx.activity("Fetching your Pluslide presentations…");
-      const data = await call(`${base}${env.pluslideListPath}`, { method: "GET", headers });
-      const arr: any[] = Array.isArray(data) ? data : data.presentations ?? data.projects ?? data.data ?? data.items ?? [];
-      const items = arr.slice(0, 25).map(summarizePresentation);
-      return {
-        data: { count: items.length, presentations: items },
-        summary: `You have ${items.length} Pluslide presentation${items.length === 1 ? "" : "s"}.`,
-      };
+    const projectId = input.projectId || env.pluslideProjectId;
+    if (!projectId) {
+      throw new ToolError(
+        "Which Pluslide project? Set PLUSLIDE_PROJECT_ID (from your project's URL / Playground) " +
+          "or tell me the project id.",
+      );
     }
 
-    // create
-    if (!input.prompt && !input.title) {
-      throw new ToolError("What should the presentation be about? Provide a prompt.");
+    ctx.activity(`Building ${input.slideList.length} slide${input.slideList.length === 1 ? "" : "s"} in Pluslide…`);
+
+    let res: Response;
+    try {
+      res = await fetch(`${base}${env.pluslideExportPath}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ projectId, presentation: { slideList: input.slideList } }),
+        signal: AbortSignal.timeout(45_000),
+      });
+    } catch {
+      throw new ToolError("Couldn't reach Pluslide. Check PLUSLIDE_BASE_URL / your connection.");
     }
-    ctx.activity("Generating a presentation with Pluslide…");
-    const body: Record<string, unknown> = {};
-    if (input.prompt) body.prompt = input.prompt;
-    if (input.title) body.title = input.title;
-    const data = await call(`${base}${env.pluslideCreatePath}`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
-    const p = summarizePresentation(data.presentation ?? data.project ?? data);
-    const openUrl = typeof p.url === "string" ? p.url : undefined;
+
+    if (res.status === 401 || res.status === 403) {
+      throw new ToolError("Pluslide rejected the API key. Check PLUSLIDE_API_KEY.");
+    }
+    if (res.status === 404) {
+      throw new ToolError(
+        `Pluslide returned 404 — the project id "${projectId}" may be wrong, or PLUSLIDE_EXPORT_PATH is off. ` +
+          "Confirm the project id and export path.",
+      );
+    }
+    if (res.status === 402 || res.status === 429) {
+      throw new ToolError("Pluslide couldn't process this (plan or rate limit reached).");
+    }
+
+    const text = await res.text();
+    const data = text ? safeJson(text) : {};
+    if (!res.ok) {
+      const msg = (data?.error?.message || data?.message || text || "").toString().slice(0, 220);
+      throw new ToolError(`Pluslide error (HTTP ${res.status})${msg ? `: ${msg}` : ""}.`);
+    }
+
+    const url = pickUrl(data);
     return {
       data: {
-        presentation: p,
-        ...(openUrl ? { openUrl, label: "presentation" } : {}),
+        projectId,
+        slides: input.slideList.length,
+        result: data,
+        ...(url ? { openUrl: url, label: "presentation" } : {}),
       },
-      summary: p.title ? `Created "${p.title}" in Pluslide.` : "Created a presentation in Pluslide.",
+      summary: `Built a ${input.slideList.length}-slide presentation in Pluslide${url ? " — link ready." : "."}`,
     };
   },
 };
+
+function pickUrl(d: any): string | undefined {
+  if (!d || typeof d !== "object") return undefined;
+  const v = [d.url, d.shareUrl, d.editUrl, d.viewUrl, d.downloadUrl, d.exportUrl, d.link, d.presentation?.url]
+    .find((x) => typeof x === "string" && /^https?:\/\//.test(x));
+  return v as string | undefined;
+}
+
+function safeJson(t: string): any {
+  try { return JSON.parse(t); } catch { return { raw: t.slice(0, 500) }; }
+}
