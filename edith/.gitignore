@@ -1,0 +1,5 @@
+node_modules/
+.edith-token
+workspaces/
+.edith/
+*.log

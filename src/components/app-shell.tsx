@@ -19,6 +19,7 @@ import {
   LogOut,
   Maximize2,
   MousePointerClick,
+  Code2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ReactorLogo, RobotFace, Chevrons, Waveform } from "@/components/hud/visuals";
@@ -31,6 +32,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard", label: "Command Center", icon: Terminal },
   { href: "/dashboard/operator", label: "Operator", icon: MousePointerClick },
+  { href: "/dashboard/edith", label: "EDITH", icon: Code2 },
   { href: "/dashboard/memory", label: "AI Agents", icon: Bot },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },
   { href: "/dashboard/settings", label: "Systems", icon: Server },

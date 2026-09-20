@@ -1,0 +1,16 @@
+{
+  "name": "jarvis-edith",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "EDITH — JARVIS's local software-development subagent runtime. Real filesystem, terminal, git, build and test tools on the user's machine.",
+  "bin": { "jarvis-edith": "run.mjs" },
+  "scripts": {
+    "start": "node run.mjs",
+    "edith": "node run.mjs",
+    "selftest": "node selftest.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
