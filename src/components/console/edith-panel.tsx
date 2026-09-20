@@ -1,30 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  Send, Square, PlugZap, Plug, Bot, TerminalSquare, FileCode2, ShieldCheck,
-  AlertTriangle, Check, Loader2, CircleDot, GitBranch, Rocket, Cpu, Volume2, VolumeX,
+  Send, Square, PlugZap, Plug, Wifi, WifiOff, Volume2, VolumeX, ShieldCheck,
+  AlertTriangle, Check, Loader2, ChevronUp, Cpu,
 } from "lucide-react";
-import { HudPanel } from "@/components/hud/panel";
 import { useEdith, type EdithMode } from "@/hooks/useEdith";
-import { cn } from "@/lib/utils";
-
-const MODES: { id: EdithMode; label: string; hint: string }[] = [
-  { id: "autonomous", label: "Autonomous", hint: "Runs safe & review-level steps automatically" },
-  { id: "confirmation", label: "Confirmation", hint: "Asks before review & dangerous steps" },
-  { id: "manual", label: "Manual", hint: "Confirms every step" },
-];
+import { cn, timeAgo } from "@/lib/utils";
 
 /**
- * EDITH — JARVIS's software-development subagent cockpit. Everything shown is
- * REAL runtime state from the local EDITH service: capability check, live tool
- * calls, actual terminal output, real file changes. No simulated progress.
+ * EDITH dashboard — the sci-fi HUD from the reference: a glowing orb with a live
+ * waveform at the center, an Activity Stream (left), Execution/Status (right), a
+ * UTC clock header, and voice-command / activity-timeline waveforms along the
+ * bottom. Every value is REAL runtime state from the local EDITH runtime — the
+ * orb reacts to connection/work state, the streams show actual tool activity.
  */
+const MODES: { id: EdithMode; label: string }[] = [
+  { id: "autonomous", label: "Auto" },
+  { id: "confirmation", label: "Confirm" },
+  { id: "manual", label: "Manual" },
+];
+
 export function EdithPanel() {
   const e = useEdith();
   const [goal, setGoal] = useState("");
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const clock = useUtcClock();
 
   useEffect(() => { setUrl(e.savedUrl); setToken(e.savedToken); }, [e.savedUrl, e.savedToken]);
   useEffect(() => {
@@ -33,185 +36,266 @@ export function EdithPanel() {
   }, [e]);
 
   const connected = e.conn === "connected";
+  const orbState: OrbMode = !connected ? "offline" : e.working ? "working" : e.confirm ? "await" : "online";
 
   return (
-    <div className="grid gap-3 p-3 xl:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
-      {/* LEFT: pairing, capabilities, mode, goal, controls */}
-      <div className="flex flex-col gap-3">
-        <HudPanel label="EDITH Link" bodyClassName="p-3">
-          <div className="flex items-center gap-2">
-            <span className={cn("h-2.5 w-2.5 rounded-full",
-              connected ? "bg-success shadow-[0_0_8px_hsl(var(--success))] animate-hud-pulse"
-              : e.conn === "connecting" ? "bg-warning animate-pulse"
-              : e.conn === "unauthorized" ? "bg-destructive" : "bg-muted-foreground/40")} />
-            <span className="hud-label text-[11px] text-foreground/85">
-              {connected ? "Online" : e.conn === "connecting" ? "Connecting…" : e.conn === "unauthorized" ? "Bad token" : "Offline"}
-            </span>
-            {e.provider && connected && (
-              <span className="hud-label ml-auto rounded-full border border-accent/25 bg-accent/8 px-2 py-0.5 text-[8px] text-accent">
-                <Bot className="mr-1 inline h-3 w-3" />{e.provider}
-              </span>
-            )}
-            <button onClick={() => e.setMuted(!e.muted)} title={e.muted ? "Unmute EDITH's voice" : "Mute EDITH's voice"}
-              className={cn("ml-1 rounded p-1 transition hover:bg-accent/10", e.provider && connected ? "" : "ml-auto")}>
-              {e.muted ? <VolumeX className="h-3.5 w-3.5 text-muted-foreground" /> : <Volume2 className="h-3.5 w-3.5 text-accent" />}
-            </button>
-          </div>
-          {!connected ? (
-            <div className="mt-3 space-y-2">
-              <p className="text-[11px] text-muted-foreground">
-                Start EDITH on your machine (<code className="text-accent">cd edith &amp;&amp; npm run edith</code>), then paste its URL + token.
-              </p>
-              <input value={url} onChange={(ev) => setUrl(ev.target.value)} placeholder="ws://127.0.0.1:7420"
-                className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus:border-accent/60" />
-              <input value={token} onChange={(ev) => setToken(ev.target.value)} placeholder="pairing token"
-                className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus:border-accent/60" />
-              <button onClick={() => e.connect(url.trim(), token.trim())}
-                className="flex w-full items-center justify-center gap-2 rounded border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-bright transition hover:bg-accent/20">
-                <PlugZap className="h-4 w-4" /> Activate EDITH
-              </button>
-            </div>
-          ) : (
-            <div className="mt-2 flex items-center justify-between">
-              {e.workspace && <span className="truncate text-[10px] text-muted-foreground" title={e.workspace}>📁 {e.workspace}</span>}
-              <button onClick={e.disconnect} className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-accent"><Plug className="h-3.5 w-3.5" /> Deactivate</button>
-            </div>
-          )}
-        </HudPanel>
-
-        {e.caps && (
-          <HudPanel label="System Check" bodyClassName="p-3">
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-              <Cap label="AI Provider" ok={e.caps.aiProvider?.ok} detail={e.caps.aiProvider?.detail} />
-              <Cap label="Workspace" ok={e.caps.workspace?.ok} />
-              <Cap label="Terminal" ok={e.caps.terminal?.ok} />
-              <Cap label="Node.js" ok={e.caps.node?.ok} detail={e.caps.node?.detail} />
-              <Cap label="Git" ok={e.caps.git?.ok} />
-              <Cap label="Python" ok={e.caps.python?.ok} />
-              <Cap label="Docker" ok={e.caps.docker?.ok} />
-              {e.caps.deploy && Object.entries(e.caps.deploy).map(([k, v]: any) => (
-                <Cap key={k} label={k[0].toUpperCase() + k.slice(1)} ok={v.ok} detail={v.ok ? "connected" : "not connected"} />
-              ))}
-            </div>
-          </HudPanel>
-        )}
-
-        <HudPanel label="Mode" bodyClassName="p-3">
-          <div className="grid grid-cols-3 gap-2">
-            {MODES.map((m) => (
-              <button key={m.id} onClick={() => e.setMode(m.id)} disabled={!connected} title={m.hint}
-                className={cn("rounded border px-2 py-2 text-center transition disabled:opacity-40",
-                  e.mode === m.id ? "border-accent bg-accent/15 text-accent-bright" : "border-border text-muted-foreground hover:border-accent/50")}>
-                <ShieldCheck className="mx-auto mb-1 h-4 w-4" />
-                <div className="hud-label text-[9px]">{m.label}</div>
-              </button>
-            ))}
-          </div>
-          <p className="mt-2 text-[10px] text-muted-foreground">{MODES.find((m) => m.id === e.mode)?.hint}</p>
-        </HudPanel>
-
-        <HudPanel label="Command" bodyClassName="p-3">
-          <form onSubmit={(ev) => { ev.preventDefault(); e.runGoal(goal); setGoal(""); }} className="flex items-center gap-2">
-            <input value={goal} onChange={(ev) => setGoal(ev.target.value)} disabled={!connected || e.working}
-              placeholder={connected ? "e.g. Build a cafe website, then run the build" : "Activate EDITH first"}
-              className="flex-1 rounded border border-border bg-transparent px-2 py-2 text-sm outline-none focus:border-accent/60 disabled:opacity-50" />
-            <button type="submit" disabled={!connected || !goal.trim() || e.working}
-              className="flex h-9 w-9 items-center justify-center rounded bg-accent/15 text-accent transition hover:bg-accent/25 disabled:opacity-40"><Send className="h-4 w-4" /></button>
-          </form>
-          <button onClick={e.stop} disabled={!connected}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border-2 border-destructive/70 bg-destructive/15 px-3 py-2.5 text-sm font-semibold text-destructive transition hover:bg-destructive/25 disabled:opacity-40">
-            <Square className="h-4 w-4" /> STOP EDITH <span className="ml-1 rounded bg-destructive/20 px-1.5 py-0.5 text-[9px] font-normal">Ctrl+Shift+X</span>
-          </button>
-        </HudPanel>
+    <div className="edith-root relative min-h-[calc(100vh-4rem)] overflow-hidden">
+      {/* ambient background glows */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden>
+        <div className="absolute left-1/2 top-1/2 h-[70vmin] w-[70vmin] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(var(--accent)/0.18),transparent_60%)] blur-2xl" />
+        <div className="absolute inset-0 opacity-[0.5] [background:radial-gradient(1200px_500px_at_50%_-10%,hsl(var(--accent)/0.08),transparent)]" />
       </div>
 
-      {/* RIGHT: plan/confirm, activity, terminal, files */}
-      <div className="flex flex-col gap-3">
-        {e.confirm && (
-          <HudPanel label="Confirmation Required" bodyClassName="p-3">
+      {/* ===== HEADER ===== */}
+      <div className="relative z-10 flex items-center justify-between px-4 pt-3">
+        <div className="hud-panel box-glow-soft flex items-center gap-2.5 rounded-xl px-3 py-2">
+          <EdithLogo />
+          <span className="hud-display text-lg tracking-[0.3em] text-foreground text-glow">EDITH</span>
+          <span className={cn("hud-label ml-1 flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px]",
+            connected ? "bg-success/15 text-success" : "bg-muted-foreground/15 text-muted-foreground")}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-success animate-hud-pulse" : "bg-muted-foreground/50")} />
+            {connected ? "ONLINE" : e.conn === "connecting" ? "LINKING" : "OFFLINE"}
+          </span>
+        </div>
+
+        <div className="hud-panel box-glow-soft flex items-center gap-2 rounded-xl px-3 py-2">
+          <span className="hud-display text-sm tracking-widest text-accent-bright">{clock} UTC</span>
+          {connected ? <Wifi className="h-4 w-4 text-accent" /> : <WifiOff className="h-4 w-4 text-muted-foreground" />}
+          <button onClick={() => e.setMuted(!e.muted)} title={e.muted ? "Unmute EDITH" : "Mute EDITH"} className="rounded p-0.5 hover:bg-accent/10">
+            {e.muted ? <VolumeX className="h-4 w-4 text-muted-foreground" /> : <Volume2 className="h-4 w-4 text-accent" />}
+          </button>
+          <button onClick={() => setShowSettings((s) => !s)} title="Systems" className="rounded p-0.5 hover:bg-accent/10"><Cpu className="h-4 w-4 text-accent" /></button>
+        </div>
+      </div>
+
+      {/* ===== CENTER ORB ===== */}
+      <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center">
+        <EdithOrb state={orbState} />
+        <div className="mt-2 text-center">
+          <div className="hud-display text-2xl tracking-[0.4em] text-foreground text-glow">EDITH</div>
+          <div className="hud-label text-[10px] tracking-[0.3em] text-accent/80">
+            {orbState === "offline" ? "OFFLINE" : orbState === "working" ? "EXECUTING" : orbState === "await" ? "AWAITING CONFIRMATION" : "ONLINE"}
+          </div>
+        </div>
+      </div>
+
+      {/* ===== LEFT: ACTIVITY STREAM ===== */}
+      <div className="absolute left-4 top-24 z-10 hidden w-72 lg:block">
+        <GlassPanel title="Activity Stream">
+          <div className="max-h-[46vh] space-y-1.5 overflow-y-auto pr-1">
+            {e.activity.length === 0 && <p className="text-[11px] text-muted-foreground">{connected ? "Awaiting a command." : "Activate EDITH to begin."}</p>}
+            {e.activity.slice(0, 20).map((a) => (
+              <div key={a.id} className="rounded-lg border border-accent/10 bg-accent/[0.04] px-2.5 py-1.5">
+                <div className="flex items-start gap-1.5">
+                  <Dot tone={a.tone} />
+                  <span className={cn("text-[11px] leading-snug", a.tone === "error" ? "text-destructive" : a.tone === "warn" ? "text-warning" : "text-foreground/85")}>{a.text}</span>
+                </div>
+                <div className="hud-label mt-0.5 pl-3 text-[8px] text-muted-foreground">{timeAgo(new Date(a.at).toISOString())}</div>
+              </div>
+            ))}
+          </div>
+        </GlassPanel>
+      </div>
+
+      {/* ===== RIGHT: EXECUTION / STATUS ===== */}
+      <div className="absolute right-4 top-24 z-10 hidden w-72 lg:block">
+        <GlassPanel title="Execution / Status">
+          <div className="max-h-[46vh] space-y-1.5 overflow-y-auto pr-1">
+            {e.tasks.length === 0 && <p className="text-[11px] text-muted-foreground">No tasks running.</p>}
+            {e.tasks.map((t) => (
+              <div key={t.id} className={cn("rounded-lg border px-2.5 py-1.5",
+                t.status === "ok" ? "border-success/25 bg-success/[0.06]" : t.status === "error" ? "border-destructive/30 bg-destructive/[0.06]" : "border-warning/25 bg-warning/[0.06]")}>
+                <div className="flex items-center gap-1.5">
+                  {t.status === "ok" ? <Check className="h-3.5 w-3.5 text-success" />
+                    : t.status === "error" ? <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                    : <Loader2 className="h-3.5 w-3.5 animate-spin text-warning" />}
+                  <span className="truncate text-[11px] text-foreground/85">{t.label}</span>
+                </div>
+                <div className="hud-label mt-0.5 pl-5 text-[8px] text-muted-foreground">
+                  {t.status === "ok" ? "completed" : t.status === "error" ? "failed" : "ongoing"} · {timeAgo(new Date(t.at).toISOString())}
+                </div>
+              </div>
+            ))}
+          </div>
+        </GlassPanel>
+      </div>
+
+      {/* ===== CONFIRMATION (center modal) ===== */}
+      {e.confirm && (
+        <div className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,26rem)] -translate-x-1/2 translate-y-24">
+          <GlassPanel title="Confirmation Required">
             <div className="flex items-start gap-2">
               <AlertTriangle className={cn("mt-0.5 h-5 w-5 shrink-0", e.confirm.level === "dangerous" ? "text-destructive" : "text-warning")} />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-foreground">{e.confirm.title}</p>
-                {e.confirm.detail && <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded border border-border bg-black/20 p-2 text-xs text-foreground/80">{e.confirm.detail}</pre>}
-                {e.confirm.level === "dangerous" && <p className="mt-1 text-[11px] text-destructive">Destructive action — review carefully.</p>}
+                {e.confirm.detail && <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded border border-border bg-black/30 p-2 text-[11px] text-foreground/80">{e.confirm.detail}</pre>}
               </div>
             </div>
             <div className="mt-3 flex gap-2">
               <button onClick={() => e.answerConfirm(false)} className="flex-1 rounded border border-border px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted/40">Cancel</button>
               <button onClick={() => e.answerConfirm(true)} className={cn("flex-1 rounded px-3 py-2 text-sm font-medium text-white transition", e.confirm.level === "dangerous" ? "bg-destructive hover:brightness-110" : "bg-accent hover:brightness-110")}>Confirm</button>
             </div>
-          </HudPanel>
-        )}
+          </GlassPanel>
+        </div>
+      )}
 
-        <HudPanel label="EDITH Activity" bodyClassName="p-3">
-          <div className="max-h-52 space-y-1.5 overflow-y-auto">
-            {e.activity.length === 0 && <p className="text-xs text-muted-foreground">{connected ? "Ready. Give EDITH a development goal." : "Activate EDITH to begin."}</p>}
-            {e.activity.map((a) => (
-              <div key={a.id} className="flex items-start gap-2 text-xs animate-fade-in">
-                {a.tone === "ok" ? <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-                  : a.tone === "error" ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
-                  : a.tone === "warn" ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-                  : a.tone === "tool" ? <Loader2 className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 text-accent", e.working && "animate-spin")} />
-                  : <CircleDot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent/50" />}
-                <span className={cn(a.tone === "error" ? "text-destructive" : a.tone === "warn" ? "text-warning" : "text-foreground/85")}>{linkify(a.text)}</span>
-              </div>
-            ))}
-          </div>
-        </HudPanel>
+      {/* ===== PAIRING OVERLAY ===== */}
+      {!connected && (
+        <div className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,24rem)] -translate-x-1/2 translate-y-28">
+          <GlassPanel title="Activate EDITH">
+            <p className="mb-2 text-[11px] text-muted-foreground">Start EDITH on your machine (<code className="text-accent">cd edith &amp;&amp; npm run edith</code>), then paste its URL + token.</p>
+            <input value={url} onChange={(ev) => setUrl(ev.target.value)} placeholder="ws://127.0.0.1:7420" className="mb-2 w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus:border-accent/60" />
+            <input value={token} onChange={(ev) => setToken(ev.target.value)} placeholder="pairing token" className="mb-2 w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus:border-accent/60" />
+            <button onClick={() => e.connect(url.trim(), token.trim())} className="flex w-full items-center justify-center gap-2 rounded border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-bright transition hover:bg-accent/20"><PlugZap className="h-4 w-4" /> Activate</button>
+            {e.conn === "unauthorized" && <p className="mt-2 text-[11px] text-destructive">Pairing rejected — check the token.</p>}
+          </GlassPanel>
+        </div>
+      )}
 
-        <HudPanel label="Terminal" bodyClassName="p-3">
-          <div className="max-h-56 space-y-2 overflow-y-auto font-mono text-[11px]">
-            {e.terminal.length === 0 && <p className="text-muted-foreground">No commands run yet.</p>}
-            {e.terminal.map((t) => (
-              <div key={t.id} className="rounded border border-border/60 bg-black/25 p-2">
-                <div className="flex items-center gap-2">
-                  <TerminalSquare className="h-3.5 w-3.5 text-accent" />
-                  <span className="truncate text-accent-bright">$ {t.command}</span>
-                  <span className={cn("ml-auto rounded px-1.5 text-[9px]", t.exitCode === 0 ? "bg-success/20 text-success" : "bg-destructive/20 text-destructive")}>exit {t.exitCode}{t.durationMs != null ? ` · ${t.durationMs}ms` : ""}</span>
-                </div>
-                {t.stdout && <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap text-foreground/75">{t.stdout}</pre>}
-                {t.stderr && <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap text-destructive/80">{t.stderr}</pre>}
+      {/* ===== SETTINGS DRAWER (systems + mode + STOP) ===== */}
+      {showSettings && (
+        <div className="absolute right-4 top-24 z-40 w-72">
+          <GlassPanel title="Systems">
+            {e.caps && (
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                {[["AI", e.caps.aiProvider], ["Workspace", e.caps.workspace], ["Terminal", e.caps.terminal], ["Node", e.caps.node], ["Git", e.caps.git], ["Python", e.caps.python], ["Docker", e.caps.docker]].map(([label, v]: any) => (
+                  <div key={label} className="flex items-center gap-1.5 text-[11px]"><span className={cn("h-1.5 w-1.5 rounded-full", v?.ok ? "bg-success" : "bg-muted-foreground/40")} /><span className="text-foreground/80">{label}</span></div>
+                ))}
+                {e.caps.deploy && Object.entries(e.caps.deploy).map(([k, v]: any) => (
+                  <div key={k} className="flex items-center gap-1.5 text-[11px]"><span className={cn("h-1.5 w-1.5 rounded-full", v.ok ? "bg-success" : "bg-muted-foreground/40")} /><span className="text-foreground/80">{k[0].toUpperCase() + k.slice(1)}</span></div>
+                ))}
               </div>
-            ))}
-          </div>
-        </HudPanel>
+            )}
+            <div className="mt-3 flex gap-1.5">
+              {MODES.map((m) => (
+                <button key={m.id} onClick={() => e.setMode(m.id)} disabled={!connected} className={cn("flex-1 rounded border px-2 py-1.5 text-center transition disabled:opacity-40", e.mode === m.id ? "border-accent bg-accent/15 text-accent-bright" : "border-border text-muted-foreground hover:border-accent/50")}>
+                  <ShieldCheck className="mx-auto mb-0.5 h-3.5 w-3.5" /><div className="hud-label text-[8px]">{m.label}</div>
+                </button>
+              ))}
+            </div>
+            {connected && <button onClick={e.disconnect} className="mt-2 flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-accent"><Plug className="h-3.5 w-3.5" /> Deactivate</button>}
+          </GlassPanel>
+        </div>
+      )}
 
-        <HudPanel label="File Changes" bodyClassName="p-3">
-          <div className="max-h-40 space-y-1 overflow-y-auto text-xs">
-            {e.files.length === 0 && <p className="text-muted-foreground">No file changes yet.</p>}
-            {e.files.map((f) => (
-              <div key={f.id} className="flex items-center gap-2">
-                <FileCode2 className="h-3.5 w-3.5 text-accent/70" />
-                <span className={cn("hud-label rounded px-1.5 text-[8px]",
-                  f.kind === "created" ? "bg-success/15 text-success" : f.kind === "deleted" ? "bg-destructive/15 text-destructive" : "bg-warning/15 text-warning")}>{f.kind}</span>
-                <span className="truncate text-foreground/85">{f.path}</span>
-              </div>
-            ))}
+      {/* ===== BOTTOM: VOICE-COMMAND INPUT (left) + ACTIVITY TIMELINE (right) ===== */}
+      <div className="absolute inset-x-0 bottom-4 z-10 flex items-end justify-between gap-3 px-4">
+        <div className="w-full max-w-md">
+          <div className="hud-label mb-1 text-[9px] tracking-[0.25em] text-muted-foreground">VOICE-COMMAND INPUT</div>
+          <form onSubmit={(ev) => { ev.preventDefault(); e.runGoal(goal); setGoal(""); }} className="hud-panel box-glow-soft flex items-center gap-2 rounded-xl px-2 py-1.5">
+            <Equalizer active={e.working} bars={16} className="h-6 w-16 shrink-0" />
+            <input value={goal} onChange={(ev) => setGoal(ev.target.value)} disabled={!connected || e.working}
+              placeholder={connected ? "Command EDITH…" : "Activate first"} className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50" />
+            <button onClick={e.stop} type="button" title="Stop (Ctrl+Shift+X)" disabled={!connected} className="flex h-8 w-8 items-center justify-center rounded border border-destructive/50 text-destructive transition hover:bg-destructive/15 disabled:opacity-40"><Square className="h-3.5 w-3.5" /></button>
+            <button type="submit" disabled={!connected || !goal.trim() || e.working} className="flex h-8 w-8 items-center justify-center rounded bg-accent/15 text-accent transition hover:bg-accent/25 disabled:opacity-40"><Send className="h-4 w-4" /></button>
+          </form>
+        </div>
+        <div className="hidden w-full max-w-md md:block">
+          <div className="hud-label mb-1 text-right text-[9px] tracking-[0.25em] text-muted-foreground">ACTIVITY TIMELINE</div>
+          <div className="hud-panel box-glow-soft rounded-xl px-3 py-2">
+            <Equalizer active={e.working || e.tasks.some((t) => t.status === "running")} bars={64} className="h-8 w-full" />
           </div>
-        </HudPanel>
+        </div>
       </div>
     </div>
   );
 }
 
-function Cap({ label, ok, detail }: { label: string; ok?: boolean; detail?: string }) {
+/* ---------------- pieces ---------------- */
+
+type OrbMode = "offline" | "online" | "working" | "await";
+
+function GlassPanel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-1.5 text-[11px]">
-      <span className={cn("h-1.5 w-1.5 rounded-full", ok ? "bg-success" : "bg-muted-foreground/40")} />
-      <span className="text-foreground/80">{label}</span>
-      <span className={cn("ml-auto truncate text-[9px]", ok ? "text-success" : "text-muted-foreground")} title={detail}>{ok ? (detail || "ready") : "—"}</span>
+    <div className="hud-panel box-glow-soft rounded-xl p-3 backdrop-blur-md">
+      <div className="hud-label mb-2 flex items-center justify-between text-[9px] tracking-[0.2em] text-accent/80">
+        <span>{title.toUpperCase()}</span><ChevronUp className="h-3 w-3 opacity-50" />
+      </div>
+      {children}
     </div>
   );
 }
 
-/** Turn any https URLs in a line into clickable links (e.g. a deployed URL). */
-function linkify(text: string): React.ReactNode {
-  const parts = text.split(/(https:\/\/[^\s)"']+)/g);
-  if (parts.length === 1) return text;
-  return parts.map((p, i) =>
-    /^https:\/\//.test(p)
-      ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-2 hover:text-accent-bright">{p}</a>
-      : <span key={i}>{p}</span>,
+function Dot({ tone }: { tone: string }) {
+  const c = tone === "ok" ? "bg-success" : tone === "error" ? "bg-destructive" : tone === "warn" ? "bg-warning" : tone === "tool" ? "bg-accent" : "bg-accent/50";
+  return <span className={cn("mt-1 h-1.5 w-1.5 shrink-0 rounded-full", c)} />;
+}
+
+function EdithLogo() {
+  return (
+    <svg viewBox="0 0 32 32" className="h-6 w-6">
+      <circle cx="16" cy="16" r="14" fill="none" stroke="hsl(var(--accent)/0.4)" strokeWidth="1.5" />
+      <circle cx="16" cy="16" r="9" fill="none" stroke="hsl(var(--accent-bright)/0.6)" strokeWidth="1.2" />
+      <circle cx="16" cy="16" r="4" fill="hsl(var(--accent-bright))" style={{ filter: "drop-shadow(0 0 4px hsl(var(--accent-bright)))" }} />
+    </svg>
   );
+}
+
+/** The central glowing orb with concentric rings + a live audio waveform. */
+function EdithOrb({ state }: { state: OrbMode }) {
+  const color = state === "offline" ? "120,132,150" : state === "working" ? "251,191,36" : state === "await" ? "167,139,250" : "120,200,255";
+  const active = state === "working" || state === "online";
+  return (
+    <div className="relative" style={{ width: "min(56vmin,460px)", height: "min(56vmin,460px)" }}>
+      <svg viewBox="0 0 400 400" className="h-full w-full">
+        <defs>
+          <radialGradient id="edith-core" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor={`rgb(${color})`} stopOpacity="0.9" />
+            <stop offset="35%" stopColor={`rgb(${color})`} stopOpacity="0.25" />
+            <stop offset="100%" stopColor={`rgb(${color})`} stopOpacity="0" />
+          </radialGradient>
+        </defs>
+        {/* soft core glow */}
+        <circle cx="200" cy="200" r="150" fill="url(#edith-core)" />
+        {/* concentric rings */}
+        {[190, 160, 128, 96].map((r, i) => (
+          <circle key={r} cx="200" cy="200" r={r} fill="none" stroke={`rgb(${color})`} strokeOpacity={0.15 + i * 0.08} strokeWidth={1.2}
+            strokeDasharray={i % 2 ? "3 7" : undefined}
+            style={active ? { transformOrigin: "200px 200px", animation: `edith-spin ${18 + i * 6}s linear infinite ${i % 2 ? "reverse" : ""}` } : undefined} />
+        ))}
+        {/* tilted orbital ellipses */}
+        {[0, 60, 120].map((deg) => (
+          <ellipse key={deg} cx="200" cy="200" rx="188" ry="66" fill="none" stroke={`rgb(${color})`} strokeOpacity="0.18" strokeWidth="1"
+            transform={`rotate(${deg} 200 200)`}
+            style={active ? { transformOrigin: "200px 200px", animation: `edith-spin 26s linear infinite` } : undefined} />
+        ))}
+      </svg>
+      {/* central waveform */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <Equalizer active={active} bars={40} className="h-16 w-[46%]" color={color} />
+      </div>
+    </div>
+  );
+}
+
+/** A symmetric bar equalizer. Animates when active; flat otherwise. */
+function Equalizer({ active, bars = 32, className, color }: { active: boolean; bars?: number; className?: string; color?: string }) {
+  const heights = useMemo(() => Array.from({ length: bars }, (_, i) => {
+    const t = i / (bars - 1);
+    return 20 + Math.sin(t * Math.PI) * 60 + (i % 3) * 8; // taller in the middle
+  }), [bars]);
+  const c = color ? `rgb(${color})` : "hsl(var(--accent-bright))";
+  return (
+    <div className={cn("flex items-center justify-center gap-[2px]", className)} aria-hidden>
+      {heights.map((h, i) => (
+        <span key={i} className="w-full rounded-full"
+          style={{
+            height: active ? `${h}%` : "12%",
+            background: c,
+            opacity: active ? 0.85 : 0.35,
+            transition: "height 200ms ease",
+            animation: active ? `edith-bar 900ms ease-in-out ${i * 40}ms infinite alternate` : undefined,
+          }} />
+      ))}
+    </div>
+  );
+}
+
+function useUtcClock() {
+  const [t, setT] = useState("--:--");
+  useEffect(() => {
+    const tick = () => { const d = new Date(); setT(`${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`); };
+    tick(); const id = setInterval(tick, 1000); return () => clearInterval(id);
+  }, []);
+  return t;
 }

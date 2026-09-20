@@ -11,7 +11,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type EdithMode = "autonomous" | "confirmation" | "manual";
 export type EdithConn = "disconnected" | "connecting" | "connected" | "unauthorized";
 
-export interface EdithLine { id: string; text: string; tone: "info" | "tool" | "ok" | "error" | "warn" }
+export interface EdithLine { id: string; text: string; tone: "info" | "tool" | "ok" | "error" | "warn"; at: number }
+export interface EdithTask { id: string; label: string; status: "running" | "ok" | "error"; at: number }
 export interface FileChange { id: string; kind: string; path: string }
 export interface TerminalEntry { id: string; command: string; exitCode: number | null; stdout?: string; stderr?: string; durationMs?: number }
 export interface Capabilities { [k: string]: any }
@@ -29,6 +30,7 @@ export function useEdith() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [workspace, setWorkspace] = useState<string | null>(null);
   const [activity, setActivity] = useState<EdithLine[]>([]);
+  const [tasks, setTasks] = useState<EdithTask[]>([]);
   const [terminal, setTerminal] = useState<TerminalEntry[]>([]);
   const [files, setFiles] = useState<FileChange[]>([]);
   const [project, setProject] = useState<any>(null);
@@ -70,7 +72,7 @@ export function useEdith() {
   }, []);
 
   const push = useCallback((text: string, tone: EdithLine["tone"]) => {
-    setActivity((a) => [{ id: uid(), text, tone }, ...a].slice(0, 80));
+    setActivity((a) => [{ id: uid(), text, tone, at: Date.now() }, ...a].slice(0, 80));
   }, []);
 
   const disconnect = useCallback(() => {
@@ -101,12 +103,22 @@ export function useEdith() {
         case "hello": setProvider(m.provider); setModeState(m.mode); setCaps(m.capabilities); setWorkspace(m.workspace); setConn("connected"); break;
         case "capabilities": setCaps(m.capabilities); break;
         case "mode": setModeState(m.mode); break;
-        case "goal": setWorking(true); setFiles([]); setTerminal([]); setConfirm(null); push(`▸ ${m.goal}`, "tool"); break;
+        case "goal": setWorking(true); setFiles([]); setTerminal([]); setTasks([]); setConfirm(null); push(`▸ ${m.goal}`, "tool"); break;
         case "project": setProject(m); push(`Project: ${m.framework} / ${m.packageManager}`, "info"); break;
         case "activity": push(m.label, "info"); break;
         case "tool":
-          if (m.status === "running") push(`${m.label}`, "tool");
-          else push(`${m.status === "ok" ? "✓" : "✗"} ${m.label} — ${m.summary ?? ""}`, m.status === "ok" ? "ok" : "error");
+          if (m.status === "running") {
+            setTasks((t) => [{ id: uid(), label: m.label, status: "running" as const, at: Date.now() }, ...t].slice(0, 14));
+            push(`${m.label}`, "tool");
+          } else {
+            const st: EdithTask["status"] = m.status === "ok" ? "ok" : "error";
+            setTasks((t) => {
+              const i = t.findIndex((x) => x.label === m.label && x.status === "running");
+              if (i < 0) return [{ id: uid(), label: m.label, status: st, at: Date.now() }, ...t].slice(0, 14);
+              const c = [...t]; c[i] = { ...c[i], status: st }; return c;
+            });
+            push(`${m.status === "ok" ? "✓" : "✗"} ${m.label} — ${m.summary ?? ""}`, m.status === "ok" ? "ok" : "error");
+          }
           break;
         case "terminal":
           setTerminal((t) => [{ id: uid(), command: m.command, exitCode: m.exitCode, stdout: m.stdout, stderr: m.stderr, durationMs: m.durationMs }, ...t].slice(0, 40));
@@ -141,7 +153,7 @@ export function useEdith() {
   const refreshCaps = useCallback(() => send({ op: "capabilities" }), [send]);
 
   return {
-    conn, provider, mode, caps, workspace, activity, terminal, files, project, confirm, working,
+    conn, provider, mode, caps, workspace, activity, tasks, terminal, files, project, confirm, working,
     savedUrl, savedToken, muted, setMuted, speak,
     connect, disconnect, runGoal, setMode, stop, answerConfirm, refreshCaps,
   };
