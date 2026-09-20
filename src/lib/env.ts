@@ -40,7 +40,12 @@ export const env = {
   ollamaBaseUrl: read("OLLAMA_BASE_URL"),
 
   elevenLabsApiKey: read("ELEVENLABS_API_KEY"),
-  elevenLabsVoiceId: read("ELEVENLABS_VOICE_ID"),
+  // JARVIS voice — defaults to "Daniel" (British male, authoritative). Override
+  // with ELEVENLABS_VOICE_ID.
+  elevenLabsVoiceId: read("ELEVENLABS_VOICE_ID") || "onwK4e9ZLuTAKqWW03F9",
+  // EDITH voice — a distinct British voice ("Alice", British female) so EDITH and
+  // JARVIS are easy to tell apart. Override with EDITH_VOICE_ID.
+  edithVoiceId: read("EDITH_VOICE_ID") || "Xb7hH8MSUJpSbSDYk0k2",
   elevenLabsModelId: read("ELEVENLABS_MODEL_ID") || "eleven_turbo_v2_5",
   elevenLabsSttModelId: read("ELEVENLABS_STT_MODEL_ID") || "scribe_v1",
 

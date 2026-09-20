@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   Send, Square, PlugZap, Plug, Bot, TerminalSquare, FileCode2, ShieldCheck,
-  AlertTriangle, Check, Loader2, CircleDot, GitBranch, Rocket, Cpu,
+  AlertTriangle, Check, Loader2, CircleDot, GitBranch, Rocket, Cpu, Volume2, VolumeX,
 } from "lucide-react";
 import { HudPanel } from "@/components/hud/panel";
 import { useEdith, type EdithMode } from "@/hooks/useEdith";
@@ -52,6 +52,10 @@ export function EdithPanel() {
                 <Bot className="mr-1 inline h-3 w-3" />{e.provider}
               </span>
             )}
+            <button onClick={() => e.setMuted(!e.muted)} title={e.muted ? "Unmute EDITH's voice" : "Mute EDITH's voice"}
+              className={cn("ml-1 rounded p-1 transition hover:bg-accent/10", e.provider && connected ? "" : "ml-auto")}>
+              {e.muted ? <VolumeX className="h-3.5 w-3.5 text-muted-foreground" /> : <Volume2 className="h-3.5 w-3.5 text-accent" />}
+            </button>
           </div>
           {!connected ? (
             <div className="mt-3 space-y-2">

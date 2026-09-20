@@ -36,8 +36,31 @@ export function useEdith() {
   const [working, setWorking] = useState(false);
   const [savedUrl, setSavedUrl] = useState("");
   const [savedToken, setSavedToken] = useState("");
+  const [muted, setMuted] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const mutedRef = useRef(false);
   const manualClose = useRef(false);
+
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
+
+  /** Speak text in EDITH's own (British) voice via the shared TTS endpoint. */
+  const speak = useCallback(async (text: string) => {
+    if (mutedRef.current || !text?.trim()) return;
+    try {
+      const res = await fetch("/api/voice/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: text.slice(0, 800), agent: "edith" }),
+      });
+      if (!res.ok) return; // voice not configured — stay silent, no error noise
+      const blob = await res.blob();
+      audioRef.current?.pause();
+      const audio = new Audio(URL.createObjectURL(blob));
+      audioRef.current = audio;
+      audio.play().catch(() => {});
+    } catch { /* ignore playback failures */ }
+  }, []);
 
   useEffect(() => {
     try {
@@ -91,15 +114,15 @@ export function useEdith() {
         case "file": setFiles((f) => [{ id: uid(), kind: m.kind, path: m.path }, ...f].slice(0, 60)); break;
         case "confirm": setConfirm({ title: m.title, detail: m.detail, level: m.level }); push(`Awaiting confirmation: ${m.title}`, "warn"); break;
         case "cancelled": push(`Cancelled: ${m.label}`, "warn"); break;
-        case "ask": push(`⚠ ${m.message}`, "warn"); setWorking(false); break;
+        case "ask": push(`⚠ ${m.message}`, "warn"); setWorking(false); speak(m.message); break;
         case "stopped": push(m.message || "Stopped.", "warn"); setWorking(false); setConfirm(null); break;
-        case "report": push(`✓ ${m.report}`, "ok"); break;
-        case "result": setWorking(false); setConfirm(null); push(`${m.ok ? "✓" : "✗"} ${m.message}`, m.ok ? "ok" : "error"); break;
+        case "report": push(`✓ ${m.report}`, "ok"); speak(m.report); break;
+        case "result": setWorking(false); setConfirm(null); push(`${m.ok ? "✓" : "✗"} ${m.message}`, m.ok ? "ok" : "error"); speak(m.message); break;
         case "error": push(`Error: ${m.message}`, "error"); setWorking(false); break;
         default: break;
       }
     };
-  }, [push]);
+  }, [push, speak]);
 
   const tried = useRef(false);
   useEffect(() => {
@@ -119,6 +142,7 @@ export function useEdith() {
 
   return {
     conn, provider, mode, caps, workspace, activity, terminal, files, project, confirm, working,
-    savedUrl, savedToken, connect, disconnect, runGoal, setMode, stop, answerConfirm, refreshCaps,
+    savedUrl, savedToken, muted, setMuted, speak,
+    connect, disconnect, runGoal, setMode, stop, answerConfirm, refreshCaps,
   };
 }
