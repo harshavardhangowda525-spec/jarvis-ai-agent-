@@ -4,7 +4,7 @@
  */
 import { execSync } from "node:child_process";
 import { hasProvider, providerName } from "./provider.mjs";
-import { deploymentAdapters } from "./tools/build.mjs";
+import { deploymentAdapters } from "./tools/deploy.mjs";
 
 export function capabilityCheck(ws) {
   const probe = (cmd) => {

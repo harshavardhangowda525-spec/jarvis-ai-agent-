@@ -5,7 +5,8 @@
  */
 import { makeFsTools } from "./tools/fs.mjs";
 import { makeGitTools } from "./tools/git.mjs";
-import { makeBuildTools, deploymentAdapters } from "./tools/build.mjs";
+import { makeBuildTools } from "./tools/build.mjs";
+import { deploymentAdapters } from "./tools/deploy.mjs";
 import { runCommand } from "./tools/terminal.mjs";
 import { classifyCommand } from "./safety.mjs";
 

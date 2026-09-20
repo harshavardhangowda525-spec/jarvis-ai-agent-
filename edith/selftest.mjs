@@ -12,6 +12,7 @@ import { Workspace } from "./src/workspace.mjs";
 import { buildRegistry } from "./src/registry.mjs";
 import { classifyCommand, LEVEL } from "./src/safety.mjs";
 import { capabilityCheck } from "./src/capabilities.mjs";
+import { extractDeployUrl } from "./src/tools/deploy.mjs";
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "edith-selftest-"));
 const ws = new Workspace(tmp);
@@ -77,6 +78,15 @@ ok("safety classifier tags SAFE/REVIEW/DANGEROUS correctly");
 // 10. deploy is honestly "not connected" without creds
 r = await tools["edith.deploy"].run({ provider: "vercel" });
 assert.equal(r.ok, false); assert.equal(r.connected, false); ok("deploy reports 'not connected' instead of faking success");
+
+// 10b. deploy URL extraction from real Vercel-style CLI output
+assert.equal(
+  extractDeployUrl("Inspect: https://vercel.com/acme/site/abc\nProduction: https://cafe-site.vercel.app [2s]"),
+  "https://cafe-site.vercel.app"
+);
+assert.equal(extractDeployUrl("✅  https://my-app-xyz.vercel.app"), "https://my-app-xyz.vercel.app");
+assert.equal(extractDeployUrl("no url here"), null);
+ok("deploy URL is extracted from real CLI output (skips dashboard links)");
 
 // 11. capability check is real
 const caps = capabilityCheck(ws);

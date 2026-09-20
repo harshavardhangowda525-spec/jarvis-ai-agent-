@@ -85,37 +85,3 @@ export function makeBuildTools(ws) {
   };
 }
 
-/**
- * Deployment adapters. Each is REAL or explicitly unavailable — no simulation.
- * A provider is "connected" only when its credential env var is present; the
- * actual deploy shells out to that provider's real CLI.
- */
-export function deploymentAdapters(ws) {
-  const read = (n) => (process.env[n] ?? "").trim();
-  return {
-    vercel: {
-      connected: !!read("VERCEL_TOKEN"),
-      requires: ["VERCEL_TOKEN"],
-      async deploy({ prod = false } = {}) {
-        if (!read("VERCEL_TOKEN")) return { ok: false, connected: false, message: "Vercel not connected — set VERCEL_TOKEN." };
-        return runCommand(ws, `npx vercel ${prod ? "--prod" : ""} --token ${read("VERCEL_TOKEN")} --yes`, { timeoutMs: 600_000 });
-      },
-    },
-    netlify: {
-      connected: !!read("NETLIFY_AUTH_TOKEN"),
-      requires: ["NETLIFY_AUTH_TOKEN"],
-      async deploy({ prod = false } = {}) {
-        if (!read("NETLIFY_AUTH_TOKEN")) return { ok: false, connected: false, message: "Netlify not connected — set NETLIFY_AUTH_TOKEN." };
-        return runCommand(ws, `npx netlify deploy ${prod ? "--prod" : ""}`, { timeoutMs: 600_000 });
-      },
-    },
-    cloudflare: {
-      connected: !!read("CLOUDFLARE_API_TOKEN"),
-      requires: ["CLOUDFLARE_API_TOKEN"],
-      async deploy() {
-        if (!read("CLOUDFLARE_API_TOKEN")) return { ok: false, connected: false, message: "Cloudflare not connected — set CLOUDFLARE_API_TOKEN." };
-        return runCommand(ws, `npx wrangler deploy`, { timeoutMs: 600_000 });
-      },
-    },
-  };
-}

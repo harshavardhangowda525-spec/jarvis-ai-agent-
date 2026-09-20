@@ -154,7 +154,7 @@ export function EdithPanel() {
                   : a.tone === "warn" ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                   : a.tone === "tool" ? <Loader2 className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 text-accent", e.working && "animate-spin")} />
                   : <CircleDot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent/50" />}
-                <span className={cn(a.tone === "error" ? "text-destructive" : a.tone === "warn" ? "text-warning" : "text-foreground/85")}>{a.text}</span>
+                <span className={cn(a.tone === "error" ? "text-destructive" : a.tone === "warn" ? "text-warning" : "text-foreground/85")}>{linkify(a.text)}</span>
               </div>
             ))}
           </div>
@@ -202,5 +202,16 @@ function Cap({ label, ok, detail }: { label: string; ok?: boolean; detail?: stri
       <span className="text-foreground/80">{label}</span>
       <span className={cn("ml-auto truncate text-[9px]", ok ? "text-success" : "text-muted-foreground")} title={detail}>{ok ? (detail || "ready") : "—"}</span>
     </div>
+  );
+}
+
+/** Turn any https URLs in a line into clickable links (e.g. a deployed URL). */
+function linkify(text: string): React.ReactNode {
+  const parts = text.split(/(https:\/\/[^\s)"']+)/g);
+  if (parts.length === 1) return text;
+  return parts.map((p, i) =>
+    /^https:\/\//.test(p)
+      ? <a key={i} href={p} target="_blank" rel="noopener noreferrer" className="text-accent underline underline-offset-2 hover:text-accent-bright">{p}</a>
+      : <span key={i}>{p}</span>,
   );
 }

@@ -161,6 +161,7 @@ function describeCall(tool, input) {
 
 function summarize(tool, r) {
   if (!r) return "no result";
+  if (r.provider && (r.url !== undefined || r.connected === false)) return r.message || (r.url ? `deployed ${r.url}` : "deploy");
   if (r.error) return r.error;
   if (r.exitCode !== undefined) return `exit ${r.exitCode}${r.timedOut ? " (timed out)" : ""}`;
   if (r.action) return `${r.action} ${r.file || ""}`.trim();

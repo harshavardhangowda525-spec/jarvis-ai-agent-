@@ -30,6 +30,29 @@ commit hash, real build/test, blocked workspace-escape, and deploy honestly repo
 - 🔌 Needs credentials (shown as "not connected" until set): deployment to Vercel /
   Netlify / Cloudflare. Set the provider token and EDITH runs the provider's REAL CLI.
 
+## Real deployment (Vercel, end-to-end)
+
+EDITH deploys through the provider's actual CLI and then **verifies the result** —
+no fabricated success:
+
+1. Set a token in `edith/.env` (get one at vercel.com → Account → Settings → Tokens):
+   ```
+   VERCEL_TOKEN=your_real_token
+   ```
+2. Point EDITH at the project (`EDITH_WORKSPACE=/path/to/site`) and run `npm run edith`.
+3. Ask EDITH: **"deploy this to production"** (or "deploy it").
+4. EDITH will:
+   - run `npx vercel --prod --yes --token …` in the workspace (the real deploy),
+   - extract the live `*.vercel.app` URL from the CLI output (skipping dashboard links),
+   - **verify** it with real HTTP(S) checks — status code, latency, HTTPS — retrying a
+     few times while the deployment propagates,
+   - report e.g. *"Deployed to https://cafe-site.vercel.app and verified live
+     (HTTP 200, 180ms, HTTPS)."* — and the URL is clickable in the JARVIS panel.
+   If the token is missing it says exactly that; if the deploy or verification fails it
+   reports the real exit code / status, and does **not** claim success.
+
+Netlify (`NETLIFY_AUTH_TOKEN`) and Cloudflare (`CLOUDFLARE_API_TOKEN`) work the same way.
+
 ## Setup
 
 ```bash
