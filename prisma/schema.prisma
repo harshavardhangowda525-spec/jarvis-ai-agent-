@@ -29,6 +29,7 @@ model User {
   integrations     Integration[]
   sessions         Session[]
   evContents       EvContent[]
+  evMedia          EvMedia[]
 
   @@index([email])
 }
@@ -202,6 +203,24 @@ model EvContent {
   @@index([userId, kind, status])
   @@index([userId, createdAt])
   @@index([userId, fingerprint])
+}
+
+/// Images EV generates. Stored as bytes so the app can serve them at a stable
+/// public URL (required for Instagram publishing, which fetches image_url). The
+/// id is an unguessable cuid that acts as the capability to fetch the bytes.
+model EvMedia {
+  id        String   @id @default(cuid())
+  userId    String
+  mimeType  String   @default("image/png")
+  data      Bytes
+  prompt    String   @db.Text
+  width     Int?
+  height    Int?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
 
 model Integration {

@@ -3,7 +3,7 @@ import { availableTools, getTool } from "@/lib/tools/registry";
 import { fingerprint, findSimilar, normalizeText, tokenSet, jaccard } from "@/lib/ev/dedup";
 
 describe("EV tool scoping", () => {
-  const EV_TOOLS = ["ev_content", "ev_ideas", "ev_leads", "ev_instagram", "ev_analytics", "ev_outreach"];
+  const EV_TOOLS = ["ev_content", "ev_ideas", "ev_image", "ev_leads", "ev_instagram", "ev_analytics", "ev_outreach"];
 
   it("hides EV marketing tools from the base JARVIS toolset", () => {
     const names = availableTools().map((t) => t.name);

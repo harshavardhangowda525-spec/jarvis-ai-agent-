@@ -90,6 +90,13 @@ export const env = {
   // unset, EV honestly reports lead discovery isn't wired and never fakes leads.
   darwinApiUrl: read("DARWIN_API_URL"),
   darwinApiKey: read("DARWIN_API_KEY"),
+
+  // EV image generation. Provider + model are configurable (no hard-coded
+  // obsolete model names). If blank, the provider is inferred from whichever AI
+  // key is present (Gemini preferred, then OpenAI). Uses the same keys as the
+  // text brain — no extra credentials required for Gemini/OpenAI.
+  evImageProvider: read("EV_IMAGE_PROVIDER").toLowerCase(),
+  evImageModel: read("EV_IMAGE_MODEL"),
 };
 
 /**
@@ -309,6 +316,10 @@ export const capabilities = {
   /** DARWIN lead-discovery service is reachable. */
   get darwin() {
     return env.darwinApiUrl.length > 0;
+  },
+  /** EV can generate images (a Gemini or OpenAI key is present). */
+  get evImage() {
+    return env.geminiApiKey.length > 0 || env.openaiApiKey.length > 0;
   },
 };
 

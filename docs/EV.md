@@ -46,10 +46,19 @@ scoped exclusively to Infinity Web & Apps, with hard honesty rules:
 | --------------- | ---------------------------------------------------------------- |
 | `ev_content`    | Store content, **duplicate-check**, approval lifecycle, stats    |
 | `ev_ideas`      | Idea engine: niche **gap analysis** + batch store (deduped)      |
+| `ev_image`      | Generate a **real** image (Gemini/OpenAI) → public URL to publish|
 | `ev_leads`      | DARWIN bridge for **real** leads (honest when not connected)     |
 | `ev_instagram`  | Profile / media / insights + **approval-gated** publish (real)   |
 | `ev_analytics`  | Real IG + content metrics; states clearly what's unavailable     |
 | `ev_outreach`   | Personalized outreach **drafts** (never sends, never bulk)       |
+
+### Content generation
+
+EV writes all the copy itself (captions, hooks, reel scripts, ads, CTAs) via the
+LLM brain, then `ev_content` stores + dedupes it. For **visuals**, `ev_image`
+calls the configured image model, stores the bytes (`EvMedia`), and returns a
+public URL served at `/api/ev/media/<id>` — that URL is what Instagram's Graph
+API fetches when publishing. No external image host is required.
 
 These only appear when EV is active; the base JARVIS toolset is unchanged.
 
@@ -76,6 +85,10 @@ INSTAGRAM_GRAPH_VERSION="v21.0"
 # DARWIN lead discovery (optional; EV degrades honestly if unset)
 DARWIN_API_URL=""
 DARWIN_API_KEY=""
+
+# Image generation — reuses the Gemini/OpenAI key; provider/model overridable
+EV_IMAGE_PROVIDER=""   # "gemini" | "openai" (blank = auto)
+EV_IMAGE_MODEL=""      # e.g. gemini-2.5-flash-image | gpt-image-1
 ```
 
 Tokens never reach the browser. A per-user Instagram OAuth connection
@@ -88,6 +101,7 @@ Activate EV.
 EV, what's today's marketing plan?
 EV, give me five fresh content ideas.
 EV, create a reel for gyms.
+EV, design a post with an image for my ₹4,999 website offer.
 EV, create an ad for my ₹4,999 website offer.
 EV, analyze our recent content.
 EV, find leads through DARWIN.

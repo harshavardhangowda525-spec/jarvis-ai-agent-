@@ -11,6 +11,7 @@ import { buildEvSystemPrompt } from "@/lib/ev/prompt";
 import { memorySummary } from "@/lib/ev/memory";
 import { resolveIgCreds } from "@/lib/ev/instagram";
 import { darwinConfigured } from "@/lib/ev/darwin";
+import { capabilities } from "@/lib/env";
 
 export type AgentEvent =
   | { type: "activity"; label: string }
@@ -63,6 +64,7 @@ export async function* runAgent(
       memory,
       darwinAvailable: darwinConfigured(),
       instagramAvailable: !!igCreds,
+      imageAvailable: capabilities.evImage,
     });
   } else {
     const memories = await db.memory.findMany({
