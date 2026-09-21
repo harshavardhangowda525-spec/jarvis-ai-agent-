@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { Mic, MicOff, Send, Power } from "lucide-react";
+import { Mic, MicOff, Send, Power, X, ExternalLink, ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,6 +28,11 @@ export interface EvViewProps {
   level: number;
   /** Transition phase driven by the console. */
   phase: "in" | "active" | "out";
+  /** A freshly generated EV image to reveal as a liquid-glass message. */
+  image: { url: string } | null;
+  /** Caption/context shown with the image (EV's latest reply). */
+  caption?: string;
+  onDismissImage: () => void;
   input: string;
   onInput: (v: string) => void;
   onSubmit: () => void;
@@ -89,6 +94,11 @@ export function EvView(props: EvViewProps) {
 
       {/* subtle light trails hologram → panels */}
       <TrailLines />
+
+      {/* generated image reveals as a liquid-glass message */}
+      {props.image && (
+        <EvImageMessage url={props.image.url} caption={props.caption} onDismiss={props.onDismissImage} />
+      )}
 
       {/* ===== SPEC 1 — EV ACTIVITY (bottom-left) ===== */}
       <div className="absolute bottom-6 left-4 z-20 md:bottom-10 md:left-10" style={{ animation: "ev-panel-in .6s ease .3s both" }}>
@@ -275,6 +285,78 @@ function EvCore(props: {
               }}
             />
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- liquid-glass image message ---------------- */
+
+function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: string; onDismiss: () => void }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
+      <div
+        className="pointer-events-auto relative w-full max-w-md overflow-hidden rounded-3xl border border-white/15"
+        style={{
+          animation: "ev-msg-in 0.7s cubic-bezier(0.22,1,0.36,1) both",
+          background: "linear-gradient(145deg, hsl(0 0% 100% / 0.10), hsl(210 60% 12% / 0.28))",
+          backdropFilter: "blur(26px) saturate(1.3)",
+          WebkitBackdropFilter: "blur(26px) saturate(1.3)",
+          boxShadow: "0 24px 80px -24px hsl(var(--accent)/0.6), inset 0 1px 0 hsl(0 0% 100% / 0.22), inset 0 0 40px -20px hsl(var(--accent)/0.5)",
+        }}
+      >
+        {/* moving sheen — the "liquid glass" highlight */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+          <div
+            className="absolute -inset-y-8 left-0 w-1/3"
+            style={{
+              background: "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.14), transparent)",
+              animation: "ev-sheen 4.5s ease-in-out infinite",
+            }}
+          />
+        </div>
+
+        {/* header */}
+        <div className="relative flex items-center justify-between px-4 pt-3">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-accent/40 bg-accent/15 text-accent">
+              <ImageIcon className="h-3.5 w-3.5" />
+            </span>
+            <span className="hud-label text-[10px] tracking-[0.28em] text-accent/80">EV · IMAGE READY</span>
+          </div>
+          <button
+            onClick={onDismiss}
+            title="Dismiss"
+            className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* image inside an inner glass frame */}
+        <div className="relative mx-4 mt-3 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt="EV generated marketing image" className="block h-auto w-full select-none" />
+        </div>
+
+        {/* caption */}
+        {caption && (
+          <p className="relative max-h-24 overflow-y-auto px-4 pt-3 text-sm leading-relaxed text-foreground/85">
+            {caption}
+          </p>
+        )}
+
+        {/* actions */}
+        <div className="relative flex items-center justify-end gap-2 px-4 py-3">
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent/10 px-3 py-1.5 text-xs text-accent transition hover:bg-accent/20"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Open full
+          </a>
         </div>
       </div>
     </div>

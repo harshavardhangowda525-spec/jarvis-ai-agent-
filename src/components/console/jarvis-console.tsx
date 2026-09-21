@@ -44,6 +44,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [evCommand, setEvCommand] = useState("");
   const [evAwaitingApproval, setEvAwaitingApproval] = useState(false);
   const [evPulse, setEvPulse] = useState<null | "success" | "error">(null);
+  const [evImage, setEvImage] = useState<{ url: string } | null>(null);
   const evActiveRef = useRef(false);
   const evPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [services, setServices] = useState<Services | null>(null);
@@ -90,7 +91,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     },
     onNavigate,
     onOpen: (url) => {
-      // Always open in a NEW tab, never hijack the current one. If the pop-up
+      // An EV-generated image reveals as a liquid-glass message inside the EV
+      // dashboard rather than hijacking a tab.
+      if (evActiveRef.current && /\/api\/ev\/media\//.test(url)) {
+        setEvImage({ url });
+        flashEv("success");
+        return;
+      }
+      // Otherwise open in a NEW tab, never hijack the current one. If the pop-up
       // blocker stops it, the "Open X" button in the reply is the fallback.
       try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* blocked — use the link button */ }
     },
@@ -122,6 +130,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   }, [voice, voiceStarted]);
   const closeEv = useCallback(() => {
     evActiveRef.current = false;
+    setEvImage(null);
     setEvPhase("out");
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("EV standing down. Back to JARVIS.");
     setTimeout(() => setEvPhase("off"), 900);
@@ -310,6 +319,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           command={evCommand}
           level={voice.level}
           phase={evPhase === "in" ? "in" : evPhase === "out" ? "out" : "active"}
+          image={evImage}
+          caption={subtitle}
+          onDismissImage={() => setEvImage(null)}
           input={input}
           onInput={setInput}
           onSubmit={() => handleSend()}

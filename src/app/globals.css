@@ -189,6 +189,8 @@ body {
 @keyframes ev-glitch { 0%,100% { transform: translate(0,0); } 20% { transform: translate(-2px,1px); } 40% { transform: translate(2px,-1px); } 60% { transform: translate(-1px,-1px); } 80% { transform: translate(1px,1px); } }
 @keyframes ev-trail { 0% { stroke-dashoffset: 220; opacity: 0.15; } 50% { opacity: 0.55; } 100% { stroke-dashoffset: 0; opacity: 0.15; } }
 @keyframes ev-panel-in { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes ev-msg-in { 0% { opacity: 0; transform: translateY(18px) scale(0.94); filter: blur(10px); } 100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
+@keyframes ev-sheen { 0% { transform: translateX(-120%) skewX(-18deg); } 100% { transform: translateX(220%) skewX(-18deg); } }
 .animate-fade-in { animation: fade-in 0.35s ease-out; }
 .animate-hud-spin { animation: hud-spin 18s linear infinite; }
 .animate-hud-spin-rev { animation: hud-spin-rev 24s linear infinite; }
