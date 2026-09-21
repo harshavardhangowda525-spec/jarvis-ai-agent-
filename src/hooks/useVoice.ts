@@ -133,6 +133,15 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
       const text: string = (json.data?.text ?? "").trim();
       if (text) {
         onTranscript(text);
+        // Fallback re-arm: if the consumer doesn't move the mic to "speaking"
+        // itself (e.g. EDITH speaks via its own TTS, not voice.speak), resume
+        // listening so the NEXT command is heard. Guarded on "processing" so it
+        // never overrides a real speaking/recording transition.
+        setTimeout(() => {
+          if (enabledRef.current && !mutedRef.current && statusRef.current === "processing") {
+            setStatusBoth("listening");
+          }
+        }, 2500);
       } else if (enabledRef.current && !mutedRef.current) {
         setStatusBoth("listening");
       }
