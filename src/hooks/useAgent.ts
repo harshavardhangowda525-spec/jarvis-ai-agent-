@@ -21,6 +21,13 @@ interface UseAgentOptions {
   onAssistantComplete?: (text: string) => void;
   onNavigate?: (path: string) => void;
   onOpen?: (url: string) => void;
+  /** Fired for every tool result (used e.g. to drive EV's operating state). */
+  onTool?: (t: { name: string; status: "ok" | "error"; summary: string }) => void;
+}
+
+/** Per-send options. `agent: "ev"` routes the turn through EV's marketing brain. */
+export interface SendOptions {
+  agent?: "jarvis" | "ev";
 }
 
 let idc = 0;
@@ -31,7 +38,7 @@ const nextId = () => `m${Date.now()}_${idc++}`;
  * and exposes messages, the live-activity feed, and the currently streaming
  * assistant text. Voice and text share this same flow.
  */
-export function useAgent({ onAssistantComplete, onNavigate, onOpen }: UseAgentOptions = {}) {
+export function useAgent({ onAssistantComplete, onNavigate, onOpen, onTool }: UseAgentOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -75,7 +82,7 @@ export function useAgent({ onAssistantComplete, onNavigate, onOpen }: UseAgentOp
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, opts?: SendOptions) => {
       const trimmed = text.trim();
       if (!trimmed || streaming) return;
 
@@ -99,6 +106,7 @@ export function useAgent({ onAssistantComplete, onNavigate, onOpen }: UseAgentOp
           body: JSON.stringify({
             conversationId: conversationIdRef.current,
             message: trimmed,
+            ...(opts?.agent ? { agent: opts.agent } : {}),
           }),
           signal: ac.signal,
         });
@@ -149,6 +157,7 @@ export function useAgent({ onAssistantComplete, onNavigate, onOpen }: UseAgentOp
                 break;
               case "tool":
                 pushActivity({ label: ev.summary, kind: "tool", status: ev.status });
+                onTool?.({ name: ev.name, status: ev.status, summary: ev.summary });
                 setMessages((m) =>
                   m.map((x) =>
                     x.id === assistantId
@@ -212,7 +221,7 @@ export function useAgent({ onAssistantComplete, onNavigate, onOpen }: UseAgentOp
         abortRef.current = null;
       }
     },
-    [onAssistantComplete, onNavigate, onOpen, pushActivity, setConversation, streaming],
+    [onAssistantComplete, onNavigate, onOpen, onTool, pushActivity, setConversation, streaming],
   );
 
   return {

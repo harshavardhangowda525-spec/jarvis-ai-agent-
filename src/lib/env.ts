@@ -78,6 +78,18 @@ export const env = {
   // The service_role key is server-side ONLY and never sent to the browser.
   compassSupabaseUrl: read("COMPASS_SUPABASE_URL"),
   compassSupabaseServiceRoleKey: read("COMPASS_SUPABASE_SERVICE_ROLE_KEY"),
+
+  // --- EV marketing agent -------------------------------------------------
+  // Instagram Graph API (Business/Creator account via a long-lived token). The
+  // token + IG business id are server-side ONLY and never sent to the browser.
+  // A per-user OAuth connection (Integration table) takes precedence when present.
+  instagramAccessToken: read("INSTAGRAM_ACCESS_TOKEN"),
+  instagramBusinessId: read("INSTAGRAM_BUSINESS_ID"),
+  instagramGraphVersion: read("INSTAGRAM_GRAPH_VERSION") || "v21.0",
+  // DARWIN lead-discovery service (optional). EV talks to it for REAL leads; if
+  // unset, EV honestly reports lead discovery isn't wired and never fakes leads.
+  darwinApiUrl: read("DARWIN_API_URL"),
+  darwinApiKey: read("DARWIN_API_KEY"),
 };
 
 /**
@@ -285,6 +297,18 @@ export const capabilities = {
   },
   get pluslide() {
     return env.pluslideApiKey.length > 0;
+  },
+  /** EV can publish/read Instagram via an env-level long-lived token. A per-user
+   *  OAuth token (Integration table) can also enable it at request time. The
+   *  Instagram-Login API (tokens starting "IG") can use "me" as the node, so it
+   *  doesn't require a separate business id. */
+  get instagram() {
+    if (env.instagramAccessToken.length === 0) return false;
+    return env.instagramBusinessId.length > 0 || env.instagramAccessToken.startsWith("IG");
+  },
+  /** DARWIN lead-discovery service is reachable. */
+  get darwin() {
+    return env.darwinApiUrl.length > 0;
   },
 };
 

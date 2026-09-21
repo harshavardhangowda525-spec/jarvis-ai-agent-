@@ -7,6 +7,10 @@ import { availableTools, getTool } from "@/lib/tools/registry";
 import type { ToolContext, ToolDefinition } from "@/lib/tools/types";
 import { ToolError } from "@/lib/tools/types";
 import { getDb } from "@/lib/db";
+import { buildEvSystemPrompt } from "@/lib/ev/prompt";
+import { memorySummary } from "@/lib/ev/memory";
+import { resolveIgCreds } from "@/lib/ev/instagram";
+import { darwinConfigured } from "@/lib/ev/darwin";
 
 export type AgentEvent =
   | { type: "activity"; label: string }
@@ -27,6 +31,8 @@ export interface AgentInput {
   message: string;
   /** Per-user preferred primary AI provider (from Settings); overrides env default. */
   preferredProvider?: string | null;
+  /** Which internal agent is driving. "ev" swaps in EV's marketing brain + tools. */
+  agent?: "ev";
 }
 
 const MAX_STEPS = 8;
@@ -42,21 +48,38 @@ export async function* runAgent(
   const configs = getAiConfigs(input.preferredProvider ?? undefined);
   const db = getDb();
 
-  const memories = await db.memory.findMany({
-    where: { userId: input.userId },
-    orderBy: { updatedAt: "desc" },
-    take: 40,
-    select: { key: true, content: true },
-  });
+  const isEv = input.agent === "ev";
 
-  const system = buildSystemPrompt({
-    assistantName: input.assistantName,
-    userDisplayName: input.displayName,
-    timezone: input.timezone,
-    memories,
-  });
+  let system: string;
+  if (isEv) {
+    // EV's marketing brain: its own personality, mission, memory + honesty rules.
+    const [memory, igCreds] = await Promise.all([
+      memorySummary(input.userId),
+      resolveIgCreds(input.userId).catch(() => null),
+    ]);
+    system = buildEvSystemPrompt({
+      userDisplayName: input.displayName,
+      timezone: input.timezone,
+      memory,
+      darwinAvailable: darwinConfigured(),
+      instagramAvailable: !!igCreds,
+    });
+  } else {
+    const memories = await db.memory.findMany({
+      where: { userId: input.userId },
+      orderBy: { updatedAt: "desc" },
+      take: 40,
+      select: { key: true, content: true },
+    });
+    system = buildSystemPrompt({
+      assistantName: input.assistantName,
+      userDisplayName: input.displayName,
+      timezone: input.timezone,
+      memories,
+    });
+  }
 
-  const tools = availableTools();
+  const tools = availableTools(isEv ? "ev" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {
     userId: input.userId,

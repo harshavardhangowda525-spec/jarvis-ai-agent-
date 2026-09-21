@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       return fail("The AI model is not configured. Set AI_API_KEY.", 503);
     }
 
-    const { conversationId, message } = agentRequestSchema.parse(await req.json());
+    const { conversationId, message, agent } = agentRequestSchema.parse(await req.json());
     const db = getDb();
 
     // Resolve or create the conversation (ownership enforced).
@@ -87,6 +87,7 @@ export async function POST(req: NextRequest) {
             history,
             message,
             preferredProvider: (profile as { aiProvider?: string | null } | null)?.aiProvider ?? null,
+            agent: agent === "ev" ? "ev" : undefined,
           })) {
             if (event.type === "done") finalText = event.text;
             if (event.type === "tool") {

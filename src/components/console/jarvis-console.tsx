@@ -16,6 +16,7 @@ import { useDeviceMetrics } from "@/hooks/useDeviceMetrics";
 import { useWakeWord } from "@/hooks/useWakeWord";
 import { useScreenVision } from "@/hooks/useScreenVision";
 import { HumanoidView } from "@/components/console/humanoid-view";
+import { EvView, type EvState } from "@/components/console/ev-view";
 import { cn, timeAgo } from "@/lib/utils";
 
 interface Services { [k: string]: boolean }
@@ -38,6 +39,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [voiceStarted, setVoiceStarted] = useState(false);
   const [launchingEdith, setLaunchingEdith] = useState(false);
   const [humanoidPhase, setHumanoidPhase] = useState<"off" | "in" | "active" | "out">("off");
+  // EV marketing agent — cinematic overlay presentation of the same JARVIS brain.
+  const [evPhase, setEvPhase] = useState<"off" | "in" | "active" | "out">("off");
+  const [evCommand, setEvCommand] = useState("");
+  const [evAwaitingApproval, setEvAwaitingApproval] = useState(false);
+  const [evPulse, setEvPulse] = useState<null | "success" | "error">(null);
+  const evActiveRef = useRef(false);
+  const evPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [services, setServices] = useState<Services | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [input, setInput] = useState("");
@@ -53,9 +61,33 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (path.startsWith("/dashboard") && path !== "/dashboard") router.push(path);
   }, [router]);
 
+  const flashEv = useCallback((kind: "success" | "error") => {
+    if (evPulseTimer.current) clearTimeout(evPulseTimer.current);
+    setEvPulse(kind);
+    evPulseTimer.current = setTimeout(() => setEvPulse(null), kind === "success" ? 1500 : 1300);
+  }, []);
+
   const voice = useVoice({ onTranscript: (t) => sendRef.current(t), autoListen: true });
   const agent = useAgent({
-    onAssistantComplete: (text) => { if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text); },
+    onAssistantComplete: (text) => {
+      // EV prepares content by presenting "CONTENT READY …" — that's the signal
+      // it's waiting for the user's approval before any external action.
+      if (evActiveRef.current && /content ready|awaiting (your )?approval|for your approval/i.test(text)) {
+        setEvAwaitingApproval(true);
+      }
+      if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text);
+    },
+    onTool: (t) => {
+      if (!evActiveRef.current) return;
+      if (t.status === "error") { flashEv("error"); return; }
+      if (/waiting for (your )?approval|ready for (your )?approval|for your approval|is ready for your approval/i.test(t.summary)) {
+        setEvAwaitingApproval(true);
+      }
+      if (/✅|\bpublished\b|\bscheduled\b|\bapproved\b/i.test(t.summary)) {
+        setEvAwaitingApproval(false);
+        flashEv("success");
+      }
+    },
     onNavigate,
     onOpen: (url) => {
       // Always open in a NEW tab, never hijack the current one. If the pop-up
@@ -80,10 +112,46 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Returning to the normal interface.");
     setTimeout(() => setHumanoidPhase("off"), 900);
   }, [voice, voiceStarted]);
+  const openEv = useCallback(() => {
+    evActiveRef.current = true;
+    setEvAwaitingApproval(false);
+    setEvCommand("");
+    setEvPhase("in");
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("EV online. Marketing systems ready.");
+    setTimeout(() => setEvPhase("active"), 1400);
+  }, [voice, voiceStarted]);
+  const closeEv = useCallback(() => {
+    evActiveRef.current = false;
+    setEvPhase("out");
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("EV standing down. Back to JARVIS.");
+    setTimeout(() => setEvPhase("off"), 900);
+  }, [voice, voiceStarted]);
   useEffect(() => {
     sendRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
       if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) { sleep(); return; }
+
+      // ===== EV marketing agent =====
+      // Deactivate first (only meaningful while EV is active).
+      if (evActiveRef.current &&
+          (/\b(close|exit|deactivate|shut ?down)\s+ev\b|\bback to jarvis\b|\bev[,\s]+(stand down|close|exit)\b/.test(low) || /^(close|exit)[\s!.,]*$/.test(low))) {
+        closeEv();
+        return;
+      }
+      // Activate EV.
+      if (evPhase === "off" &&
+          (/\b(activate|open|start|launch|bring up|switch to|go to)\s+ev\b|\bev\s+mode\b|^ev[\s!.,]*$/.test(low))) {
+        openEv();
+        return;
+      }
+      // While EV is active, everything else goes to EV's marketing brain.
+      if (evActiveRef.current) {
+        setEvCommand(t);
+        setEvAwaitingApproval(false);
+        agent.send(t, { agent: "ev" });
+        return;
+      }
+
       // Humanoid View mode switch (works from either mode).
       if (/\b(open|show|activate|enter|start)\s+(the\s+)?humanoid(\s+view)?\b|\bhumanoid view\b|\bshow yourself\b/.test(low)) { openHumanoid(); return; }
       if (/\b(get me |go |take me )?back to (the )?normal( interface| view)?\b|\b(close|exit|leave)\s+humanoid\b|\bnormal (interface|view|mode)\b/.test(low)) { closeHumanoid(); return; }
@@ -99,7 +167,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchEdith, openHumanoid, closeHumanoid]);
+  }, [agent, sleep, launchEdith, openHumanoid, closeHumanoid, openEv, closeEv, evPhase]);
 
   const wake = useWakeWord({
     enabled: !voiceStarted,
@@ -134,6 +202,31 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     return "idle";
   })();
   const statusLabel = agent.streaming ? (orbState === "executing" ? "Executing" : "Thinking") : orbStateLabel(orbState);
+
+  // EV operating state — derived from the SAME real voice + agent signals.
+  const evState: EvState = (() => {
+    if (evPulse === "error" || voice.status === "denied" || voice.status === "error") return "ERROR";
+    if (evPulse === "success") return "SUCCESS";
+    if (evAwaitingApproval && !agent.streaming) return "WAITING_FOR_APPROVAL";
+    if (agent.streaming) {
+      const act = agent.activity[0];
+      if (act?.kind === "tool") return "EXECUTING";
+      if (/content|idea|caption|reel|post|story|\bad\b|draft|writ|generat/i.test(act?.label ?? "")) return "GENERATING";
+      return "THINKING";
+    }
+    if (voice.status === "speaking") return "GENERATING";
+    if (voice.status === "recording" || voice.status === "listening") return "LISTENING";
+    if (voice.status === "processing") return "THINKING";
+    return "IDLE";
+  })();
+  const evActivity = agent.streaming
+    ? (agent.activity[0]?.label ?? "Thinking…")
+    : evState === "WAITING_FOR_APPROVAL" ? "Waiting for approval…"
+    : evState === "LISTENING" ? "Listening…"
+    : evState === "SUCCESS" ? "Done."
+    : evState === "ERROR" ? "Something went wrong."
+    : voice.status === "speaking" ? "Speaking…"
+    : "Idle";
 
   async function enableVoice() { const ok = await voice.init(); if (ok) setVoiceStarted(true); return ok; }
   const focusCommand = useCallback((prefill?: string) => {
@@ -210,6 +303,22 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   return (
     <div className="jarvis-scene relative min-h-[calc(100vh-4rem)] overflow-hidden bg-[#02060e]">
       {launchingEdith && <EdithLaunchOverlay />}
+      {evPhase !== "off" && (
+        <EvView
+          state={evState}
+          activity={evActivity}
+          command={evCommand}
+          level={voice.level}
+          phase={evPhase === "in" ? "in" : evPhase === "out" ? "out" : "active"}
+          input={input}
+          onInput={setInput}
+          onSubmit={() => handleSend()}
+          voiceStarted={voiceStarted}
+          muted={voice.muted}
+          onMic={() => (voiceStarted ? voice.toggleMute() : enableVoice())}
+          onSleep={sleep}
+        />
+      )}
       {humanoidPhase !== "off" && (
         <HumanoidView
           userName={userName}

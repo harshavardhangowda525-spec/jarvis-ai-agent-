@@ -28,6 +28,7 @@ model User {
   toolLogs         ToolLog[]
   integrations     Integration[]
   sessions         Session[]
+  evContents       EvContent[]
 
   @@index([email])
 }
@@ -167,6 +168,40 @@ model ToolLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+/// EV marketing agent's persistent memory: every piece of content, idea,
+/// campaign note and outreach draft it produces, with a status lifecycle and a
+/// normalized `fingerprint` used to reject near-duplicate ideas before they are
+/// generated again. Per-user isolated.
+model EvContent {
+  id          String    @id @default(cuid())
+  userId      String
+  // post | reel | story | caption | hook | cta | ad | educational | growth |
+  // website | app | idea | outreach | campaign | note
+  kind        String
+  // draft | ready | approved | rejected | scheduled | published | failed
+  status      String    @default("draft")
+  niche       String? // gyms | cafes | restaurants | salons | ...
+  theme       String? // content theme / angle
+  title       String    @default("")
+  caption     String?   @db.Text
+  hook        String?   @db.Text
+  cta         String?   @db.Text
+  body        String?   @db.Text // full script / preview / message body
+  fingerprint String // normalized hash for near-duplicate detection
+  metadata    Json?
+  scheduledAt DateTime?
+  publishedAt DateTime?
+  externalId  String? // e.g. Instagram media id after a confirmed publish
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, status])
+  @@index([userId, createdAt])
+  @@index([userId, fingerprint])
 }
 
 model Integration {

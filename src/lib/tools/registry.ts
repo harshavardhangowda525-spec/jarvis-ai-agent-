@@ -22,6 +22,12 @@ import { analyticsTool } from "./analytics";
 import { websiteDataTool } from "./websiteData";
 import { compassTool } from "./compass";
 import { pluslideTool } from "./pluslide";
+import { evContentTool } from "./ev/content";
+import { evIdeasTool } from "./ev/ideas";
+import { evLeadsTool } from "./ev/leads";
+import { evInstagramTool } from "./ev/instagram";
+import { evAnalyticsTool } from "./ev/analytics";
+import { evOutreachTool } from "./ev/outreach";
 
 const ALL_TOOLS: ToolDefinition[] = [
   calculatorTool as ToolDefinition,
@@ -39,12 +45,24 @@ const ALL_TOOLS: ToolDefinition[] = [
   websiteDataTool as ToolDefinition,
   compassTool as ToolDefinition,
   pluslideTool as ToolDefinition,
+  evContentTool as ToolDefinition,
+  evIdeasTool as ToolDefinition,
+  evLeadsTool as ToolDefinition,
+  evInstagramTool as ToolDefinition,
+  evAnalyticsTool as ToolDefinition,
+  evOutreachTool as ToolDefinition,
 ];
 
-/** Tools available given the current capability + integration configuration. */
-export function availableTools(): ToolDefinition[] {
+/**
+ * Tools available given the current capability + integration configuration and
+ * the active agent. EV's marketing tools only appear when `agent` is "ev"; the
+ * base JARVIS toolset never includes them (and never excludes anything it had).
+ */
+export function availableTools(agent?: "ev"): ToolDefinition[] {
   const googleReady = isProviderConfigured("google");
   return ALL_TOOLS.filter((t) => {
+    // Agent-scoped tools (EV's) only surface for their agent.
+    if (t.agentScope) return t.agentScope === agent;
     if (t.requiresCapability === "search") return capabilities.search;
     if (t.requiresCapability === "weather") return capabilities.weather;
     if (t.requiresCapability === "websiteData") return capabilities.websiteData;

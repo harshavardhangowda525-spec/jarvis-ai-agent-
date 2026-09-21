@@ -178,6 +178,17 @@ body {
 @keyframes drift { 0% { transform: translateY(0) translateX(0); opacity: .5; } 50% { opacity: 1; } 100% { transform: translateY(-14px) translateX(6px); opacity: .3; } }
 @keyframes materialize { 0% { opacity: 0; filter: blur(14px); transform: scale(1.06); } 100% { opacity: 1; filter: blur(0); transform: scale(1); } }
 @keyframes dematerialize { 0% { opacity: 1; filter: blur(0); transform: scale(1); } 100% { opacity: 0; filter: blur(16px); transform: scale(1.08); } }
+/* --- EV holographic core --- */
+@keyframes ev-breathe { 0%,100% { transform: scale(1); opacity: 0.92; } 50% { transform: scale(1.025); opacity: 1; } }
+@keyframes ev-core-pulse { 0%,100% { opacity: 0.55; filter: drop-shadow(0 0 10px hsl(var(--accent-bright) / 0.6)); } 50% { opacity: 1; filter: drop-shadow(0 0 26px hsl(var(--accent-bright) / 0.95)); } }
+@keyframes ev-orbit { from { transform: rotate(0deg) translateX(var(--r)) rotate(0deg); } to { transform: rotate(360deg) translateX(var(--r)) rotate(-360deg); } }
+@keyframes ev-particle-in { 0% { transform: rotate(var(--a)) translateX(var(--r0)); opacity: 0; } 40% { opacity: 1; } 100% { transform: rotate(var(--a)) translateX(var(--r1)); opacity: 0.9; } }
+@keyframes ev-scan { 0% { transform: rotate(0deg); opacity: 0.15; } 50% { opacity: 0.6; } 100% { transform: rotate(360deg); opacity: 0.15; } }
+@keyframes ev-materialize { 0% { opacity: 0; transform: scale(0.35); filter: blur(20px); } 60% { opacity: 1; filter: blur(2px); } 100% { opacity: 1; transform: scale(1); filter: blur(0); } }
+@keyframes ev-dissolve { 0% { opacity: 1; transform: scale(1); filter: blur(0); } 100% { opacity: 0; transform: scale(0.4); filter: blur(22px); } }
+@keyframes ev-glitch { 0%,100% { transform: translate(0,0); } 20% { transform: translate(-2px,1px); } 40% { transform: translate(2px,-1px); } 60% { transform: translate(-1px,-1px); } 80% { transform: translate(1px,1px); } }
+@keyframes ev-trail { 0% { stroke-dashoffset: 220; opacity: 0.15; } 50% { opacity: 0.55; } 100% { stroke-dashoffset: 0; opacity: 0.15; } }
+@keyframes ev-panel-in { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
 .animate-fade-in { animation: fade-in 0.35s ease-out; }
 .animate-hud-spin { animation: hud-spin 18s linear infinite; }
 .animate-hud-spin-rev { animation: hud-spin-rev 24s linear infinite; }
