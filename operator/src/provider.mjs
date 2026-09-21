@@ -26,14 +26,22 @@ function resolveProvider() {
   return { provider, apiKey, baseUrl, model: read("AI_MODEL") && provider === preferred ? read("AI_MODEL") : model };
 }
 
-const PROVIDER = resolveProvider();
+// Resolve lazily: run.mjs loads .env AFTER modules are imported, so resolving at
+// import time would miss the keys. Cache on first real use.
+let _provider;
+let _resolved = false;
+function provider() {
+  if (!_resolved) { _provider = resolveProvider(); _resolved = true; }
+  return _provider;
+}
 
 export function providerName() {
-  return PROVIDER ? `${PROVIDER.provider} (${PROVIDER.model})` : "none";
+  const p = provider();
+  return p ? `${p.provider} (${p.model})` : "none";
 }
 
 export function hasProvider() {
-  return !!PROVIDER;
+  return !!provider();
 }
 
 /**
@@ -41,6 +49,7 @@ export function hasProvider() {
  * command + current page observation. Returns the parsed JSON, or throws.
  */
 export async function askJson(system, user) {
+  const PROVIDER = provider();
   if (!PROVIDER) throw new Error("No AI provider configured. Set GROQ_API_KEY (or GEMINI/CEREBRAS/OPENROUTER/OPENAI).");
   const res = await fetch(`${PROVIDER.baseUrl}/chat/completions`, {
     method: "POST",
