@@ -15,6 +15,7 @@ import { useAgent } from "@/hooks/useAgent";
 import { useDeviceMetrics } from "@/hooks/useDeviceMetrics";
 import { useWakeWord } from "@/hooks/useWakeWord";
 import { useScreenVision } from "@/hooks/useScreenVision";
+import { HumanoidView } from "@/components/console/humanoid-view";
 import { cn, timeAgo } from "@/lib/utils";
 
 interface Services { [k: string]: boolean }
@@ -36,6 +37,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [voiceConfigured, setVoiceConfigured] = useState<boolean | null>(null);
   const [voiceStarted, setVoiceStarted] = useState(false);
   const [launchingEdith, setLaunchingEdith] = useState(false);
+  const [humanoidPhase, setHumanoidPhase] = useState<"off" | "in" | "active" | "out">("off");
   const [services, setServices] = useState<Services | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [input, setInput] = useState("");
@@ -68,10 +70,23 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Bringing EDITH online.");
     setTimeout(() => router.push("/dashboard/edith"), 1900);
   }, [router, voice, voiceStarted]);
+  const openHumanoid = useCallback(() => {
+    setHumanoidPhase("in");
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Humanoid view activated.");
+    setTimeout(() => setHumanoidPhase("active"), 1400);
+  }, [voice, voiceStarted]);
+  const closeHumanoid = useCallback(() => {
+    setHumanoidPhase("out");
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Returning to the normal interface.");
+    setTimeout(() => setHumanoidPhase("off"), 900);
+  }, [voice, voiceStarted]);
   useEffect(() => {
     sendRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
       if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) { sleep(); return; }
+      // Humanoid View mode switch (works from either mode).
+      if (/\b(open|show|activate|enter|start)\s+(the\s+)?humanoid(\s+view)?\b|\bhumanoid view\b|\bshow yourself\b/.test(low)) { openHumanoid(); return; }
+      if (/\b(get me |go |take me )?back to (the )?normal( interface| view)?\b|\b(close|exit|leave)\s+humanoid\b|\bnormal (interface|view|mode)\b/.test(low)) { closeHumanoid(); return; }
       // "EDITH", "open EDITH", "activate EDITH", "developer mode" → launch EDITH.
       if (/^edith[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+edith\b|\bedith[,\s]+(come online|wake up|online|developer mode)\b|\bdeveloper mode\b/.test(low)) {
         launchEdith();
@@ -84,7 +99,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchEdith]);
+  }, [agent, sleep, launchEdith, openHumanoid, closeHumanoid]);
 
   const wake = useWakeWord({
     enabled: !voiceStarted,
@@ -195,6 +210,24 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   return (
     <div className="jarvis-scene relative min-h-[calc(100vh-4rem)] overflow-hidden bg-[#02060e]">
       {launchingEdith && <EdithLaunchOverlay />}
+      {humanoidPhase !== "off" && (
+        <HumanoidView
+          userName={userName}
+          state={orbState}
+          level={voice.level}
+          streaming={agent.streaming}
+          task={agent.activity[0]?.label ?? null}
+          subtitle={subtitle}
+          phase={humanoidPhase === "in" ? "in" : humanoidPhase === "out" ? "out" : "active"}
+          input={input}
+          onInput={setInput}
+          onSubmit={() => handleSend()}
+          voiceStarted={voiceStarted}
+          muted={voice.muted}
+          onMic={() => (voiceStarted ? voice.toggleMute() : enableVoice())}
+          onSleep={sleep}
+        />
+      )}
 
       {/* ambient glows */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>

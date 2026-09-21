@@ -173,6 +173,11 @@ body {
 @keyframes edith-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes edith-bar { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }
 @keyframes jv-indet { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
+@keyframes breathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-1.2%) scale(1.012); } }
+@keyframes sway { 0%,100% { transform: rotate(-0.8deg); } 50% { transform: rotate(0.8deg); } }
+@keyframes drift { 0% { transform: translateY(0) translateX(0); opacity: .5; } 50% { opacity: 1; } 100% { transform: translateY(-14px) translateX(6px); opacity: .3; } }
+@keyframes materialize { 0% { opacity: 0; filter: blur(14px); transform: scale(1.06); } 100% { opacity: 1; filter: blur(0); transform: scale(1); } }
+@keyframes dematerialize { 0% { opacity: 1; filter: blur(0); transform: scale(1); } 100% { opacity: 0; filter: blur(16px); transform: scale(1.08); } }
 .animate-fade-in { animation: fade-in 0.35s ease-out; }
 .animate-hud-spin { animation: hud-spin 18s linear infinite; }
 .animate-hud-spin-rev { animation: hud-spin-rev 24s linear infinite; }
