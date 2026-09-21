@@ -26,6 +26,7 @@ export const env = {
   // If unset, it is inferred from whichever key is present.
   aiProvider: read("AI_PROVIDER").toLowerCase(),
   geminiApiKey: read("GEMINI_API_KEY"),
+  geminiModel: read("GEMINI_MODEL"),
   groqApiKey: read("GROQ_API_KEY"),
   groqModel: read("GROQ_MODEL"),
   openaiApiKey: read("OPENAI_API_KEY"),
@@ -135,7 +136,7 @@ function buildAiConfig(provider: string): AiConfig | null {
         ? { provider, kind: "openai", apiKey: env.geminiApiKey,
             // No trailing slash: the OpenAI SDK appends "/chat/completions".
             baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
-            model: AI_DEFAULT_MODEL.gemini }
+            model: env.geminiModel || AI_DEFAULT_MODEL.gemini }
         : null;
     case "groq":
       return env.groqApiKey
