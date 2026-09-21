@@ -35,6 +35,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const router = useRouter();
   const [voiceConfigured, setVoiceConfigured] = useState<boolean | null>(null);
   const [voiceStarted, setVoiceStarted] = useState(false);
+  const [launchingEdith, setLaunchingEdith] = useState(false);
   const [services, setServices] = useState<Services | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [input, setInput] = useState("");
@@ -62,10 +63,20 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   });
 
   const sleep = useCallback(() => { voice.stop(); setVoiceStarted(false); }, [voice]);
+  const launchEdith = useCallback(() => {
+    setLaunchingEdith(true);
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Bringing EDITH online.");
+    setTimeout(() => router.push("/dashboard/edith"), 1900);
+  }, [router, voice, voiceStarted]);
   useEffect(() => {
     sendRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
       if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) { sleep(); return; }
+      // "EDITH", "open EDITH", "activate EDITH", "developer mode" → launch EDITH.
+      if (/^edith[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+edith\b|\bedith[,\s]+(come online|wake up|online|developer mode)\b|\bdeveloper mode\b/.test(low)) {
+        launchEdith();
+        return;
+      }
       // "read my screen", "what's on my screen", "look at my screen"…
       if (/\b(read|look at|see|analyz|check|what('?s| is) on).{0,20}\b(screen|display|monitor)\b/.test(low)) {
         readScreenRef.current(t);
@@ -73,7 +84,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep]);
+  }, [agent, sleep, launchEdith]);
 
   const wake = useWakeWord({
     enabled: !voiceStarted,
@@ -174,6 +185,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
   return (
     <div className="grid min-h-[calc(100vh-4rem)] grid-rows-[1fr_auto] gap-3 p-3">
+      {launchingEdith && <EdithLaunchOverlay />}
       {/* ===== MAIN 3-COLUMN HUD ===== */}
       <div className="grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.5fr)_minmax(0,0.9fr)]">
         {/* LEFT */}
@@ -485,5 +497,36 @@ function IconBtn({ children, onClick, label, disabled, type = "button" }: {
       className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition hover:bg-accent/10 hover:text-accent disabled:opacity-40">
       {children}
     </button>
+  );
+}
+
+/** Cinematic transition played when the user says "EDITH" — a portal that
+ *  expands into the EDITH dashboard. Pure CSS/SVG, ~1.9s. */
+function EdithLaunchOverlay() {
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-md animate-fade-in">
+      <div className="pointer-events-none absolute inset-0 [background:radial-gradient(circle_at_center,hsl(var(--accent)/0.15),transparent_60%)]" />
+      <div className="relative flex flex-col items-center">
+        <svg viewBox="0 0 400 400" style={{ width: "min(70vmin,520px)", height: "min(70vmin,520px)" }}>
+          <defs>
+            <radialGradient id="edith-launch" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="rgb(120,200,255)" stopOpacity="0.9" />
+              <stop offset="40%" stopColor="rgb(120,200,255)" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="rgb(120,200,255)" stopOpacity="0" />
+            </radialGradient>
+          </defs>
+          <circle cx="200" cy="200" r="150" fill="url(#edith-launch)" style={{ transformOrigin: "200px 200px", animation: "edith-bar 1.9s ease-out forwards" }} />
+          {[190, 150, 110, 70].map((r, i) => (
+            <circle key={r} cx="200" cy="200" r={r} fill="none" stroke="rgb(120,200,255)" strokeOpacity={0.4 - i * 0.06} strokeWidth="1.5"
+              strokeDasharray={i % 2 ? "4 8" : undefined}
+              style={{ transformOrigin: "200px 200px", animation: `edith-spin ${6 + i * 3}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
+          ))}
+        </svg>
+        <div className="absolute flex flex-col items-center">
+          <div className="hud-display text-3xl tracking-[0.5em] text-foreground text-glow">EDITH</div>
+          <div className="hud-label mt-2 text-[10px] tracking-[0.4em] text-accent-bright animate-hud-pulse">BRINGING ONLINE…</div>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Send, Square, PlugZap, Plug, Wifi, WifiOff, Volume2, VolumeX, ShieldCheck,
-  AlertTriangle, Check, Loader2, ChevronUp, Cpu,
+  AlertTriangle, Check, Loader2, ChevronUp, Cpu, Mic, MicOff,
 } from "lucide-react";
 import { useEdith, type EdithMode } from "@/hooks/useEdith";
+import { useVoice } from "@/hooks/useVoice";
 import { cn, timeAgo } from "@/lib/utils";
 
 /**
@@ -27,7 +28,21 @@ export function EdithPanel() {
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [voiceOn, setVoiceOn] = useState(false);
   const clock = useUtcClock();
+
+  // Hands-free: spoken commands → EDITH. A ref keeps the callback fresh so the
+  // voice hook always calls the latest runGoal/stop without re-initializing.
+  const cmdRef = useRef<(t: string) => void>(() => {});
+  const voice = useVoice({ onTranscript: (t) => cmdRef.current(t), autoListen: true });
+  useEffect(() => {
+    cmdRef.current = (t: string) => {
+      const low = t.toLowerCase().trim();
+      if (/\b(stop|halt|cancel|abort)\b/.test(low)) { e.stop(); return; }
+      e.runGoal(t);
+    };
+  });
+  const enableVoice = useCallback(async () => { await voice.init(); setVoiceOn(true); }, [voice]);
 
   useEffect(() => { setUrl(e.savedUrl); setToken(e.savedToken); }, [e.savedUrl, e.savedToken]);
   useEffect(() => {
@@ -181,11 +196,20 @@ export function EdithPanel() {
       {/* ===== BOTTOM: VOICE-COMMAND INPUT (left) + ACTIVITY TIMELINE (right) ===== */}
       <div className="absolute inset-x-0 bottom-4 z-10 flex items-end justify-between gap-3 px-4">
         <div className="w-full max-w-md">
-          <div className="hud-label mb-1 text-[9px] tracking-[0.25em] text-muted-foreground">VOICE-COMMAND INPUT</div>
+          <div className="hud-label mb-1 flex items-center gap-2 text-[9px] tracking-[0.25em] text-muted-foreground">
+            VOICE-COMMAND INPUT
+            {voiceOn && <span className="text-accent">{voice.status === "recording" ? "● listening" : voice.status === "processing" ? "…thinking" : voice.status === "speaking" ? "speaking" : "ready"}</span>}
+          </div>
           <form onSubmit={(ev) => { ev.preventDefault(); e.runGoal(goal); setGoal(""); }} className="hud-panel box-glow-soft flex items-center gap-2 rounded-xl px-2 py-1.5">
-            <Equalizer active={e.working} bars={16} className="h-6 w-16 shrink-0" />
+            <Equalizer active={e.working || voice.status === "recording"} bars={16} className="h-6 w-16 shrink-0" />
             <input value={goal} onChange={(ev) => setGoal(ev.target.value)} disabled={!connected || e.working}
-              placeholder={connected ? "Command EDITH…" : "Activate first"} className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50" />
+              placeholder={connected ? (voiceOn ? "Speak or type a command…" : "Command EDITH…") : "Activate first"} className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50" />
+            <button type="button" onClick={() => (voiceOn ? voice.toggleMute() : enableVoice())} disabled={!connected}
+              title={voiceOn ? (voice.muted ? "Mic muted — tap to unmute" : "Listening — tap to mute") : "Enable hands-free voice"}
+              className={cn("flex h-8 w-8 items-center justify-center rounded border transition disabled:opacity-40",
+                voiceOn && !voice.muted ? "border-accent bg-accent/15 text-accent animate-hud-pulse" : "border-border text-muted-foreground hover:border-accent/50")}>
+              {voiceOn && voice.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            </button>
             <button onClick={e.stop} type="button" title="Stop (Ctrl+Shift+X)" disabled={!connected} className="flex h-8 w-8 items-center justify-center rounded border border-destructive/50 text-destructive transition hover:bg-destructive/15 disabled:opacity-40"><Square className="h-3.5 w-3.5" /></button>
             <button type="submit" disabled={!connected || !goal.trim() || e.working} className="flex h-8 w-8 items-center justify-center rounded bg-accent/15 text-accent transition hover:bg-accent/25 disabled:opacity-40"><Send className="h-4 w-4" /></button>
           </form>
