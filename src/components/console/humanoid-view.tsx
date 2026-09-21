@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Mic, MicOff, Send, Power, Loader2 } from "lucide-react";
 import type { OrbState } from "@/components/orb";
 import { cn } from "@/lib/utils";
@@ -84,7 +84,7 @@ export function HumanoidView(props: HumanoidViewProps) {
       {/* ===== the humanoid ===== */}
       <div className="absolute inset-0 z-0 flex items-end justify-center" style={{ animation: wrapAnim }}>
         <div className="relative flex h-[92%] items-end" style={{ animation: "breathe 6s ease-in-out infinite" }}>
-          <Humanoid eyeColor={eyeColor} listening={listening} thinking={thinking} speaking={speaking} level={level} />
+          <HumanoidFigure eyeColor={eyeColor} listening={listening} thinking={thinking} speaking={speaking} level={level} />
         </div>
       </div>
 
@@ -128,6 +128,69 @@ export function HumanoidView(props: HumanoidViewProps) {
 }
 
 /* ---------------- the humanoid figure ---------------- */
+
+/* ---------------- the humanoid figure ---------------- */
+
+/**
+ * Uses a real holographic-human IMAGE at /brand/humanoid.png when present
+ * (screen-blended so its dark background drops out and it glows), with the live
+ * neural overlays (head halo, chest core, particles, state glow) on top. Falls
+ * back to the pure-SVG figure when no image is available.
+ */
+function HumanoidFigure(props: { eyeColor: string; listening: boolean; thinking: boolean; speaking: boolean; level: number }) {
+  const [imgOk, setImgOk] = useState(true);
+  const { listening, thinking, speaking, level } = props;
+
+  if (!imgOk) return <Humanoid {...props} />;
+
+  return (
+    <div className="relative h-full">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/brand/humanoid.png"
+        alt=""
+        onError={() => setImgOk(false)}
+        className="h-full w-auto select-none object-contain"
+        style={{
+          mixBlendMode: "screen",
+          filter: `saturate(1.15) brightness(${1 + (speaking ? level * 0.5 : 0) + (listening ? 0.06 : 0)}) drop-shadow(0 0 26px hsl(var(--accent)/0.45))`,
+          transition: "filter 120ms linear",
+        }}
+      />
+      {/* cyan tint to unify the image with the theme */}
+      <div className="pointer-events-none absolute inset-0 mix-blend-color" style={{ background: "hsl(var(--accent)/0.22)" }} aria-hidden />
+      {/* live neural overlays positioned for a centred bust */}
+      <HoloOverlays listening={listening} thinking={thinking} speaking={speaking} level={level} />
+    </div>
+  );
+}
+
+/** Neural halo (top), chest core (lower-centre) and particles, drawn over an image figure. */
+function HoloOverlays({ listening, thinking, speaking, level }: { listening: boolean; thinking: boolean; speaking: boolean; level: number }) {
+  const A = "hsl(var(--accent))"; const AB = "hsl(var(--accent-bright))";
+  return (
+    <div className="pointer-events-none absolute inset-0" aria-hidden>
+      {/* head halo — top ~26% */}
+      <svg viewBox="0 0 300 200" className="absolute left-1/2 top-[6%] h-[34%] -translate-x-1/2" preserveAspectRatio="xMidYMid meet">
+        {[0, 60, 120].map((deg, i) => (
+          <ellipse key={deg} cx="150" cy="100" rx="120" ry="42" fill="none" stroke={A} strokeOpacity={thinking ? 0.5 : 0.24} strokeWidth="1"
+            transform={`rotate(${deg} 150 100)`} style={{ transformOrigin: "150px 100px", animation: `edith-spin ${20 + i * 6}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
+        ))}
+        {listening && [90, 104].map((r) => <circle key={r} cx="150" cy="100" r={r} fill="none" stroke={AB} strokeOpacity="0.3" strokeWidth="1" className="animate-hud-pulse" />)}
+      </svg>
+      {/* chest core — ~62% down */}
+      <svg viewBox="0 0 200 200" className="absolute left-1/2 top-[58%] h-[22%] -translate-x-1/2" preserveAspectRatio="xMidYMid meet">
+        <defs><radialGradient id="hv-core2" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor={AB} stopOpacity="0.9" /><stop offset="60%" stopColor={A} stopOpacity="0.12" /><stop offset="100%" stopColor={A} stopOpacity="0" /></radialGradient></defs>
+        <circle cx="100" cy="100" r="80" fill="url(#hv-core2)" />
+        {[60, 46, 32].map((r, i) => (
+          <circle key={r} cx="100" cy="100" r={r} fill="none" stroke={AB} strokeOpacity="0.5" strokeWidth="1.4"
+            style={{ transformOrigin: "100px 100px", animation: `edith-spin ${8 + i * 4}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
+        ))}
+        <circle cx="100" cy="100" r={14 + (speaking ? level * 26 : 0)} fill={AB} style={{ filter: `drop-shadow(0 0 10px ${AB})`, transition: "r 90ms linear" }} className={thinking ? "animate-hud-pulse" : ""} />
+      </svg>
+    </div>
+  );
+}
 
 function Humanoid({ eyeColor, listening, thinking, speaking, level }: {
   eyeColor: string; listening: boolean; thinking: boolean; speaking: boolean; level: number;
