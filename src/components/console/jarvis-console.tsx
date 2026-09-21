@@ -129,7 +129,10 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   function handleSend(e?: React.FormEvent) {
     e?.preventDefault();
     const t = input.trim(); if (!t) return;
-    setInput(""); agent.send(t);
+    setInput("");
+    // Route typed commands through the same handler as voice, so "open EDITH",
+    // "read my screen", "go to sleep" etc. trigger their shortcuts too.
+    sendRef.current(t);
   }
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; e.target.value = ""; if (!file) return;
