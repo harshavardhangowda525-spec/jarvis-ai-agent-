@@ -61,40 +61,62 @@ export async function askJson(system, user) {
   const providers = chain();
   if (!providers.length) throw new Error("No AI provider configured (set GROQ_API_KEY or GEMINI/CEREBRAS/OPENROUTER/OPENAI).");
 
+  // Groq (and some others) reject json_object mode unless the prompt literally
+  // contains the word "json". Guarantee it so we never eat a needless 400.
+  const sys = /json/i.test(system) ? system : `${system}\n\nRespond ONLY with a single valid JSON object.`;
+
   let lastErr = "";
   for (let i = 0; i < providers.length; i++) {
     const P = providers[i];
-    for (let attempt = 0; attempt < (i === 0 ? 2 : 1); attempt++) {
-      try {
-        const res = await fetch(`${P.baseUrl}/chat/completions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${P.apiKey}` },
-          body: JSON.stringify({
+    // Two request shapes: strict json_object mode, then a plain fallback (no
+    // response_format) for models/providers that don't support it — parseJson
+    // still extracts the object. This keeps a quirky provider from blocking us.
+    for (const useJsonMode of [true, false]) {
+      const attempts = i === 0 && useJsonMode ? 2 : 1; // one quick retry on the primary
+      let advanceProvider = false;
+      for (let attempt = 0; attempt < attempts; attempt++) {
+        try {
+          const body = {
             model: P.model,
             temperature: 0.1,
             max_tokens: 2048,
-            response_format: { type: "json_object" },
-            messages: [{ role: "system", content: system }, { role: "user", content: user }],
-          }),
-          signal: AbortSignal.timeout(60_000),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          return parseJson(data.choices?.[0]?.message?.content ?? "");
+            messages: [{ role: "system", content: sys }, { role: "user", content: user }],
+          };
+          if (useJsonMode) body.response_format = { type: "json_object" };
+
+          const res = await fetch(`${P.baseUrl}/chat/completions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${P.apiKey}` },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(60_000),
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            return parseJson(data.choices?.[0]?.message?.content ?? "");
+          }
+
+          const text = (await res.text().catch(() => "")).slice(0, 240);
+          lastErr = `${P.provider} ${res.status}: ${text}`;
+          log.warn(`Provider ${P.provider} (${P.model}) ${res.status}: ${text}`);
+
+          if (res.status === 429 || res.status === 503) {
+            if (attempt === 0 && attempts === 2) { await sleep(2000); continue; } // quick retry
+            advanceProvider = true; break; // transient → next provider
+          }
+          // A response_format/json complaint → retry this provider WITHOUT json mode.
+          if (res.status === 400 && useJsonMode && /json|response_format/i.test(text)) {
+            break; // fall through to the plain (non-json-mode) shape below
+          }
+          // Any other error (400/401/404/5xx): don't die — try the next provider.
+          advanceProvider = true; break;
+        } catch (err) {
+          lastErr = `${P.provider}: ${err.message}`;
+          log.warn(`Provider ${P.provider} error: ${err.message}`);
+          advanceProvider = true; break; // network/timeout → next provider
         }
-        const body = (await res.text().catch(() => "")).slice(0, 200);
-        lastErr = `${P.provider} ${res.status}: ${body}`;
-        // Retry/fall back only on transient statuses; fail fast on 400/401/404.
-        if (res.status === 503 || res.status === 429) {
-          if (attempt === 0 && i === 0) { await sleep(2000); continue; } // one quick retry
-          break; // move to the next provider
-        }
-        throw new Error(`EDITH LLM error ${res.status}: ${body}`);
-      } catch (err) {
-        lastErr = `${P.provider}: ${err.message}`;
-        if (err.message?.startsWith("EDITH LLM error")) throw err; // non-transient
-        break; // network/timeout → next provider
       }
+      if (advanceProvider) break; // stop trying shapes for this provider; move on
     }
   }
   throw new Error(`All AI providers failed. Last: ${lastErr}`);
