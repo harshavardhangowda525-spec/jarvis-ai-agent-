@@ -270,16 +270,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         </div>
       </div>
 
-      {/* ===== reflective floor ===== */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-40" aria-hidden>
-        <div className="absolute inset-0 [background:linear-gradient(hsl(var(--accent)/0.05),transparent)]" />
-        <svg viewBox="0 0 1200 160" preserveAspectRatio="none" className="absolute inset-0 h-full w-full">
-          <ellipse cx="600" cy="20" rx="240" ry="16" fill="none" stroke="hsl(var(--accent)/0.5)" strokeWidth="1.5" />
-          <ellipse cx="600" cy="20" rx="150" ry="10" fill="none" stroke="hsl(var(--accent-bright)/0.6)" strokeWidth="1" />
-          <line x1="600" y1="0" x2="600" y2="150" stroke="hsl(var(--accent-bright)/0.5)" strokeWidth="2" style={{ filter: "blur(1px)" }} />
-        </svg>
-      </div>
-
       {/* ===== bottom command bar ===== */}
       <div className="absolute inset-x-0 bottom-5 z-20 flex justify-center px-4">
         <form onSubmit={handleSend} className="hud-panel box-glow-soft relative w-full max-w-2xl backdrop-blur-md">
