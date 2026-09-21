@@ -172,6 +172,7 @@ body {
 @keyframes dash-flow { to { stroke-dashoffset: -1000; } }
 @keyframes edith-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes edith-bar { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }
+@keyframes jv-indet { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
 .animate-fade-in { animation: fade-in 0.35s ease-out; }
 .animate-hud-spin { animation: hud-spin 18s linear infinite; }
 .animate-hud-spin-rev { animation: hud-spin-rev 24s linear infinite; }
