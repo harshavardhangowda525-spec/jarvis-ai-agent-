@@ -255,3 +255,14 @@ body {
 @keyframes dw-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes dw-pop-in { 0% { opacity: 0; transform: translateY(28px) scale(0.9); filter: blur(14px); } 60% { opacity: 1; filter: blur(0); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes dw-card-in { 0% { opacity: 0; transform: translateX(-14px) scale(0.98); filter: blur(6px); } 100% { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); } }
+
+/* Weather popup animations */
+@keyframes wx-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes wx-pulse { 0%,100% { transform: translate(-50%,-50%) scale(1); filter: brightness(1); } 50% { transform: translate(-50%,-50%) scale(1.06); filter: brightness(1.12); } }
+@keyframes wx-cloud { from { transform: translateX(0); } to { transform: translateX(180%); } }
+@keyframes wx-rain { 0% { transform: translateY(-20px); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(240px); opacity: 0.2; } }
+@keyframes wx-snow { 0% { transform: translateY(-10px) translateX(0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translateY(230px) translateX(16px); opacity: 0.3; } }
+@keyframes wx-twinkle { 0%,100% { opacity: 0.2; } 50% { opacity: 1; } }
+@keyframes wx-flash { 0%,92%,100% { opacity: 0; } 93% { opacity: 0.85; } 94% { opacity: 0.1; } 95% { opacity: 0.7; } 96% { opacity: 0; } }
+@keyframes wx-fog { from { transform: translateX(-30%); } to { transform: translateX(30%); } }
+@keyframes wx-temp-in { 0% { opacity: 0; transform: translateY(10px) scale(0.9); } 100% { opacity: 1; transform: translateY(0) scale(1); } }

@@ -17,7 +17,18 @@ import { useWakeWord } from "@/hooks/useWakeWord";
 import { useScreenVision } from "@/hooks/useScreenVision";
 import { HumanoidView } from "@/components/console/humanoid-view";
 import { EvView, type EvState } from "@/components/console/ev-view";
+import { WeatherPopup, type WeatherData } from "@/components/console/weather-popup";
 import { cn, timeAgo } from "@/lib/utils";
+
+// Weather intents ("what's the weather", "forecast for Tokyo", "will it rain").
+const WEATHER_RE = /\b(weather|forecast|temperature|how (hot|cold|warm)|is it (going to |gonna )?(rain|snow|sunny|cold|hot))\b/i;
+
+/** Pull a place out of a weather question ("weather in London" → "London"). */
+function parseWeatherPlace(text: string): string | undefined {
+  const m = text.match(/\b(?:in|for|at|of)\s+([A-Za-z][\w'.\- ]{1,60})$/i) || text.match(/\b(?:in|for|at|of)\s+([A-Za-z][\w'.\- ]{1,60})\b/i);
+  if (!m) return undefined;
+  return m[1].replace(/\b(please|now|today|tomorrow|right now|currently)\b/gi, "").trim().replace(/[.?!,]+$/, "") || undefined;
+}
 
 interface Services { [k: string]: boolean }
 interface Stats {
@@ -45,6 +56,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [evAwaitingApproval, setEvAwaitingApproval] = useState(false);
   const [evPulse, setEvPulse] = useState<null | "success" | "error">(null);
   const [evImage, setEvImage] = useState<{ url: string } | null>(null);
+  const [weather, setWeather] = useState<WeatherData | null>(null);
+  const fetchWeatherRef = useRef<(place?: string) => void>(() => {});
   const evActiveRef = useRef(false);
   const evPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [services, setServices] = useState<Services | null>(null);
@@ -144,6 +157,43 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("EV standing down. Back to JARVIS.");
     setTimeout(() => setEvPhase("off"), 900);
   }, [voice, voiceStarted]);
+
+  // Real weather → liquid-glass popup with a live animated scene.
+  const fetchWeather = useCallback(async (place?: string) => {
+    const speak = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
+    const errObj = (msg: string): WeatherData => ({
+      location: { name: "", country: "", admin: "", timezone: null },
+      current: { temp: 0, feelsLike: 0, humidity: 0, wind: 0, isDay: true, condition: "", icon: "cloudy" },
+      daily: [], error: msg,
+    });
+    try {
+      let url = "";
+      if (place) {
+        url = `/api/weather?q=${encodeURIComponent(place)}`;
+      } else {
+        // No place named → try the browser's location; fall back to asking.
+        const coords = await new Promise<{ lat: number; lon: number } | null>((resolve) => {
+          if (!navigator.geolocation) return resolve(null);
+          navigator.geolocation.getCurrentPosition(
+            (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
+            () => resolve(null),
+            { timeout: 6000, maximumAge: 600000 },
+          );
+        });
+        if (!coords) { speak("Which city's weather would you like?"); setWeather(errObj("Tell me a city — e.g. “weather in London”.")); return; }
+        url = `/api/weather?lat=${coords.lat}&lon=${coords.lon}`;
+      }
+      const res = await fetch(url);
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setWeather(errObj(j.error || "Weather is unavailable right now.")); return; }
+      const data: WeatherData = j.data;
+      setWeather(data);
+      speak(`It's ${data.current.temp} degrees and ${data.current.condition.toLowerCase()} in ${data.location.name}.`);
+    } catch {
+      setWeather(errObj("Network error — couldn't reach the weather service."));
+    }
+  }, [voice, voiceStarted]);
+  useEffect(() => { fetchWeatherRef.current = fetchWeather; }, [fetchWeather]);
   useEffect(() => {
     sendRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
@@ -186,6 +236,12 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // "read my screen", "what's on my screen", "look at my screen"…
       if (/\b(read|look at|see|analyz|check|what('?s| is) on).{0,20}\b(screen|display|monitor)\b/.test(low)) {
         readScreenRef.current(t);
+        return;
+      }
+      // "what's the weather", "forecast for Tokyo", "will it rain in London" →
+      // real forecast in the animated liquid-glass weather popup.
+      if (WEATHER_RE.test(low)) {
+        fetchWeatherRef.current(parseWeatherPlace(t));
         return;
       }
       agent.send(t);
@@ -363,6 +419,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           onSleep={sleep}
         />
       )}
+
+      {/* live weather — animated liquid-glass popup */}
+      {weather && <WeatherPopup data={weather} onClose={() => setWeather(null)} />}
 
       {/* ambient glows */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
