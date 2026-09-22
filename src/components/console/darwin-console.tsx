@@ -10,6 +10,33 @@ import { cn, timeAgo } from "@/lib/utils";
 // Phrases that close DARWIN and return to JARVIS.
 const DEACTIVATE_RE = /\b(deactivate|de-activate|shut ?down|power down|close|exit|leave|stand ?down|log ?off)\b.*\bdarwin\b|\bdarwin[,\s]+(deactivate|shut ?down|stand ?down|close|exit|off)\b|^(deactivate|shut ?down|power down|exit|close|stand ?down|back to jarvis|go to jarvis|open jarvis|return to jarvis)[\s!.,]*$/i;
 
+// Phrases that trigger a fresh lead discovery (voice or text).
+const GENERATE_LEADS_RE = /\b(generate|find|get|discover|search|pull|fetch|give me|show me|need|scan for|look for)\b.*\bleads?\b|\bnew leads?\b|\bmore leads?\b|\blead gen(eration)?\b/i;
+
+const KNOWN_CATEGORIES = ["cafe", "coffee", "restaurant", "tech", "retail", "shop", "salon", "hair", "beauty", "gym", "fitness", "hotel", "bakery", "bar", "pub", "dentist", "clinic", "agency", "boutique", "spa"];
+
+/** Best-effort parse of a spoken/typed lead command into a search form. */
+function parseLeadCommand(text: string): { category?: string; location?: string; limit?: number } {
+  const s = text.trim();
+  // Location: "... in <place>" (take the tail after the last " in ").
+  let location: string | undefined;
+  const inMatch = s.match(/\bin\s+([A-Za-z][\w'.\- ]{1,60})$/i) || s.match(/\bin\s+([A-Za-z][\w'.\- ]{1,60})\b/i);
+  if (inMatch) location = inMatch[1].replace(/\b(please|now|today|for me)\b/gi, "").trim().replace(/[.,!]+$/, "");
+  // Category: a known keyword, or "<word> leads".
+  let category: string | undefined;
+  const low = s.toLowerCase();
+  const hit = KNOWN_CATEGORIES.find((c) => new RegExp(`\\b${c}\\b`).test(low));
+  if (hit) category = hit.charAt(0).toUpperCase() + hit.slice(1);
+  else {
+    const cm = low.match(/\b([a-z]{3,20})\s+leads?\b/);
+    if (cm && !/new|more|some|the|real|good|hot|fresh|business/.test(cm[1])) category = cm[1].charAt(0).toUpperCase() + cm[1].slice(1);
+  }
+  // Limit: a number in the command.
+  const num = s.match(/\b(\d{1,3})\b/);
+  const limit = num ? Math.min(Math.max(parseInt(num[1], 10), 1), 60) : undefined;
+  return { category, location, limit };
+}
+
 type DarwinState = "IDLE" | "LISTENING" | "THINKING" | "SEARCHING" | "PROCESSING" | "WAITING_FOR_APPROVAL" | "COMPLETED" | "ERROR";
 
 const PROGRESS: Record<DarwinState, string> = {
@@ -46,6 +73,8 @@ export function DarwinConsole() {
   const [leadsPopup, setLeadsPopup] = useState<LeadsResult | null>(null);
   const sendRef = useRef<(t: string) => void>(() => {});
   const deactivateRef = useRef<() => void>(() => {});
+  const runSearchRef = useRef<(f: SearchForm) => void>(() => {});
+  const lastFormRef = useRef<SearchForm | null>(null);
 
   useEffect(() => {
     const t1 = setTimeout(() => setBoot("fade"), 1900);
@@ -53,8 +82,27 @@ export function DarwinConsole() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
+  // Pull the freshly-stored leads and reveal them in the liquid-glass popup.
+  const openLeadsFromApi = useCallback(async (note?: string) => {
+    try {
+      const lr = await fetch("/api/darwin/leads?limit=30");
+      const lj = await lr.json();
+      if (lr.ok && Array.isArray(lj.data?.leads) && lj.data.leads.length) {
+        const leads: LeadCard[] = lj.data.leads.map((x: any) => ({
+          businessName: x.businessName, category: x.category ?? null, location: x.location ?? null,
+          website: x.website ?? null, phone: x.phone ?? null, instagram: x.instagram ?? null, source: x.source,
+        }));
+        setLeadsPopup({ leads, found: leads.length, created: 0, duplicates: 0, source: leads[0]?.source ?? null, query: note ?? "your CRM" });
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const voice = useVoice({ onTranscript: (t) => sendRef.current(t), autoListen: true, voiceProfile: "darwin" });
-  const agent = useAgent({ onAssistantComplete: (text) => { if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text); loadOverview(); } });
+  const agent = useAgent({
+    onAssistantComplete: (text) => { if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text); loadOverview(); },
+    // When the agent runs a discovery itself, reveal the results in the popup.
+    onTool: (t) => { if (t.name === "darwin_search" && t.status === "ok") { loadOverview(); openLeadsFromApi("latest discovery"); } },
+  });
 
   const loadOverview = useCallback(() => {
     fetch("/api/darwin/overview").then((r) => (r.ok ? r.json() : null)).then((j) => j?.data && setOverview(j.data)).catch(() => {});
@@ -79,9 +127,34 @@ export function DarwinConsole() {
       if (!s) return;
       // "deactivate" / "close darwin" / "back to jarvis" → return to JARVIS.
       if (DEACTIVATE_RE.test(s)) { deactivateRef.current(); return; }
+
+      // "generate new leads" / "find cafes in London" → run a real discovery and
+      // pop the results, deterministically (no dependence on the agent loop).
+      if (GENERATE_LEADS_RE.test(s)) {
+        const parsed = parseLeadCommand(s);
+        const last = lastFormRef.current;
+        const location = parsed.location || last?.location;
+        if (!location) {
+          setSearchMsg("Where should I look? Try “find cafes in London”.");
+          if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak("Sure — where should I look? For example, say find cafes in London."); } catch { /* ignore */ } }
+          return;
+        }
+        const form: SearchForm = {
+          location,
+          category: parsed.category ?? last?.category,
+          radiusKm: last?.radiusKm ?? 5,
+          limit: parsed.limit ?? last?.limit ?? 50,
+          hasWebsite: last?.hasWebsite, noWebsite: last?.noWebsite,
+          needsPhone: last?.needsPhone, needsEmail: last?.needsEmail,
+        };
+        if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(`On it — pulling ${form.category ? form.category.toLowerCase() + " " : ""}leads in ${location}.`); } catch { /* ignore */ } }
+        runSearchRef.current(form);
+        return;
+      }
+
       agent.send(s, { agent: "darwin" });
     };
-  }, [agent]);
+  }, [agent, voice, voiceStarted]);
 
   async function enableVoice() { const ok = await voice.init(); if (ok) setVoiceStarted(true); return ok; }
 
@@ -101,6 +174,7 @@ export function DarwinConsole() {
   })();
 
   const runSearch = useCallback(async (form: SearchForm) => {
+    lastFormRef.current = form; // remember for "generate more leads" with no params
     setSearching(true); setSearchMsg("");
     try {
       const res = await fetch("/api/darwin/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
@@ -144,6 +218,7 @@ export function DarwinConsole() {
     }
     finally { setSearching(false); }
   }, [loadOverview, voice, voiceStarted]);
+  useEffect(() => { runSearchRef.current = runSearch; }, [runSearch]);
 
   const intel = overview?.intelligence;
 
