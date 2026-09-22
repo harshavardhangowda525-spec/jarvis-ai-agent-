@@ -41,17 +41,47 @@ export function makeFsTools(ws, onChange) {
       return { file: ws.display(abs), action: existed ? "modified" : "created", bytes: Buffer.byteLength(content ?? "") };
     },
 
-    /** Exact-string replacement in a file (like a surgical edit). */
+    /** Surgical edit. Exact match first, then whitespace-tolerant; if it still
+     *  can't match, it returns the file's current content so the model corrects
+     *  itself in one step instead of looping on "text not found". */
     async edit({ file, find, replace, all = false }) {
       const abs = ws.resolve(file);
       const buf = await fsp.readFile(abs, "utf8").catch(() => { throw new Error(`File not found: ${file}`); });
-      if (!buf.includes(find)) throw new Error(`The text to replace was not found in ${file}.`);
-      const occurrences = buf.split(find).length - 1;
-      if (!all && occurrences > 1) throw new Error(`"find" matches ${occurrences} places in ${file}; set all=true or make it unique.`);
-      const next = all ? buf.split(find).join(replace) : buf.replace(find, replace);
-      await fsp.writeFile(abs, next, "utf8");
-      change("modified", ws.display(abs));
-      return { file: ws.display(abs), action: "modified", replacements: all ? occurrences : 1 };
+      if (typeof find !== "string" || find.length === 0) throw new Error(`"find" must be a non-empty string.`);
+      const rep = typeof replace === "string" ? replace : "";
+
+      // 1) Exact match.
+      if (buf.includes(find)) {
+        const occurrences = buf.split(find).length - 1;
+        if (!all && occurrences > 1) throw new Error(`"find" matches ${occurrences} places in ${file}; set all=true or make it unique.`);
+        const next = all ? buf.split(find).join(rep) : buf.replace(find, () => rep);
+        await fsp.writeFile(abs, next, "utf8");
+        change("modified", ws.display(abs));
+        return { file: ws.display(abs), action: "modified", replacements: all ? occurrences : 1, match: "exact" };
+      }
+
+      // 2) Whitespace-tolerant match (indentation / newline differences).
+      const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const tokens = find.trim().split(/\s+/).filter(Boolean);
+      if (tokens.join("").length >= 3) {
+        const pattern = tokens.map(esc).join("\\s+");
+        const matches = buf.match(new RegExp(pattern, "g"));
+        if (matches && matches.length) {
+          if (!all && matches.length > 1) {
+            throw new Error(`The text matches ${matches.length} places in ${file}; set all=true or give a longer, unique "find".`);
+          }
+          const next = buf.replace(new RegExp(pattern, all ? "g" : ""), () => rep);
+          await fsp.writeFile(abs, next, "utf8");
+          change("modified", ws.display(abs));
+          return { file: ws.display(abs), action: "modified", replacements: matches.length, match: "whitespace-normalized" };
+        }
+      }
+
+      // 3) Not found — hand back the real content so the next attempt is exact.
+      const snippet = buf.length <= 2500 ? buf : buf.slice(0, 2500) + "\n…(truncated)";
+      throw new Error(
+        `The text to replace was not found in ${file}. Copy the EXACT text to replace from the current content below:\n----- ${file} -----\n${snippet}\n-----`,
+      );
     },
 
     async remove({ file }) {
