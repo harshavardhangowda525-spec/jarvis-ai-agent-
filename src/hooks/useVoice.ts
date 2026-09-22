@@ -270,12 +270,39 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
 
   // --- Public: initialize (must be called from a user gesture) -----------
   const init = useCallback(async () => {
-    if (!supported) {
+    if (!supported && !recognitionSupported) {
       fail("Your browser doesn't support the microphone API.", "unconfigured");
       return false;
     }
     setStatusBoth("requesting");
     setError(null);
+
+    // Prepare the playback element (created once).
+    if (!audioElRef.current) {
+      const el = new Audio();
+      el.autoplay = false;
+      audioElRef.current = el;
+    }
+
+    // Decide STT engine: use the free browser recognizer when server STT
+    // (ElevenLabs) isn't configured — so voice input works with no key.
+    const cfg = await fetch("/api/voice/config").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const serverStt = !!cfg?.data?.configured;
+    browserSTTRef.current = !serverStt && recognitionSupported;
+
+    // Browser-STT mode: let SpeechRecognition OWN the microphone. Holding a
+    // getUserMedia stream (for the level meter) blocks the recognizer from
+    // hearing anything, so we don't open one here — recognition prompts for the
+    // mic itself.
+    if (browserSTTRef.current) {
+      enabledRef.current = true;
+      setEnabledState(true);
+      setStatusBoth(autoListen ? "listening" : "idle");
+      if (autoListen) startRecognition();
+      return true;
+    }
+
+    // ElevenLabs mode: open the mic + analyser for VAD/metering + MediaRecorder.
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -296,24 +323,10 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      // Prepare the playback element (created once).
-      if (!audioElRef.current) {
-        const el = new Audio();
-        el.autoplay = false;
-        audioElRef.current = el;
-      }
-
-      // Decide STT engine: use the free browser recognizer when server STT
-      // (ElevenLabs) isn't configured — so voice input works with no key.
-      const cfg = await fetch("/api/voice/config").then((r) => (r.ok ? r.json() : null)).catch(() => null);
-      const serverStt = !!cfg?.data?.configured;
-      browserSTTRef.current = !serverStt && recognitionSupported;
-
       enabledRef.current = true;
       setEnabledState(true);
       setStatusBoth(autoListen ? "listening" : "idle");
       if (rafRef.current == null) rafRef.current = requestAnimationFrame(loop);
-      if (browserSTTRef.current && autoListen) startRecognition();
       return true;
     } catch (e: any) {
       if (e?.name === "NotAllowedError" || e?.name === "SecurityError") {
@@ -383,6 +396,15 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
     synth.addEventListener?.("voiceschanged", warm);
     return () => synth.removeEventListener?.("voiceschanged", warm);
   }, []);
+
+  // In browser-STT mode there's no analyser, so give the level meter a gentle
+  // pulse while actively hearing speech (visual feedback for the orb/EQ).
+  useEffect(() => {
+    if (!browserSTTRef.current) return;
+    if (status !== "recording") { setLevel(0); return; }
+    const id = setInterval(() => setLevel(0.22 + Math.random() * 0.5), 120);
+    return () => clearInterval(id);
+  }, [status]);
 
   const speak = useCallback(
     async (text: string): Promise<void> => {
