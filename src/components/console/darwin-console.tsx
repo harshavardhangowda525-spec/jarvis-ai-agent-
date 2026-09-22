@@ -109,9 +109,26 @@ export function DarwinConsole() {
       else {
         const d = j.data;
         setSearchMsg(`Found ${d.found} real business${d.found === 1 ? "" : "es"} — added ${d.created} new, ${d.duplicates} duplicate(s).`);
+
+        // Prefer the leads the search returned; if absent (older API) or empty,
+        // fall back to the freshly-stored leads so the popup always shows them.
+        let leads: LeadCard[] = Array.isArray(d.leads) ? d.leads : [];
+        if (!leads.length && ((d.found ?? 0) > 0 || (d.created ?? 0) > 0)) {
+          try {
+            const lr = await fetch("/api/darwin/leads?limit=30");
+            const lj = await lr.json();
+            if (lr.ok && Array.isArray(lj.data?.leads)) {
+              leads = lj.data.leads.map((x: any) => ({
+                businessName: x.businessName, category: x.category ?? null, location: x.location ?? null,
+                website: x.website ?? null, phone: x.phone ?? null, instagram: x.instagram ?? null, source: x.source,
+              }));
+            }
+          } catch { /* keep whatever we have */ }
+        }
+
         // Line the discovered leads up in the liquid-glass popup.
-        if (Array.isArray(d.leads) && d.leads.length) {
-          setLeadsPopup({ leads: d.leads, found: d.found, created: d.created, duplicates: d.duplicates, source: d.source, query: d.query });
+        if (leads.length) {
+          setLeadsPopup({ leads, found: d.found ?? leads.length, created: d.created ?? 0, duplicates: d.duplicates ?? 0, source: d.source ?? leads[0]?.source ?? null, query: d.query ?? "" });
           if (voiceStarted && !voice.muted && voice.enabled) {
             try { voice.speak(`Nice — found ${d.found} real ${d.found === 1 ? "business" : "businesses"}. Added ${d.created} new to the CRM. Want me to line up outreach?`); } catch { /* ignore */ }
           }
