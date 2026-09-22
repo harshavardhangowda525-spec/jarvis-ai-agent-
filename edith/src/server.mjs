@@ -12,7 +12,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "./log.mjs";
-import { providerName, hasProvider } from "./provider.mjs";
+import { providerName, providerSummary, hasProvider } from "./provider.mjs";
 import { EdithAgent } from "./agent.mjs";
 import { Audit } from "./audit.mjs";
 import { killAll } from "./tools/terminal.mjs";
@@ -152,6 +152,7 @@ export function startServer({ port, ws }) {
     log.info(`  EDITH is listening on ws://127.0.0.1:${port}`);
     log.info(`  Workspace: ${ws.root}`);
     log.info(`  Brain: ${providerName()}`);
+    log.info(`  Providers (in order): ${providerSummary()}`);
     log.info(`  node ${caps.node.ok ? "✓" : "✗"}  git ${caps.git.ok ? "✓" : "✗"}  python ${caps.python.ok ? "✓" : "✗"}`);
     log.info("");
     log.info("  Pair JARVIS (Dashboard → EDITH):");

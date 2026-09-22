@@ -10,11 +10,14 @@ const read = (n) => (process.env[n] ?? "").trim();
 
 /** All configured providers, preferred first, then the rest in default order. */
 function resolveChain() {
+  // Order matters: OpenRouter's llama-3.3-70b is a very reliable JSON producer,
+  // so it sits right after Groq and ahead of Gemini (which often returns 503 on
+  // the free tier). Cerebras is later since its free tier may require billing.
   const order = [
     ["groq", read("GROQ_API_KEY"), "https://api.groq.com/openai/v1", read("GROQ_MODEL") || "openai/gpt-oss-120b"],
-    ["cerebras", read("CEREBRAS_API_KEY"), "https://api.cerebras.ai/v1", read("CEREBRAS_MODEL") || "gpt-oss-120b"],
-    ["gemini", read("GEMINI_API_KEY"), "https://generativelanguage.googleapis.com/v1beta/openai", read("GEMINI_MODEL") || "gemini-3.6-flash"],
     ["openrouter", read("OPENROUTER_API_KEY"), "https://openrouter.ai/api/v1", read("OPENROUTER_MODEL") || "meta-llama/llama-3.3-70b-instruct:free"],
+    ["gemini", read("GEMINI_API_KEY"), "https://generativelanguage.googleapis.com/v1beta/openai", read("GEMINI_MODEL") || "gemini-3.6-flash"],
+    ["cerebras", read("CEREBRAS_API_KEY"), "https://api.cerebras.ai/v1", read("CEREBRAS_MODEL") || "gpt-oss-120b"],
     ["openai", read("OPENAI_API_KEY"), read("OPENAI_BASE_URL") || "https://api.openai.com/v1", "gpt-4o-mini"],
   ];
   const preferred = read("EDITH_AI_PROVIDER").toLowerCase() || read("AI_PROVIDER").toLowerCase();
@@ -44,6 +47,11 @@ export function providerName() {
   const p = provider();
   const rest = chain().length - 1;
   return p ? `${p.provider} (${p.model})${rest > 0 ? ` +${rest} fallback` : ""}` : "none";
+}
+/** Ordered list of EVERY configured provider (name + model) for diagnostics. */
+export function providerSummary() {
+  const c = chain();
+  return c.length ? c.map((p) => `${p.provider}(${p.model})`).join(" → ") : "none";
 }
 export function hasProvider() {
   return !!provider();
