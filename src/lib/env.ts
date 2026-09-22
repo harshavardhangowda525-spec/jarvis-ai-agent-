@@ -115,12 +115,15 @@ export const env = {
   // source. Without it (and with no CSV/manual leads) DARWIN shows
   // "NO REAL DATA AVAILABLE — CONNECT A DATA SOURCE" rather than any mock data.
   googlePlacesApiKey: read("GOOGLE_PLACES_API_KEY"),
-  // Foursquare Places — a FREE alternative discovery source (generous free tier,
-  // simple API key). Used when Google Places isn't set. Get a key at
-  // https://foursquare.com/developers → create a project → Service key.
+  // Foursquare Places — alternative discovery source (its "free" tier now needs
+  // billing credits). Get a key at https://foursquare.com/developers.
   foursquareApiKey: read("FOURSQUARE_API_KEY"),
   // Foursquare Places API version header (date-stamped). Override if needed.
   foursquareApiVersion: read("FOURSQUARE_API_VERSION") || "2025-06-17",
+  // Geoapify Places — TRULY FREE discovery source (3,000 requests/day, API key,
+  // NO credit card). OSM-backed business data (name, website, phone). Get a key
+  // at https://myprojects.geoapify.com (sign up → create project → API key).
+  geoapifyApiKey: read("GEOAPIFY_API_KEY"),
   // Hard guard: even if code were misconfigured, never fabricate leads.
   mockDataDisabled: (read("MOCK_DATA") || "false").toLowerCase() !== "true",
   appEnv: read("APP_ENV").toLowerCase() || "development",
@@ -356,13 +359,17 @@ export const capabilities = {
   get googlePlaces() {
     return env.googlePlacesApiKey.length > 0;
   },
-  /** Foursquare Places lead source is connected (free alternative discovery). */
+  /** Foursquare Places lead source is connected. */
   get foursquare() {
     return env.foursquareApiKey.length > 0;
   },
+  /** Geoapify Places lead source is connected (truly free, no card). */
+  get geoapify() {
+    return env.geoapifyApiKey.length > 0;
+  },
   /** Any automated business-discovery source is connected. */
   get leadDiscovery() {
-    return env.googlePlacesApiKey.length > 0 || env.foursquareApiKey.length > 0;
+    return env.googlePlacesApiKey.length > 0 || env.foursquareApiKey.length > 0 || env.geoapifyApiKey.length > 0;
   },
 };
 

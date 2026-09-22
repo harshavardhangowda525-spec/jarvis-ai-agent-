@@ -37,7 +37,8 @@ export interface SourceInfo {
 export function listSources(): SourceInfo[] {
   return [
     { id: "google_places", label: "Google Places", kind: "api", connected: env.googlePlacesApiKey.length > 0 },
-    { id: "foursquare", label: "Foursquare Places (free)", kind: "api", connected: env.foursquareApiKey.length > 0 },
+    { id: "geoapify", label: "Geoapify Places (free)", kind: "api", connected: env.geoapifyApiKey.length > 0 },
+    { id: "foursquare", label: "Foursquare Places", kind: "api", connected: env.foursquareApiKey.length > 0 },
     { id: "csv", label: "CSV Import", kind: "import", connected: true },
     { id: "manual", label: "Manual / user-provided", kind: "import", connected: true },
   ];
@@ -45,7 +46,7 @@ export function listSources(): SourceInfo[] {
 
 /** True when at least one automated discovery source (an API) is connected. */
 export function hasDiscoverySource(): boolean {
-  return env.googlePlacesApiKey.length > 0 || env.foursquareApiKey.length > 0;
+  return env.googlePlacesApiKey.length > 0 || env.foursquareApiKey.length > 0 || env.geoapifyApiKey.length > 0;
 }
 
 // --- Google Places (New Places API v1) -----------------------------------
@@ -248,16 +249,132 @@ export async function searchFoursquare(query: string, limit: number): Promise<Ra
   throw new LeadSourceError(`Foursquare: ${lastMsg}`);
 }
 
+// --- Geoapify Places (TRULY free — 3k/day, API key, no credit card) -------
+
+// Map a free-text business term to Geoapify's category taxonomy. Falls back to
+// the broad "commercial" bucket (all shops/businesses) for anything unmapped.
+function geoapifyCategories(term: string): string {
+  const t = term.toLowerCase();
+  const map: [RegExp, string][] = [
+    [/cafe|coffee|espresso/, "catering.cafe"],
+    [/restaurant|dining|eatery|bistro/, "catering.restaurant"],
+    [/bar|pub|brewery/, "catering.bar,catering.pub"],
+    [/bakery|patisserie/, "commercial.food_and_drink.bakery"],
+    [/salon|hair|barber|beauty|nails|spa/, "service.beauty,service.beauty.hairdresser"],
+    [/gym|fitness|yoga|crossfit|pilates/, "sport.fitness,leisure.spa"],
+    [/hotel|hostel|guest ?house|b&b|accommodation/, "accommodation.hotel,accommodation"],
+    [/retail|shop|store|boutique|clothing|fashion/, "commercial"],
+    [/dentist|clinic|doctor|medical|physio|health/, "healthcare"],
+    [/law|solicitor|accountant|estate agent|agency|office|tech|it |software|studio|marketing/, "office,commercial.business"],
+    [/car|garage|automotive|mechanic|dealer/, "commercial.vehicle,service.vehicle"],
+  ];
+  for (const [re, cat] of map) if (re.test(t)) return cat;
+  return "commercial";
+}
+
+function mapGeoapify(f: any): RawLead {
+  const p = f?.properties ?? {};
+  const raw = p?.datasource?.raw ?? {};
+  const name: string = p?.name || raw?.name || "";
+  const website: string | undefined = p?.website || raw?.website || raw?.["contact:website"] || undefined;
+  const phone: string | undefined = raw?.phone || raw?.["contact:phone"] || p?.contact?.phone || undefined;
+  const email: string | undefined = raw?.email || raw?.["contact:email"] || undefined;
+  const location: string | undefined = p?.formatted || p?.address_line2 || undefined;
+  const category: string | undefined = (Array.isArray(p?.categories) ? p.categories[0] : undefined) || raw?.shop || raw?.amenity || undefined;
+  const igTag: string | undefined = raw?.["contact:instagram"] || raw?.instagram;
+  const instagram: string | undefined = igTag ? (igTag.startsWith("http") ? igTag : `https://instagram.com/${String(igTag).replace(/^@/, "")}`) : undefined;
+  const id: string | undefined = p?.place_id ?? p?.datasource?.raw?.osm_id?.toString();
+
+  const verified: string[] = ["businessName"];
+  if (website) verified.push("website");
+  if (phone) verified.push("phone");
+  if (email) verified.push("email");
+  if (location) verified.push("location");
+  if (category) verified.push("category");
+
+  return {
+    businessName: name,
+    category,
+    location,
+    website,
+    phone,
+    email,
+    instagram,
+    source: "geoapify",
+    sourceRef: id,
+    sourceUrl: p?.lon && p?.lat ? `https://www.openstreetmap.org/?mlat=${p.lat}&mlon=${p.lon}#map=19/${p.lat}/${p.lon}` : undefined,
+    verifiedFields: verified,
+    metadata: { categories: p?.categories ?? [], osm: raw?.osm_id ?? null },
+  };
+}
+
 /**
- * Unified discovery entry point. Prefers Google Places when connected, otherwise
- * uses the free Foursquare Places source. Returns the REAL leads found (may be
+ * Real business search via Geoapify. Geoapify Places needs a geographic filter
+ * (not free text), so we geocode "<term> in <place>" → lat/lon, then query
+ * businesses in a radius. Returns the ACTUAL count found.
+ */
+export async function searchGeoapify(query: string, limit: number, radiusKm = 10): Promise<RawLead[]> {
+  const key = env.geoapifyApiKey;
+  if (!key) throw new LeadSourceError("Geoapify isn't connected (GEOAPIFY_API_KEY).");
+
+  const m = query.match(/^(.*?)\s+\bin\b\s+(.+)$/i);
+  const term = (m ? m[1] : query).trim();
+  const place = (m ? m[2] : query).trim();
+  const want = Math.min(Math.max(limit, 1), 50);
+
+  // 1) Geocode the place → coordinates.
+  let geo: Response;
+  try {
+    geo = await fetch(`https://api.geoapify.com/v1/geocode/search?text=${encodeURIComponent(place)}&limit=1&apiKey=${key}`, {
+      headers: { accept: "application/json" }, signal: AbortSignal.timeout(15_000),
+    });
+  } catch { throw new LeadSourceError("Couldn't reach Geoapify (geocoding)."); }
+  const geoJson: any = await geo.json().catch(() => ({}));
+  if (!geo.ok) throw new LeadSourceError(`Geoapify: ${geoJson?.message || `geocoding failed (HTTP ${geo.status})`}`);
+  const coords = geoJson?.features?.[0]?.geometry?.coordinates; // [lon, lat]
+  if (!coords || coords.length < 2) throw new LeadSourceError(`Geoapify couldn't locate "${place}". Try a more specific location.`);
+  const [lon, lat] = coords;
+
+  // 2) Query businesses within the radius.
+  const radius = Math.min(Math.max(radiusKm, 1), 50) * 1000;
+  const cats = geoapifyCategories(term);
+  const url = `https://api.geoapify.com/v2/places?categories=${encodeURIComponent(cats)}&filter=circle:${lon},${lat},${radius}&bias=proximity:${lon},${lat}&limit=${want}&apiKey=${key}`;
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
+  } catch { throw new LeadSourceError("Couldn't reach Geoapify (places)."); }
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw new LeadSourceError(`Geoapify: ${json?.message || json?.error || `places failed (HTTP ${res.status})`}`);
+  const feats: any[] = json?.features ?? [];
+  return feats.map(mapGeoapify).filter((r) => r.businessName).slice(0, want);
+}
+
+/**
+ * Unified discovery entry point. Tries connected providers in order (Google
+ * Places → free Geoapify → Foursquare) and falls through to the next when one
+ * errors (e.g. Foursquare's billing wall). Returns the REAL leads found (may be
  * fewer than requested — that's the truth, not padded). Throws LeadSourceError
- * when no discovery source is connected.
+ * only when no source is connected or every connected source failed.
  */
 export async function discoverLeads(opts: { query: string; limit: number }): Promise<RawLead[]> {
-  if (env.googlePlacesApiKey.length > 0) return searchGooglePlaces(opts.query, opts.limit);
-  if (env.foursquareApiKey.length > 0) return searchFoursquare(opts.query, opts.limit);
-  throw new LeadSourceError(
-    "NO REAL DATA AVAILABLE — CONNECT A DATA SOURCE. Add GOOGLE_PLACES_API_KEY or the free FOURSQUARE_API_KEY to enable real business discovery, or import a CSV / add leads manually.",
-  );
+  const providers: { name: string; run: () => Promise<RawLead[]> }[] = [];
+  if (env.googlePlacesApiKey.length > 0) providers.push({ name: "Google Places", run: () => searchGooglePlaces(opts.query, opts.limit) });
+  if (env.geoapifyApiKey.length > 0) providers.push({ name: "Geoapify", run: () => searchGeoapify(opts.query, opts.limit) });
+  if (env.foursquareApiKey.length > 0) providers.push({ name: "Foursquare", run: () => searchFoursquare(opts.query, opts.limit) });
+
+  if (providers.length === 0) {
+    throw new LeadSourceError(
+      "NO REAL DATA AVAILABLE — CONNECT A DATA SOURCE. Add the free GEOAPIFY_API_KEY (no credit card) or GOOGLE_PLACES_API_KEY to enable real business discovery, or import a CSV / add leads manually.",
+    );
+  }
+
+  const errors: string[] = [];
+  for (const p of providers) {
+    try {
+      return await p.run(); // first provider that responds wins (even with 0 results)
+    } catch (err) {
+      errors.push(`${p.name}: ${err instanceof Error ? err.message.replace(/^[^:]+:\s*/, "") : "failed"}`);
+    }
+  }
+  throw new LeadSourceError(`All connected lead sources failed. ${errors.join(" | ")}`);
 }

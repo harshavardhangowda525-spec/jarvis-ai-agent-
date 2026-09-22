@@ -278,7 +278,7 @@ function LeadDiscovery({ onSearch, searching, msg, connected }: { onSearch: (f: 
         <button onClick={submit} disabled={searching || !location.trim()} className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg border border-accent/40 bg-accent/12 px-3 py-2 text-sm text-accent-bright transition hover:bg-accent/20 disabled:opacity-40">
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} {searching ? "Discovering…" : "Discover Leads"}
         </button>
-        {!connected && <p className="text-[10px] leading-snug text-warning">No discovery source connected — set GOOGLE_PLACES_API_KEY or the free FOURSQUARE_API_KEY. DARWIN won&apos;t invent leads.</p>}
+        {!connected && <p className="text-[10px] leading-snug text-warning">No discovery source connected — set the free GEOAPIFY_API_KEY (no card) or GOOGLE_PLACES_API_KEY. DARWIN won&apos;t invent leads.</p>}
         {msg && <p className="text-[10px] leading-snug text-muted-foreground">{msg}</p>}
       </div>
     </GlassPanel>

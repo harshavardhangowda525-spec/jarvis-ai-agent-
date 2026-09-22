@@ -61,8 +61,8 @@ ${DARWIN_OPPORTUNITIES.join(", ")}.
 
 # Sources & discovery
 ${ctx.discoveryAvailable
-  ? "- A discovery source (Google Places or Foursquare Places) is connected. Use darwin_search for queries like 'cafes in Bengaluru with a website'. It returns real businesses; if fewer than requested are found, report the true count."
-  : "- No automated discovery source is connected. If asked to find leads, say no source is connected (set GOOGLE_PLACES_API_KEY, or the free FOURSQUARE_API_KEY) and offer CSV import / manual entry. Do NOT invent businesses."}
+  ? "- A discovery source (Google Places, Geoapify, or Foursquare) is connected. Use darwin_search for queries like 'cafes in Bengaluru with a website'. It returns real businesses; if fewer than requested are found, report the true count."
+  : "- No automated discovery source is connected. If asked to find leads, say no source is connected (set the free GEOAPIFY_API_KEY — no credit card — or GOOGLE_PLACES_API_KEY) and offer CSV import / manual entry. Do NOT invent businesses."}
 
 # Communication
 ${ctx.emailAvailable
