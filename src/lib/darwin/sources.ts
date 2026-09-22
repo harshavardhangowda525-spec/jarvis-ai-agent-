@@ -204,34 +204,48 @@ export async function searchFoursquare(query: string, limit: number): Promise<Ra
   const near = (m ? m[2] : "").trim();
   const want = Math.min(Math.max(limit, 1), 50);
 
-  const params = new URLSearchParams({
-    query: term || "business",
-    limit: String(want),
-    fields: "fsq_place_id,name,website,tel,email,location,categories,social_media,rating,popularity",
-  });
+  const fields = "fsq_place_id,fsq_id,name,website,tel,email,location,categories,social_media,rating,popularity";
+  const params = new URLSearchParams({ query: term || "business", limit: String(want), fields });
   if (near) params.set("near", near);
 
-  let res: Response;
-  try {
-    res = await fetch(`https://places-api.foursquare.com/places/search?${params.toString()}`, {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        authorization: `Bearer ${key}`,
-        "X-Places-Api-Version": env.foursquareApiVersion,
-      },
-      signal: AbortSignal.timeout(20_000),
-    });
-  } catch {
-    throw new LeadSourceError("Couldn't reach Foursquare Places.");
+  // Foursquare has two key generations that use different hosts + auth:
+  //  • New Places API  → places-api.foursquare.com, Bearer token + version header
+  //  • Legacy v3       → api.foursquare.com/v3, raw Authorization header
+  // A key only works on the generation it was issued for, so we try the new API
+  // first and transparently fall back to legacy v3 on an auth/route failure —
+  // whichever kind of key you generated, discovery just works.
+  const attempts: { url: string; headers: Record<string, string> }[] = [
+    {
+      url: `https://places-api.foursquare.com/places/search?${params.toString()}`,
+      headers: { accept: "application/json", authorization: `Bearer ${key}`, "X-Places-Api-Version": env.foursquareApiVersion },
+    },
+    {
+      url: `https://api.foursquare.com/v3/places/search?${params.toString()}`,
+      headers: { accept: "application/json", authorization: key },
+    },
+  ];
+
+  let lastMsg = "Foursquare request failed.";
+  for (let i = 0; i < attempts.length; i++) {
+    const a = attempts[i];
+    let res: Response;
+    try {
+      res = await fetch(a.url, { method: "GET", headers: a.headers, signal: AbortSignal.timeout(20_000) });
+    } catch {
+      lastMsg = "Couldn't reach Foursquare Places.";
+      continue; // network hiccup → try the other generation
+    }
+    const json: any = await res.json().catch(() => ({}));
+    if (res.ok) {
+      const results: any[] = json?.results ?? [];
+      return results.map(mapFoursquare).filter((r) => r.businessName).slice(0, want);
+    }
+    lastMsg = json?.message || json?.error?.message || json?.error || `HTTP ${res.status}`;
+    // Only fall through to the legacy endpoint for auth/route errors; a real
+    // query error (e.g. 400 bad params) should surface immediately.
+    if (![401, 403, 404].includes(res.status)) break;
   }
-  const json: any = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const msg = json?.message || json?.error || `Foursquare error (HTTP ${res.status}).`;
-    throw new LeadSourceError(`Foursquare: ${msg}`);
-  }
-  const results: any[] = json?.results ?? [];
-  return results.map(mapFoursquare).filter((r) => r.businessName).slice(0, want);
+  throw new LeadSourceError(`Foursquare: ${lastMsg}`);
 }
 
 /**
