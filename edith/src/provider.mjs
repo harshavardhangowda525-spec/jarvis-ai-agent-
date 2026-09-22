@@ -71,16 +71,24 @@ export async function askJson(system, user) {
   // contains the word "json". Guarantee it so we never eat a needless 400.
   const sys = /json/i.test(system) ? system : `${system}\n\nRespond ONLY with a single valid JSON object.`;
 
+  // Free tiers get momentarily rate-limited (429) or overloaded (503) — often all
+  // at once during a multi-step build. Rather than aborting the whole goal, retry
+  // the ENTIRE chain a few times with exponential backoff, but only while the
+  // failures are transient (a hard 401/404 or a bad response won't self-heal).
+  const ROUNDS = Math.max(1, Number(process.env.EDITH_RETRY_ROUNDS || 3));
   let lastErr = "";
-  for (let i = 0; i < providers.length; i++) {
-    const P = providers[i];
-    // Two request shapes: strict json_object mode, then a plain fallback (no
-    // response_format) for models/providers that don't support it — parseJson
-    // still extracts the object. This keeps a quirky provider from blocking us.
-    for (const useJsonMode of [true, false]) {
-      const attempts = i === 0 && useJsonMode ? 2 : 1; // one quick retry on the primary
-      let advanceProvider = false;
-      for (let attempt = 0; attempt < attempts; attempt++) {
+
+  for (let round = 0; round < ROUNDS; round++) {
+    let sawTransient = false;
+
+    for (let i = 0; i < providers.length; i++) {
+      const P = providers[i];
+      // Two request shapes: strict json_object mode, then a plain fallback (no
+      // response_format) for models/providers that don't support it — parseJson
+      // still extracts the object. This keeps a quirky provider from blocking us.
+      let nextProvider = false;
+      for (const useJsonMode of [true, false]) {
+        if (nextProvider) break;
         try {
           const body = {
             model: P.model,
@@ -107,23 +115,31 @@ export async function askJson(system, user) {
           log.warn(`Provider ${P.provider} (${P.model}) ${res.status}: ${text}`);
 
           if (res.status === 429 || res.status === 503) {
-            if (attempt === 0 && attempts === 2) { await sleep(2000); continue; } // quick retry
-            advanceProvider = true; break; // transient → next provider
+            sawTransient = true; nextProvider = true; break; // transient → next provider, retry later
           }
           // A response_format/json complaint → retry this provider WITHOUT json mode.
           if (res.status === 400 && useJsonMode && /json|response_format/i.test(text)) {
-            break; // fall through to the plain (non-json-mode) shape below
+            continue; // try the plain (non-json-mode) shape
           }
-          // Any other error (400/401/404/5xx): don't die — try the next provider.
-          advanceProvider = true; break;
+          nextProvider = true; break; // any other hard error → next provider
         } catch (err) {
           lastErr = `${P.provider}: ${err.message}`;
           log.warn(`Provider ${P.provider} error: ${err.message}`);
-          advanceProvider = true; break; // network/timeout → next provider
+          // Network/timeout errors are transient and worth a later retry.
+          if (/timeout|network|fetch failed|ECONN|socket|aborted/i.test(err.message)) sawTransient = true;
+          nextProvider = true; break; // → next provider
         }
       }
-      if (advanceProvider) break; // stop trying shapes for this provider; move on
     }
+
+    // Whole chain failed this round. Back off and retry only if it might recover.
+    if (round < ROUNDS - 1 && sawTransient) {
+      const wait = 1500 * Math.pow(2, round); // 1.5s, 3s, 6s…
+      log.warn(`All providers busy — retrying in ${wait}ms (round ${round + 2}/${ROUNDS})…`);
+      await sleep(wait);
+      continue;
+    }
+    break; // nothing transient to wait on, or out of rounds
   }
   throw new Error(`All AI providers failed. Last: ${lastErr}`);
 }
