@@ -83,11 +83,15 @@ export async function askJson(system, user) {
 
     for (let i = 0; i < providers.length; i++) {
       const P = providers[i];
-      // Two request shapes: strict json_object mode, then a plain fallback (no
-      // response_format) for models/providers that don't support it — parseJson
-      // still extracts the object. This keeps a quirky provider from blocking us.
+      // gpt-oss is a REASONING model: on Groq, strict json_object mode fails
+      // (json_validate_failed) and long reasoning can eat the whole budget, so
+      // we skip json mode for it and cap reasoning to leave room for the answer.
+      const isGptOss = /gpt-oss/i.test(P.model);
+      const groqGptOss = P.provider === "groq" && isGptOss;
+      // Request shapes to try: strict json_object first, then a plain fallback.
+      const shapes = groqGptOss ? [false] : [true, false];
       let nextProvider = false;
-      for (const useJsonMode of [true, false]) {
+      for (const useJsonMode of shapes) {
         if (nextProvider) break;
         try {
           const body = {
@@ -97,6 +101,10 @@ export async function askJson(system, user) {
             messages: [{ role: "system", content: sys }, { role: "user", content: user }],
           };
           if (useJsonMode) body.response_format = { type: "json_object" };
+          // Keep reasoning short so gpt-oss actually emits the JSON answer.
+          if (isGptOss && (P.provider === "groq" || P.provider === "cerebras")) {
+            body.reasoning_effort = "low";
+          }
 
           const res = await fetch(`${P.baseUrl}/chat/completions`, {
             method: "POST",
