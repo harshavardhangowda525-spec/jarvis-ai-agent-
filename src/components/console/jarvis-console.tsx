@@ -424,6 +424,22 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         </div>
       </div>
 
+      {/* live voice caption — shows what JARVIS is hearing */}
+      {voiceStarted && !voice.muted && (voice.status === "listening" || voice.status === "recording" || voice.status === "processing" || voice.transcript) && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-24 z-20 flex justify-center px-6">
+          <div className="flex max-w-xl items-center gap-2 rounded-full border border-accent/20 bg-black/40 px-4 py-1.5 backdrop-blur-md">
+            <span className={cn("h-2 w-2 shrink-0 rounded-full", voice.status === "recording" ? "bg-accent animate-hud-pulse" : voice.status === "processing" ? "bg-warning animate-hud-pulse" : "bg-accent/60 animate-hud-pulse")} />
+            <span className="truncate text-sm text-foreground/90">
+              {voice.transcript
+                ? <>“{voice.transcript}”</>
+                : voice.status === "processing" ? "Thinking…"
+                : voice.status === "recording" ? "Listening…"
+                : "Listening… speak now"}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ===== bottom command bar ===== */}
       <div className="absolute inset-x-0 bottom-5 z-20 flex justify-center px-4">
         <form onSubmit={handleSend} className="hud-panel box-glow-soft relative w-full max-w-2xl backdrop-blur-md">

@@ -45,6 +45,7 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
   const [muted, setMuted] = useState(false);
   const [enabled, setEnabledState] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState(""); // live interim words being heard
 
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -180,17 +181,20 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
       r = new SR();
       r.lang = "en-US";
       r.continuous = true;
-      r.interimResults = false;
+      r.interimResults = true; // live words for the caption
       r.maxAlternatives = 1;
       r.onstart = () => { recogActiveRef.current = true; if (statusRef.current !== "speaking") setStatusBoth("listening"); };
       r.onspeechstart = () => { if (statusRef.current === "listening") setStatusBoth("recording"); };
       r.onresult = (ev: any) => {
-        let text = "";
+        let interim = "", finalText = "";
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
-          if (ev.results[i].isFinal) text += ev.results[i][0].transcript;
+          const seg = ev.results[i][0]?.transcript ?? "";
+          if (ev.results[i].isFinal) finalText += seg; else interim += seg;
         }
-        text = text.trim();
+        if (interim && statusRef.current !== "speaking") { setTranscript(interim); if (statusRef.current === "listening") setStatusBoth("recording"); }
+        const text = finalText.trim();
         if (!text) return;
+        setTranscript("");
         setStatusBoth("processing");
         onTranscript(text);
         // If the consumer doesn't move us to "speaking", re-arm listening.
@@ -386,6 +390,7 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
       const el = audioElRef.current;
       if (!el || !text.trim()) return;
       // Pause the recognizer while JARVIS speaks so it doesn't hear its own voice.
+      setTranscript("");
       if (browserSTTRef.current) stopRecognition();
       try {
         setStatusBoth("speaking");
@@ -500,6 +505,9 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
     muted,
     enabled,
     error,
+    transcript,
+    /** True when JARVIS is transcribing locally with the free browser recognizer. */
+    browserSTT: browserSTTRef.current,
     supported,
     init,
     speak,
