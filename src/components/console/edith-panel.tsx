@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Send, Square, PlugZap, Plug, Wifi, WifiOff, Volume2, VolumeX, ShieldCheck,
   AlertTriangle, Check, Loader2, ChevronUp, Cpu, Mic, MicOff,
-  Eye, X, ExternalLink, RefreshCw,
+  Eye, X, ExternalLink, RefreshCw, Code2, FileCode,
 } from "lucide-react";
-import { useEdith, type EdithMode } from "@/hooks/useEdith";
+import { useEdith, type EdithMode, type FileChange } from "@/hooks/useEdith";
 import { useVoice } from "@/hooks/useVoice";
 import { cn, timeAgo } from "@/lib/utils";
 
@@ -34,7 +34,15 @@ export function EdithPanel() {
   const [pairMsg, setPairMsg] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
+  const [codeOpen, setCodeOpen] = useState(false);
   const clock = useUtcClock();
+
+  // Auto-open the live coding popup when EDITH starts working.
+  const wasWorking = useRef(false);
+  useEffect(() => {
+    if (e.working && !wasWorking.current) setCodeOpen(true);
+    wasWorking.current = e.working;
+  }, [e.working]);
 
   // Hands-free: spoken commands → EDITH. A ref keeps the callback fresh so the
   // voice hook always calls the latest runGoal/stop without re-initializing.
@@ -287,19 +295,106 @@ export function EdithPanel() {
         </div>
       </div>
 
+      {/* live coding stream — liquid-glass popup while EDITH writes files */}
+      {codeOpen && <EdithBuildStream files={e.files} working={e.working} onDismiss={() => setCodeOpen(false)} />}
+
       {/* live website preview — liquid-glass popup */}
       {e.preview && <EdithPreview url={e.preview.url} path={e.preview.path} onDismiss={e.dismissPreview} />}
 
-      {/* floating "Preview" button once a site exists (re-open after dismiss) */}
-      {connected && !e.preview && (
-        <button
-          onClick={e.requestPreview}
-          title="Preview the built site"
-          className="absolute bottom-24 right-4 z-30 flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent backdrop-blur-md transition hover:bg-accent/20"
-        >
-          <Eye className="h-3.5 w-3.5" /> Preview
-        </button>
+      {/* floating actions (re-open after dismiss) */}
+      {connected && (
+        <div className="absolute bottom-24 right-4 z-30 flex flex-col items-end gap-2">
+          {!codeOpen && e.files.length > 0 && (
+            <button onClick={() => setCodeOpen(true)} title="Show the code EDITH is writing"
+              className="flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent backdrop-blur-md transition hover:bg-accent/20">
+              <Code2 className="h-3.5 w-3.5" /> Code
+            </button>
+          )}
+          {!e.preview && (
+            <button onClick={e.requestPreview} title="Preview the built site"
+              className="flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent backdrop-blur-md transition hover:bg-accent/20">
+              <Eye className="h-3.5 w-3.5" /> Preview
+            </button>
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+/** Liquid-glass popup that streams the CODE as EDITH writes each file. */
+function EdithBuildStream({ files, working, onDismiss }: { files: FileChange[]; working: boolean; onDismiss: () => void }) {
+  const coded = useMemo(() => files.filter((f) => f.preview && f.preview.trim()), [files]);
+  const [selId, setSelId] = useState<string | null>(null);
+  // Follow the latest file while building unless the user pinned one.
+  const current = (selId && coded.find((f) => f.id === selId)) || coded[0] || null;
+  const codeRef = useRef<HTMLPreElement>(null);
+  useEffect(() => { if (!selId && codeRef.current) codeRef.current.scrollTop = 0; }, [current?.id, selId]);
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center p-4">
+      <div
+        className="pointer-events-auto relative flex w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/15"
+        style={{
+          height: "min(78vh, 600px)",
+          transformOrigin: "center bottom",
+          animation: "ev-holo-in 0.9s cubic-bezier(0.22,1,0.36,1) both",
+          background: "linear-gradient(145deg, hsl(0 0% 100% / 0.10), hsl(210 60% 12% / 0.34))",
+          backdropFilter: "blur(26px) saturate(1.3)",
+          WebkitBackdropFilter: "blur(26px) saturate(1.3)",
+          boxShadow: "0 24px 80px -24px hsl(var(--accent)/0.6), inset 0 1px 0 hsl(0 0% 100% / 0.22), inset 0 0 40px -20px hsl(var(--accent)/0.5)",
+        }}
+      >
+        <div className="pointer-events-none absolute inset-x-0 z-10 h-px" aria-hidden
+          style={{ background: "linear-gradient(90deg, transparent, hsl(var(--accent-bright)), transparent)", boxShadow: "0 0 12px hsl(var(--accent-bright))", animation: "ev-holo-scan 0.9s ease-out both" }} />
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+          <div className="absolute -inset-y-8 left-0 w-1/3" style={{ background: "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.10), transparent)", animation: "ev-sheen 5s ease-in-out infinite" }} />
+        </div>
+
+        {/* header */}
+        <div className="relative flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-accent/40 bg-accent/15 text-accent">
+              {working ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Code2 className="h-3.5 w-3.5" />}
+            </span>
+            <span className="hud-label text-[10px] tracking-[0.28em] text-accent/80">
+              {working ? "EDITH · WRITING CODE" : "EDITH · CODE"} {coded.length ? `· ${coded.length} file${coded.length === 1 ? "" : "s"}` : ""}
+            </span>
+          </div>
+          <button onClick={onDismiss} title="Close" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-white/10 hover:text-foreground"><X className="h-4 w-4" /></button>
+        </div>
+
+        {/* file tabs */}
+        {coded.length > 0 && (
+          <div className="relative flex gap-1 overflow-x-auto border-b border-white/10 px-3 py-1.5">
+            {selId && (
+              <button onClick={() => setSelId(null)} className="shrink-0 rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10px] text-accent">● live</button>
+            )}
+            {coded.slice(0, 12).map((f) => (
+              <button key={f.id} onClick={() => setSelId(f.id)}
+                className={cn("flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] transition",
+                  current?.id === f.id ? "border border-accent/40 bg-accent/15 text-accent-bright" : "text-muted-foreground hover:text-foreground")}>
+                <FileCode className="h-3 w-3" /> {f.path.split(/[\\/]/).pop()}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* code */}
+        <div className="relative flex-1 overflow-hidden">
+          {current ? (
+            <pre ref={codeRef} className="h-full overflow-auto px-4 py-3 text-[11px] leading-relaxed text-foreground/90"
+              style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }}>
+              <code>{current.preview}</code>
+              {working && !selId && <span className="ml-0.5 inline-block h-3.5 w-1.5 translate-y-0.5 bg-accent-bright animate-hud-pulse" />}
+            </pre>
+          ) : (
+            <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+              {working ? "Analyzing… code will stream here as EDITH writes files." : "No code written yet."}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

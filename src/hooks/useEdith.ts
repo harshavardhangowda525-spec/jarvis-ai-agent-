@@ -13,7 +13,7 @@ export type EdithConn = "disconnected" | "connecting" | "connected" | "unauthori
 
 export interface EdithLine { id: string; text: string; tone: "info" | "tool" | "ok" | "error" | "warn"; at: number }
 export interface EdithTask { id: string; label: string; status: "running" | "ok" | "error"; at: number }
-export interface FileChange { id: string; kind: string; path: string }
+export interface FileChange { id: string; kind: string; path: string; preview?: string }
 export interface TerminalEntry { id: string; command: string; exitCode: number | null; stdout?: string; stderr?: string; durationMs?: number }
 export interface Capabilities { [k: string]: any }
 export interface ConfirmReq { title: string; detail?: string; level?: string }
@@ -124,7 +124,7 @@ export function useEdith() {
         case "terminal":
           setTerminal((t) => [{ id: uid(), command: m.command, exitCode: m.exitCode, stdout: m.stdout, stderr: m.stderr, durationMs: m.durationMs }, ...t].slice(0, 40));
           break;
-        case "file": setFiles((f) => [{ id: uid(), kind: m.kind, path: m.path }, ...f].slice(0, 60)); break;
+        case "file": setFiles((f) => [{ id: uid(), kind: m.kind, path: m.path, preview: m.preview }, ...f].slice(0, 60)); break;
         case "confirm": setConfirm({ title: m.title, detail: m.detail, level: m.level }); push(`Awaiting confirmation: ${m.title}`, "warn"); break;
         case "cancelled": push(`Cancelled: ${m.label}`, "warn"); break;
         case "ask": push(`⚠ ${m.message}`, "warn"); setWorking(false); speak(m.message); break;

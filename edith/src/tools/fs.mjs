@@ -10,7 +10,9 @@ import path from "node:path";
 const MAX_READ = 200_000; // chars returned to the model
 
 export function makeFsTools(ws, onChange) {
-  const change = (kind, rel) => onChange?.({ kind, path: rel });
+  // Include a content preview so the UI can stream the code as EDITH writes it.
+  const change = (kind, rel, content) =>
+    onChange?.({ kind, path: rel, preview: content != null ? String(content).slice(0, 6000) : undefined });
 
   return {
     async list({ dir = "." } = {}) {
@@ -37,7 +39,7 @@ export function makeFsTools(ws, onChange) {
       const existed = fs.existsSync(abs);
       await fsp.mkdir(path.dirname(abs), { recursive: true });
       await fsp.writeFile(abs, content ?? "", "utf8");
-      change(existed ? "modified" : "created", ws.display(abs));
+      change(existed ? "modified" : "created", ws.display(abs), content ?? "");
       return { file: ws.display(abs), action: existed ? "modified" : "created", bytes: Buffer.byteLength(content ?? "") };
     },
 
@@ -56,7 +58,7 @@ export function makeFsTools(ws, onChange) {
         if (!all && occurrences > 1) throw new Error(`"find" matches ${occurrences} places in ${file}; set all=true or make it unique.`);
         const next = all ? buf.split(find).join(rep) : buf.replace(find, () => rep);
         await fsp.writeFile(abs, next, "utf8");
-        change("modified", ws.display(abs));
+        change("modified", ws.display(abs), next);
         return { file: ws.display(abs), action: "modified", replacements: all ? occurrences : 1, match: "exact" };
       }
 
@@ -72,7 +74,7 @@ export function makeFsTools(ws, onChange) {
           }
           const next = buf.replace(new RegExp(pattern, all ? "g" : ""), () => rep);
           await fsp.writeFile(abs, next, "utf8");
-          change("modified", ws.display(abs));
+          change("modified", ws.display(abs), next);
           return { file: ws.display(abs), action: "modified", replacements: matches.length, match: "whitespace-normalized" };
         }
       }
