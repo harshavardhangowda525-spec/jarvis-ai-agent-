@@ -184,30 +184,43 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
       r.interimResults = true; // live words for the caption
       r.maxAlternatives = 1;
       r.onstart = () => { recogActiveRef.current = true; if (statusRef.current !== "speaking") setStatusBoth("listening"); };
+      r.onaudiostart = () => { if (statusRef.current === "listening") setStatusBoth("recording"); };
       r.onspeechstart = () => { if (statusRef.current === "listening") setStatusBoth("recording"); };
       r.onresult = (ev: any) => {
-        let interim = "", finalText = "";
+        // Build the full live text (interim + final) so the caption always shows
+        // what's being heard, and detect when a segment is finalized.
+        let live = "", hasFinal = false;
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
-          const seg = ev.results[i][0]?.transcript ?? "";
-          if (ev.results[i].isFinal) finalText += seg; else interim += seg;
+          live += ev.results[i][0]?.transcript ?? "";
+          if (ev.results[i].isFinal) hasFinal = true;
         }
-        if (interim && statusRef.current !== "speaking") { setTranscript(interim); if (statusRef.current === "listening") setStatusBoth("recording"); }
-        const text = finalText.trim();
-        if (!text) return;
-        setTranscript("");
+        live = live.trim();
+        if (statusRef.current === "speaking") return;
+        if (live) { setTranscript(live); if (statusRef.current === "listening") setStatusBoth("recording"); }
+        if (!hasFinal || !live) return;
+        // Finalized → dispatch the command, keep the words visible briefly.
         setStatusBoth("processing");
-        onTranscript(text);
-        // If the consumer doesn't move us to "speaking", re-arm listening.
+        onTranscript(live);
         setTimeout(() => {
-          if (enabledRef.current && !mutedRef.current && statusRef.current === "processing") setStatusBoth("listening");
+          if (enabledRef.current && !mutedRef.current && statusRef.current === "processing") {
+            setTranscript("");
+            setStatusBoth("listening");
+          }
         }, 2500);
       };
       r.onerror = (e: any) => {
-        if (e?.error === "not-allowed" || e?.error === "service-not-allowed") {
+        const err = e?.error;
+        if (err === "not-allowed" || err === "service-not-allowed") {
           wantRecogRef.current = false;
           fail("Microphone permission denied for speech recognition.", "denied");
+        } else if (err === "network") {
+          // Chrome's recognizer needs internet; surface it briefly.
+          setTranscript("");
+          setError("Speech recognition needs an internet connection.");
+        } else if (err === "language-not-supported") {
+          setError("This browser can't recognize the selected language.");
         }
-        // "no-speech"/"aborted"/"network" → onend will restart if still wanted.
+        // "no-speech" / "aborted" → onend restarts if still wanted.
       };
       r.onend = () => {
         recogActiveRef.current = false;

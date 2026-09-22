@@ -432,6 +432,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
             <span className="truncate text-sm text-foreground/90">
               {voice.transcript
                 ? <>“{voice.transcript}”</>
+                : voice.error && voice.status !== "recording" ? <span className="text-warning">{voice.error}</span>
                 : voice.status === "processing" ? "Thinking…"
                 : voice.status === "recording" ? "Listening…"
                 : "Listening… speak now"}
