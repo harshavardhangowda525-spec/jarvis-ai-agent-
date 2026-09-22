@@ -109,11 +109,11 @@ export async function askJson(system, user) {
             messages: [{ role: "system", content: sys }, { role: "user", content: user }],
           };
           if (useJsonMode) body.response_format = { type: "json_object" };
-          // gpt-oss hides its answer in a separate reasoning channel, leaving
-          // `content` empty. On Groq, reasoning_format:"hidden" collapses the
-          // reasoning so the final JSON lands in `content`.
-          if (groqGptOss) {
-            body.reasoning_format = "hidden";
+          // gpt-oss is a reasoning model. Keep reasoning short so it actually
+          // emits the final JSON answer (and we also read the reasoning channel
+          // below as a fallback). Do NOT hide reasoning — that can delete the
+          // only channel the answer was written to.
+          if (isGptOss && (P.provider === "groq" || P.provider === "cerebras")) {
             body.reasoning_effort = "low";
           }
 
