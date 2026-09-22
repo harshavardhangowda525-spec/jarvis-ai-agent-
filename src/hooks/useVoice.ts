@@ -46,8 +46,9 @@ const BROWSER_VOICE: Record<VoiceProfile, { rate: number; pitch: number; match: 
   jarvis: { rate: 1.0, pitch: 0.9, match: /daniel|arthur|google uk english male|ryan|george/i, female: false },
   // Bright, energetic — a lively female voice for the marketing agent.
   ev: { rate: 1.08, pitch: 1.12, match: /aria|jenny|samantha|google us english|libby|sonia|zira/i, female: true },
-  // Deep, measured, analytical male — clearly not JARVIS.
-  darwin: { rate: 0.95, pitch: 0.72, match: /guy|david|alex|fred|google uk english male|rishi/i, female: false },
+  // Warm, friendly male — like a sharp buddy. Natural pace, a touch lower than
+  // JARVIS so the two are still easy to tell apart.
+  darwin: { rate: 1.0, pitch: 0.82, match: /guy|david|alex|aaron|google uk english male|rishi/i, female: false },
   // Composed British female for EDITH.
   edith: { rate: 1.0, pitch: 1.02, match: /alice|kate|serena|hazel|google uk english female|sonia/i, female: true },
 };

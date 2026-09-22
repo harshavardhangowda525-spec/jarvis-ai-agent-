@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     const agentRate: Record<string, number | undefined> = {
       edith: undefined,
       ev: 1.08,      // upbeat, energetic
-      darwin: 0.96,  // measured, analytical
+      darwin: 1.0,   // warm, friendly, natural pace
     };
     const speakingRate = agent && agent !== "jarvis"
       ? agentRate[agent]
