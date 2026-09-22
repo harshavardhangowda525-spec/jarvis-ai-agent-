@@ -51,6 +51,12 @@ export function hasProvider() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// A single EDITH action can carry a whole file's contents inside the JSON
+// (e.g. write_file for an HTML/CSS page), so the completion budget must be
+// generous or the JSON gets truncated mid-string and won't parse. Configurable
+// via EDITH_MAX_TOKENS. gpt-oss / gemini support far more than this default.
+const MAX_TOKENS = Math.max(2048, Number(process.env.EDITH_MAX_TOKENS || 8192));
+
 /**
  * Ask the model for a JSON object. Tries each configured provider in order,
  * falling back on transient errors (429 rate-limit / 503 overloaded / network),
@@ -79,7 +85,7 @@ export async function askJson(system, user) {
           const body = {
             model: P.model,
             temperature: 0.1,
-            max_tokens: 2048,
+            max_tokens: MAX_TOKENS,
             messages: [{ role: "system", content: sys }, { role: "user", content: user }],
           };
           if (useJsonMode) body.response_format = { type: "json_object" };
@@ -123,9 +129,23 @@ export async function askJson(system, user) {
 }
 
 function parseJson(text) {
-  try { return JSON.parse(text); } catch { /* try to extract */ }
-  const m = text.match(/\{[\s\S]*\}/);
-  if (m) { try { return JSON.parse(m[0]); } catch { /* fall through */ } }
-  log.warn("Model returned non-JSON:", text.slice(0, 160));
-  throw new Error("The model returned an unparseable response.");
+  const raw = (text ?? "").trim();
+  // Strip a ```json … ``` (or ``` … ```) code fence if the model added one.
+  const unfenced = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+  for (const candidate of [unfenced, raw]) {
+    try { return JSON.parse(candidate); } catch { /* try extraction */ }
+    // Outermost { … } — greedy, so it captures a complete object amid any prose.
+    const m = candidate.match(/\{[\s\S]*\}/);
+    if (m) { try { return JSON.parse(m[0]); } catch { /* fall through */ } }
+  }
+
+  // Heuristic: an opening brace but no matching close → the response was cut off.
+  const looksTruncated = unfenced.includes("{") && !/\}\s*$/.test(unfenced);
+  log.warn("Model returned non-JSON:", raw.slice(0, 200));
+  throw new Error(
+    looksTruncated
+      ? "The model's JSON was cut off (raise EDITH_MAX_TOKENS or use a larger model)."
+      : "The model returned an unparseable response.",
+  );
 }
