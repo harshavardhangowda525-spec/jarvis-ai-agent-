@@ -25,8 +25,10 @@ const MODES: { id: EdithMode; label: string }[] = [
 export function EdithPanel() {
   const e = useEdith();
   const [goal, setGoal] = useState("");
-  const [url, setUrl] = useState("");
+  // Default to the standard local EDITH address so pairing is one paste (token only).
+  const [url, setUrl] = useState("ws://127.0.0.1:7420");
   const [token, setToken] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
   const clock = useUtcClock();
@@ -158,10 +160,41 @@ export function EdithPanel() {
       {!connected && (
         <div className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,24rem)] -translate-x-1/2 translate-y-28">
           <GlassPanel title="Activate EDITH">
-            <p className="mb-2 text-[11px] text-muted-foreground">Start EDITH on your machine (<code className="text-accent">cd edith &amp;&amp; npm run edith</code>), then paste its URL + token.</p>
-            <input value={url} onChange={(ev) => setUrl(ev.target.value)} placeholder="ws://127.0.0.1:7420" className="mb-2 w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus:border-accent/60" />
-            <input value={token} onChange={(ev) => setToken(ev.target.value)} placeholder="pairing token" className="mb-2 w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus:border-accent/60" />
-            <button onClick={() => e.connect(url.trim(), token.trim())} className="flex w-full items-center justify-center gap-2 rounded border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-bright transition hover:bg-accent/20"><PlugZap className="h-4 w-4" /> Activate</button>
+            <p className="mb-2 text-[11px] text-muted-foreground">
+              Start EDITH on your machine (<code className="text-accent">cd edith &amp;&amp; npm run edith</code>), copy the <code className="text-accent">TOKEN</code> it prints, and paste it below.
+            </p>
+            {/* Token is the only thing you paste — the URL is pre-filled. */}
+            <input
+              value={token}
+              onChange={(ev) => setToken(ev.target.value)}
+              onKeyDown={(ev) => { if (ev.key === "Enter" && token.trim()) e.connect(url.trim() || "ws://127.0.0.1:7420", token.trim()); }}
+              placeholder="Paste pairing token"
+              autoFocus
+              className="mb-2 w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus:border-accent/60"
+            />
+            <button
+              onClick={() => e.connect(url.trim() || "ws://127.0.0.1:7420", token.trim())}
+              disabled={!token.trim() || e.conn === "connecting"}
+              className="flex w-full items-center justify-center gap-2 rounded border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-bright transition hover:bg-accent/20 disabled:opacity-40"
+            >
+              <PlugZap className="h-4 w-4" /> {e.conn === "connecting" ? "Linking…" : "Activate"}
+            </button>
+
+            {/* URL is auto-filled; reveal it only if EDITH runs on a custom host/port. */}
+            <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
+              <span className="truncate">Connecting to <code className="text-accent/80">{url || "ws://127.0.0.1:7420"}</code></span>
+              <button onClick={() => setShowAdvanced((v) => !v)} className="ml-2 shrink-0 underline decoration-dotted hover:text-accent">
+                {showAdvanced ? "hide" : "change"}
+              </button>
+            </div>
+            {showAdvanced && (
+              <input
+                value={url}
+                onChange={(ev) => setUrl(ev.target.value)}
+                placeholder="ws://127.0.0.1:7420"
+                className="mt-2 w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus:border-accent/60"
+              />
+            )}
             {e.conn === "unauthorized" && <p className="mt-2 text-[11px] text-destructive">Pairing rejected — check the token.</p>}
           </GlassPanel>
         </div>
