@@ -261,6 +261,50 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
         el.load();
       }
     }
+    // Also stop any browser-native speech in progress.
+    try { window.speechSynthesis?.cancel(); } catch { /* unsupported */ }
+  }, []);
+
+  /**
+   * Free, built-in voice via the browser's Web Speech API — no ElevenLabs, no
+   * API key, no cost. Used automatically when server TTS isn't configured. Picks
+   * a calm British-leaning voice for JARVIS when one is available.
+   */
+  const speakBrowser = useCallback((text: string): Promise<void> => {
+    return new Promise<void>((resolve) => {
+      const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+      if (!synth || typeof SpeechSynthesisUtterance === "undefined") { resolve(); return; }
+      try {
+        synth.cancel();
+        const voices = synth.getVoices();
+        const pick =
+          voices.find((v) => /daniel|arthur|google uk english male|ryan|george/i.test(v.name) && /en-GB|en_GB/i.test(v.lang)) ||
+          voices.find((v) => /en-GB|en_GB/i.test(v.lang) && /male/i.test(v.name)) ||
+          voices.find((v) => /en-GB|en_GB/i.test(v.lang)) ||
+          voices.find((v) => /^en(-|_)/i.test(v.lang)) ||
+          voices[0];
+        const u = new SpeechSynthesisUtterance(text);
+        if (pick) { u.voice = pick; u.lang = pick.lang; }
+        u.rate = 1.0;   // steady, natural pace
+        u.pitch = 0.9;  // slightly lower — calm and confident
+        u.onend = () => resolve();
+        u.onerror = () => resolve();
+        synth.speak(u);
+      } catch {
+        resolve();
+      }
+    });
+  }, []);
+
+  // Warm up the browser voice list (Chrome loads it async) so the right voice
+  // is picked on the very first spoken reply.
+  useEffect(() => {
+    const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+    if (!synth) return;
+    const warm = () => { try { synth.getVoices(); } catch { /* ignore */ } };
+    warm();
+    synth.addEventListener?.("voiceschanged", warm);
+    return () => synth.removeEventListener?.("voiceschanged", warm);
   }, []);
 
   const speak = useCallback(
@@ -274,11 +318,12 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text }),
-        });
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          fail(j.error || "Voice generation failed.", "error");
-          if (enabledRef.current && !mutedRef.current) setStatusBoth("listening");
+        }).catch(() => null);
+        // No server voice configured (or the request failed) → speak with the
+        // free built-in browser voice instead of going silent.
+        if (!res || !res.ok) {
+          await speakBrowser(text);
+          if (enabledRef.current && !mutedRef.current && statusRef.current === "speaking") setStatusBoth("listening");
           return;
         }
         const blob = await res.blob();
@@ -303,7 +348,7 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
         }
       }
     },
-    [fail, setStatusBoth, stopSpeaking],
+    [fail, setStatusBoth, stopSpeaking, speakBrowser],
   );
 
   const toggleMute = useCallback(() => {
