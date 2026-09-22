@@ -141,3 +141,45 @@ export async function igPublishImage(c: IgCreds, imageUrl: string, caption: stri
   if (!published?.id) throw new IgError("Instagram did not confirm the publish.");
   return published.id as string;
 }
+
+// --- Reels (video) -------------------------------------------------------
+// Reels publishing is 3 steps: create a REELS container from a public video URL,
+// wait while Instagram downloads + processes the video (can take a while), then
+// publish the finished container.
+
+/** Create a REELS container; returns the creation/container id. */
+export async function igCreateReel(c: IgCreds, videoUrl: string, caption: string): Promise<string> {
+  const container: any = await graphPost(
+    `${c.businessId}/media`,
+    { media_type: "REELS", video_url: videoUrl, caption },
+    c.accessToken,
+  );
+  if (!container?.id) throw new IgError("Instagram did not return a reel container id.");
+  return container.id as string;
+}
+
+/** Publish a finished container; returns the real media id. */
+export async function igPublishContainer(c: IgCreds, creationId: string): Promise<string> {
+  const published: any = await graphPost(
+    `${c.businessId}/media_publish`,
+    { creation_id: creationId },
+    c.accessToken,
+  );
+  if (!published?.id) throw new IgError("Instagram did not confirm the publish.");
+  return published.id as string;
+}
+
+export interface ReelStatus { ready: boolean; status: string; error: boolean }
+
+/** Poll a container's processing status until FINISHED/ERROR or the budget ends. */
+export async function igWaitContainer(c: IgCreds, creationId: string, budgetMs: number): Promise<ReelStatus> {
+  const deadline = Date.now() + budgetMs;
+  while (true) {
+    const json: any = await graphGet(creationId, { fields: "status_code,status" }, c.accessToken);
+    const code = String(json?.status_code ?? json?.status ?? "").toUpperCase();
+    if (code === "FINISHED") return { ready: true, status: code, error: false };
+    if (code === "ERROR") return { ready: false, status: code, error: true };
+    if (Date.now() + 6000 >= deadline) return { ready: false, status: code || "IN_PROGRESS", error: false };
+    await new Promise((r) => setTimeout(r, 6000));
+  }
+}

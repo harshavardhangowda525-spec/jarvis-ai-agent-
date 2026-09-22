@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types";
 import { ToolError } from "../types";
 import {
-  resolveIgCreds, igProfile, igMedia, igAccountInsights, igPublishImage, IgError,
+  resolveIgCreds, igProfile, igMedia, igAccountInsights, igPublishImage,
+  igCreateReel, igWaitContainer, igPublishContainer, IgError,
 } from "@/lib/ev/instagram";
 import { getDb } from "@/lib/db";
 
@@ -16,12 +17,14 @@ import { getDb } from "@/lib/db";
 
 const schema = z.object({
   action: z
-    .enum(["status", "profile", "media", "insights", "publish_image"])
-    .describe("status: is IG connected? profile/media/insights: read. publish_image: publish a real post (needs approval)."),
+    .enum(["status", "profile", "media", "insights", "publish_image", "publish_reel"])
+    .describe("status: connected? profile/media/insights: read. publish_image: post an image. publish_reel: post a video Reel. Publishing needs approval."),
   limit: z.number().int().min(1).max(25).optional(),
   metrics: z.array(z.string().max(40)).max(10).optional().describe("Account insight metrics, e.g. reach, profile_views."),
   imageUrl: z.string().url().optional().describe("Public image URL to publish (publish_image)."),
-  caption: z.string().max(2200).optional().describe("Caption for the published post."),
+  videoUrl: z.string().url().optional().describe("Public video URL to publish as a Reel (publish_reel)."),
+  containerId: z.string().optional().describe("Resume a Reel whose container was already created (publish_reel)."),
+  caption: z.string().max(2200).optional().describe("Caption for the published post/reel."),
   contentId: z.string().optional().describe("EvContent id this publish fulfills (marks it published on success)."),
 });
 
@@ -30,9 +33,10 @@ type Input = z.infer<typeof schema>;
 export const evInstagramTool: ToolDefinition<Input> = {
   name: "ev_instagram",
   description:
-    "Instagram for EV (Infinity Web & Apps). Read profile, recent media and permitted insights; publish an image post " +
-    "(REAL Graph API call, only after the user approves). If Instagram isn't connected, it says so — never fake a publish " +
-    "or invent metrics.",
+    "Instagram for EV (Infinity Web & Apps). Read profile, recent media and permitted insights; publish an image post or a " +
+    "video Reel (REAL Graph API calls, only after the user approves). Reels are async: publish_reel uploads the video, waits for " +
+    "processing, and publishes — if it's still processing you get a containerId, call publish_reel again with it to finish. If " +
+    "Instagram isn't connected, it says so — never fake a publish or invent metrics.",
   schema,
   agentScope: "ev",
   requiresConfirmation: true, // publishing is external; EV confirms before acting
@@ -86,6 +90,34 @@ export const evInstagramTool: ToolDefinition<Input> = {
             summary: `✅ Published to Instagram (media id ${mediaId}).`,
           };
         }
+        case "publish_reel": {
+          // Resume a container that's already processing, or create a new one.
+          let containerId = input.containerId;
+          if (!containerId) {
+            if (!input.videoUrl) throw new ToolError("A public 'videoUrl' is required to publish a Reel.");
+            if (!input.caption) throw new ToolError("A 'caption' is required to publish a Reel.");
+            ctx.activity("Uploading Reel to Instagram…");
+            containerId = await igCreateReel(creds, input.videoUrl, input.caption);
+          }
+          ctx.activity("Waiting for Instagram to process the video…");
+          const st = await igWaitContainer(creds, containerId, 40_000);
+          if (st.error) throw new ToolError("Instagram couldn't process the Reel video (check format: MP4, 9:16, 3–90s).");
+          if (!st.ready) {
+            return {
+              data: { published: false, containerId, status: st.status },
+              summary: `Reel is still processing on Instagram (${st.status}). Ask me to finish publishing it in a moment — I'll resume with containerId ${containerId}.`,
+            };
+          }
+          ctx.activity("Publishing the Reel…");
+          const mediaId = await igPublishContainer(creds, containerId);
+          if (input.contentId) {
+            await getDb().evContent.updateMany({
+              where: { id: input.contentId, userId: ctx.userId },
+              data: { status: "published", publishedAt: new Date(), externalId: mediaId },
+            }).catch(() => {});
+          }
+          return { data: { published: true, mediaId, type: "reel" }, summary: `✅ Published Reel to Instagram (media id ${mediaId}).` };
+        }
       }
     } catch (err) {
       if (err instanceof IgError) throw new ToolError(`Instagram: ${err.message}`);
@@ -96,10 +128,12 @@ export const evInstagramTool: ToolDefinition<Input> = {
   inputSchema: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["status", "profile", "media", "insights", "publish_image"] },
+      action: { type: "string", enum: ["status", "profile", "media", "insights", "publish_image", "publish_reel"] },
       limit: { type: "number" },
       metrics: { type: "array", items: { type: "string" } },
       imageUrl: { type: "string" },
+      videoUrl: { type: "string" },
+      containerId: { type: "string" },
       caption: { type: "string" },
       contentId: { type: "string" },
     },
