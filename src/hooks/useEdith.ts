@@ -36,6 +36,7 @@ export function useEdith() {
   const [project, setProject] = useState<any>(null);
   const [confirm, setConfirm] = useState<ConfirmReq | null>(null);
   const [working, setWorking] = useState(false);
+  const [preview, setPreview] = useState<{ url: string; path: string } | null>(null);
   const [savedUrl, setSavedUrl] = useState("");
   const [savedToken, setSavedToken] = useState("");
   const [muted, setMuted] = useState(false);
@@ -130,6 +131,7 @@ export function useEdith() {
         case "stopped": push(m.message || "Stopped.", "warn"); setWorking(false); setConfirm(null); break;
         case "report": push(`✓ ${m.report}`, "ok"); speak(m.report); break;
         case "result": setWorking(false); setConfirm(null); push(`${m.ok ? "✓" : "✗"} ${m.message}`, m.ok ? "ok" : "error"); speak(m.message); break;
+        case "preview": setPreview({ url: m.url, path: m.path }); push(`Preview ready: ${m.path}`, "ok"); break;
         case "error": push(`Error: ${m.message}`, "error"); setWorking(false); break;
         default: break;
       }
@@ -177,10 +179,12 @@ export function useEdith() {
   const stop = useCallback(() => send({ op: "stop" }), [send]);
   const answerConfirm = useCallback((approved: boolean) => { send({ op: "confirm", approved }); setConfirm(null); }, [send]);
   const refreshCaps = useCallback(() => send({ op: "capabilities" }), [send]);
+  const requestPreview = useCallback(() => send({ op: "preview" }), [send]);
+  const dismissPreview = useCallback(() => setPreview(null), []);
 
   return {
-    conn, provider, mode, caps, workspace, activity, tasks, terminal, files, project, confirm, working,
+    conn, provider, mode, caps, workspace, activity, tasks, terminal, files, project, confirm, working, preview,
     savedUrl, savedToken, muted, setMuted, speak,
-    connect, disconnect, autoPair, runGoal, setMode, stop, answerConfirm, refreshCaps,
+    connect, disconnect, autoPair, runGoal, setMode, stop, answerConfirm, refreshCaps, requestPreview, dismissPreview,
   };
 }

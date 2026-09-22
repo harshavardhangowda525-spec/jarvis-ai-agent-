@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Send, Square, PlugZap, Plug, Wifi, WifiOff, Volume2, VolumeX, ShieldCheck,
   AlertTriangle, Check, Loader2, ChevronUp, Cpu, Mic, MicOff,
+  Eye, X, ExternalLink, RefreshCw,
 } from "lucide-react";
 import { useEdith, type EdithMode } from "@/hooks/useEdith";
 import { useVoice } from "@/hooks/useVoice";
@@ -283,6 +284,65 @@ export function EdithPanel() {
           <div className="hud-panel box-glow-soft rounded-xl px-3 py-2">
             <Equalizer active={e.working || e.tasks.some((t) => t.status === "running")} bars={64} className="h-8 w-full" />
           </div>
+        </div>
+      </div>
+
+      {/* live website preview — liquid-glass popup */}
+      {e.preview && <EdithPreview url={e.preview.url} path={e.preview.path} onDismiss={e.dismissPreview} />}
+
+      {/* floating "Preview" button once a site exists (re-open after dismiss) */}
+      {connected && !e.preview && (
+        <button
+          onClick={e.requestPreview}
+          title="Preview the built site"
+          className="absolute bottom-24 right-4 z-30 flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent backdrop-blur-md transition hover:bg-accent/20"
+        >
+          <Eye className="h-3.5 w-3.5" /> Preview
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Liquid-glass popup that shows a LIVE preview of the site EDITH built,
+ *  served from the local EDITH workspace. */
+function EdithPreview({ url, path, onDismiss }: { url: string; path: string; onDismiss: () => void }) {
+  const [nonce, setNonce] = useState(0);
+  const src = `${url}${url.includes("?") ? "&" : "?"}_=${nonce}`;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center p-4">
+      <div
+        className="pointer-events-auto relative flex w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/15"
+        style={{
+          height: "min(80vh, 640px)",
+          animation: "ev-msg-in 0.7s cubic-bezier(0.22,1,0.36,1) both",
+          background: "linear-gradient(145deg, hsl(0 0% 100% / 0.10), hsl(210 60% 12% / 0.30))",
+          backdropFilter: "blur(26px) saturate(1.3)",
+          WebkitBackdropFilter: "blur(26px) saturate(1.3)",
+          boxShadow: "0 24px 80px -24px hsl(var(--accent)/0.6), inset 0 1px 0 hsl(0 0% 100% / 0.22), inset 0 0 40px -20px hsl(var(--accent)/0.5)",
+        }}
+      >
+        {/* moving sheen */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+          <div className="absolute -inset-y-8 left-0 w-1/3" style={{ background: "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.12), transparent)", animation: "ev-sheen 5s ease-in-out infinite" }} />
+        </div>
+
+        {/* header */}
+        <div className="relative flex items-center justify-between border-b border-white/10 px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-accent/40 bg-accent/15 text-accent"><Eye className="h-3.5 w-3.5" /></span>
+            <span className="hud-label text-[10px] tracking-[0.28em] text-accent/80">LIVE PREVIEW · {path}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setNonce((n) => n + 1)} title="Reload" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-white/10 hover:text-foreground"><RefreshCw className="h-3.5 w-3.5" /></button>
+            <a href={url} target="_blank" rel="noopener noreferrer" title="Open in new tab" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-white/10 hover:text-foreground"><ExternalLink className="h-3.5 w-3.5" /></a>
+            <button onClick={onDismiss} title="Close" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-white/10 hover:text-foreground"><X className="h-4 w-4" /></button>
+          </div>
+        </div>
+
+        {/* the live site inside an inner glass frame */}
+        <div className="relative m-3 flex-1 overflow-hidden rounded-2xl border border-white/10 bg-white">
+          <iframe key={nonce} src={src} title="Website preview" className="h-full w-full" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
         </div>
       </div>
     </div>
