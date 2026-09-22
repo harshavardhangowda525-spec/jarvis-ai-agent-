@@ -22,7 +22,7 @@ interface LeadCard {
   website: string | null; phone: string | null; instagram: string | null; source: string;
 }
 interface LeadsResult {
-  leads: LeadCard[]; found: number; created: number; duplicates: number; source: string | null; query: string;
+  leads: LeadCard[]; found: number; created: number; duplicates: number; source: string | null; query: string; error?: string;
 }
 
 interface Overview {
@@ -104,9 +104,13 @@ export function DarwinConsole() {
     setSearching(true); setSearchMsg("");
     try {
       const res = await fetch("/api/darwin/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-      const j = await res.json();
-      if (!res.ok) { setSearchMsg(j.error || "Search failed."); }
-      else {
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = j.error || `Search failed (HTTP ${res.status}).`;
+        setSearchMsg(msg);
+        // Surface the failure in the popup too, so it's never a silent no-op.
+        setLeadsPopup({ leads: [], found: 0, created: 0, duplicates: 0, source: null, query: form.location, error: msg });
+      } else {
         const d = j.data;
         setSearchMsg(`Found ${d.found} real business${d.found === 1 ? "" : "es"} — added ${d.created} new, ${d.duplicates} duplicate(s).`);
 
@@ -126,16 +130,18 @@ export function DarwinConsole() {
           } catch { /* keep whatever we have */ }
         }
 
-        // Line the discovered leads up in the liquid-glass popup.
-        if (leads.length) {
-          setLeadsPopup({ leads, found: d.found ?? leads.length, created: d.created ?? 0, duplicates: d.duplicates ?? 0, source: d.source ?? leads[0]?.source ?? null, query: d.query ?? "" });
-          if (voiceStarted && !voice.muted && voice.enabled) {
-            try { voice.speak(`Nice — found ${d.found} real ${d.found === 1 ? "business" : "businesses"}. Added ${d.created} new to the CRM. Want me to line up outreach?`); } catch { /* ignore */ }
-          }
+        // ALWAYS open the popup after a successful search — with the leads, or a
+        // clear empty state when zero matched. Never a silent result.
+        setLeadsPopup({ leads, found: d.found ?? leads.length, created: d.created ?? 0, duplicates: d.duplicates ?? 0, source: d.source ?? leads[0]?.source ?? null, query: d.query ?? form.location });
+        if (leads.length && voiceStarted && !voice.muted && voice.enabled) {
+          try { voice.speak(`Nice — found ${d.found} real ${d.found === 1 ? "business" : "businesses"}. Added ${d.created} new to the CRM. Want me to line up outreach?`); } catch { /* ignore */ }
         }
       }
       loadOverview();
-    } catch { setSearchMsg("Network error."); }
+    } catch {
+      setSearchMsg("Network error.");
+      setLeadsPopup({ leads: [], found: 0, created: 0, duplicates: 0, source: null, query: form.location, error: "Network error — couldn't reach the server." });
+    }
     finally { setSearching(false); }
   }, [loadOverview, voice, voiceStarted]);
 
@@ -280,7 +286,21 @@ function LeadsPopup({ data, onClose }: { data: LeadsResult; onClose: () => void 
 
         {/* leads list */}
         <div className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4" style={{ scrollbarWidth: "thin" }}>
-          {data.leads.map((l, i) => (
+          {data.error ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <span className="text-2xl">⚠️</span>
+              <p className="text-sm text-warning">Search couldn&apos;t complete</p>
+              <p className="max-w-sm text-[11px] leading-snug text-muted-foreground">{data.error}</p>
+            </div>
+          ) : data.leads.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+              <Radar className="h-7 w-7 text-accent/60" />
+              <p className="text-sm text-foreground/85">No real businesses matched</p>
+              <p className="max-w-sm text-[11px] leading-snug text-muted-foreground">
+                DARWIN found 0 for “{data.query}”. Try a broader category (Cafe, Restaurant, Salon, Gym), a bigger radius, and turn off the Has/No-website and Phone/Email filters. DARWIN never invents leads.
+              </p>
+            </div>
+          ) : data.leads.map((l, i) => (
             <div key={`${l.businessName}-${i}`}
               className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5"
               style={{ opacity: 0, animation: `dw-card-in .5s ${Math.min(i * 0.06, 1.2)}s cubic-bezier(.2,.9,.25,1.1) both` }}>
@@ -309,7 +329,13 @@ function LeadsPopup({ data, onClose }: { data: LeadsResult; onClose: () => void 
 
         {/* footer */}
         <div className="relative border-t border-white/10 px-5 py-3 text-center">
-          <p className="text-[10px] text-muted-foreground">Stored in the CRM. Ask DARWIN to qualify or draft outreach — say “qualify these” or “deactivate”.</p>
+          <p className="text-[10px] text-muted-foreground">
+            {data.error
+              ? "Fix the issue above and try again — DARWIN only shows real, verified businesses."
+              : data.leads.length === 0
+                ? "Adjust the filters on the left and run another discovery."
+                : "Stored in the CRM. Ask DARWIN to qualify or draft outreach — say “qualify these” or “deactivate”."}
+          </p>
         </div>
       </div>
     </div>
