@@ -39,14 +39,18 @@ export function listSources(): SourceInfo[] {
     { id: "google_places", label: "Google Places", kind: "api", connected: env.googlePlacesApiKey.length > 0 },
     { id: "geoapify", label: "Geoapify Places (free)", kind: "api", connected: env.geoapifyApiKey.length > 0 },
     { id: "foursquare", label: "Foursquare Places", kind: "api", connected: env.foursquareApiKey.length > 0 },
+    { id: "openstreetmap", label: "OpenStreetMap (free, no key)", kind: "api", connected: true },
     { id: "csv", label: "CSV Import", kind: "import", connected: true },
     { id: "manual", label: "Manual / user-provided", kind: "import", connected: true },
   ];
 }
 
-/** True when at least one automated discovery source (an API) is connected. */
+/**
+ * True when automated discovery is available. OpenStreetMap Overpass needs no
+ * key, so real discovery is always available (best-effort) as a fallback.
+ */
 export function hasDiscoverySource(): boolean {
-  return env.googlePlacesApiKey.length > 0 || env.foursquareApiKey.length > 0 || env.geoapifyApiKey.length > 0;
+  return true;
 }
 
 // --- Google Places (New Places API v1) -----------------------------------
@@ -349,32 +353,148 @@ export async function searchGeoapify(query: string, limit: number, radiusKm = 10
   return feats.map(mapGeoapify).filter((r) => r.businessName).slice(0, want);
 }
 
+// --- OpenStreetMap Overpass (NO KEY, zero cost — the always-on fallback) ---
+
+const NOMINATIM_UA = "JARVIS-DARWIN/1.0 (business lead discovery)";
+
+/** Free geocoding via Nominatim (no key). Returns [lon, lat]. */
+async function geocodeNominatim(place: string): Promise<[number, number]> {
+  let res: Response;
+  try {
+    res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(place)}&format=json&limit=1`, {
+      headers: { accept: "application/json", "User-Agent": NOMINATIM_UA },
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch { throw new LeadSourceError("Couldn't reach OpenStreetMap geocoder."); }
+  const json: any = await res.json().catch(() => []);
+  if (!res.ok || !Array.isArray(json) || json.length === 0) {
+    throw new LeadSourceError(`OpenStreetMap couldn't locate "${place}". Try a more specific location.`);
+  }
+  return [parseFloat(json[0].lon), parseFloat(json[0].lat)];
+}
+
+/** Map a business term to Overpass tag selectors (union of these is queried). */
+function overpassSelectors(term: string): string[] {
+  const t = term.toLowerCase();
+  const map: [RegExp, string[]][] = [
+    [/cafe|coffee|espresso/, ['"amenity"="cafe"']],
+    [/restaurant|dining|eatery|bistro/, ['"amenity"="restaurant"']],
+    [/bar|pub|brewery/, ['"amenity"="bar"', '"amenity"="pub"']],
+    [/bakery|patisserie/, ['"shop"="bakery"']],
+    [/salon|hair|barber|beauty|nails|spa/, ['"shop"="hairdresser"', '"shop"="beauty"', '"leisure"="spa"']],
+    [/gym|fitness|yoga|crossfit|pilates/, ['"leisure"="fitness_centre"', '"leisure"="sports_centre"']],
+    [/hotel|hostel|guest ?house|b&b|accommodation/, ['"tourism"="hotel"', '"tourism"="guest_house"']],
+    [/dentist|clinic|doctor|medical|physio|health/, ['"amenity"="dentist"', '"amenity"="clinic"', '"amenity"="doctors"']],
+    [/car|garage|automotive|mechanic|dealer/, ['"shop"="car"', '"shop"="car_repair"']],
+    [/law|solicitor|accountant|estate agent|agency|office|tech|it |software|studio|marketing/, ['"office"']],
+    [/retail|shop|store|boutique|clothing|fashion/, ['"shop"']],
+  ];
+  for (const [re, sels] of map) if (re.test(t)) return sels;
+  return ['"shop"']; // broad default: any shop
+}
+
+function mapOverpass(el: any): RawLead {
+  const tags = el?.tags ?? {};
+  const name: string = tags.name || tags["name:en"] || "";
+  const website: string | undefined = tags.website || tags["contact:website"] || undefined;
+  const phone: string | undefined = tags.phone || tags["contact:phone"] || undefined;
+  const email: string | undefined = tags.email || tags["contact:email"] || undefined;
+  const igTag: string | undefined = tags["contact:instagram"] || tags.instagram;
+  const instagram: string | undefined = igTag ? (igTag.startsWith("http") ? igTag : `https://instagram.com/${String(igTag).replace(/^@/, "")}`) : undefined;
+  const addr = [tags["addr:housenumber"], tags["addr:street"], tags["addr:city"], tags["addr:postcode"]].filter(Boolean).join(" ");
+  const location = addr || undefined;
+  const category: string | undefined = tags.shop || tags.amenity || tags.office || tags.leisure || tags.tourism || undefined;
+  const lat = el?.lat ?? el?.center?.lat;
+  const lon = el?.lon ?? el?.center?.lon;
+
+  const verified: string[] = ["businessName"];
+  if (website) verified.push("website");
+  if (phone) verified.push("phone");
+  if (email) verified.push("email");
+  if (location) verified.push("location");
+  if (category) verified.push("category");
+
+  return {
+    businessName: name,
+    category,
+    location,
+    website,
+    phone,
+    email,
+    instagram,
+    source: "openstreetmap",
+    sourceRef: el?.type && el?.id ? `${el.type}/${el.id}` : undefined,
+    sourceUrl: el?.type && el?.id ? `https://www.openstreetmap.org/${el.type}/${el.id}` : undefined,
+    verifiedFields: verified,
+    metadata: { osmType: el?.type ?? null, lat: lat ?? null, lon: lon ?? null },
+  };
+}
+
+/**
+ * Real business search via OpenStreetMap Overpass — NO API KEY, no cost. Geocodes
+ * the place (Nominatim), then queries businesses within a radius. Best-effort,
+ * shared public endpoint, so used as the last-resort fallback. Returns the ACTUAL
+ * count found — never fabricates.
+ */
+export async function searchOverpass(query: string, limit: number, radiusKm = 8): Promise<RawLead[]> {
+  const m = query.match(/^(.*?)\s+\bin\b\s+(.+)$/i);
+  const term = (m ? m[1] : query).trim();
+  const place = (m ? m[2] : query).trim();
+  const want = Math.min(Math.max(limit, 1), 50);
+
+  const [lon, lat] = await geocodeNominatim(place);
+  const radius = Math.min(Math.max(radiusKm, 1), 50) * 1000;
+
+  const selectors = overpassSelectors(term);
+  const union = selectors.map((sel) => `nwr[${sel}](around:${radius},${lat},${lon});`).join("");
+  const ql = `[out:json][timeout:25];(${union});out center tags ${want};`;
+
+  let res: Response;
+  try {
+    res = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", accept: "application/json", "User-Agent": NOMINATIM_UA },
+      body: `data=${encodeURIComponent(ql)}`,
+      signal: AbortSignal.timeout(30_000),
+    });
+  } catch { throw new LeadSourceError("Couldn't reach OpenStreetMap Overpass."); }
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new LeadSourceError(`OpenStreetMap Overpass error (HTTP ${res.status}). ${text.slice(0, 120)}`.trim());
+  }
+  const json: any = await res.json().catch(() => ({}));
+  const els: any[] = json?.elements ?? [];
+  // Only elements that are actually named businesses.
+  return els.map(mapOverpass).filter((r) => r.businessName).slice(0, want);
+}
+
 /**
  * Unified discovery entry point. Tries connected providers in order (Google
- * Places → free Geoapify → Foursquare) and falls through to the next when one
- * errors (e.g. Foursquare's billing wall). Returns the REAL leads found (may be
- * fewer than requested — that's the truth, not padded). Throws LeadSourceError
- * only when no source is connected or every connected source failed.
+ * Places → free Geoapify → Foursquare → OpenStreetMap Overpass) and falls
+ * through to the next when one errors (e.g. Foursquare's billing wall).
+ * Overpass needs no key, so real discovery ALWAYS works as a last resort.
+ * Returns the REAL leads found (may be fewer than requested — that's the truth,
+ * not padded). Throws LeadSourceError only when every source failed.
  */
 export async function discoverLeads(opts: { query: string; limit: number }): Promise<RawLead[]> {
   const providers: { name: string; run: () => Promise<RawLead[]> }[] = [];
   if (env.googlePlacesApiKey.length > 0) providers.push({ name: "Google Places", run: () => searchGooglePlaces(opts.query, opts.limit) });
   if (env.geoapifyApiKey.length > 0) providers.push({ name: "Geoapify", run: () => searchGeoapify(opts.query, opts.limit) });
   if (env.foursquareApiKey.length > 0) providers.push({ name: "Foursquare", run: () => searchFoursquare(opts.query, opts.limit) });
-
-  if (providers.length === 0) {
-    throw new LeadSourceError(
-      "NO REAL DATA AVAILABLE — CONNECT A DATA SOURCE. Add the free GEOAPIFY_API_KEY (no credit card) or GOOGLE_PLACES_API_KEY to enable real business discovery, or import a CSV / add leads manually.",
-    );
-  }
+  // Always-available, no-key fallback so discovery never dead-ends.
+  providers.push({ name: "OpenStreetMap", run: () => searchOverpass(opts.query, opts.limit) });
 
   const errors: string[] = [];
   for (const p of providers) {
     try {
-      return await p.run(); // first provider that responds wins (even with 0 results)
+      const leads = await p.run();
+      // A keyed provider that returns 0 falls through to the next so we still try
+      // the free fallback; the last provider's result is returned as-is.
+      if (leads.length > 0 || p === providers[providers.length - 1]) return leads;
+      errors.push(`${p.name}: 0 results`);
     } catch (err) {
       errors.push(`${p.name}: ${err instanceof Error ? err.message.replace(/^[^:]+:\s*/, "") : "failed"}`);
     }
   }
-  throw new LeadSourceError(`All connected lead sources failed. ${errors.join(" | ")}`);
+  throw new LeadSourceError(`All lead sources failed. ${errors.join(" | ")}`);
 }

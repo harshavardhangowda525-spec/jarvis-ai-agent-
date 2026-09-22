@@ -17,6 +17,14 @@ const PROGRESS: Record<DarwinState, string> = {
   PROCESSING: "72%", WAITING_FOR_APPROVAL: "60%", COMPLETED: "100%", ERROR: "30%",
 };
 
+interface LeadCard {
+  businessName: string; category: string | null; location: string | null;
+  website: string | null; phone: string | null; instagram: string | null; source: string;
+}
+interface LeadsResult {
+  leads: LeadCard[]; found: number; created: number; duplicates: number; source: string | null; query: string;
+}
+
 interface Overview {
   hasData: boolean; hasConnectedDiscovery: boolean; emailReady: boolean;
   totals: { leads: number; dueFollowUps: number; pendingApprovals: number };
@@ -35,6 +43,7 @@ export function DarwinConsole() {
   // Cinematic boot sequence on entry.
   const [boot, setBoot] = useState<"run" | "fade" | "done">("run");
   const [leaving, setLeaving] = useState(false);
+  const [leadsPopup, setLeadsPopup] = useState<LeadsResult | null>(null);
   const sendRef = useRef<(t: string) => void>(() => {});
   const deactivateRef = useRef<() => void>(() => {});
 
@@ -97,11 +106,21 @@ export function DarwinConsole() {
       const res = await fetch("/api/darwin/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
       const j = await res.json();
       if (!res.ok) { setSearchMsg(j.error || "Search failed."); }
-      else { setSearchMsg(`Found ${j.data.found} real business${j.data.found === 1 ? "" : "es"} — added ${j.data.created} new, ${j.data.duplicates} duplicate(s).`); }
+      else {
+        const d = j.data;
+        setSearchMsg(`Found ${d.found} real business${d.found === 1 ? "" : "es"} — added ${d.created} new, ${d.duplicates} duplicate(s).`);
+        // Line the discovered leads up in the liquid-glass popup.
+        if (Array.isArray(d.leads) && d.leads.length) {
+          setLeadsPopup({ leads: d.leads, found: d.found, created: d.created, duplicates: d.duplicates, source: d.source, query: d.query });
+          if (voiceStarted && !voice.muted && voice.enabled) {
+            try { voice.speak(`Nice — found ${d.found} real ${d.found === 1 ? "business" : "businesses"}. Added ${d.created} new to the CRM. Want me to line up outreach?`); } catch { /* ignore */ }
+          }
+        }
+      }
       loadOverview();
     } catch { setSearchMsg("Network error."); }
     finally { setSearching(false); }
-  }, [loadOverview]);
+  }, [loadOverview, voice, voiceStarted]);
 
   const intel = overview?.intelligence;
 
@@ -149,7 +168,7 @@ export function DarwinConsole() {
 
       {/* main grid */}
       <div className="relative z-10 mx-auto mt-4 grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-[300px_1fr_300px]">
-        <LeadDiscovery onSearch={runSearch} searching={searching} msg={searchMsg} connected={overview?.hasConnectedDiscovery ?? false} />
+        <LeadDiscovery onSearch={runSearch} searching={searching} msg={searchMsg} keyedSource={(overview?.sources ?? []).some((s) => s.kind === "api" && s.connected && s.id !== "openstreetmap")} />
         <div className="relative flex min-h-[320px] items-center justify-center lg:min-h-[420px]">
           <GlassCylinder state={state} level={voice.level} />
         </div>
@@ -183,6 +202,98 @@ export function DarwinConsole() {
 
       {/* live activity stream */}
       <ActivityStream items={overview?.recentActivity ?? []} connected={overview?.hasConnectedDiscovery ?? false} />
+      </div>
+
+      {/* discovered leads — liquid-glass popup */}
+      {leadsPopup && <LeadsPopup data={leadsPopup} onClose={() => setLeadsPopup(null)} />}
+    </div>
+  );
+}
+
+/* ================= LEADS POPUP (liquid glass) ================= */
+const SOURCE_LABEL: Record<string, string> = {
+  google_places: "Google Places", geoapify: "Geoapify", foursquare: "Foursquare", openstreetmap: "OpenStreetMap",
+};
+
+function LeadsPopup({ data, onClose }: { data: LeadsResult; onClose: () => void }) {
+  const [closing, setClosing] = useState(false);
+  const close = useCallback(() => { setClosing(true); setTimeout(onClose, 320); }, [onClose]);
+
+  // Close on Escape.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [close]);
+
+  const src = data.source ? (SOURCE_LABEL[data.source] ?? data.source) : "—";
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-6"
+      style={{ animation: closing ? "dw-scrim-out .3s ease forwards" : "dw-scrim-in .35s ease" }}>
+      {/* scrim */}
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={close} />
+
+      {/* liquid-glass panel */}
+      <div className="relative flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-[26px] border border-white/15"
+        style={{
+          background: "linear-gradient(150deg, hsl(0 0% 100% / 0.10), hsl(210 60% 12% / 0.34))",
+          backdropFilter: "blur(22px) saturate(140%)", WebkitBackdropFilter: "blur(22px) saturate(140%)",
+          boxShadow: "0 40px 120px -30px hsl(var(--accent)/0.7), inset 0 1px 0 hsl(0 0% 100% / 0.25), inset 0 0 80px -40px hsl(var(--accent)/0.6)",
+          animation: closing ? "ev-dissolve .32s ease forwards" : "dw-pop-in .5s cubic-bezier(.2,.9,.25,1.15) both",
+        }}>
+        {/* moving sheen */}
+        <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[26px]">
+          <div className="absolute -inset-y-10 -left-1/3 w-1/3 -skew-x-12 bg-white/10 blur-md" style={{ animation: "ev-sheen 2.4s ease-in-out .3s" }} />
+        </div>
+
+        {/* header */}
+        <div className="relative flex items-start justify-between gap-3 border-b border-white/10 px-5 py-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Radar className="h-4 w-4 text-accent-bright drop-glow" />
+              <h2 className="hud-label text-sm tracking-[0.28em] text-accent-bright">DISCOVERED LEADS</h2>
+            </div>
+            <p className="mt-1 text-[11px] text-foreground/70">
+              <span className="text-foreground/90">{data.found}</span> found · <span className="text-success">{data.created}</span> new · <span className="text-muted-foreground">{data.duplicates} dup</span> · via <span className="text-accent">{src}</span>
+            </p>
+          </div>
+          <button onClick={close} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 text-muted-foreground transition hover:border-destructive/60 hover:text-destructive" aria-label="Close">✕</button>
+        </div>
+
+        {/* leads list */}
+        <div className="relative flex-1 space-y-2 overflow-y-auto px-4 py-4" style={{ scrollbarWidth: "thin" }}>
+          {data.leads.map((l, i) => (
+            <div key={`${l.businessName}-${i}`}
+              className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3.5 py-2.5"
+              style={{ opacity: 0, animation: `dw-card-in .5s ${Math.min(i * 0.06, 1.2)}s cubic-bezier(.2,.9,.25,1.1) both` }}>
+              {/* index chip */}
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">{i + 1}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="truncate text-sm text-foreground/95">{l.businessName}</span>
+                  {l.website
+                    ? <span className="shrink-0 rounded-full bg-success/15 px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-success">web</span>
+                    : <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-[8px] uppercase tracking-wider text-warning">no site</span>}
+                </div>
+                <div className="truncate text-[10px] text-muted-foreground">
+                  {[l.category, l.location].filter(Boolean).join(" · ") || "—"}
+                </div>
+              </div>
+              {/* contact chips */}
+              <div className="flex shrink-0 items-center gap-1.5">
+                {l.phone && <span title={l.phone} className="rounded-md border border-white/10 px-1.5 py-0.5 text-[9px] text-foreground/70">☎</span>}
+                {l.website && <a href={l.website} target="_blank" rel="noopener noreferrer" title={l.website} className="rounded-md border border-white/10 px-1.5 py-0.5 text-[9px] text-accent hover:bg-accent/10">↗</a>}
+                {l.instagram && <a href={l.instagram} target="_blank" rel="noopener noreferrer" title="Instagram" className="rounded-md border border-white/10 px-1.5 py-0.5 text-[9px] text-accent hover:bg-accent/10">IG</a>}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* footer */}
+        <div className="relative border-t border-white/10 px-5 py-3 text-center">
+          <p className="text-[10px] text-muted-foreground">Stored in the CRM. Ask DARWIN to qualify or draft outreach — say “qualify these” or “deactivate”.</p>
+        </div>
       </div>
     </div>
   );
@@ -232,7 +343,7 @@ function DarwinBoot({ fading }: { fading: boolean }) {
 /* ================= LEAD DISCOVERY ================= */
 interface SearchForm { category?: string; location: string; radiusKm?: number; limit?: number; hasWebsite?: boolean; noWebsite?: boolean; needsPhone?: boolean; needsEmail?: boolean }
 
-function LeadDiscovery({ onSearch, searching, msg, connected }: { onSearch: (f: SearchForm) => void; searching: boolean; msg: string; connected: boolean }) {
+function LeadDiscovery({ onSearch, searching, msg, keyedSource }: { onSearch: (f: SearchForm) => void; searching: boolean; msg: string; keyedSource: boolean }) {
   const [category, setCategory] = useState("");
   const [location, setLocation] = useState("");
   const [radius, setRadius] = useState(5);
@@ -278,7 +389,7 @@ function LeadDiscovery({ onSearch, searching, msg, connected }: { onSearch: (f: 
         <button onClick={submit} disabled={searching || !location.trim()} className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg border border-accent/40 bg-accent/12 px-3 py-2 text-sm text-accent-bright transition hover:bg-accent/20 disabled:opacity-40">
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} {searching ? "Discovering…" : "Discover Leads"}
         </button>
-        {!connected && <p className="text-[10px] leading-snug text-warning">No discovery source connected — set the free GEOAPIFY_API_KEY (no card) or GOOGLE_PLACES_API_KEY. DARWIN won&apos;t invent leads.</p>}
+        {!keyedSource && <p className="text-[10px] leading-snug text-muted-foreground">Using the free OpenStreetMap fallback (no key). Add GEOAPIFY_API_KEY or GOOGLE_PLACES_API_KEY for richer, faster data. Real data only — never invented.</p>}
         {msg && <p className="text-[10px] leading-snug text-muted-foreground">{msg}</p>}
       </div>
     </GlassPanel>

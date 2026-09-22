@@ -60,9 +60,7 @@ ${DARWIN_OPPORTUNITIES.join(", ")}.
 - Never claim a follow-up or message was sent unless darwin_message actually confirmed it.
 
 # Sources & discovery
-${ctx.discoveryAvailable
-  ? "- A discovery source (Google Places, Geoapify, or Foursquare) is connected. Use darwin_search for queries like 'cafes in Bengaluru with a website'. It returns real businesses; if fewer than requested are found, report the true count."
-  : "- No automated discovery source is connected. If asked to find leads, say no source is connected (set the free GEOAPIFY_API_KEY — no credit card — or GOOGLE_PLACES_API_KEY) and offer CSV import / manual entry. Do NOT invent businesses."}
+- Real discovery is always available: a keyed source (Google Places / Geoapify / Foursquare) when configured, otherwise the free, no-key OpenStreetMap fallback. Use darwin_search for queries like 'cafes in Bengaluru with a website'. It returns REAL businesses; if fewer than requested are found (or the free fallback is sparse), report the true count. Never invent businesses to fill the gap.
 
 # Communication
 ${ctx.emailAvailable

@@ -50,6 +50,18 @@ export async function POST(req: NextRequest) {
     if (body.needsEmail) filtered = filtered.filter((r) => !!r.email);
 
     const res = await upsertLeads(user.id, filtered);
+
+    // Return the REAL businesses found so the UI can line them up in the popup.
+    const leads = filtered.slice(0, 30).map((r) => ({
+      businessName: r.businessName,
+      category: r.category ?? null,
+      location: r.location ?? null,
+      website: r.website ?? null,
+      phone: r.phone ?? null,
+      instagram: r.instagram ?? null,
+      source: r.source,
+    }));
+
     return ok({
       query,
       found: raws.length,
@@ -57,6 +69,7 @@ export async function POST(req: NextRequest) {
       created: res.created,
       duplicates: res.duplicates,
       source: raws[0]?.source ?? null,
+      leads,
     });
   } catch (err) {
     return handleError(err);
