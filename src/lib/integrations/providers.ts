@@ -89,11 +89,13 @@ export const DISPLAY_INTEGRATIONS: DisplayIntegration[] = [
   { id: "instagram", label: "Instagram", kind: "oauth" },
   { id: "whatsapp", label: "WhatsApp", kind: "oauth" },
   { id: "pluslide", label: "Pluslide (AI Slides)", kind: "key" },
+  { id: "magichour", label: "Magic Hour (AI Image & Video)", kind: "key" },
 ];
 
 /** True when a KEY-based integration has its credentials set in env. */
 export function isKeyIntegrationConfigured(id: string): boolean {
   if (id === "pluslide") return env.pluslideApiKey.length > 0;
+  if (id === "magichour") return env.magicHourApiKey.length > 0;
   return false;
 }
 

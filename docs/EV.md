@@ -46,7 +46,8 @@ scoped exclusively to Infinity Web & Apps, with hard honesty rules:
 | --------------- | ---------------------------------------------------------------- |
 | `ev_content`    | Store content, **duplicate-check**, approval lifecycle, stats    |
 | `ev_ideas`      | Idea engine: niche **gap analysis** + batch store (deduped)      |
-| `ev_image`      | Generate a **real** image (Gemini/OpenAI) → public URL to publish|
+| `ev_image`      | Generate a **real** image (Magic Hour / Gemini / OpenAI) → public URL |
+| `ev_video`      | Generate a **real** reel/video (Magic Hour) — text- or image-to-video |
 | `ev_leads`      | DARWIN bridge for **real** leads (honest when not connected)     |
 | `ev_instagram`  | Profile / media / insights + **approval-gated** publish (real)   |
 | `ev_analytics`  | Real IG + content metrics; states clearly what's unavailable     |
@@ -59,6 +60,19 @@ LLM brain, then `ev_content` stores + dedupes it. For **visuals**, `ev_image`
 calls the configured image model, stores the bytes (`EvMedia`), and returns a
 public URL served at `/api/ev/media/<id>` — that URL is what Instagram's Graph
 API fetches when publishing. No external image host is required.
+
+**Images & video via Magic Hour.** When `MAGICHOUR_API_KEY` is set, EV prefers
+Magic Hour for images and can generate **video/reels** with `ev_video`
+(text-to-video, or image-to-video from an EV image). Magic Hour jobs are async
+and video takes minutes, so the tools return a `projectId` and EV calls them
+again with `action: "check"` when you ask if it's ready. Finished media is
+downloaded into `EvMedia` and shown in the dashboard's liquid-glass popup
+(images render, videos play inline).
+
+```
+MAGICHOUR_API_KEY="..."           # magichour.ai → API
+MAGICHOUR_VIDEO_MODEL=""          # optional (e.g. kling-3.0, sora-2)
+```
 
 These only appear when EV is active; the base JARVIS toolset is unchanged.
 

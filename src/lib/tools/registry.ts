@@ -29,6 +29,7 @@ import { evInstagramTool } from "./ev/instagram";
 import { evAnalyticsTool } from "./ev/analytics";
 import { evOutreachTool } from "./ev/outreach";
 import { evImageTool } from "./ev/image";
+import { evVideoTool } from "./ev/video";
 
 const ALL_TOOLS: ToolDefinition[] = [
   calculatorTool as ToolDefinition,
@@ -53,6 +54,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   evAnalyticsTool as ToolDefinition,
   evOutreachTool as ToolDefinition,
   evImageTool as ToolDefinition,
+  evVideoTool as ToolDefinition,
 ];
 
 /**

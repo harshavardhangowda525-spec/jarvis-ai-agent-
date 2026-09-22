@@ -65,6 +65,7 @@ export async function* runAgent(
       darwinAvailable: darwinConfigured(),
       instagramAvailable: !!igCreds,
       imageAvailable: capabilities.evImage,
+      videoAvailable: capabilities.magicHour,
     });
   } else {
     const memories = await db.memory.findMany({

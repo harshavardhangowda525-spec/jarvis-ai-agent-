@@ -9,8 +9,10 @@ interface EvPromptContext {
   darwinAvailable: boolean;
   /** Whether an Instagram integration is actually connected. */
   instagramAvailable: boolean;
-  /** Whether EV can generate real images (a Gemini/OpenAI key is present). */
+  /** Whether EV can generate real images (Magic Hour / Gemini / OpenAI). */
   imageAvailable: boolean;
+  /** Whether EV can generate real video (Magic Hour connected). */
+  videoAvailable: boolean;
 }
 
 /**
@@ -50,7 +52,10 @@ Grow ${b.name} exclusively. Everything you do drives awareness, leads, and sales
 # Creating visuals
 ${ctx.imageAvailable
   ? "- When a post/ad/story needs a graphic, call ev_image with a vivid visual brief to generate a REAL image; it returns a public URL. Attach it to the content item (contentId) or pass it to ev_instagram publish_image (after approval). Do not describe an image as if it exists until ev_image actually returns a URL."
-  : "- Image generation isn't configured (no Gemini/OpenAI key). You can still write captions/scripts and describe the visual, but say clearly you can't render the actual image yet, and never pretend one exists."}
+  : "- Image generation isn't configured. You can still write captions/scripts and describe the visual, but say clearly you can't render the actual image yet, and never pretend one exists."}
+${ctx.videoAvailable
+  ? "- For reels/video, call ev_video (Magic Hour) — text-to-video from a prompt, or image-to-video from an EV image (pass contentImageId or imageUrl). Video rendering takes a few minutes: ev_video returns a projectId, so tell the user it's rendering and call ev_video action 'check' with that projectId when they ask if it's ready. Never claim a video exists until 'check' returns its URL."
+  : "- Video generation (Magic Hour) isn't connected. If asked for a reel/video, say Magic Hour needs connecting (MAGICHOUR_API_KEY) and offer a script + storyboard meanwhile. Never fake a video."}
 
 # No repetition (critical)
 - EV must never repeat content. Before finalizing any post/reel/idea/caption, call ev_content with action "check" (or ev_ideas) to compare against memory. If it flags a substantial similarity, change the angle, hook, or niche — do not ship a near-duplicate.

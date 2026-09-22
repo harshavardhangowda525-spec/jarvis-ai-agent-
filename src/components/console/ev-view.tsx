@@ -294,6 +294,7 @@ function EvCore(props: {
 /* ---------------- liquid-glass image message ---------------- */
 
 function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: string; onDismiss: () => void }) {
+  const isVideo = /kind=video|\.mp4|\.webm|\.mov/i.test(url);
   return (
     <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
       <div
@@ -327,7 +328,7 @@ function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: st
             <span className="flex h-6 w-6 items-center justify-center rounded-full border border-accent/40 bg-accent/15 text-accent">
               <ImageIcon className="h-3.5 w-3.5" />
             </span>
-            <span className="hud-label text-[10px] tracking-[0.28em] text-accent/80">EV · IMAGE READY</span>
+            <span className="hud-label text-[10px] tracking-[0.28em] text-accent/80">{isVideo ? "EV · VIDEO READY" : "EV · IMAGE READY"}</span>
           </div>
           <button
             onClick={onDismiss}
@@ -338,10 +339,14 @@ function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: st
           </button>
         </div>
 
-        {/* image inside an inner glass frame */}
+        {/* media inside an inner glass frame */}
         <div className="relative mx-4 mt-3 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt="EV generated marketing image" className="block h-auto w-full select-none" />
+          {isVideo ? (
+            <video src={url} controls autoPlay loop playsInline className="block h-auto max-h-[60vh] w-full" />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={url} alt="EV generated marketing image" className="block h-auto w-full select-none" />
+          )}
         </div>
 
         {/* caption */}

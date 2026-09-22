@@ -97,6 +97,13 @@ export const env = {
   // text brain — no extra credentials required for Gemini/OpenAI.
   evImageProvider: read("EV_IMAGE_PROVIDER").toLowerCase(),
   evImageModel: read("EV_IMAGE_MODEL"),
+
+  // Magic Hour AI — dedicated image + VIDEO generation for EV. Bearer API key.
+  // Server-side only. Async jobs: create → poll project → download URL.
+  magicHourApiKey: read("MAGICHOUR_API_KEY"),
+  magicHourBaseUrl: read("MAGICHOUR_BASE_URL") || "https://api.magichour.ai",
+  // Optional model overrides (Magic Hour defaults are used when blank).
+  magicHourVideoModel: read("MAGICHOUR_VIDEO_MODEL"),
 };
 
 /**
@@ -317,9 +324,13 @@ export const capabilities = {
   get darwin() {
     return env.darwinApiUrl.length > 0;
   },
-  /** EV can generate images (a Gemini or OpenAI key is present). */
+  /** EV can generate images (Magic Hour, or a Gemini/OpenAI key is present). */
   get evImage() {
-    return env.geminiApiKey.length > 0 || env.openaiApiKey.length > 0;
+    return env.magicHourApiKey.length > 0 || env.geminiApiKey.length > 0 || env.openaiApiKey.length > 0;
+  },
+  /** Magic Hour is configured — enables high-quality image + video generation. */
+  get magicHour() {
+    return env.magicHourApiKey.length > 0;
   },
 };
 
