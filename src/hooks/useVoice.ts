@@ -64,6 +64,7 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
   const browserSTTRef = useRef(false); // true = transcribe with the browser
   const wantRecogRef = useRef(false); // whether recognition should be running
   const recogActiveRef = useRef(false);
+  const startRecognitionRef = useRef<() => void>(() => {}); // latest startRecognition
   const recognitionSupported =
     typeof window !== "undefined" &&
     !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
@@ -138,7 +139,22 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
       const res = await fetch("/api/voice/stt", { method: "POST", body: form });
       const json = await res.json();
       if (!res.ok) {
-        fail(json.error || "Transcription failed.", "error");
+        const msg: string = json.error || "Transcription failed.";
+        // ElevenLabs key missing/invalid → switch to the FREE browser recognizer
+        // for the rest of the session (releasing the mic so it can capture).
+        if (recognitionSupported && (res.status === 401 || res.status === 403 || res.status === 503 || /invalid|unauthor|api key|not configured/i.test(msg))) {
+          browserSTTRef.current = true;
+          if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+          streamRef.current?.getTracks().forEach((t) => t.stop());
+          streamRef.current = null;
+          audioCtxRef.current?.close().catch(() => {});
+          audioCtxRef.current = null;
+          analyserRef.current = null;
+          setError(null);
+          if (enabledRef.current && !mutedRef.current) startRecognitionRef.current();
+          return;
+        }
+        fail(msg, "error");
         // Recover to listening after surfacing the error.
         setTimeout(() => enabledRef.current && !mutedRef.current && setStatusBoth("listening"), 1200);
         return;
@@ -162,7 +178,7 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
       fail("Network error during transcription.", "error");
       setTimeout(() => enabledRef.current && !mutedRef.current && setStatusBoth("listening"), 1200);
     }
-  }, [fail, onTranscript, setStatusBoth]);
+  }, [fail, onTranscript, setStatusBoth, recognitionSupported]);
 
   const stopCapture = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
@@ -238,6 +254,8 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
     const r = recognitionRef.current;
     if (r && recogActiveRef.current) { try { r.abort(); } catch { /* ignore */ } }
   }, []);
+  // Keep a ref so callbacks defined earlier (finalizeCapture) can trigger it.
+  startRecognitionRef.current = startRecognition;
 
   // --- Metering + VAD loop ------------------------------------------------
   const loop = useCallback(() => {
