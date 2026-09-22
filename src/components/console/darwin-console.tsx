@@ -1,10 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Loader2, Search, ChevronLeft, ChevronRight, Radar } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Mic, MicOff, Loader2, Search, ChevronLeft, ChevronRight, Radar, LogOut } from "lucide-react";
 import { useVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import { cn, timeAgo } from "@/lib/utils";
+
+// Phrases that close DARWIN and return to JARVIS.
+const DEACTIVATE_RE = /\b(deactivate|de-activate|shut ?down|power down|close|exit|leave|stand ?down|log ?off)\b.*\bdarwin\b|\bdarwin[,\s]+(deactivate|shut ?down|stand ?down|close|exit|off)\b|^(deactivate|shut ?down|power down|exit|close|stand ?down|back to jarvis|go to jarvis|open jarvis|return to jarvis)[\s!.,]*$/i;
 
 type DarwinState = "IDLE" | "LISTENING" | "THINKING" | "SEARCHING" | "PROCESSING" | "WAITING_FOR_APPROVAL" | "COMPLETED" | "ERROR";
 
@@ -23,13 +27,16 @@ interface Overview {
 }
 
 export function DarwinConsole() {
+  const router = useRouter();
   const [voiceStarted, setVoiceStarted] = useState(false);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchMsg, setSearchMsg] = useState("");
   // Cinematic boot sequence on entry.
   const [boot, setBoot] = useState<"run" | "fade" | "done">("run");
+  const [leaving, setLeaving] = useState(false);
   const sendRef = useRef<(t: string) => void>(() => {});
+  const deactivateRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const t1 = setTimeout(() => setBoot("fade"), 1900);
@@ -44,7 +51,28 @@ export function DarwinConsole() {
     fetch("/api/darwin/overview").then((r) => (r.ok ? r.json() : null)).then((j) => j?.data && setOverview(j.data)).catch(() => {});
   }, []);
   useEffect(() => { loadOverview(); const t = setInterval(loadOverview, 20000); return () => clearInterval(t); }, [loadOverview]);
-  useEffect(() => { sendRef.current = (t: string) => { if (t.trim()) agent.send(t, { agent: "darwin" }); }; }, [agent]);
+
+  // Deactivate DARWIN and return to JARVIS: brief goodbye, release the mic, route.
+  const deactivate = useCallback(() => {
+    if (leaving) return;
+    setLeaving(true);
+    const spoke = voiceStarted && !voice.muted && voice.enabled;
+    // Speak the goodbye (don't stop() first — that would cut it off). Navigating
+    // unmounts the console, whose cleanup releases the mic so JARVIS can take it.
+    if (spoke) { try { voice.speak("Deactivating. Handing you back to JARVIS."); } catch { /* ignore */ } }
+    setTimeout(() => router.push("/dashboard"), spoke ? 1100 : 300);
+  }, [leaving, router, voice, voiceStarted]);
+  useEffect(() => { deactivateRef.current = deactivate; }, [deactivate]);
+
+  useEffect(() => {
+    sendRef.current = (t: string) => {
+      const s = t.trim();
+      if (!s) return;
+      // "deactivate" / "close darwin" / "back to jarvis" → return to JARVIS.
+      if (DEACTIVATE_RE.test(s)) { deactivateRef.current(); return; }
+      agent.send(s, { agent: "darwin" });
+    };
+  }, [agent]);
 
   async function enableVoice() { const ok = await voice.init(); if (ok) setVoiceStarted(true); return ok; }
 
@@ -82,6 +110,14 @@ export function DarwinConsole() {
       {/* cinematic boot sequence */}
       {boot !== "done" && <DarwinBoot fading={boot === "fade"} />}
 
+      {/* deactivation fade → JARVIS */}
+      {leaving && (
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-[#04060d]/95 backdrop-blur-sm" style={{ animation: "dw-reveal .4s ease both" }}>
+          <span className="hud-label text-[11px] tracking-[0.4em] text-accent/80">DEACTIVATING DARWIN</span>
+          <span className="mt-2 text-xs text-muted-foreground">Returning to JARVIS…</span>
+        </div>
+      )}
+
       {/* everything reveals once the boot clears */}
       <div style={boot === "done" ? { animation: "dw-reveal .7s ease both" } : { opacity: 0 }}>
       {/* ambient */}
@@ -102,6 +138,11 @@ export function DarwinConsole() {
           <button onClick={() => (voiceStarted ? voice.toggleMute() : enableVoice())} title="Voice"
             className={cn("flex h-7 w-7 items-center justify-center rounded-full border transition", voiceStarted && !voice.muted ? "border-accent bg-accent/15 text-accent animate-hud-pulse" : "border-border text-muted-foreground hover:border-accent/50")}>
             {voiceStarted && voice.muted ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
+          </button>
+          {/* deactivate → back to JARVIS */}
+          <button onClick={deactivate} disabled={leaving} title="Deactivate DARWIN — back to JARVIS"
+            className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground transition hover:border-destructive/60 hover:text-destructive disabled:opacity-50">
+            <LogOut className="h-3 w-3" /> Deactivate
           </button>
         </div>
       </header>
