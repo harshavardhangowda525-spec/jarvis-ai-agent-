@@ -76,6 +76,13 @@ export const evVideoTool: ToolDefinition<Input> = {
       // Our media route is public, so Magic Hour can fetch it as the start frame.
       if (m) imageUrl = `${env.appUrl.replace(/\/$/, "")}/api/ev/media/${m.id}`;
     }
+    // Magic Hour fetches the start image server-side — if our URL isn't public
+    // (APP_URL not set to a public https URL), drop it and do text-to-video so
+    // the video still generates instead of failing on an unreachable image.
+    if (imageUrl && (!/^https:\/\//i.test(imageUrl) || /localhost|127\.0\.0\.1/i.test(imageUrl))) {
+      ctx.activity("Start image URL isn't public — rendering text-to-video instead.");
+      imageUrl = undefined;
+    }
 
     try {
       ctx.activity("Starting video render on Magic Hour…");

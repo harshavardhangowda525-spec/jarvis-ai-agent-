@@ -30,6 +30,14 @@ const schema = z.object({
 
 type Input = z.infer<typeof schema>;
 
+/** Instagram fetches media server-side, so the URL must be public https. */
+function assertPublicUrl(url: string, what: string) {
+  if (/^https:\/\//i.test(url) && !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(url)) return;
+  throw new ToolError(
+    `The ${what} isn't a public https URL (${url.slice(0, 40)}…). Instagram can't fetch it. Set APP_URL to your public https app URL (on Vercel it's auto-detected after a redeploy), then try again.`,
+  );
+}
+
 export const evInstagramTool: ToolDefinition<Input> = {
   name: "ev_instagram",
   description:
@@ -76,6 +84,7 @@ export const evInstagramTool: ToolDefinition<Input> = {
         case "publish_image": {
           if (!input.imageUrl) throw new ToolError("A public 'imageUrl' is required to publish.");
           if (!input.caption) throw new ToolError("A 'caption' is required to publish.");
+          assertPublicUrl(input.imageUrl, "image URL");
           ctx.activity("Publishing to Instagram…");
           const mediaId = await igPublishImage(creds, input.imageUrl, input.caption);
           // Mark the source content as truly published only on confirmed success.
@@ -96,6 +105,7 @@ export const evInstagramTool: ToolDefinition<Input> = {
           if (!containerId) {
             if (!input.videoUrl) throw new ToolError("A public 'videoUrl' is required to publish a Reel.");
             if (!input.caption) throw new ToolError("A 'caption' is required to publish a Reel.");
+            assertPublicUrl(input.videoUrl, "video URL");
             ctx.activity("Uploading Reel to Instagram…");
             containerId = await igCreateReel(creds, input.videoUrl, input.caption);
           }

@@ -13,10 +13,26 @@ function read(name: string): string {
   return (process.env[name] ?? "").trim();
 }
 
+/**
+ * Public base URL of the app. External services (Instagram Graph API, Magic Hour
+ * image-to-video) fetch our generated media server-side, so this MUST be a
+ * publicly reachable https URL — not localhost. We honor APP_URL first, then
+ * auto-detect Vercel's URLs so publishing "just works" on Vercel with no config.
+ */
+function resolveAppUrl(): string {
+  const explicit = read("APP_URL");
+  if (explicit) return explicit.replace(/\/$/, "");
+  const prod = read("VERCEL_PROJECT_PRODUCTION_URL"); // stable production domain
+  if (prod) return `https://${prod}`;
+  const dep = read("VERCEL_URL"); // per-deploy URL (still public)
+  if (dep) return `https://${dep}`;
+  return "http://localhost:3000";
+}
+
 export const env = {
   databaseUrl: read("DATABASE_URL"),
   authSecret: read("AUTH_SECRET"),
-  appUrl: read("APP_URL") || "http://localhost:3000",
+  appUrl: resolveAppUrl(),
 
   // Legacy/Anthropic key. Kept for backward compatibility.
   aiApiKey: read("AI_API_KEY"),
