@@ -15,7 +15,7 @@ function resolveChain() {
   // the free tier). Cerebras is later since its free tier may require billing.
   const order = [
     ["groq", read("GROQ_API_KEY"), "https://api.groq.com/openai/v1", read("GROQ_MODEL") || "openai/gpt-oss-120b"],
-    ["openrouter", read("OPENROUTER_API_KEY"), "https://openrouter.ai/api/v1", read("OPENROUTER_MODEL") || "meta-llama/llama-3.3-70b-instruct:free"],
+    ["openrouter", read("OPENROUTER_API_KEY"), "https://openrouter.ai/api/v1", read("OPENROUTER_MODEL") || "deepseek/deepseek-chat-v3-0324:free"],
     ["gemini", read("GEMINI_API_KEY"), "https://generativelanguage.googleapis.com/v1beta/openai", read("GEMINI_MODEL") || "gemini-3.6-flash"],
     ["cerebras", read("CEREBRAS_API_KEY"), "https://api.cerebras.ai/v1", read("CEREBRAS_MODEL") || "gpt-oss-120b"],
     ["openai", read("OPENAI_API_KEY"), read("OPENAI_BASE_URL") || "https://api.openai.com/v1", "gpt-4o-mini"],
@@ -109,8 +109,11 @@ export async function askJson(system, user) {
             messages: [{ role: "system", content: sys }, { role: "user", content: user }],
           };
           if (useJsonMode) body.response_format = { type: "json_object" };
-          // Keep reasoning short so gpt-oss actually emits the JSON answer.
-          if (isGptOss && (P.provider === "groq" || P.provider === "cerebras")) {
+          // gpt-oss hides its answer in a separate reasoning channel, leaving
+          // `content` empty. On Groq, reasoning_format:"hidden" collapses the
+          // reasoning so the final JSON lands in `content`.
+          if (groqGptOss) {
+            body.reasoning_format = "hidden";
             body.reasoning_effort = "low";
           }
 
@@ -123,7 +126,10 @@ export async function askJson(system, user) {
 
           if (res.ok) {
             const data = await res.json();
-            return parseJson(data.choices?.[0]?.message?.content ?? "");
+            const msg = data.choices?.[0]?.message ?? {};
+            // Prefer content; fall back to the reasoning channel if content is empty.
+            const out = (msg.content && msg.content.trim()) ? msg.content : (msg.reasoning || "");
+            return parseJson(out);
           }
 
           const text = (await res.text().catch(() => "")).slice(0, 240);
