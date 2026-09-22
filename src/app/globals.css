@@ -191,6 +191,16 @@ body {
 @keyframes ev-panel-in { 0% { opacity: 0; transform: translateY(10px); } 100% { opacity: 1; transform: translateY(0); } }
 @keyframes ev-msg-in { 0% { opacity: 0; transform: translateY(18px) scale(0.94); filter: blur(10px); } 100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
 @keyframes ev-sheen { 0% { transform: translateX(-120%) skewX(-18deg); } 100% { transform: translateX(220%) skewX(-18deg); } }
+/* Holographic projection: the card unfolds up from a thin glowing line with a
+ * slight 3D tilt that settles flat — a distinctive "materialize" for pop-ups. */
+@keyframes ev-holo-in {
+  0%   { opacity: 0; transform: perspective(1200px) rotateX(28deg) scaleY(0.015) translateY(34px); filter: blur(14px) brightness(1.6); }
+  45%  { opacity: 1; transform: perspective(1200px) rotateX(11deg) scaleY(1.06) translateY(0);    filter: blur(5px)  brightness(1.25); }
+  72%  {            transform: perspective(1200px) rotateX(-3deg) scaleY(0.985);                   filter: blur(1px)  brightness(1.08); }
+  100% { opacity: 1; transform: perspective(1200px) rotateX(0deg)  scaleY(1)     translateY(0);    filter: blur(0)    brightness(1); }
+}
+/* One-shot scan line that sweeps down the card as it forms. */
+@keyframes ev-holo-scan { 0% { top: 0; opacity: 0; } 12% { opacity: 0.9; } 100% { top: 100%; opacity: 0; } }
 .animate-fade-in { animation: fade-in 0.35s ease-out; }
 .animate-hud-spin { animation: hud-spin 18s linear infinite; }
 .animate-hud-spin-rev { animation: hud-spin-rev 24s linear infinite; }

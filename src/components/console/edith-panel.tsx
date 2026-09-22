@@ -315,13 +315,17 @@ function EdithPreview({ url, path, onDismiss }: { url: string; path: string; onD
         className="pointer-events-auto relative flex w-full max-w-3xl flex-col overflow-hidden rounded-3xl border border-white/15"
         style={{
           height: "min(80vh, 640px)",
-          animation: "ev-msg-in 0.7s cubic-bezier(0.22,1,0.36,1) both",
+          transformOrigin: "center bottom",
+          animation: "ev-holo-in 0.9s cubic-bezier(0.22,1,0.36,1) both",
           background: "linear-gradient(145deg, hsl(0 0% 100% / 0.10), hsl(210 60% 12% / 0.30))",
           backdropFilter: "blur(26px) saturate(1.3)",
           WebkitBackdropFilter: "blur(26px) saturate(1.3)",
           boxShadow: "0 24px 80px -24px hsl(var(--accent)/0.6), inset 0 1px 0 hsl(0 0% 100% / 0.22), inset 0 0 40px -20px hsl(var(--accent)/0.5)",
         }}
       >
+        {/* one-shot holo scan line on entrance */}
+        <div className="pointer-events-none absolute inset-x-0 z-10 h-px" aria-hidden
+          style={{ background: "linear-gradient(90deg, transparent, hsl(var(--accent-bright)), transparent)", boxShadow: "0 0 12px hsl(var(--accent-bright))", animation: "ev-holo-scan 0.9s ease-out both" }} />
         {/* moving sheen */}
         <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
           <div className="absolute -inset-y-8 left-0 w-1/3" style={{ background: "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.12), transparent)", animation: "ev-sheen 5s ease-in-out infinite" }} />
