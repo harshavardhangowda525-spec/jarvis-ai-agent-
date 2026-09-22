@@ -224,3 +224,20 @@ body {
 }
 
 :focus-visible { outline: 2px solid hsl(var(--accent)); outline-offset: 2px; }
+
+/* DARWIN form inputs (Lead Discovery panel) */
+.dw-input {
+  min-width: 0;
+  width: 9rem;
+  max-width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border) / 0.35);
+  background: hsl(var(--accent) / 0.05);
+  padding: 0.3rem 0.55rem;
+  font-size: 11px;
+  color: hsl(var(--foreground) / 0.9);
+  outline: none;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.dw-input:focus { border-color: hsl(var(--accent) / 0.6); background: hsl(var(--accent) / 0.08); }
+.dw-input::placeholder { color: hsl(var(--muted-foreground) / 0.7); }
