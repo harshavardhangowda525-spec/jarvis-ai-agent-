@@ -25,9 +25,9 @@ interface UseAgentOptions {
   onTool?: (t: { name: string; status: "ok" | "error"; summary: string }) => void;
 }
 
-/** Per-send options. `agent: "ev"` routes the turn through EV's marketing brain. */
+/** Per-send options. `agent` routes the turn through a specific internal brain. */
 export interface SendOptions {
-  agent?: "jarvis" | "ev";
+  agent?: "jarvis" | "ev" | "darwin";
 }
 
 let idc = 0;

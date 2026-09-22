@@ -110,6 +110,10 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Bringing EDITH online.");
     setTimeout(() => router.push("/dashboard/edith"), 1900);
   }, [router, voice, voiceStarted]);
+  const launchDarwin = useCallback(() => {
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Opening DARWIN. Lead systems online.");
+    setTimeout(() => router.push("/dashboard/darwin"), 700);
+  }, [router, voice, voiceStarted]);
   const openHumanoid = useCallback(() => {
     setHumanoidPhase("in");
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Humanoid view activated.");
@@ -169,6 +173,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         launchEdith();
         return;
       }
+      // "DARWIN", "open DARWIN", "activate DARWIN" → open the lead-gen/CRM console.
+      if (/^darwin[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+darwin\b|\bdarwin[,\s]+(online|wake up|come online)\b/.test(low)) {
+        launchDarwin();
+        return;
+      }
       // "read my screen", "what's on my screen", "look at my screen"…
       if (/\b(read|look at|see|analyz|check|what('?s| is) on).{0,20}\b(screen|display|monitor)\b/.test(low)) {
         readScreenRef.current(t);
@@ -176,7 +185,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchEdith, openHumanoid, closeHumanoid, openEv, closeEv, evPhase]);
+  }, [agent, sleep, launchEdith, launchDarwin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase]);
 
   const wake = useWakeWord({
     enabled: !voiceStarted,

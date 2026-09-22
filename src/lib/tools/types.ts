@@ -42,11 +42,11 @@ export interface ToolDefinition<Input = unknown> {
   /** Capability flag name this tool depends on (e.g. "search", "weather"). */
   requiresCapability?: "search" | "weather" | "websiteData" | "compass" | "pluslide";
   /**
-   * Restricts this tool to a specific internal agent. EV's marketing tools are
-   * scoped to "ev" so they only appear when EV is active — they never clutter
-   * the base JARVIS toolset. Omitted = available to every agent.
+   * Restricts this tool to a specific internal agent (EV = marketing,
+   * DARWIN = lead-gen/CRM). Scoped tools only appear when that agent is active,
+   * so they never clutter the base JARVIS toolset. Omitted = available to all.
    */
-  agentScope?: "ev";
+  agentScope?: "ev" | "darwin";
   /** Short label shown in the activity panel while running. */
   activityLabel: string;
   execute: (input: Input, ctx: ToolContext) => Promise<ToolResult>;

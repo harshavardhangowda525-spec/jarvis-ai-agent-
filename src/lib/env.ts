@@ -104,6 +104,14 @@ export const env = {
   magicHourBaseUrl: read("MAGICHOUR_BASE_URL") || "https://api.magichour.ai",
   // Optional model overrides (Magic Hour defaults are used when blank).
   magicHourVideoModel: read("MAGICHOUR_VIDEO_MODEL"),
+
+  // DARWIN lead generation. Google Places (real, authorized) is the primary lead
+  // source. Without it (and with no CSV/manual leads) DARWIN shows
+  // "NO REAL DATA AVAILABLE — CONNECT A DATA SOURCE" rather than any mock data.
+  googlePlacesApiKey: read("GOOGLE_PLACES_API_KEY"),
+  // Hard guard: even if code were misconfigured, never fabricate leads.
+  mockDataDisabled: (read("MOCK_DATA") || "false").toLowerCase() !== "true",
+  appEnv: read("APP_ENV").toLowerCase() || "development",
 };
 
 /**
@@ -331,6 +339,10 @@ export const capabilities = {
   /** Magic Hour is configured — enables high-quality image + video generation. */
   get magicHour() {
     return env.magicHourApiKey.length > 0;
+  },
+  /** Google Places lead source is connected (real business discovery). */
+  get googlePlaces() {
+    return env.googlePlacesApiKey.length > 0;
   },
 };
 

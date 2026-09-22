@@ -12,6 +12,9 @@ import { memorySummary } from "@/lib/ev/memory";
 import { resolveIgCreds } from "@/lib/ev/instagram";
 import { darwinConfigured } from "@/lib/ev/darwin";
 import { capabilities } from "@/lib/env";
+import { buildDarwinSystemPrompt } from "@/lib/darwin/prompt";
+import { hasDiscoverySource } from "@/lib/darwin/sources";
+import { emailChannelReady } from "@/lib/darwin/email";
 
 export type AgentEvent =
   | { type: "activity"; label: string }
@@ -32,8 +35,8 @@ export interface AgentInput {
   message: string;
   /** Per-user preferred primary AI provider (from Settings); overrides env default. */
   preferredProvider?: string | null;
-  /** Which internal agent is driving. "ev" swaps in EV's marketing brain + tools. */
-  agent?: "ev";
+  /** Which internal agent is driving: "ev" (marketing) or "darwin" (lead-gen/CRM). */
+  agent?: "ev" | "darwin";
 }
 
 const MAX_STEPS = 8;
@@ -50,6 +53,7 @@ export async function* runAgent(
   const db = getDb();
 
   const isEv = input.agent === "ev";
+  const isDarwin = input.agent === "darwin";
 
   let system: string;
   if (isEv) {
@@ -62,10 +66,29 @@ export async function* runAgent(
       userDisplayName: input.displayName,
       timezone: input.timezone,
       memory,
-      darwinAvailable: darwinConfigured(),
+      darwinAvailable: darwinConfigured() || true, // DARWIN is now internal
       instagramAvailable: !!igCreds,
       imageAvailable: capabilities.evImage,
       videoAvailable: capabilities.magicHour,
+    });
+  } else if (isDarwin) {
+    // DARWIN's lead-gen/CRM brain — real data only.
+    const [leads, dueFollowUps, emailReady] = await Promise.all([
+      db.darwinLead.findMany({ where: { userId: input.userId }, select: { stage: true } }),
+      db.darwinFollowUp.count({ where: { userId: input.userId, status: "pending", dueAt: { lte: new Date() } } }),
+      emailChannelReady(input.userId).catch(() => false),
+    ]);
+    const byStage: Record<string, number> = {};
+    for (const l of leads) byStage[l.stage] = (byStage[l.stage] ?? 0) + 1;
+    const crmSummary = leads.length
+      ? `CRM: ${leads.length} real leads (${Object.entries(byStage).map(([s, n]) => `${n} ${s}`).join(", ")}). ${dueFollowUps} follow-up(s) due now.`
+      : "CRM is empty — no leads discovered yet. Use darwin_search once a source is connected.";
+    system = buildDarwinSystemPrompt({
+      userDisplayName: input.displayName,
+      timezone: input.timezone,
+      crmSummary,
+      discoveryAvailable: hasDiscoverySource(),
+      emailAvailable: emailReady,
     });
   } else {
     const memories = await db.memory.findMany({
@@ -82,7 +105,7 @@ export async function* runAgent(
     });
   }
 
-  const tools = availableTools(isEv ? "ev" : undefined);
+  const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {
     userId: input.userId,

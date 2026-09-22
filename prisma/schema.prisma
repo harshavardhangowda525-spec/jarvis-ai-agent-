@@ -30,6 +30,10 @@ model User {
   sessions         Session[]
   evContents       EvContent[]
   evMedia          EvMedia[]
+  darwinLeads      DarwinLead[]
+  darwinActivities DarwinActivity[]
+  darwinFollowUps  DarwinFollowUp[]
+  darwinMessages   DarwinMessage[]
 
   @@index([email])
 }
@@ -221,6 +225,108 @@ model EvMedia {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+/// DARWIN — real lead / CRM record for Infinity Web & Apps. Every row is a REAL
+/// business from a connected source (Google Places, CSV import, user-provided).
+/// `verifiedFields` lists which fields are source-verified facts vs AI analysis.
+/// `fingerprint` (domain / phone / name+location) enforces duplicate protection.
+model DarwinLead {
+  id             String    @id @default(cuid())
+  userId         String
+  businessName   String
+  category       String?
+  location       String?
+  website        String?
+  phone          String?
+  email          String?
+  instagram      String?
+  // Provenance
+  source         String    @default("manual") // google_places | csv | manual | instagram | ...
+  sourceRef      String? // place_id / row id / URL the data came from
+  sourceUrl      String?
+  discoveredAt   DateTime  @default(now())
+  lastVerifiedAt DateTime?
+  // CRM
+  stage          String    @default("new") // new|qualified|contacted|replied|interested|demo|proposal|negotiation|won|lost|follow_up
+  assignedTo     String?
+  opportunityType String? // no_website | outdated_website | no_app | ... (AI analysis)
+  notes          String?   @db.Text
+  nextFollowUpAt DateTime?
+  // Which fields are source-VERIFIED facts (the rest of the analysis is AI).
+  verifiedFields String[]  @default([])
+  aiAnalysis     String?   @db.Text // clearly-labeled AI opportunity analysis
+  leadScore      Int? // AI analysis, never presented as verified fact
+  fingerprint    String
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities  DarwinActivity[]
+  followUps   DarwinFollowUp[]
+  messages    DarwinMessage[]
+
+  @@index([userId, stage, nextFollowUpAt])
+  @@index([userId, discoveredAt])
+  @@index([userId, fingerprint])
+}
+
+/// Real activity log — only actual events (discovered, stage change, message sent…).
+model DarwinActivity {
+  id        String   @id @default(cuid())
+  userId    String
+  leadId    String?
+  type      String // discovered | qualified | stage_changed | note | message_drafted | message_sent | message_failed | reply_received | followup_scheduled | followup_completed
+  detail    String   @db.Text
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead DarwinLead? @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([leadId, createdAt])
+}
+
+model DarwinFollowUp {
+  id        String    @id @default(cuid())
+  userId    String
+  leadId    String
+  dueAt     DateTime
+  reason    String?
+  message   String?   @db.Text
+  priority  String    @default("normal") // low | normal | high
+  status    String    @default("pending") // pending | completed | cancelled
+  createdAt DateTime  @default(now())
+  completedAt DateTime?
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead DarwinLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, dueAt])
+}
+
+/// Outreach / communication record with REAL delivery states.
+model DarwinMessage {
+  id         String    @id @default(cuid())
+  userId     String
+  leadId     String
+  channel    String    @default("email") // email | instagram_dm | note
+  subject    String?
+  body       String    @db.Text
+  // draft | approval_required | sending | sent | delivered | failed | replied
+  status     String    @default("draft")
+  externalId String? // provider message id when actually sent
+  error      String?
+  createdAt  DateTime  @default(now())
+  sentAt     DateTime?
+
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead DarwinLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([leadId, createdAt])
 }
 
 model Integration {

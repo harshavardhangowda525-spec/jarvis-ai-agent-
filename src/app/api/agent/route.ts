@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
             history,
             message,
             preferredProvider: (profile as { aiProvider?: string | null } | null)?.aiProvider ?? null,
-            agent: agent === "ev" ? "ev" : undefined,
+            agent: agent === "ev" ? "ev" : agent === "darwin" ? "darwin" : undefined,
           })) {
             if (event.type === "done") finalText = event.text;
             if (event.type === "tool") {

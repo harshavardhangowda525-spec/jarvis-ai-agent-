@@ -38,9 +38,9 @@ export const memoryInputSchema = z.object({
 export const agentRequestSchema = z.object({
   conversationId: z.string().cuid().optional().nullable(),
   message: z.string().trim().min(1).max(8000),
-  // Which internal agent should handle this turn. "ev" activates EV's marketing
-  // brain + tools; omitted/"jarvis" is the default assistant.
-  agent: z.enum(["jarvis", "ev"]).optional(),
+  // Which internal agent should handle this turn. "ev" = marketing brain/tools,
+  // "darwin" = lead-gen/CRM brain/tools; omitted/"jarvis" is the default assistant.
+  agent: z.enum(["jarvis", "ev", "darwin"]).optional(),
   // Client may confirm a previously-requested destructive action.
   confirm: z
     .object({
