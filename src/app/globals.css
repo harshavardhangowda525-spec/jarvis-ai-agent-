@@ -241,3 +241,11 @@ body {
 }
 .dw-input:focus { border-color: hsl(var(--accent) / 0.6); background: hsl(var(--accent) / 0.08); }
 .dw-input::placeholder { color: hsl(var(--muted-foreground) / 0.7); }
+
+/* DARWIN cinematic boot sequence */
+@keyframes dw-boot-out { 0% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.04); pointer-events: none; } }
+@keyframes dw-reveal { 0% { opacity: 0; transform: translateY(10px) scale(0.995); filter: blur(6px); } 100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
+@keyframes dw-scan { 0% { top: -20%; opacity: 0; } 20% { opacity: 1; } 100% { top: 120%; opacity: 0; } }
+@keyframes dw-ring-in { 0% { opacity: 0; transform: scale(0.4); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes dw-hex-pop { 0% { opacity: 0; transform: scale(0.4); filter: blur(8px); } 70% { opacity: 1; transform: scale(1.08); } 100% { opacity: 1; transform: scale(1); filter: blur(0); } }
+@keyframes dw-line { 0% { opacity: 0; transform: translateY(4px); } 30% { opacity: 1; transform: translateY(0); } 70% { opacity: 1; } 100% { opacity: 0; transform: translateY(-4px); } }

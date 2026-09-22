@@ -20,7 +20,7 @@ type Input = z.infer<typeof schema>;
 export const darwinSearchTool: ToolDefinition<Input> = {
   name: "darwin_search",
   description:
-    "Find REAL businesses from connected lead sources (Google Places) and store them in the CRM with duplicate protection. " +
+    "Find REAL businesses from connected lead sources (Google Places or Foursquare Places) and store them in the CRM with duplicate protection. " +
     "Returns the actual number of real businesses found — never fabricates or pads results. If no source is connected it says so.",
   schema,
   agentScope: "darwin",

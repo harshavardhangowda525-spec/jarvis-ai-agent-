@@ -68,7 +68,12 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     evPulseTimer.current = setTimeout(() => setEvPulse(null), kind === "success" ? 1500 : 1300);
   }, []);
 
-  const voice = useVoice({ onTranscript: (t) => sendRef.current(t), autoListen: true });
+  // EV runs inside this console; while it's active JARVIS speaks in EV's voice.
+  const voice = useVoice({
+    onTranscript: (t) => sendRef.current(t),
+    autoListen: true,
+    voiceProfile: evPhase === "off" ? "jarvis" : "ev",
+  });
   const agent = useAgent({
     onAssistantComplete: (text) => {
       // EV prepares content by presenting "CONTENT READY …" — that's the signal

@@ -37,6 +37,7 @@ export interface SourceInfo {
 export function listSources(): SourceInfo[] {
   return [
     { id: "google_places", label: "Google Places", kind: "api", connected: env.googlePlacesApiKey.length > 0 },
+    { id: "foursquare", label: "Foursquare Places (free)", kind: "api", connected: env.foursquareApiKey.length > 0 },
     { id: "csv", label: "CSV Import", kind: "import", connected: true },
     { id: "manual", label: "Manual / user-provided", kind: "import", connected: true },
   ];
@@ -44,7 +45,7 @@ export function listSources(): SourceInfo[] {
 
 /** True when at least one automated discovery source (an API) is connected. */
 export function hasDiscoverySource(): boolean {
-  return env.googlePlacesApiKey.length > 0;
+  return env.googlePlacesApiKey.length > 0 || env.foursquareApiKey.length > 0;
 }
 
 // --- Google Places (New Places API v1) -----------------------------------
@@ -144,16 +145,105 @@ export async function searchGooglePlaces(query: string, limit: number): Promise<
   return out.slice(0, want);
 }
 
+// --- Foursquare Places (free alternative to Google Places) ----------------
+
+function mapFoursquare(p: any): RawLead {
+  // Defensive across Foursquare API generations (v3 + new Places API).
+  const name: string = p?.name ?? "";
+  const website: string | undefined = p?.website || undefined;
+  const phone: string | undefined = p?.tel || undefined;
+  const email: string | undefined = p?.email || undefined;
+  const loc = p?.location ?? {};
+  const location: string | undefined =
+    loc?.formatted_address || [loc?.address, loc?.locality, loc?.region, loc?.postcode].filter(Boolean).join(", ") || undefined;
+  const category: string | undefined = p?.categories?.[0]?.name ?? p?.categories?.[0]?.short_name ?? undefined;
+  const id: string | undefined = p?.fsq_place_id ?? p?.fsq_id ?? p?.id;
+  const instagram: string | undefined = p?.social_media?.instagram
+    ? `https://instagram.com/${String(p.social_media.instagram).replace(/^@/, "")}`
+    : undefined;
+
+  const verified: string[] = ["businessName"];
+  if (website) verified.push("website");
+  if (phone) verified.push("phone");
+  if (email) verified.push("email");
+  if (location) verified.push("location");
+  if (category) verified.push("category");
+
+  return {
+    businessName: name,
+    category,
+    location,
+    website,
+    phone,
+    email,
+    instagram,
+    source: "foursquare",
+    sourceRef: id,
+    sourceUrl: id ? `https://foursquare.com/v/${id}` : undefined,
+    verifiedFields: verified,
+    metadata: {
+      rating: p?.rating ?? null,
+      popularity: p?.popularity ?? null,
+      categories: (p?.categories ?? []).map((c: any) => c?.name).filter(Boolean),
+    },
+  };
+}
+
 /**
- * Unified discovery entry point. Currently backed by Google Places. Returns the
- * REAL leads found (may be fewer than requested — that's the truth, not padded).
- * Throws LeadSourceError when no discovery source is connected.
+ * Real business search via Foursquare Places. Free tier, single API key. The
+ * query is split into a search term + a "near" locality (from "<term> in
+ * <place>") so results are geographically scoped. Returns the ACTUAL count.
+ */
+export async function searchFoursquare(query: string, limit: number): Promise<RawLead[]> {
+  const key = env.foursquareApiKey;
+  if (!key) throw new LeadSourceError("Foursquare isn't connected (FOURSQUARE_API_KEY).");
+
+  // Split "cafes in London, UK" → term="cafes", near="London, UK".
+  const m = query.match(/^(.*?)\s+\bin\b\s+(.+)$/i);
+  const term = (m ? m[1] : query).trim();
+  const near = (m ? m[2] : "").trim();
+  const want = Math.min(Math.max(limit, 1), 50);
+
+  const params = new URLSearchParams({
+    query: term || "business",
+    limit: String(want),
+    fields: "fsq_place_id,name,website,tel,email,location,categories,social_media,rating,popularity",
+  });
+  if (near) params.set("near", near);
+
+  let res: Response;
+  try {
+    res = await fetch(`https://places-api.foursquare.com/places/search?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${key}`,
+        "X-Places-Api-Version": env.foursquareApiVersion,
+      },
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch {
+    throw new LeadSourceError("Couldn't reach Foursquare Places.");
+  }
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = json?.message || json?.error || `Foursquare error (HTTP ${res.status}).`;
+    throw new LeadSourceError(`Foursquare: ${msg}`);
+  }
+  const results: any[] = json?.results ?? [];
+  return results.map(mapFoursquare).filter((r) => r.businessName).slice(0, want);
+}
+
+/**
+ * Unified discovery entry point. Prefers Google Places when connected, otherwise
+ * uses the free Foursquare Places source. Returns the REAL leads found (may be
+ * fewer than requested — that's the truth, not padded). Throws LeadSourceError
+ * when no discovery source is connected.
  */
 export async function discoverLeads(opts: { query: string; limit: number }): Promise<RawLead[]> {
-  if (!hasDiscoverySource()) {
-    throw new LeadSourceError(
-      "NO REAL DATA AVAILABLE — CONNECT A DATA SOURCE. Add GOOGLE_PLACES_API_KEY to enable real business discovery, or import a CSV / add leads manually.",
-    );
-  }
-  return searchGooglePlaces(opts.query, opts.limit);
+  if (env.googlePlacesApiKey.length > 0) return searchGooglePlaces(opts.query, opts.limit);
+  if (env.foursquareApiKey.length > 0) return searchFoursquare(opts.query, opts.limit);
+  throw new LeadSourceError(
+    "NO REAL DATA AVAILABLE — CONNECT A DATA SOURCE. Add GOOGLE_PLACES_API_KEY or the free FOURSQUARE_API_KEY to enable real business discovery, or import a CSV / add leads manually.",
+  );
 }

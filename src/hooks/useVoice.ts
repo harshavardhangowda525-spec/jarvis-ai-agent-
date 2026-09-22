@@ -27,11 +27,30 @@ export type VoiceStatus =
   | "processing" // transcribing
   | "speaking"; // playing JARVIS reply
 
+/** Which agent's voice this hook speaks with — selects a distinct timbre. */
+export type VoiceProfile = "jarvis" | "ev" | "darwin" | "edith";
+
 interface UseVoiceOptions {
   onTranscript: (text: string) => void;
   onError?: (message: string) => void;
   autoListen?: boolean;
+  /** Agent persona whose voice to use (server TTS voice + free browser voice). */
+  voiceProfile?: VoiceProfile;
 }
+
+// Free browser-voice tuning per agent, so each one sounds distinct even with no
+// ElevenLabs key. rate/pitch shape the delivery; `match` picks a fitting system
+// voice, `female` biases the fallback search.
+const BROWSER_VOICE: Record<VoiceProfile, { rate: number; pitch: number; match: RegExp; female: boolean }> = {
+  // Calm, authoritative British male.
+  jarvis: { rate: 1.0, pitch: 0.9, match: /daniel|arthur|google uk english male|ryan|george/i, female: false },
+  // Bright, energetic — a lively female voice for the marketing agent.
+  ev: { rate: 1.08, pitch: 1.12, match: /aria|jenny|samantha|google us english|libby|sonia|zira/i, female: true },
+  // Deep, measured, analytical male — clearly not JARVIS.
+  darwin: { rate: 0.95, pitch: 0.72, match: /guy|david|alex|fred|google uk english male|rishi/i, female: false },
+  // Composed British female for EDITH.
+  edith: { rate: 1.0, pitch: 1.02, match: /alice|kate|serena|hazel|google uk english female|sonia/i, female: true },
+};
 
 // VAD tuning (normalized RMS 0..1)
 const SPEECH_START = 0.05;
@@ -39,7 +58,9 @@ const SPEECH_START_WHILE_SPEAKING = 0.14; // higher bar for barge-in
 const SILENCE_HANG_MS = 850;
 const MIN_UTTERANCE_MS = 350;
 
-export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceOptions) {
+export function useVoice({ onTranscript, onError, autoListen = true, voiceProfile = "jarvis" }: UseVoiceOptions) {
+  const profileRef = useRef<VoiceProfile>(voiceProfile);
+  profileRef.current = voiceProfile;
   const [status, setStatus] = useState<VoiceStatus>("uninitialized");
   const [level, setLevel] = useState(0);
   const [muted, setMuted] = useState(false);
@@ -398,16 +419,22 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
       try {
         synth.cancel();
         const voices = synth.getVoices();
+        const prof = BROWSER_VOICE[profileRef.current] ?? BROWSER_VOICE.jarvis;
+        const femaleRe = /female|aria|jenny|samantha|libby|sonia|zira|alice|kate|serena|hazel|victoria|karen|moira|tessa/i;
+        const maleRe = /male|daniel|arthur|guy|david|alex|fred|george|ryan|rishi|thomas/i;
+        const biasRe = prof.female ? femaleRe : maleRe;
         const pick =
-          voices.find((v) => /daniel|arthur|google uk english male|ryan|george/i.test(v.name) && /en-GB|en_GB/i.test(v.lang)) ||
-          voices.find((v) => /en-GB|en_GB/i.test(v.lang) && /male/i.test(v.name)) ||
-          voices.find((v) => /en-GB|en_GB/i.test(v.lang)) ||
+          // 1) exact voice this agent prefers
+          voices.find((v) => prof.match.test(v.name)) ||
+          // 2) any English voice matching the desired gender bias
+          voices.find((v) => /^en(-|_)/i.test(v.lang) && biasRe.test(v.name)) ||
+          // 3) any English voice at all
           voices.find((v) => /^en(-|_)/i.test(v.lang)) ||
           voices[0];
         const u = new SpeechSynthesisUtterance(text);
         if (pick) { u.voice = pick; u.lang = pick.lang; }
-        u.rate = 1.0;   // steady, natural pace
-        u.pitch = 0.9;  // slightly lower — calm and confident
+        u.rate = prof.rate;
+        u.pitch = prof.pitch;
         u.onend = () => resolve();
         u.onerror = () => resolve();
         synth.speak(u);
@@ -450,7 +477,7 @@ export function useVoice({ onTranscript, onError, autoListen = true }: UseVoiceO
         const res = await fetch("/api/voice/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text }),
+          body: JSON.stringify({ text, agent: profileRef.current }),
         }).catch(() => null);
         // No server voice configured (or the request failed) → speak with the
         // free built-in browser voice instead of going silent.

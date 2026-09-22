@@ -66,6 +66,10 @@ export function AppShell({
   const [online, setOnline] = useState<number | null>(null);
   const now = useClock();
 
+  // DARWIN is a full-immersion command center — the nav rails fold away so the
+  // cinematic dashboard owns the whole viewport.
+  const immersive = pathname.startsWith("/dashboard/darwin");
+
   const name = user.displayName || user.email.split("@")[0];
 
   useEffect(() => {
@@ -150,7 +154,8 @@ export function AppShell({
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* Left nav rail — desktop */}
+        {/* Left nav rail — desktop (folded away in immersive DARWIN mode) */}
+        {!immersive && (
         <aside className="hidden w-56 shrink-0 flex-col overflow-y-auto border-r border-accent/15 p-3 md:flex">
           {/* robot face */}
           <div className="mb-3 flex justify-center pt-1">
@@ -195,13 +200,17 @@ export function AppShell({
             </div>
           </div>
         </aside>
+        )}
 
         {/* Content */}
-        <main className="min-w-0 flex-1 pb-16 md:pb-0">{children}</main>
+        <main className={cn("min-w-0 flex-1", immersive ? "pb-0" : "pb-16 md:pb-0")}>{children}</main>
       </div>
 
-      {/* Bottom nav — mobile */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-accent/20 bg-panel/95 backdrop-blur md:hidden">
+      {/* Bottom nav — mobile (hidden in immersive DARWIN mode) */}
+      <nav className={cn(
+        "fixed inset-x-0 bottom-0 z-30 flex items-center justify-around border-t border-accent/20 bg-panel/95 backdrop-blur md:hidden",
+        immersive && "hidden",
+      )}>
         {MOBILE_NAV.map(({ href, label, icon: Icon }) => (
           <Link
             key={label}

@@ -47,7 +47,7 @@ export function EdithPanel() {
   // Hands-free: spoken commands → EDITH. A ref keeps the callback fresh so the
   // voice hook always calls the latest runGoal/stop without re-initializing.
   const cmdRef = useRef<(t: string) => void>(() => {});
-  const voice = useVoice({ onTranscript: (t) => cmdRef.current(t), autoListen: true });
+  const voice = useVoice({ onTranscript: (t) => cmdRef.current(t), autoListen: true, voiceProfile: "edith" });
   useEffect(() => {
     cmdRef.current = (t: string) => {
       const low = t.toLowerCase().trim();

@@ -27,18 +27,33 @@ export async function POST(req: NextRequest) {
       return fail("JARVIS voice is not configured.", 503);
     }
 
-    // Per-user voice override (applies to JARVIS). EDITH always uses its own
-    // distinct voice so the two agents are easy to tell apart.
+    // Per-user voice override (applies to JARVIS). Each internal agent uses its
+    // own distinct voice so they're easy to tell apart by ear.
     const pref = await getDb().voicePreference.findUnique({
       where: { userId: user.id },
     });
 
-    const voiceId = agent === "edith" ? env.edithVoiceId : (pref?.voiceId ?? undefined);
+    // Fixed per-agent voice IDs; JARVIS honors the user's saved preference.
+    const agentVoiceId: Record<string, string> = {
+      edith: env.edithVoiceId,
+      ev: env.evVoiceId,
+      darwin: env.darwinVoiceId,
+    };
+    const voiceId = agent && agent !== "jarvis"
+      ? agentVoiceId[agent]
+      : (pref?.voiceId ?? undefined);
 
-    const audioStream = await provider.streamTts(text, {
-      voiceId,
-      speakingRate: agent === "edith" ? undefined : (pref?.speakingRate ?? undefined),
-    });
+    // Each agent gets a characteristic cadence; JARVIS keeps the user's setting.
+    const agentRate: Record<string, number | undefined> = {
+      edith: undefined,
+      ev: 1.08,      // upbeat, energetic
+      darwin: 0.96,  // measured, analytical
+    };
+    const speakingRate = agent && agent !== "jarvis"
+      ? agentRate[agent]
+      : (pref?.speakingRate ?? undefined);
+
+    const audioStream = await provider.streamTts(text, { voiceId, speakingRate });
 
     return new Response(audioStream, {
       headers: {

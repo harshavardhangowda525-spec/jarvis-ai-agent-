@@ -27,9 +27,17 @@ export function DarwinConsole() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchMsg, setSearchMsg] = useState("");
+  // Cinematic boot sequence on entry.
+  const [boot, setBoot] = useState<"run" | "fade" | "done">("run");
   const sendRef = useRef<(t: string) => void>(() => {});
 
-  const voice = useVoice({ onTranscript: (t) => sendRef.current(t), autoListen: true });
+  useEffect(() => {
+    const t1 = setTimeout(() => setBoot("fade"), 1900);
+    const t2 = setTimeout(() => setBoot("done"), 2600);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
+  const voice = useVoice({ onTranscript: (t) => sendRef.current(t), autoListen: true, voiceProfile: "darwin" });
   const agent = useAgent({ onAssistantComplete: (text) => { if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text); loadOverview(); } });
 
   const loadOverview = useCallback(() => {
@@ -71,6 +79,11 @@ export function DarwinConsole() {
 
   return (
     <div className="darwin-bg relative min-h-[calc(100vh-4rem)] overflow-hidden bg-[#04060d] px-3 pb-6 pt-4 md:px-6">
+      {/* cinematic boot sequence */}
+      {boot !== "done" && <DarwinBoot fading={boot === "fade"} />}
+
+      {/* everything reveals once the boot clears */}
+      <div style={boot === "done" ? { animation: "dw-reveal .7s ease both" } : { opacity: 0 }}>
       {/* ambient */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <div className="absolute left-1/2 top-1/3 h-[60vmin] w-[60vmin] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,hsl(var(--accent)/0.12),transparent_62%)] blur-3xl" />
@@ -110,8 +123,67 @@ export function DarwinConsole() {
         </div>
       )}
 
+      {/* live voice caption — shows what DARWIN is hearing */}
+      {voiceStarted && !voice.muted && (voice.status === "listening" || voice.status === "recording" || voice.status === "processing" || voice.transcript) && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-6">
+          <div className="flex max-w-xl items-center gap-2 rounded-full border border-accent/25 bg-black/50 px-4 py-1.5 backdrop-blur-md">
+            <span className={cn("h-2 w-2 shrink-0 rounded-full", voice.status === "recording" ? "bg-accent animate-hud-pulse" : voice.status === "processing" ? "bg-warning animate-hud-pulse" : "bg-accent/60 animate-hud-pulse")} />
+            <span className="truncate text-sm text-foreground/90">
+              {voice.transcript
+                ? <>“{voice.transcript}”</>
+                : voice.error && voice.status !== "recording" ? <span className="text-warning">{voice.error}</span>
+                : voice.status === "processing" ? "Thinking…"
+                : voice.status === "recording" ? "Listening…"
+                : "Listening… say “find cafes in London”"}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* live activity stream */}
       <ActivityStream items={overview?.recentActivity ?? []} connected={overview?.hasConnectedDiscovery ?? false} />
+      </div>
+    </div>
+  );
+}
+
+/* ================= BOOT SEQUENCE ================= */
+function DarwinBoot({ fading }: { fading: boolean }) {
+  const lines = ["INITIALIZING NEURAL CORE", "LINKING DATA SOURCES", "CALIBRATING LEAD INTELLIGENCE", "DARWIN ONLINE"];
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-[#04060d]"
+      style={{ animation: fading ? "dw-boot-out .7s ease forwards" : undefined }}
+    >
+      {/* scanline sweep */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute inset-x-0 h-24 bg-[linear-gradient(to_bottom,transparent,hsl(var(--accent)/0.18),transparent)]" style={{ animation: "dw-scan 1.9s ease-in-out" }} />
+        <div className="absolute left-1/2 top-1/2 h-[70vmin] w-[70vmin] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(var(--accent)/0.14),transparent_60%)] blur-2xl" />
+      </div>
+
+      {/* assembling rings + hex */}
+      <div className="relative mb-6 h-40 w-40">
+        <span className="absolute inset-0 rounded-full border border-accent/30" style={{ animation: "dw-ring-in .8s ease both" }} />
+        <span className="absolute inset-3 rounded-full border border-dashed border-accent/40" style={{ animation: "edith-spin 4s linear infinite, dw-ring-in .9s ease both" }} />
+        <span className="absolute inset-8 rounded-full border border-accent-bright/50" style={{ animation: "dw-ring-in 1s ease both" }} />
+        <span className="absolute inset-0 flex items-center justify-center">
+          <span className="flex h-16 w-16 items-center justify-center text-lg font-semibold text-white"
+            style={{ clipPath: "polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)", background: "linear-gradient(160deg, hsl(var(--accent)/0.5), hsl(280 70% 55% / 0.5))", boxShadow: "0 0 30px hsl(var(--accent-bright))", animation: "dw-hex-pop .6s .3s ease both" }}>
+            AI
+          </span>
+        </span>
+      </div>
+
+      <h1 className="bg-gradient-to-r from-accent via-accent-bright to-accent bg-clip-text text-3xl font-light tracking-[0.5em] text-transparent" style={{ animation: "dw-hex-pop .7s .2s ease both" }}>
+        DARWIN
+      </h1>
+      <div className="relative mt-4 h-4 w-72 text-center">
+        {lines.map((l, i) => (
+          <div key={l} className="hud-label absolute inset-x-0 text-[10px] tracking-[0.3em] text-accent/80" style={{ opacity: 0, animation: `dw-line 1.9s ${i * 0.45}s ease both` }}>
+            {l}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -165,7 +237,7 @@ function LeadDiscovery({ onSearch, searching, msg, connected }: { onSearch: (f: 
         <button onClick={submit} disabled={searching || !location.trim()} className="mt-1 flex w-full items-center justify-center gap-2 rounded-lg border border-accent/40 bg-accent/12 px-3 py-2 text-sm text-accent-bright transition hover:bg-accent/20 disabled:opacity-40">
           {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} {searching ? "Discovering…" : "Discover Leads"}
         </button>
-        {!connected && <p className="text-[10px] leading-snug text-warning">Google Places not connected — set GOOGLE_PLACES_API_KEY. DARWIN won't invent leads.</p>}
+        {!connected && <p className="text-[10px] leading-snug text-warning">No discovery source connected — set GOOGLE_PLACES_API_KEY or the free FOURSQUARE_API_KEY. DARWIN won&apos;t invent leads.</p>}
         {msg && <p className="text-[10px] leading-snug text-muted-foreground">{msg}</p>}
       </div>
     </GlassPanel>

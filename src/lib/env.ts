@@ -47,6 +47,12 @@ export const env = {
   // EDITH voice — a distinct British voice ("Alice", British female) so EDITH and
   // JARVIS are easy to tell apart. Override with EDITH_VOICE_ID.
   edithVoiceId: read("EDITH_VOICE_ID") || "Xb7hH8MSUJpSbSDYk0k2",
+  // EV voice — bright, energetic (marketing/growth agent). Defaults to "Aria".
+  // Override with EV_VOICE_ID.
+  evVoiceId: read("EV_VOICE_ID") || "9BWtsMINqrJLrRacOk9x",
+  // DARWIN voice — deep, analytical operator. Defaults to "Charlie" (Australian
+  // male). Override with DARWIN_VOICE_ID.
+  darwinVoiceId: read("DARWIN_VOICE_ID") || "IKne3meq5aSn9XLyUdCD",
   elevenLabsModelId: read("ELEVENLABS_MODEL_ID") || "eleven_turbo_v2_5",
   elevenLabsSttModelId: read("ELEVENLABS_STT_MODEL_ID") || "scribe_v1",
 
@@ -109,6 +115,12 @@ export const env = {
   // source. Without it (and with no CSV/manual leads) DARWIN shows
   // "NO REAL DATA AVAILABLE — CONNECT A DATA SOURCE" rather than any mock data.
   googlePlacesApiKey: read("GOOGLE_PLACES_API_KEY"),
+  // Foursquare Places — a FREE alternative discovery source (generous free tier,
+  // simple API key). Used when Google Places isn't set. Get a key at
+  // https://foursquare.com/developers → create a project → Service key.
+  foursquareApiKey: read("FOURSQUARE_API_KEY"),
+  // Foursquare Places API version header (date-stamped). Override if needed.
+  foursquareApiVersion: read("FOURSQUARE_API_VERSION") || "2025-06-17",
   // Hard guard: even if code were misconfigured, never fabricate leads.
   mockDataDisabled: (read("MOCK_DATA") || "false").toLowerCase() !== "true",
   appEnv: read("APP_ENV").toLowerCase() || "development",
@@ -343,6 +355,14 @@ export const capabilities = {
   /** Google Places lead source is connected (real business discovery). */
   get googlePlaces() {
     return env.googlePlacesApiKey.length > 0;
+  },
+  /** Foursquare Places lead source is connected (free alternative discovery). */
+  get foursquare() {
+    return env.foursquareApiKey.length > 0;
+  },
+  /** Any automated business-discovery source is connected. */
+  get leadDiscovery() {
+    return env.googlePlacesApiKey.length > 0 || env.foursquareApiKey.length > 0;
   },
 };
 

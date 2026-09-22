@@ -53,5 +53,5 @@ export const agentRequestSchema = z.object({
 export const ttsSchema = z.object({
   text: z.string().trim().min(1).max(5000),
   // Which agent is speaking — selects a distinct voice. Defaults to JARVIS.
-  agent: z.enum(["jarvis", "edith"]).optional(),
+  agent: z.enum(["jarvis", "edith", "ev", "darwin"]).optional(),
 });
