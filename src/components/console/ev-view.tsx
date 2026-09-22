@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
-import { Mic, MicOff, Send, Power, X, ExternalLink, ImageIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Mic, MicOff, Send, Power, X, ExternalLink, ImageIcon, Instagram, Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -295,6 +295,29 @@ function EvCore(props: {
 
 function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: string; onDismiss: () => void }) {
   const isVideo = /kind=video|\.mp4|\.webm|\.mov/i.test(url);
+  const [cap, setCap] = useState(caption ?? "");
+  const [status, setStatus] = useState<"idle" | "publishing" | "done" | "error">("idle");
+  const [msg, setMsg] = useState("");
+  const [containerId, setContainerId] = useState<string | undefined>();
+
+  async function publish() {
+    const text = cap.trim();
+    if (!text) { setStatus("error"); setMsg("Add a caption first."); return; }
+    setStatus("publishing"); setMsg("");
+    try {
+      const res = await fetch("/api/ev/instagram/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(isVideo ? { videoUrl: url, caption: text, containerId } : { imageUrl: url, caption: text }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) { setStatus("error"); setMsg(j.error || `Publish failed (HTTP ${res.status}).`); return; }
+      if (j.data?.published) { setStatus("done"); setMsg(`Published to Instagram ✓ (id ${j.data.mediaId})`); }
+      else if (j.data?.containerId) { setStatus("idle"); setContainerId(j.data.containerId); setMsg(j.data.message || "Still processing — click Publish again to finish."); }
+      else { setStatus("error"); setMsg("Instagram didn't confirm the post."); }
+    } catch { setStatus("error"); setMsg("Network error — couldn't reach the server."); }
+  }
+
   return (
     <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
       <div
@@ -349,23 +372,51 @@ function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: st
           )}
         </div>
 
-        {/* caption */}
-        {caption && (
-          <p className="relative max-h-24 overflow-y-auto px-4 pt-3 text-sm leading-relaxed text-foreground/85">
-            {caption}
+        {/* editable caption for publishing */}
+        <div className="relative px-4 pt-3">
+          <textarea
+            value={cap}
+            onChange={(e) => setCap(e.target.value)}
+            rows={3}
+            placeholder="Write the Instagram caption…"
+            disabled={status === "publishing" || status === "done"}
+            className="max-h-28 w-full resize-none rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm leading-relaxed text-foreground/90 outline-none transition focus:border-accent/50 disabled:opacity-60"
+          />
+        </div>
+
+        {/* publish status message */}
+        {msg && (
+          <p className={cn("relative px-4 pt-2 text-[11px] leading-snug", status === "error" ? "text-warning" : status === "done" ? "text-success" : "text-muted-foreground")}>
+            {msg}
           </p>
         )}
 
         {/* actions */}
-        <div className="relative flex items-center justify-end gap-2 px-4 py-3">
+        <div className="relative flex items-center justify-between gap-2 px-4 py-3">
           <a
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent/10 px-3 py-1.5 text-xs text-accent transition hover:bg-accent/20"
+            className="flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-muted-foreground transition hover:text-foreground"
           >
             <ExternalLink className="h-3.5 w-3.5" /> Open full
           </a>
+          <button
+            onClick={publish}
+            disabled={status === "publishing" || status === "done"}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition disabled:opacity-60",
+              status === "done"
+                ? "bg-success/20 text-success"
+                : "bg-gradient-to-r from-[#833ab4] via-[#fd1d1d] to-[#fcb045] text-white hover:brightness-110",
+            )}
+            title="Publish to Instagram"
+          >
+            {status === "publishing" ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              : status === "done" ? <Check className="h-3.5 w-3.5" />
+              : <Instagram className="h-3.5 w-3.5" />}
+            {status === "publishing" ? "Publishing…" : status === "done" ? "Published" : isVideo ? "Publish Reel" : "Publish to Instagram"}
+          </button>
         </div>
       </div>
     </div>
