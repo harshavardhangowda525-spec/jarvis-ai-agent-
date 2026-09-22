@@ -136,11 +136,37 @@ export function useEdith() {
     };
   }, [push, speak]);
 
+  /**
+   * Auto-pair: ask the local EDITH for its token over the origin-locked HTTP
+   * /pair endpoint and connect — no copy/paste. Returns why it failed so the UI
+   * can guide the user (EDITH not running, or this origin isn't allow-listed).
+   */
+  const autoPair = useCallback(
+    async (baseUrl?: string): Promise<{ ok: boolean; reason?: "unreachable" | "origin" | "no_token" | string }> => {
+      const wsUrl = (baseUrl || savedUrl || "ws://127.0.0.1:7420").trim();
+      const httpUrl = wsUrl.replace(/^ws(s?):\/\//, "http$1://");
+      try {
+        const res = await fetch(`${httpUrl}/pair`, { method: "GET" });
+        if (res.status === 403) return { ok: false, reason: "origin" };
+        if (!res.ok) return { ok: false, reason: `http_${res.status}` };
+        const j = await res.json();
+        if (j?.token) { connect(j.url || wsUrl, j.token); return { ok: true }; }
+        return { ok: false, reason: "no_token" };
+      } catch {
+        return { ok: false, reason: "unreachable" };
+      }
+    },
+    [connect, savedUrl],
+  );
+
   const tried = useRef(false);
   useEffect(() => {
-    if (tried.current) return;
-    if (savedUrl && savedToken) { tried.current = true; connect(savedUrl, savedToken); }
-  }, [savedUrl, savedToken, connect]);
+    if (tried.current || !savedUrl) return;
+    tried.current = true;
+    // Reconnect instantly if we already paired; otherwise try a silent auto-pair.
+    if (savedToken) connect(savedUrl, savedToken);
+    else autoPair(savedUrl);
+  }, [savedUrl, savedToken, connect, autoPair]);
   useEffect(() => () => { manualClose.current = true; wsRef.current?.close(); }, []);
 
   const send = useCallback((obj: Record<string, unknown>) => {
@@ -155,6 +181,6 @@ export function useEdith() {
   return {
     conn, provider, mode, caps, workspace, activity, tasks, terminal, files, project, confirm, working,
     savedUrl, savedToken, muted, setMuted, speak,
-    connect, disconnect, runGoal, setMode, stop, answerConfirm, refreshCaps,
+    connect, disconnect, autoPair, runGoal, setMode, stop, answerConfirm, refreshCaps,
   };
 }

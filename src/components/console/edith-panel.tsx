@@ -29,6 +29,8 @@ export function EdithPanel() {
   const [url, setUrl] = useState("ws://127.0.0.1:7420");
   const [token, setToken] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const [pairMsg, setPairMsg] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [voiceOn, setVoiceOn] = useState(false);
   const clock = useUtcClock();
@@ -161,9 +163,36 @@ export function EdithPanel() {
         <div className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,24rem)] -translate-x-1/2 translate-y-28">
           <GlassPanel title="Activate EDITH">
             <p className="mb-2 text-[11px] text-muted-foreground">
-              Start EDITH on your machine (<code className="text-accent">cd edith &amp;&amp; npm run edith</code>), copy the <code className="text-accent">TOKEN</code> it prints, and paste it below.
+              Start EDITH on your machine (<code className="text-accent">cd edith &amp;&amp; npm run edith</code>), then just click Auto-detect — no copy/paste.
             </p>
-            {/* Token is the only thing you paste — the URL is pre-filled. */}
+
+            {/* Preferred path: auto-read the token from local EDITH's /pair. */}
+            <button
+              onClick={async () => {
+                setPairMsg("Detecting local EDITH…");
+                const r = await e.autoPair(url.trim() || undefined);
+                if (r.ok) { setPairMsg(""); return; }
+                setPairMsg(
+                  r.reason === "unreachable" ? "No local EDITH found. Run `npm run edith`, then retry."
+                  : r.reason === "origin" ? "This site isn't allow-listed. Add it to EDITH_ALLOWED_ORIGINS, or paste the token below."
+                  : "Couldn't auto-pair — paste the token below.",
+                );
+                setShowManual(true);
+              }}
+              disabled={e.conn === "connecting"}
+              className="mb-2 flex w-full items-center justify-center gap-2 rounded border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent-bright transition hover:bg-accent/20 disabled:opacity-40"
+            >
+              <PlugZap className="h-4 w-4" /> {e.conn === "connecting" ? "Linking…" : "Auto-detect & pair"}
+            </button>
+            {pairMsg && <p className="mb-2 text-[11px] text-muted-foreground">{pairMsg}</p>}
+
+            <button onClick={() => setShowManual((v) => !v)} className="mb-1 text-[10px] text-muted-foreground underline decoration-dotted hover:text-accent">
+              {showManual ? "hide manual pairing" : "paste token manually"}
+            </button>
+
+            {/* Manual fallback: token is the only thing you paste — URL is pre-filled. */}
+            {showManual && (
+            <>
             <input
               value={token}
               onChange={(ev) => setToken(ev.target.value)}
@@ -194,6 +223,8 @@ export function EdithPanel() {
                 placeholder="ws://127.0.0.1:7420"
                 className="mt-2 w-full rounded border border-border bg-transparent px-2 py-1.5 text-xs outline-none focus:border-accent/60"
               />
+            )}
+            </>
             )}
             {e.conn === "unauthorized" && <p className="mt-2 text-[11px] text-destructive">Pairing rejected — check the token.</p>}
           </GlassPanel>

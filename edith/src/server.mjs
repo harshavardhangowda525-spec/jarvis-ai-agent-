@@ -6,6 +6,7 @@
  *    deploy providers) — nothing is marked available unless it actually is.
  */
 import { WebSocketServer } from "ws";
+import http from "node:http";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -30,8 +31,25 @@ export function getToken() {
 
 export { capabilityCheck };
 
+/**
+ * Origins allowed to auto-read the pairing token over HTTP (`GET /pair`).
+ * Localhost is trusted by default; add your deployed app (e.g. your Vercel URL)
+ * via EDITH_ALLOWED_ORIGINS="https://your-app.vercel.app" (comma-separated).
+ * A page from any OTHER origin gets 403 — it can't silently grab the token.
+ */
+function allowedOrigins() {
+  const defaults = [
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5173", "http://127.0.0.1:5173",
+  ];
+  const extra = (process.env.EDITH_ALLOWED_ORIGINS || "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  return new Set([...defaults, ...extra]);
+}
+
 export function startServer({ port, ws }) {
   const token = getToken();
+  const origins = allowedOrigins();
   const clients = new Set();
   const audit = new Audit(ws);
   let agent = null;
@@ -60,7 +78,50 @@ export function startServer({ port, ws }) {
     }
   }
 
-  const wss = new WebSocketServer({ host: "127.0.0.1", port });
+  // HTTP layer on the SAME port: /pair (origin-locked token hand-off) + /health.
+  const httpServer = http.createServer((req, res) => {
+    const origin = req.headers.origin || "";
+    const allow = origins.has(origin);
+    if (allow) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+    }
+    // CORS preflight — Private Network Access needs an explicit opt-in header so
+    // an HTTPS page (e.g. the Vercel app) may reach this localhost service.
+    if (req.method === "OPTIONS") {
+      if (allow) {
+        res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+        res.setHeader("Access-Control-Allow-Private-Network", "true");
+        res.setHeader("Access-Control-Max-Age", "600");
+      }
+      res.writeHead(allow ? 204 : 403);
+      res.end();
+      return;
+    }
+    const u = new URL(req.url, `http://127.0.0.1:${port}`);
+    if (req.method === "GET" && u.pathname === "/health") {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, service: "edith", brain: providerName() }));
+      return;
+    }
+    if (req.method === "GET" && u.pathname === "/pair") {
+      if (!allow) {
+        res.writeHead(403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          error: "origin_not_allowed",
+          hint: "Add this origin to EDITH_ALLOWED_ORIGINS in edith/.env, then restart EDITH.",
+        }));
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ token, url: `ws://127.0.0.1:${port}`, brain: providerName() }));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+
+  const wss = new WebSocketServer({ server: httpServer });
 
   wss.on("connection", (socket, req) => {
     const url = new URL(req.url, "http://127.0.0.1");
@@ -85,7 +146,7 @@ export function startServer({ port, ws }) {
     socket.on("error", () => clients.delete(socket));
   });
 
-  wss.on("listening", () => {
+  httpServer.listen(port, "127.0.0.1", () => {
     const caps = capabilityCheck(ws);
     log.info("");
     log.info(`  EDITH is listening on ws://127.0.0.1:${port}`);
@@ -93,11 +154,24 @@ export function startServer({ port, ws }) {
     log.info(`  Brain: ${providerName()}`);
     log.info(`  node ${caps.node.ok ? "✓" : "✗"}  git ${caps.git.ok ? "✓" : "✗"}  python ${caps.python.ok ? "✓" : "✗"}`);
     log.info("");
-    log.info("  Pair JARVIS (Dashboard → EDITH) with:");
-    log.info(`     URL   : ws://127.0.0.1:${port}`);
-    log.info(`     TOKEN : ${token}`);
+    log.info("  Pair JARVIS (Dashboard → EDITH):");
+    log.info("     • Local dashboard auto-pairs — just open Dashboard → EDITH.");
+    log.info(`     • Or paste manually →  URL: ws://127.0.0.1:${port}   TOKEN: ${token}`);
+    if ((process.env.EDITH_ALLOWED_ORIGINS || "").trim()) {
+      log.info(`     • Auto-pair enabled for: ${process.env.EDITH_ALLOWED_ORIGINS}`);
+    } else {
+      log.info("     • To auto-pair from your deployed app, set EDITH_ALLOWED_ORIGINS to its URL.");
+    }
     log.info("");
   });
 
-  return { wss, token };
+  httpServer.on("error", (err) => {
+    if (err.code === "EADDRINUSE") {
+      log.error(`Port ${port} is already in use — another EDITH may be running. Stop it (or set EDITH_PORT) and retry.`);
+      process.exit(1);
+    }
+    log.error(`Server error: ${err.message}`);
+  });
+
+  return { wss, httpServer, token };
 }
