@@ -64,6 +64,8 @@ export const env = {
   // How long to wait for the PC's first token before falling back to the cloud.
   // A 7B model on a CPU must read the whole prompt first (often 1–2 min).
   ollamaTimeoutMs: Math.max(10_000, Number(read("OLLAMA_TIMEOUT_MS")) || 150_000),
+  // Recent messages sent to the local model each turn (fewer = faster on a CPU).
+  ollamaHistory: Math.max(0, Number(read("OLLAMA_HISTORY")) || 8),
 
   elevenLabsApiKey: read("ELEVENLABS_API_KEY"),
   // JARVIS voice — defaults to "Daniel" (British male, authoritative). Override

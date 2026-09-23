@@ -44,12 +44,13 @@ export async function POST(req: NextRequest) {
 
     const profile = await db.profile.findUnique({ where: { userId: user.id } });
 
-    // Load recent history (last 20 turns) for context.
-    const priorRows = await db.message.findMany({
+    // Load recent history (last 20 turns) for context. Newest first + reverse:
+    // "asc + take" would return the OLDEST 40 messages of a long conversation.
+    const priorRows = (await db.message.findMany({
       where: { conversationId: convo.id, role: { in: ["user", "assistant"] } },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
       take: 40,
-    });
+    })).reverse();
     const history = priorRows.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,

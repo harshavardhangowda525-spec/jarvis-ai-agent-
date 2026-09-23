@@ -3,6 +3,8 @@ import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { getAiConfigs, getAnthropicClient, getOpenAiClient } from "./client";
 import { getLiveBrain } from "./brain";
+import { trimHistoryForLocal } from "./history";
+import { env } from "@/lib/env";
 import { buildSystemPrompt } from "./prompt";
 import { availableTools, getTool } from "@/lib/tools/registry";
 import type { ToolContext, ToolDefinition } from "@/lib/tools/types";
@@ -122,13 +124,17 @@ export async function* runAgent(
   const failures: string[] = []; // "Ollama: didn't answer in 150s" — shown if all fail
   for (let i = 0; i < configs.length; i++) {
     const cfg = configs[i];
-    const s: SharedCtx = { system, tools, ctx, activityQueue, model: cfg.model };
+    // The local (Ollama) brain re-reads everything it's sent on a CPU, so give it
+    // a short recent history and a tighter reply budget; cloud keeps the full window.
+    const local = cfg.provider === "ollama";
+    const s: SharedCtx = { system, tools, ctx, activityQueue, model: cfg.model, maxTokens: local ? 1024 : 2048 };
+    const turnInput = local ? { ...input, history: trimHistoryForLocal(input.history, env.ollamaHistory) } : input;
     let committed = false;
     yield { type: "provider", name: cfg.provider };
     const gen =
       cfg.kind === "anthropic"
-        ? anthropicLoop(getAnthropicClient(cfg), input, s)
-        : openaiLoop(getOpenAiClient(cfg), input, s);
+        ? anthropicLoop(getAnthropicClient(cfg), turnInput, s)
+        : openaiLoop(getOpenAiClient(cfg), turnInput, s);
     try {
       for await (const ev of gen) {
         if (ev.type === "text" || ev.type === "tool" || ev.type === "navigate" || ev.type === "open") {
@@ -163,6 +169,8 @@ interface SharedCtx {
   ctx: ToolContext;
   activityQueue: string[];
   model: string;
+  /** Reply budget per step (smaller for the local brain = faster answers). */
+  maxTokens?: number;
 }
 
 /** Runs one tool call and yields the corresponding events; returns the result string for the model. */
@@ -233,7 +241,7 @@ async function* anthropicLoop(
     try {
       const stream = client.messages.stream({
         model: s.model,
-        max_tokens: 2048,
+        max_tokens: s.maxTokens ?? 2048,
         system: s.system,
         tools: anthropicTools,
         messages,
@@ -307,7 +315,7 @@ async function* openaiLoop(
     try {
       const stream = await client.chat.completions.create({
         model: s.model,
-        max_tokens: 2048,
+        max_tokens: s.maxTokens ?? 2048,
         tools,
         messages,
         stream: true,
