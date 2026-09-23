@@ -152,6 +152,7 @@ async function waitReachable(publicUrl) {
 
 // ---- registration with JARVIS -----------------------------------------------
 let lastRegOk = null;
+let lastRegDetail = "";
 async function register(publicUrl) {
   if (!JARVIS) return "no-jarvis";
   try {
@@ -162,6 +163,7 @@ async function register(publicUrl) {
       signal: AbortSignal.timeout(15_000),
     });
     if (r.ok) return "ok";
+    lastRegDetail = ((await r.json().catch(() => ({})))?.error ?? "").toString().slice(0, 200);
     if (r.status === 503) return "key-missing";
     if (r.status === 401) return "key-mismatch";
     if (r.status === 404) return "old-deploy";
@@ -180,6 +182,24 @@ function explainReg(res) {
     "old-deploy": "✗ Your Vercel app is on an older version without the brain endpoint — redeploy the latest code.",
     "unreachable": `✗ Couldn't reach ${JARVIS} — check JARVIS_URL and your internet.`,
   }[res] ?? `✗ JARVIS answered ${res}.`;
+}
+
+/** Ask the live deployment what it sees, so a setup problem is never a guess. */
+async function diagnose() {
+  if (!JARVIS) return;
+  try {
+    const r = await fetch(`${JARVIS}/api/brain/status`, { signal: AbortSignal.timeout(10_000) });
+    if (r.status === 404) { say(`  • ${JARVIS} doesn't have the latest code yet (no /api/brain/status). Redeploy the newest commit.`); return; }
+    const d = (await r.json().catch(() => ({})))?.data;
+    if (!d) return;
+    say(`  • Live app: build ${d.build} (${d.environment}) — OLLAMA_API_KEY ${d.keyConfigured ? "IS set" : "is NOT set"} there.`);
+    if (!d.keyConfigured) {
+      say("    Checklist: exact name OLLAMA_API_KEY · value = the brain_… text only · Production ticked ·");
+      say(`    the project that serves ${JARVIS.replace(/^https?:\/\//, "")} · Redeploy AFTER saving, wait for Ready.`);
+    }
+  } catch { /* offline */ }
+  if (lastRegDetail) say(`  • JARVIS said: "${lastRegDetail}"`);
+  say("  (Keep this window open — it retries every 2 minutes and prints ✓ as soon as JARVIS accepts the key.)");
 }
 
 // ---- main ---------------------------------------------------------------------
@@ -206,6 +226,7 @@ const res = await register(publicUrl);
 lastRegOk = res === "ok";
 say(`\n  Brain URL: ${publicUrl}`);
 say(`  ${explainReg(res)}`);
+if (res !== "ok") await diagnose();
 if (FRESH_KEY && res !== "ok") say(`  (Your brain key is saved in edith/.brain-key — keep it private.)`);
 say("\n  Keep this window open. Ctrl+C to stop.\n");
 
