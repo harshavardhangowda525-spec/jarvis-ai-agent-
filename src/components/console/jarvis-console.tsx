@@ -25,9 +25,33 @@ const WEATHER_RE = /\b(weather|forecast|temperature|humidity|how (hot|cold|warm)
 
 /** Pull a place out of a weather question ("weather in London" → "London"). */
 function parseWeatherPlace(text: string): string | undefined {
-  const m = text.match(/\b(?:in|for|at|of)\s+([A-Za-z][\w'.\- ]{1,60})$/i) || text.match(/\b(?:in|for|at|of)\s+([A-Za-z][\w'.\- ]{1,60})\b/i);
-  if (!m) return undefined;
-  return m[1].replace(/\b(please|now|today|tomorrow|right now|currently)\b/gi, "").trim().replace(/[.?!,]+$/, "") || undefined;
+  const clean = (s: string) =>
+    s.replace(/\b(please|now|today|tomorrow|tonight|right now|currently|this week|like)\b/gi, "")
+      .replace(/'s\b/gi, "").replace(/\s+/g, " ").trim().replace(/[.?!,]+$/, "") || undefined;
+
+  // "weather in Bangalore", "forecast for Tokyo, Japan"
+  const m = text.match(/\b(?:in|for|at|of)\s+([A-Za-z][\w'.,\- ]{1,60})$/i) || text.match(/\b(?:in|for|at|of)\s+([A-Za-z][\w'.,\- ]{1,60})\b/i);
+  if (m) return clean(m[1]);
+
+  // "Bangalore weather", "bangalore's weather today", "Mumbai forecast"
+  const lead = text.match(/^(?:what'?s|whats|how'?s|hows|show me|tell me|get|check)?\s*(?:the\s+)?([A-Za-z][\w'.,\- ]{1,40}?)\s+(?:weather|forecast|temperature)\b/i);
+  if (lead) {
+    const place = clean(lead[1]);
+    if (place && !/^(the|current|today|todays|local|my|our|this|weekly|daily)$/i.test(place)) return place;
+  }
+  return undefined;
+}
+
+/** Viewer's country (ISO-2) from the browser locale — used to prefer local cities. */
+function viewerCountry(): string {
+  try {
+    const loc = navigator.language || "";
+    const m = loc.match(/[-_]([A-Za-z]{2})$/);
+    if (m) return m[1].toUpperCase();
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    if (/Kolkata|Calcutta/.test(tz)) return "IN";
+  } catch { /* ignore */ }
+  return "";
 }
 
 interface Services { [k: string]: boolean }
@@ -173,7 +197,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     try {
       let url = "";
       if (place) {
-        url = `/api/weather?q=${encodeURIComponent(place)}`;
+        url = `/api/weather?q=${encodeURIComponent(place)}&cc=${viewerCountry()}`;
       } else {
         // No place named → try the browser's location; fall back to asking.
         // Race against a hard timeout: some browsers never fire either callback

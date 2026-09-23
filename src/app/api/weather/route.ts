@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
+import { geocode } from "@/lib/weather";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,12 +46,8 @@ export async function GET(req: NextRequest) {
 
     // Geocode a place name when no coordinates were provided.
     if ((isNaN(lat) || isNaN(lon)) && q) {
-      const gRes = await fetch(
-        `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=1&language=en&format=json`,
-        { headers: { accept: "application/json" }, signal: AbortSignal.timeout(12_000) },
-      ).catch(() => null);
-      const gJson: any = gRes && gRes.ok ? await gRes.json().catch(() => ({})) : {};
-      const hit = gJson?.results?.[0];
+      const userCountry = (searchParams.get("cc") || "").toUpperCase(); // viewer's country hint
+      const hit = await geocode(q, userCountry);
       if (!hit) return fail(`I couldn't find "${q}". Try a city name like "London" or "Bengaluru".`, 404);
       lat = hit.latitude; lon = hit.longitude; name = hit.name;
       country = hit.country || ""; admin = hit.admin1 || "";
