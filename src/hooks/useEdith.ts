@@ -161,13 +161,28 @@ export function useEdith() {
     [connect, savedUrl],
   );
 
+  // Mirror connection state into a ref so the retry loop can read it live.
+  const connRef = useRef(conn);
+  connRef.current = conn;
+
   const tried = useRef(false);
   useEffect(() => {
-    if (tried.current || !savedUrl) return;
+    if (tried.current) return;
     tried.current = true;
-    // Reconnect instantly if we already paired; otherwise try a silent auto-pair.
-    if (savedToken) connect(savedUrl, savedToken);
-    else autoPair(savedUrl);
+    const url = (savedUrl || "ws://127.0.0.1:7420").trim();
+    // Reconnect instantly if we already have a token; otherwise auto-pair — and
+    // keep retrying for a bit, since EDITH may still be starting up when the
+    // page loads. This makes the token auto-fill with zero clicks.
+    if (savedToken) { connect(url, savedToken); return; }
+    let attempts = 0;
+    const tryPair = async () => {
+      if (connRef.current === "connected" || connRef.current === "connecting") return;
+      attempts += 1;
+      const r = await autoPair(url);
+      if (r.ok || r.reason === "origin") return; // paired, or blocked (needs manual)
+      if (attempts < 6) setTimeout(tryPair, 2500); // EDITH not up yet — retry
+    };
+    tryPair();
   }, [savedUrl, savedToken, connect, autoPair]);
   useEffect(() => () => { manualClose.current = true; wsRef.current?.close(); }, []);
 

@@ -64,6 +64,19 @@ export function EdithPanel() {
   }, [e]);
 
   const connected = e.conn === "connected";
+
+  // The hook already auto-detects and pairs on mount; reflect that here so the
+  // user sees it working with zero clicks, and guide them only if it can't.
+  const connectedRef = useRef(connected);
+  connectedRef.current = connected;
+  useEffect(() => {
+    setPairMsg("Auto-detecting local EDITH…");
+    const t = setTimeout(() => {
+      if (!connectedRef.current) setPairMsg("No local EDITH detected yet. Run `cd edith && npm run edith`, then click Auto-detect & pair.");
+    }, 16000);
+    return () => clearTimeout(t);
+  }, []);
+  useEffect(() => { if (connected) setPairMsg(""); }, [connected]);
   const orbState: OrbMode = !connected ? "offline" : e.working ? "working" : e.confirm ? "await" : "online";
 
   return (
