@@ -82,7 +82,6 @@ async function warmUp() {
 
 // ---- gateway ----------------------------------------------------------------
 const ALLOWED = /^\/v1\/(chat\/completions|completions|embeddings|models)(\/[^/]+)?$/;
-let served = 0;
 const upstream = new URL(OLLAMA);
 const client = upstream.protocol === "https:" ? https : http;
 
@@ -93,13 +92,23 @@ const server = http.createServer((req, res) => {
   if (!ALLOWED.test(url.pathname)) return json(404, { error: { message: "Not found" } });
   if (!keyMatches(req.headers.authorization)) return json(401, { error: { message: "Invalid brain key" } });
 
-  served += 1;
+  // Live log so you can SEE JARVIS reaching this PC and how long answers take.
+  const t0 = Date.now();
+  const stamp = () => new Date().toLocaleTimeString();
+  const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
+  let firstByte = 0;
+  say(`  ${stamp()}  ← request from JARVIS (${url.pathname.replace("/v1/", "")})`);
+  res.on("finish", () => say(`  ${stamp()}  ✓ answered in ${secs()}s${firstByte ? ` (thinking ${firstByte.toFixed(1)}s before the first word)` : ""}`));
+  res.on("close", () => {
+    if (!res.writableFinished) say(`  ${stamp()}  ✗ JARVIS stopped waiting after ${secs()}s — the model is too slow for its time limit (see OLLAMA_TIMEOUT_MS or use a smaller model).`);
+  });
   const up = client.request(
     { hostname: upstream.hostname, port: upstream.port, path: url.pathname + url.search, method: req.method,
       headers: { "content-type": req.headers["content-type"] ?? "application/json", accept: req.headers.accept ?? "*/*" } },
     (upRes) => {
       const headers = { ...upRes.headers }; delete headers.connection;
       res.writeHead(upRes.statusCode ?? 502, headers);
+      upRes.once("data", () => { firstByte = (Date.now() - t0) / 1000; });
       upRes.pipe(res); // streams tokens straight through
     },
   );
@@ -205,7 +214,6 @@ setInterval(async () => {
   if ((r === "ok") !== lastRegOk) say(`  ${new Date().toLocaleTimeString()}  ${explainReg(r)}`);
   lastRegOk = r === "ok";
 }, HEARTBEAT_MS);
-setInterval(() => { if (served) say(`  ${new Date().toLocaleTimeString()}  served ${served} request(s)`); served = 0; }, 10 * 60_000).unref();
 
 async function shutdown() {
   say("\n  Stopping — telling JARVIS the brain is offline…");

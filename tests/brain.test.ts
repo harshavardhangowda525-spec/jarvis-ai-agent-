@@ -17,7 +17,7 @@ describe("Ollama brain in the provider chain", () => {
       baseUrl: "https://abc.trycloudflare.com/v1",
       model: "qwen2.5-coder:7b",
       apiKey: "brain_secret", // never the OpenAI key
-      timeoutMs: 40_000,
+      timeoutMs: 150_000,
     });
   });
 

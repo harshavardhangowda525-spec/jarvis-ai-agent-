@@ -61,6 +61,9 @@ export const env = {
   // Shared secret between JARVIS and the brain gateway (Bearer auth on every
   // request + on registration). Never a real AI vendor key.
   ollamaApiKey: read("OLLAMA_API_KEY"),
+  // How long to wait for the PC's first token before falling back to the cloud.
+  // A 7B model on a CPU must read the whole prompt first (often 1–2 min).
+  ollamaTimeoutMs: Math.max(10_000, Number(read("OLLAMA_TIMEOUT_MS")) || 150_000),
 
   elevenLabsApiKey: read("ELEVENLABS_API_KEY"),
   // JARVIS voice — defaults to "Daniel" (British male, authoritative). Override
@@ -257,8 +260,8 @@ function buildAiConfig(provider: string, brain?: BrainEndpoint | null): AiConfig
         baseUrl: ollamaV1(base),
         model: brain?.model || env.ollamaModel || AI_DEFAULT_MODEL.ollama,
         headers: { "ngrok-skip-browser-warning": "1" },
-        // A PC that's asleep/slow shouldn't eat the whole request: fall back.
-        timeoutMs: 40_000,
+        // A PC that's asleep/too slow shouldn't eat the whole request: fall back.
+        timeoutMs: env.ollamaTimeoutMs,
       };
     }
     case "anthropic":

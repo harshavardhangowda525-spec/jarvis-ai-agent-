@@ -119,6 +119,7 @@ export async function* runAgent(
   // Try each configured provider in order. If one fails BEFORE producing any
   // output (e.g. rate-limited), fall back to the next — but never re-run after
   // text or a tool has already been committed (avoids duplicate side effects).
+  const failures: string[] = []; // "Ollama: didn't answer in 150s" — shown if all fail
   for (let i = 0; i < configs.length; i++) {
     const cfg = configs[i];
     const s: SharedCtx = { system, tools, ctx, activityQueue, model: cfg.model };
@@ -139,12 +140,14 @@ export async function* runAgent(
       return;
     } catch (err) {
       console.error(`[agent] provider ${cfg.provider} failed:`, err);
+      failures.push(`${label(cfg.provider)}: ${shortReason(err, cfg.timeoutMs)}`);
       const next = configs[i + 1];
       if (!committed && next) {
-        yield { type: "activity", label: `${label(cfg.provider)} unavailable — switching to ${label(next.provider)}…` };
+        yield { type: "activity", label: `${label(cfg.provider)} ${shortReason(err, cfg.timeoutMs)} — switching to ${label(next.provider)}…` };
         continue;
       }
-      yield { type: "error", message: aiErrorMessage(err) };
+      // Several providers tried → say what happened to EACH, not just the last.
+      yield { type: "error", message: failures.length > 1 && !committed ? `No AI provider could answer — ${failures.join(" · ")}.` : aiErrorMessage(err) };
       return;
     }
   }
@@ -372,6 +375,21 @@ async function* openaiLoop(
     }
   }
   yield { type: "done", text: finalText || "I couldn't complete that in the available steps." };
+}
+
+/** One short phrase per failed provider (for the combined "all failed" message). */
+function shortReason(err: unknown, timeoutMs?: number): string {
+  const e = err as { status?: number; name?: string; message?: string };
+  if (e?.name === "APIConnectionTimeoutError" || /timed? ?out/i.test(e?.message ?? "")) {
+    return timeoutMs ? `didn't answer within ${Math.round(timeoutMs / 1000)}s` : "timed out";
+  }
+  if (e?.name === "APIConnectionError") return "unreachable";
+  if (e?.status === 429) return "rate-limited (free limit reached)";
+  if (e?.status === 401 || e?.status === 403) return "key rejected";
+  if (e?.status === 402) return "needs billing";
+  if (e?.status === 404) return "model not found";
+  if (e?.status === 502 || e?.status === 530) return "unreachable";
+  return e?.status ? `error ${e.status}` : "failed";
 }
 
 /** Maps provider SDK errors to honest, user-facing messages. */
