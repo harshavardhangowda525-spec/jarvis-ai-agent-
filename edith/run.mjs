@@ -21,7 +21,7 @@ const port = Number(process.env.EDITH_PORT || 7420);
 const ws = new Workspace(process.argv[2] || process.env.EDITH_WORKSPACE);
 
 if (!hasProvider()) {
-  log.warn("No AI provider key found — set GROQ_API_KEY (or GEMINI/CEREBRAS/OPENROUTER/OPENAI) in edith/.env.");
+  log.warn("No AI provider key found — set GROQ_API_KEY (or MISTRAL/GITHUB_MODELS_TOKEN/SAMBANOVA/GEMINI/OPENROUTER/CEREBRAS/OPENAI, or OLLAMA_MODEL) in edith/.env.");
   log.warn("EDITH will pair and run REAL tools, but its reasoning/coding loop needs a provider.");
 } else {
   log.info(`Brain ready: ${providerName()}`);
@@ -40,6 +40,7 @@ function loadEnv(file) {
     const k = s.slice(0, eq).trim();
     let v = s.slice(eq + 1).trim();
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    else v = v.replace(/\s+#.*$/, "").trim(); // drop an inline "  # note" after an unquoted value
     if (!(k in process.env)) process.env[k] = v;
   }
 }
