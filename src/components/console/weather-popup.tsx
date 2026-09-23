@@ -11,6 +11,8 @@ export interface WeatherData {
   current: { temp: number; feelsLike: number; humidity: number; wind: number; isDay: boolean; condition: string; icon: WeatherIcon };
   daily: { date: string; weekday: string; condition: string; icon: WeatherIcon; tempMax: number; tempMin: number; precip: number }[];
   error?: string;
+  /** True while the forecast is being fetched — shows an animated loading card. */
+  loading?: boolean;
 }
 
 /** Sky gradient per condition + day/night. */
@@ -53,7 +55,15 @@ export function WeatherPopup({ data, onClose }: { data: WeatherData; onClose: ()
           boxShadow: "0 40px 120px -28px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 0 90px -50px rgba(255,255,255,0.6)",
           animation: closing ? "ev-dissolve .32s ease forwards" : "dw-pop-in .55s cubic-bezier(.2,.9,.25,1.15) both",
         }}>
-        {data.error ? (
+        {data.loading ? (
+          <div className="relative flex h-72 flex-col items-center justify-center gap-3 overflow-hidden text-center" style={{ background: skyGradient("partly", true) }}>
+            <WeatherScene icon="partly" isDay />
+            <div className="relative z-10 flex flex-col items-center gap-2">
+              <span className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              <p className="text-sm text-white drop-shadow">Checking the sky{data.location?.name ? ` over ${data.location.name}` : ""}…</p>
+            </div>
+          </div>
+        ) : data.error ? (
           <div className="flex flex-col items-center gap-2 bg-[#1c2136] px-6 py-12 text-center">
             <span className="text-3xl">🌫️</span>
             <p className="text-sm text-white/90">Couldn&apos;t get the weather</p>

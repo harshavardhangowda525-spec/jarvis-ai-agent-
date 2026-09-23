@@ -21,7 +21,7 @@ import { WeatherPopup, type WeatherData } from "@/components/console/weather-pop
 import { cn, timeAgo } from "@/lib/utils";
 
 // Weather intents ("what's the weather", "forecast for Tokyo", "will it rain").
-const WEATHER_RE = /\b(weather|forecast|temperature|how (hot|cold|warm)|is it (going to |gonna )?(rain|snow|sunny|cold|hot))\b/i;
+const WEATHER_RE = /\b(weather|forecast|temperature|humidity|how (hot|cold|warm)|(will|is|does|gonna) it (be )?(going to |gonna )?(rain|raining|snow|snowing|sunny|cloudy|cold|hot|windy|storm)|need an umbrella)\b/i;
 
 /** Pull a place out of a weather question ("weather in London" → "London"). */
 function parseWeatherPlace(text: string): string | undefined {
@@ -161,22 +161,29 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   // Real weather → liquid-glass popup with a live animated scene.
   const fetchWeather = useCallback(async (place?: string) => {
     const speak = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
-    const errObj = (msg: string): WeatherData => ({
+    const blank = (extra: Partial<WeatherData>): WeatherData => ({
       location: { name: "", country: "", admin: "", timezone: null },
       current: { temp: 0, feelsLike: 0, humidity: 0, wind: 0, isDay: true, condition: "", icon: "cloudy" },
-      daily: [], error: msg,
+      daily: [], ...extra,
     });
+    const errObj = (msg: string): WeatherData => blank({ error: msg });
+    // Open the glass popup IMMEDIATELY in a loading state, so the request is
+    // visibly acknowledged even before the forecast arrives.
+    setWeather(blank({ loading: true, location: { name: place ?? "", country: "", admin: "", timezone: null } }));
     try {
       let url = "";
       if (place) {
         url = `/api/weather?q=${encodeURIComponent(place)}`;
       } else {
         // No place named → try the browser's location; fall back to asking.
+        // Race against a hard timeout: some browsers never fire either callback
+        // while the permission prompt is still open.
         const coords = await new Promise<{ lat: number; lon: number } | null>((resolve) => {
           if (!navigator.geolocation) return resolve(null);
+          const hard = setTimeout(() => resolve(null), 8000);
           navigator.geolocation.getCurrentPosition(
-            (p) => resolve({ lat: p.coords.latitude, lon: p.coords.longitude }),
-            () => resolve(null),
+            (p) => { clearTimeout(hard); resolve({ lat: p.coords.latitude, lon: p.coords.longitude }); },
+            () => { clearTimeout(hard); resolve(null); },
             { timeout: 6000, maximumAge: 600000 },
           );
         });

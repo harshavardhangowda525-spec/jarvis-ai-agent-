@@ -64,6 +64,7 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const [online, setOnline] = useState<number | null>(null);
+  const [build, setBuild] = useState<{ shortSha: string; env: string } | null>(null);
   const now = useClock();
 
   // DARWIN is a full-immersion command center — the nav rails fold away so the
@@ -82,6 +83,11 @@ export function AppShell({
         setOnline(Math.round((vals.filter(Boolean).length / vals.length) * 100));
       })
       .catch(() => setOnline(null));
+    // Which commit is live — confirms a deploy picked up the latest code.
+    fetch("/api/version")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j?.data && setBuild({ shortSha: j.data.shortSha, env: j.data.env }))
+      .catch(() => setBuild(null));
   }, []);
 
   async function logout() {
@@ -188,6 +194,11 @@ export function AppShell({
           <div className="mt-4 rounded border border-accent/15 p-3 box-glow-soft">
             <div className="hud-label text-[11px] text-accent-bright">JARVIS v2.0.1</div>
             <div className="hud-label mt-0.5 text-[8px] text-muted-foreground">Premium AI Assistant</div>
+            {build && (
+              <div className="mt-1 font-mono text-[9px] text-muted-foreground" title="Live build (git commit)">
+                build <span className="text-accent">{build.shortSha}</span>{build.env && build.env !== "production" ? ` · ${build.env}` : ""}
+              </div>
+            )}
             <div className="mt-2 flex items-center gap-2">
               <span className="hud-label text-[8px] text-muted-foreground">Status</span>
               <span className="h-1.5 w-1.5 animate-hud-pulse rounded-full bg-success shadow-[0_0_8px_hsl(var(--success))]" />
