@@ -87,14 +87,58 @@ function isDead(name) {
   if (Date.now() > d.until) { dead.delete(name); return false; }
   return true;
 }
-function explain(status, text) {
+// What a real key looks like per provider + where to get a fresh one. Used to
+// turn a bare "401" into an actionable message (never prints the key itself).
+const KEY_INFO = {
+  groq: { prefix: "gsk_", where: "console.groq.com/keys" },
+  gemini: { prefix: "AIza", where: "aistudio.google.com/apikey" },
+  openrouter: { prefix: "sk-or-", where: "openrouter.ai/keys" },
+  cerebras: { prefix: "csk-", where: "cloud.cerebras.ai" },
+  mistral: { prefix: "", where: "console.mistral.ai/api-keys" },
+  github: { prefix: "github_pat_", where: "github.com/settings/tokens (fine-grained, Models: read)" },
+  sambanova: { prefix: "", where: "cloud.sambanova.ai/apis" },
+  openai: { prefix: "sk-", where: "platform.openai.com/api-keys" },
+};
+
+function explain(status, text, P) {
   if (status === 402 || /payment|billing|credit|quota/i.test(text)) return "out of free quota / needs billing";
-  if (status === 401) return "API key invalid";
+  if (/data policy|privacy/i.test(text)) return "blocked by your OpenRouter privacy settings (openrouter.ai/settings/privacy → allow free models)";
+  if (status === 401 || (status === 400 && /api.?key|API_KEY_INVALID|unauthor/i.test(text))) {
+    const info = P && KEY_INFO[P.provider];
+    if (info?.prefix && P.apiKey && !P.apiKey.startsWith(info.prefix)) {
+      return `API key invalid — ${P.provider} keys start with "${info.prefix}" and yours doesn't; create one at ${info.where}`;
+    }
+    return info ? `API key invalid or revoked — create a new one at ${info.where}` : "API key invalid";
+  }
   if (status === 403) return "key not allowed (check account/region)";
   if (status === 404) return "model not found (check the *_MODEL setting)";
   if (status === 429) return "rate-limited";
   if (status === 503) return "overloaded";
   return `HTTP ${status}`;
+}
+
+// OpenRouter rotates its free models often, so a hard-coded ":free" id goes
+// stale. When ours 404s, ask OpenRouter which free models exist right now and
+// switch to the best one (public endpoint; no extra config needed).
+let _orFree = null;
+export async function pickOpenRouterFree(exclude = "") {
+  if (_orFree && _orFree !== exclude) return _orFree;
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) return null;
+    const { data = [] } = await res.json();
+    const free = data.filter((m) =>
+      m?.id && m.id !== exclude &&
+      (m.id.endsWith(":free") || (m.pricing && Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0)) &&
+      (m.context_length ?? 0) >= 16000);
+    const prefs = [/deepseek.*(chat|v3|r1)/i, /qwen.*coder/i, /llama-3\.3-70b/i, /qwen/i, /gemini.*flash/i, /mistral|devstral/i, /llama/i];
+    const score = (m) => { const i = prefs.findIndex((re) => re.test(m.id)); return (i === -1 ? 99 : i) * 1e7 - (m.context_length ?? 0); };
+    free.sort((a, b) => score(a) - score(b));
+    _orFree = free[0]?.id ?? null;
+    return _orFree;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -168,13 +212,22 @@ export async function askJson(system, user) {
 
           const text = (await res.text().catch(() => "")).slice(0, 240);
           lastErr = `${P.provider} ${res.status}: ${text}`;
-          errors.set(P.provider, explain(res.status, text));
+          errors.set(P.provider, explain(res.status, text, P));
           log.warn(`Provider ${P.provider} (${P.model}) ${res.status}: ${text}`);
 
+          // OpenRouter model retired → switch to a current free model and retry it.
+          if (P.provider === "openrouter" && !P.swapped && (res.status === 404 || /not a valid model|model.*(not found|does not exist)/i.test(text)) && !/data policy|privacy/i.test(text)) {
+            const alt = await pickOpenRouterFree(P.model);
+            if (alt) {
+              log.info(`OpenRouter model ${P.model} is unavailable — switching to free model ${alt}.`);
+              P.model = alt; P.swapped = true; errors.delete(P.provider);
+              i -= 1; nextProvider = true; break; // re-run this provider with the new model
+            }
+          }
           // Won't recover by retrying: park this provider for a while.
           if ([401, 402, 403, 404].includes(res.status)) {
-            dead.set(P.provider, { until: Date.now() + DEAD_MS, reason: explain(res.status, text) });
-            log.warn(`Skipping ${P.provider} for ${DEAD_MS / 60000} min — ${explain(res.status, text)}.`);
+            dead.set(P.provider, { until: Date.now() + DEAD_MS, reason: explain(res.status, text, P) });
+            log.warn(`Skipping ${P.provider} for ${DEAD_MS / 60000} min — ${explain(res.status, text, P)}.`);
           }
 
           if (res.status === 429 || res.status === 503) {
@@ -232,4 +285,32 @@ function parseJson(text) {
       ? "The model's JSON was cut off (raise EDITH_MAX_TOKENS or use a larger model)."
       : "The model returned an unparseable response.",
   );
+}
+
+/**
+ * Test every configured provider with a tiny request and report which keys work.
+ * Powers `npm run check`. Never prints the keys themselves.
+ */
+export async function checkProviders() {
+  const out = [];
+  for (const P of chain()) {
+    const probe = async () => fetch(`${P.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${P.apiKey}` },
+      body: JSON.stringify({ model: P.model, max_tokens: 16, messages: [{ role: "user", content: "Reply with the word ok." }] }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    try {
+      let res = await probe();
+      let text = res.ok ? "" : (await res.text().catch(() => "")).slice(0, 240);
+      if (!res.ok && P.provider === "openrouter" && res.status === 404 && !/data policy|privacy/i.test(text)) {
+        const alt = await pickOpenRouterFree(P.model);
+        if (alt) { P.model = alt; P.swapped = true; res = await probe(); text = res.ok ? "" : (await res.text().catch(() => "")).slice(0, 240); }
+      }
+      out.push({ provider: P.provider, model: P.model, ok: res.ok, reason: res.ok ? (P.swapped ? "works (auto-picked current free model)" : "works") : explain(res.status, text, P) });
+    } catch (err) {
+      out.push({ provider: P.provider, model: P.model, ok: false, reason: /timeout|aborted/i.test(err.message) ? "timed out" : `unreachable (${err.message})` });
+    }
+  }
+  return out;
 }
