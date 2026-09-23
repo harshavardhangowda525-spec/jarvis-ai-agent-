@@ -11,7 +11,8 @@
     "start": "node run.mjs",
     "edith": "node run.mjs",
     "selftest": "node selftest.mjs",
-    "check": "node check-keys.mjs"
+    "check": "node check-keys.mjs",
+    "brain": "node brain.mjs"
   },
   "dependencies": {
     "ws": "^8.18.0"

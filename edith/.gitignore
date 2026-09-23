@@ -3,3 +3,4 @@ node_modules/
 workspaces/
 .edith/
 *.log
+.brain-key

@@ -8,7 +8,9 @@ import { fail, handleError, rateLimit } from "@/lib/api";
 import { truncate } from "@/lib/utils";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// A local Ollama brain on a CPU is slower than cloud APIs — allow up to 5 min
+// (Vercel's Fluid Compute limit on every plan).
+export const maxDuration = 300;
 
 /**
  * The JARVIS agent endpoint. Streams NDJSON events (activity / text / tool /

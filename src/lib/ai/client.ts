@@ -1,7 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { resolveAiConfig, resolveAiConfigs, resolveVisionConfigs, type AiConfig } from "@/lib/env";
+import { resolveAiConfig, resolveAiConfigs, resolveVisionConfigs, type AiConfig, type BrainEndpoint } from "@/lib/env";
 
 export class AiNotConfiguredError extends Error {
   constructor() {
@@ -18,8 +18,8 @@ export function getAiConfig(): AiConfig {
 }
 
 /** The full provider fallback chain (primary first). Throws if none configured. */
-export function getAiConfigs(primaryOverride?: string): AiConfig[] {
-  const configs = resolveAiConfigs(primaryOverride);
+export function getAiConfigs(primaryOverride?: string, brain?: BrainEndpoint | null): AiConfig[] {
+  const configs = resolveAiConfigs(primaryOverride, brain);
   if (configs.length === 0) throw new AiNotConfiguredError();
   return configs;
 }
@@ -45,8 +45,18 @@ export function getAnthropicClient(cfg: AiConfig): Anthropic {
  * Cached per apiKey+baseUrl so multiple providers can be used in one turn.
  */
 export function getOpenAiClient(cfg: AiConfig): OpenAI {
-  const cacheKey = `${cfg.apiKey}::${cfg.baseUrl ?? ""}`;
+  const cacheKey = `${cfg.apiKey}::${cfg.baseUrl ?? ""}::${cfg.timeoutMs ?? ""}`;
   let c = openaiClients.get(cacheKey);
-  if (!c) { c = new OpenAI({ apiKey: cfg.apiKey, baseURL: cfg.baseUrl }); openaiClients.set(cacheKey, c); }
+  if (!c) {
+    c = new OpenAI({
+      apiKey: cfg.apiKey,
+      baseURL: cfg.baseUrl,
+      defaultHeaders: cfg.headers,
+      // With a timeout set (Ollama), fail fast and let the chain fall back
+      // instead of the SDK silently retrying a sleeping PC.
+      ...(cfg.timeoutMs ? { timeout: cfg.timeoutMs, maxRetries: 0 } : {}),
+    });
+    openaiClients.set(cacheKey, c);
+  }
   return c;
 }

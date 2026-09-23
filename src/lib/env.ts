@@ -54,7 +54,13 @@ export const env = {
   cerebrasApiKey: read("CEREBRAS_API_KEY"),
   cerebrasModel: read("CEREBRAS_MODEL"),
   // Ollama (local, OpenAI-compatible). Default endpoint is localhost:11434.
+  // On Vercel you normally leave OLLAMA_BASE_URL empty: the brain gateway on your
+  // PC (`npm run brain` in edith/) registers its live tunnel URL automatically.
   ollamaBaseUrl: read("OLLAMA_BASE_URL"),
+  ollamaModel: read("OLLAMA_MODEL"),
+  // Shared secret between JARVIS and the brain gateway (Bearer auth on every
+  // request + on registration). Never a real AI vendor key.
+  ollamaApiKey: read("OLLAMA_API_KEY"),
 
   elevenLabsApiKey: read("ELEVENLABS_API_KEY"),
   // JARVIS voice — defaults to "Daniel" (British male, authoritative). Override
@@ -158,6 +164,19 @@ export interface AiConfig {
   apiKey: string;
   baseUrl?: string; // for OpenAI-compatible providers
   model: string;
+  /** Extra request headers (e.g. to get past a tunnel's browser-warning page). */
+  headers?: Record<string, string>;
+  /** Give up waiting for the first response after this long (then fall back). */
+  timeoutMs?: number;
+}
+
+/** A live Ollama brain registered by the gateway on the user's PC. */
+export interface BrainEndpoint { baseUrl: string; model?: string }
+
+/** Ollama's OpenAI-compatible API lives under /v1 — add it if the URL lacks it. */
+function ollamaV1(url: string): string {
+  const u = url.replace(/\/+$/, "");
+  return /\/v1$/.test(u) ? u : `${u}/v1`;
 }
 
 const AI_DEFAULT_MODEL: Record<string, string> = {
@@ -169,7 +188,7 @@ const AI_DEFAULT_MODEL: Record<string, string> = {
   openrouter: "meta-llama/llama-3.3-70b-instruct:free",
   openai: "gpt-4o-mini",
   anthropic: "claude-sonnet-5",
-  ollama: "llama3.1",
+  ollama: "qwen2.5-coder:7b",
 };
 
 /** Order tried when falling back (a provider is skipped if not configured). */
@@ -194,7 +213,7 @@ export function listConfiguredProviders(): { id: string; label: string }[] {
 }
 
 /** Build a single provider's config, or null if its credentials aren't set. */
-function buildAiConfig(provider: string): AiConfig | null {
+function buildAiConfig(provider: string, brain?: BrainEndpoint | null): AiConfig | null {
   switch (provider) {
     case "gemini":
       return env.geminiApiKey
@@ -226,13 +245,22 @@ function buildAiConfig(provider: string): AiConfig | null {
         ? { provider, kind: "openai", apiKey: env.openaiApiKey,
             baseUrl: env.openaiBaseUrl || undefined, model: AI_DEFAULT_MODEL.openai }
         : null;
-    case "ollama":
-      // Local, OpenAI-compatible. Only joins the chain when a base URL is set
-      // (won't be reachable from Vercel unless exposed via a tunnel).
-      return env.ollamaBaseUrl
-        ? { provider, kind: "openai", apiKey: env.openaiApiKey || "ollama",
-            baseUrl: env.ollamaBaseUrl.replace(/\/$/, ""), model: AI_DEFAULT_MODEL.ollama }
-        : null;
+    case "ollama": {
+      // A live gateway registration wins over a static OLLAMA_BASE_URL. Vercel
+      // can't reach localhost, so on Vercel this is normally the tunnel URL.
+      const base = brain?.baseUrl || env.ollamaBaseUrl;
+      if (!base) return null;
+      return {
+        provider, kind: "openai",
+        // The gateway's shared secret — never another vendor's key.
+        apiKey: env.ollamaApiKey || "ollama",
+        baseUrl: ollamaV1(base),
+        model: brain?.model || env.ollamaModel || AI_DEFAULT_MODEL.ollama,
+        headers: { "ngrok-skip-browser-warning": "1" },
+        // A PC that's asleep/slow shouldn't eat the whole request: fall back.
+        timeoutMs: 40_000,
+      };
+    }
     case "anthropic":
       return env.aiApiKey
         ? { provider, kind: "anthropic", apiKey: env.aiApiKey, model: AI_DEFAULT_MODEL.anthropic }
@@ -247,11 +275,12 @@ function buildAiConfig(provider: string): AiConfig | null {
  * configured provider) is primary; every other configured provider follows as
  * an automatic fallback. AI_MODEL overrides only the primary provider's model.
  */
-export function resolveAiConfigs(primaryOverride?: string): AiConfig[] {
-  // A per-user pick (from Settings) wins over the env default, as long as it's
-  // actually configured; otherwise fall back to the env AI_PROVIDER.
-  const override = (primaryOverride ?? "").toLowerCase();
-  const primary = override && buildAiConfig(override) ? override : env.aiProvider;
+export function resolveAiConfigs(primaryOverride?: string, brain?: BrainEndpoint | null): AiConfig[] {
+  // A live Ollama brain (your own PC, unlimited) is always the primary when it's
+  // online; cloud providers follow as automatic fallback. Otherwise a per-user
+  // pick (from Settings) wins over the env default, as long as it's configured.
+  const override = brain ? "ollama" : (primaryOverride ?? "").toLowerCase();
+  const primary = override && buildAiConfig(override, brain) ? override : env.aiProvider;
   const order = [
     ...(primary && AI_FALLBACK_ORDER.includes(primary) ? [primary] : []),
     ...AI_FALLBACK_ORDER.filter((p) => p !== primary),
@@ -261,7 +290,7 @@ export function resolveAiConfigs(primaryOverride?: string): AiConfig[] {
   for (const p of order) {
     if (seen.has(p)) continue;
     seen.add(p);
-    const cfg = buildAiConfig(p);
+    const cfg = buildAiConfig(p, brain);
     if (cfg) configs.push(cfg);
   }
   // AI_MODEL overrides the primary provider's model — but only when we're using

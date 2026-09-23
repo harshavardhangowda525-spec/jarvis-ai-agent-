@@ -2,6 +2,7 @@ import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { getAiConfigs, getAnthropicClient, getOpenAiClient } from "./client";
+import { getLiveBrain } from "./brain";
 import { buildSystemPrompt } from "./prompt";
 import { availableTools, getTool } from "@/lib/tools/registry";
 import type { ToolContext, ToolDefinition } from "@/lib/tools/types";
@@ -49,7 +50,9 @@ const MAX_STEPS = 8;
 export async function* runAgent(
   input: AgentInput,
 ): AsyncGenerator<AgentEvent, void, unknown> {
-  const configs = getAiConfigs(input.preferredProvider ?? undefined);
+  // Your own Ollama brain (unlimited) leads whenever the PC gateway is online.
+  const brain = await getLiveBrain(input.userId).catch(() => null);
+  const configs = getAiConfigs(input.preferredProvider ?? undefined, brain);
   const db = getDb();
 
   const isEv = input.agent === "ev";
