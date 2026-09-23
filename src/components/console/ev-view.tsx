@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Mic, MicOff, Send, Power, X, ExternalLink, ImageIcon, Instagram, Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,12 @@ export interface EvViewProps {
   /** Caption/context shown with the image (EV's latest reply). */
   caption?: string;
   onDismissImage: () => void;
+  /** Bumped by the console when you say "publish" — triggers the Instagram post. */
+  publishSignal?: number;
+  /** Caption spoken with the command ("publish with caption …"), overrides the draft. */
+  captionOverride?: string;
+  /** Reports the real publish outcome back (so EV can say it out loud). */
+  onPublishResult?: (r: { ok: boolean; message: string }) => void;
   input: string;
   onInput: (v: string) => void;
   onSubmit: () => void;
@@ -97,7 +103,8 @@ export function EvView(props: EvViewProps) {
 
       {/* generated image reveals as a liquid-glass message */}
       {props.image && (
-        <EvImageMessage url={props.image.url} caption={props.caption} onDismiss={props.onDismissImage} />
+        <EvImageMessage url={props.image.url} caption={props.caption} onDismiss={props.onDismissImage}
+          publishSignal={props.publishSignal} captionOverride={props.captionOverride} onPublishResult={props.onPublishResult} />
       )}
 
       {/* ===== SPEC 1 — EV ACTIVITY (bottom-left) ===== */}
@@ -293,16 +300,47 @@ function EvCore(props: {
 
 /* ---------------- liquid-glass image message ---------------- */
 
-function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: string; onDismiss: () => void }) {
+/**
+ * Pull the Instagram caption out of EV's reply. EV presents content as
+ * "CONTENT READY / Preview: … / Caption: … / CTA: … / Hashtags: …" — post the
+ * caption (+ CTA + hashtags), not the whole briefing. Falls back to the reply.
+ */
+export function extractCaption(text?: string): string {
+  const t = (text ?? "").replace(/\*\*/g, "").trim();
+  if (!t) return "";
+  const field = (name: string) =>
+    t.match(new RegExp(`(?:^|\\n)\\s*${name}\\s*[:：]\\s*([\\s\\S]*?)(?=\\n\\s*(?:preview|caption|cta|call to action|hashtags?|visual|image|format)\\s*[:：]|$)`, "i"))?.[1]?.trim();
+  // Drop EV's own follow-up question ("Want me to publish it?") and wrapping quotes.
+  const clean = (v?: string) =>
+    v?.replace(/\n\s*(want me to|shall i|should i|do you want|let me know|ready to|say ["“]?publish).*$/is, "")
+      .trim().replace(/^["“']+|["”']+$/g, "").trim();
+  const caption = clean(field("caption"));
+  if (!caption) return clean(t)!.slice(0, 2200);
+  const firstLine = (v?: string) => clean(v)?.split("\n")[0].trim();
+  const parts = [caption, firstLine(field("(?:cta|call to action)")), firstLine(field("hashtags?"))].filter(Boolean);
+  return parts.join("\n\n").slice(0, 2200);
+}
+
+function EvImageMessage({ url, caption, onDismiss, publishSignal, captionOverride, onPublishResult }: {
+  url: string; caption?: string; onDismiss: () => void;
+  publishSignal?: number; captionOverride?: string; onPublishResult?: (r: { ok: boolean; message: string }) => void;
+}) {
   const isVideo = /kind=video|\.mp4|\.webm|\.mov/i.test(url);
-  const [cap, setCap] = useState(caption ?? "");
+  const [cap, setCap] = useState(() => extractCaption(caption));
+  const edited = useRef(false);
   const [status, setStatus] = useState<"idle" | "publishing" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
   const [containerId, setContainerId] = useState<string | undefined>();
 
-  async function publish() {
-    const text = cap.trim();
-    if (!text) { setStatus("error"); setMsg("Add a caption first."); return; }
+  // EV's reply often lands after the image — keep the draft caption in sync
+  // until you edit it yourself.
+  useEffect(() => { if (!edited.current) setCap(extractCaption(caption)); }, [caption]);
+
+  async function publish(textArg?: string) {
+    const text = (textArg ?? cap).trim();
+    const report = (ok: boolean, message: string) => onPublishResult?.({ ok, message });
+    if (!text) { setStatus("error"); setMsg("Add a caption first."); report(false, "I need a caption first. Say: publish with caption, then your caption."); return; }
+    if (status === "publishing" || status === "done") return;
     setStatus("publishing"); setMsg("");
     try {
       const res = await fetch("/api/ev/instagram/publish", {
@@ -311,17 +349,28 @@ function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: st
         body: JSON.stringify(isVideo ? { videoUrl: url, caption: text, containerId } : { imageUrl: url, caption: text }),
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) { setStatus("error"); setMsg(j.error || `Publish failed (HTTP ${res.status}).`); return; }
-      if (j.data?.published) { setStatus("done"); setMsg(`Published to Instagram ✓ (id ${j.data.mediaId})`); }
-      else if (j.data?.containerId) { setStatus("idle"); setContainerId(j.data.containerId); setMsg(j.data.message || "Still processing — click Publish again to finish."); }
-      else { setStatus("error"); setMsg("Instagram didn't confirm the post."); }
-    } catch { setStatus("error"); setMsg("Network error — couldn't reach the server."); }
+      if (!res.ok) { const m = j.error || `Publish failed (HTTP ${res.status}).`; setStatus("error"); setMsg(m); report(false, m); return; }
+      if (j.data?.published) { setStatus("done"); setMsg(`Published to Instagram ✓ (id ${j.data.mediaId})`); report(true, "Published to Instagram."); }
+      else if (j.data?.containerId) { setStatus("idle"); setContainerId(j.data.containerId); const m = j.data.message || "Still processing — say publish again to finish."; setMsg(m); report(false, "Instagram is still processing the video. Say publish again in a moment."); }
+      else { setStatus("error"); setMsg("Instagram didn't confirm the post."); report(false, "Instagram didn't confirm the post."); }
+    } catch { setStatus("error"); setMsg("Network error — couldn't reach the server."); report(false, "I couldn't reach the server."); }
   }
+
+  // Voice/text "publish" from the console.
+  const lastSignal = useRef(publishSignal ?? 0);
+  useEffect(() => {
+    if (!publishSignal || publishSignal === lastSignal.current) return;
+    lastSignal.current = publishSignal;
+    const text = captionOverride?.trim();
+    if (text) { edited.current = true; setCap(text); }
+    void publish(text || undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [publishSignal]);
 
   return (
     <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
       <div
-        className="pointer-events-auto relative w-full max-w-md overflow-hidden rounded-3xl border border-white/15"
+        className="pointer-events-auto relative flex max-h-[90vh] w-full max-w-sm flex-col overflow-y-auto overflow-x-hidden rounded-3xl border border-white/15"
         style={{
           transformOrigin: "center bottom",
           animation: "ev-holo-in 0.9s cubic-bezier(0.22,1,0.36,1) both",
@@ -365,10 +414,10 @@ function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: st
         {/* media inside an inner glass frame */}
         <div className="relative mx-4 mt-3 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
           {isVideo ? (
-            <video src={url} controls autoPlay loop playsInline className="block h-auto max-h-[60vh] w-full" />
+            <video src={url} controls autoPlay loop playsInline className="mx-auto block max-h-[38vh] w-full object-contain" />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt="EV generated marketing image" className="block h-auto w-full select-none" />
+            <img src={url} alt="EV generated marketing image" className="mx-auto block max-h-[38vh] w-full select-none object-contain" />
           )}
         </div>
 
@@ -376,7 +425,7 @@ function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: st
         <div className="relative px-4 pt-3">
           <textarea
             value={cap}
-            onChange={(e) => setCap(e.target.value)}
+            onChange={(e) => { edited.current = true; setCap(e.target.value); }}
             rows={3}
             placeholder="Write the Instagram caption…"
             disabled={status === "publishing" || status === "done"}
@@ -402,7 +451,7 @@ function EvImageMessage({ url, caption, onDismiss }: { url: string; caption?: st
             <ExternalLink className="h-3.5 w-3.5" /> Open full
           </a>
           <button
-            onClick={publish}
+            onClick={() => publish()}
             disabled={status === "publishing" || status === "done"}
             className={cn(
               "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition disabled:opacity-60",

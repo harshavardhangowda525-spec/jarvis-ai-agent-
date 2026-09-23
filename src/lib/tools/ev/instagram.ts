@@ -7,6 +7,7 @@ import {
   igCreateReel, igWaitContainer, igPublishContainer, IgError,
 } from "@/lib/ev/instagram";
 import { getDb } from "@/lib/db";
+import { prepareImageForInstagram, IgImageError } from "@/lib/ev/igready";
 
 /**
  * EV's Instagram tool. Reads profile / media / permitted insights, and can
@@ -85,8 +86,12 @@ export const evInstagramTool: ToolDefinition<Input> = {
           if (!input.imageUrl) throw new ToolError("A public 'imageUrl' is required to publish.");
           if (!input.caption) throw new ToolError("A 'caption' is required to publish.");
           assertPublicUrl(input.imageUrl, "image URL");
+          ctx.activity("Preparing image for Instagram…");
+          let readyUrl: string;
+          try { readyUrl = (await prepareImageForInstagram(ctx.userId, input.imageUrl)).url; }
+          catch (e) { if (e instanceof IgImageError) throw new ToolError(e.message); throw e; }
           ctx.activity("Publishing to Instagram…");
-          const mediaId = await igPublishImage(creds, input.imageUrl, input.caption);
+          const mediaId = await igPublishImage(creds, readyUrl, input.caption);
           // Mark the source content as truly published only on confirmed success.
           if (input.contentId) {
             await getDb().evContent.updateMany({

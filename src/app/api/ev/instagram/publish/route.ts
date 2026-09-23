@@ -6,6 +6,7 @@ import {
   resolveIgCreds, igPublishImage, igCreateReel, igWaitContainer, igPublishContainer, IgError,
 } from "@/lib/ev/instagram";
 import { getDb } from "@/lib/db";
+import { prepareImageForInstagram, IgImageError } from "@/lib/ev/igready";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,9 +77,13 @@ export async function POST(req: NextRequest) {
       if (!isPublic(body.imageUrl)) {
         return fail("The image URL isn't a public https URL Instagram can fetch. Set APP_URL to your public app URL and redeploy.", 422);
       }
-      const mediaId = await igPublishImage(creds, body.imageUrl, body.caption);
+      // Instagram only takes JPEG within 4:5–1.91:1 — convert/pad if needed.
+      let ready;
+      try { ready = await prepareImageForInstagram(user.id, body.imageUrl); }
+      catch (e) { if (e instanceof IgImageError) return fail(e.message, 422); throw e; }
+      const mediaId = await igPublishImage(creds, ready.url, body.caption);
       await markPublished(mediaId);
-      return ok({ published: true, mediaId, type: "image" });
+      return ok({ published: true, mediaId, type: "image", adjusted: ready.note ?? null });
     } catch (err) {
       if (err instanceof IgError) return fail(`Instagram: ${err.message}`, err.status && err.status >= 400 && err.status < 500 ? err.status : 502);
       throw err;

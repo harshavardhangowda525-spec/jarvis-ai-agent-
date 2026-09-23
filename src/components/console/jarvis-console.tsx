@@ -20,6 +20,12 @@ import { EvView, type EvState } from "@/components/console/ev-view";
 import { WeatherPopup, type WeatherData } from "@/components/console/weather-popup";
 import { cn, timeAgo } from "@/lib/utils";
 
+// "publish" / "post it" / "publish with caption …" while an EV image is open.
+const EV_PUBLISH_RE = /^(please\s+)?(publish|post|upload|share)\b|\b(publish|post|upload) (it|this|that|now|the (image|post|picture|photo|video|reel))\b|\bgo ahead( and (publish|post))?\b|\b(publish|post|put it) (to|on) (instagram|insta|ig)\b/i;
+// …but not requests for NEW content ("publish a post about X tomorrow").
+const EV_NEW_CONTENT_RE = /\b(about|schedule|tomorrow|later|next week|idea|ideas|another|new|create|make|generate)\b/i;
+const captionFromCommand = (t: string) => t.match(/\bcaption\s*[:\-]?\s*(?:is\s+|as\s+)?(.+)$/i)?.[1]?.trim();
+
 // Weather intents ("what's the weather", "forecast for Tokyo", "will it rain").
 const WEATHER_RE = /\b(weather|forecast|temperature|humidity|how (hot|cold|warm)|(will|is|does|gonna) it (be )?(going to |gonna )?(rain|raining|snow|snowing|sunny|cloudy|cold|hot|windy|storm)|need an umbrella)\b/i;
 
@@ -80,6 +86,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [evAwaitingApproval, setEvAwaitingApproval] = useState(false);
   const [evPulse, setEvPulse] = useState<null | "success" | "error">(null);
   const [evImage, setEvImage] = useState<{ url: string } | null>(null);
+  const evImageRef = useRef<{ url: string } | null>(null);
+  evImageRef.current = evImage;
+  // "publish" voice/text → bumps this; the EV image message performs the real post.
+  const [evPublishSignal, setEvPublishSignal] = useState(0);
+  const [evCaptionOverride, setEvCaptionOverride] = useState<string | undefined>();
   const [weather, setWeather] = useState<WeatherData | null>(null);
   const fetchWeatherRef = useRef<(place?: string) => void>(() => {});
   const evActiveRef = useRef(false);
@@ -241,6 +252,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       if (evPhase === "off" &&
           (/\b(activate|open|start|launch|bring up|switch to|go to)\s+ev\b|\bev\s+mode\b|^ev[\s!.,]*$/.test(low))) {
         openEv();
+        return;
+      }
+      // "publish" with an EV image on screen → post THAT image + caption to
+      // Instagram directly (your words are the approval), no model round-trip.
+      if (evActiveRef.current && evImageRef.current && EV_PUBLISH_RE.test(low) && !EV_NEW_CONTENT_RE.test(low.replace(/caption.*$/, ""))) {
+        setEvCommand(t);
+        setEvCaptionOverride(captionFromCommand(t));
+        setEvPublishSignal((n) => n + 1);
         return;
       }
       // While EV is active, everything else goes to EV's marketing brain.
@@ -423,6 +442,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           image={evImage}
           caption={subtitle}
           onDismissImage={() => setEvImage(null)}
+          publishSignal={evPublishSignal}
+          captionOverride={evCaptionOverride}
+          onPublishResult={(r) => {
+            flashEv(r.ok ? "success" : "error");
+            if (r.ok) setEvAwaitingApproval(false);
+            if (voiceStarted && !voice.muted && voice.enabled) voice.speak(r.message);
+          }}
           input={input}
           onInput={setInput}
           onSubmit={() => handleSend()}
