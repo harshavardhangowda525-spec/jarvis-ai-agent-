@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
         let containerId = body.containerId;
         if (!containerId) containerId = await igCreateReel(creds, body.videoUrl!, body.caption);
         const st = await igWaitContainer(creds, containerId, 45_000);
-        if (st.error) return fail("Instagram couldn't process the Reel (must be MP4, 9:16, 3–90s).", 422);
+        if (st.error) return fail(`Instagram couldn't process the Reel${st.detail ? `: ${st.detail}` : " (must be MP4, 9:16, 3–90s)"}.`, 422);
         if (!st.ready) {
           return ok({ published: false, containerId, status: st.status, message: "Reel still processing — click Publish again in a moment to finish." });
         }

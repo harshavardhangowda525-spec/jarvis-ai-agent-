@@ -116,7 +116,7 @@ export const evInstagramTool: ToolDefinition<Input> = {
           }
           ctx.activity("Waiting for Instagram to process the video…");
           const st = await igWaitContainer(creds, containerId, 40_000);
-          if (st.error) throw new ToolError("Instagram couldn't process the Reel video (check format: MP4, 9:16, 3–90s).");
+          if (st.error) throw new ToolError(`Instagram couldn't process the Reel video${st.detail ? `: ${st.detail}` : " (check format: MP4, 9:16, 3–90s)"}.`);
           if (!st.ready) {
             return {
               data: { published: false, containerId, status: st.status },
