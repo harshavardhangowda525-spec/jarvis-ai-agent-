@@ -111,12 +111,17 @@ const server = http.createServer((req, res) => {
 function startTunnel() {
   return new Promise((resolve) => {
     const target = `http://127.0.0.1:${PORT}`;
-    const hasCf = spawnSync("cloudflared", ["--version"], { stdio: "ignore", shell: process.platform === "win32" }).status === 0;
-    const [cmd, args] = hasCf
-      ? ["cloudflared", ["tunnel", "--url", target, "--no-autoupdate"]]
-      : ["npx", ["--yes", "cloudflared", "tunnel", "--url", target, "--no-autoupdate"]];
-    if (!hasCf) say("  (cloudflared not installed — fetching it via npx; first run takes a minute)");
-    const child = spawn(cmd, args, { shell: process.platform === "win32" });
+    // Fixed command strings (no user input). On Windows npx/cloudflared are
+    // .cmd/.exe shims that need a shell; passing ONE string avoids Node's
+    // DEP0190 "args with shell" warning.
+    const win = process.platform === "win32";
+    const run = (line, opts = {}) => (win ? spawn(line, { shell: true, ...opts }) : spawn(line.split(" ")[0], line.split(" ").slice(1), opts));
+    const hasCf = (win ? spawnSync("cloudflared --version", { shell: true, stdio: "ignore" }) : spawnSync("cloudflared", ["--version"], { stdio: "ignore" })).status === 0;
+    const line = hasCf
+      ? `cloudflared tunnel --url ${target} --no-autoupdate`
+      : `npx --yes cloudflared tunnel --url ${target} --no-autoupdate`;
+    if (!hasCf) say("  (cloudflared not installed — fetching it via npx; this can take 1–2 minutes the first time.\n   Faster next time: winget install --id Cloudflare.cloudflared)");
+    const child = run(line);
     let done = false;
     const onData = (buf) => {
       const m = String(buf).match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
@@ -125,7 +130,7 @@ function startTunnel() {
     child.stdout.on("data", onData);
     child.stderr.on("data", onData);
     child.on("exit", (code) => { if (!done) { done = true; resolve({ url: null, child: null, code }); } });
-    setTimeout(() => { if (!done) { done = true; resolve({ url: null, child }); } }, 90_000);
+    setTimeout(() => { if (!done) { done = true; resolve({ url: null, child }); } }, 180_000);
   });
 }
 async function waitReachable(publicUrl) {
@@ -212,7 +217,12 @@ async function shutdown() {
       signal: AbortSignal.timeout(5000),
     }).catch(() => {});
   }
-  tunnel?.kill();
+  if (tunnel?.pid) {
+    // On Windows the tunnel runs under a cmd.exe shell — kill the whole tree so
+    // cloudflared doesn't linger in the background.
+    if (process.platform === "win32") spawnSync(`taskkill /pid ${tunnel.pid} /T /F`, { shell: true, stdio: "ignore" });
+    else tunnel.kill();
+  }
   process.exit(0);
 }
 process.on("SIGINT", shutdown);
