@@ -30,7 +30,9 @@ function resolveChain() {
     // Last resort: local model, never rate-limited or billed.
     ["ollama", ollamaModel ? "ollama" : "", `${ollamaBase}/v1`, ollamaModel],
   ];
-  const preferred = read("EDITH_AI_PROVIDER").toLowerCase() || read("AI_PROVIDER").toLowerCase();
+  // Your own Ollama model is the brain whenever it's configured (unlimited);
+  // cloud keys follow as backup. An explicit EDITH_AI_PROVIDER still wins.
+  const preferred = read("EDITH_AI_PROVIDER").toLowerCase() || (ollamaModel ? "ollama" : "") || read("AI_PROVIDER").toLowerCase();
   const configured = order.filter((p) => p[1]).map(([provider, apiKey, baseUrl, model]) => ({ provider, apiKey, baseUrl, model }));
   // Move the preferred provider to the front if it's configured.
   const i = configured.findIndex((p) => p.provider === preferred);
@@ -141,6 +143,40 @@ export async function pickOpenRouterFree(exclude = "") {
   }
 }
 
+// Local Ollama is never rate-limited but can be slow (especially the first call,
+// which loads the model from disk), so it gets far more time than cloud APIs.
+const OLLAMA_TIMEOUT_MS = Math.max(30_000, Number(process.env.OLLAMA_TIMEOUT_MS || 300_000));
+function timeoutFor(P) { return P.provider === "ollama" ? OLLAMA_TIMEOUT_MS : 60_000; }
+
+/**
+ * Load the Ollama model into memory now (and keep it there for 24h) so EDITH's
+ * first real step doesn't pay the 30–90s load time. Safe to call repeatedly.
+ */
+export async function warmOllama() {
+  const P = chain().find((p) => p.provider === "ollama");
+  if (!P) return { configured: false };
+  const base = P.baseUrl.replace(/\/v1\/?$/, "");
+  const t0 = Date.now();
+  try {
+    const res = await fetch(`${base}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: P.model, prompt: "", keep_alive: "24h" }),
+      signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      const text = (await res.text().catch(() => "")).slice(0, 200);
+      return { configured: true, ok: false, model: P.model, error: /not found/i.test(text) ? `model not downloaded — run: ollama pull ${P.model}` : `HTTP ${res.status} ${text}` };
+    }
+    return { configured: true, ok: true, model: P.model, seconds: Math.round((Date.now() - t0) / 1000) };
+  } catch (err) {
+    const msg = /timeout|aborted/i.test(err.message)
+      ? `still loading after ${Math.round(OLLAMA_TIMEOUT_MS / 1000)}s — this PC may be too slow for ${P.model}; try a smaller model (e.g. qwen2.5-coder:3b)`
+      : "can't reach Ollama — open the Ollama app (llama icon in the tray) or run: ollama serve";
+    return { configured: true, ok: false, model: P.model, error: msg };
+  }
+}
+
 /**
  * Ask the model for a JSON object. Tries each configured provider in order,
  * falling back on transient errors (429 rate-limit / 503 overloaded / network),
@@ -199,7 +235,7 @@ export async function askJson(system, user) {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${P.apiKey}` },
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(60_000),
+            signal: AbortSignal.timeout(timeoutFor(P)),
           });
 
           if (res.ok) {
@@ -291,14 +327,20 @@ function parseJson(text) {
  * Test every configured provider with a tiny request and report which keys work.
  * Powers `npm run check`. Never prints the keys themselves.
  */
-export async function checkProviders() {
+export async function checkProviders(onProgress = () => {}) {
   const out = [];
   for (const P of chain()) {
+    if (P.provider === "ollama") {
+      onProgress(`Loading ${P.model} into memory (the first time can take a minute or two)…`);
+      const w = await warmOllama();
+      if (!w.ok) { out.push({ provider: P.provider, model: P.model, ok: false, reason: w.error }); continue; }
+      onProgress(`  model loaded in ${w.seconds}s`);
+    }
     const probe = async () => fetch(`${P.baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${P.apiKey}` },
       body: JSON.stringify({ model: P.model, max_tokens: 16, messages: [{ role: "user", content: "Reply with the word ok." }] }),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(P.provider === "ollama" ? 180_000 : 30_000),
     });
     try {
       let res = await probe();

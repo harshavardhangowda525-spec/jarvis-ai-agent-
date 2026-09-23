@@ -10,7 +10,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Workspace } from "./src/workspace.mjs";
 import { startServer } from "./src/server.mjs";
-import { hasProvider, providerName } from "./src/provider.mjs";
+import { hasProvider, providerName, warmOllama } from "./src/provider.mjs";
 import { log } from "./src/log.mjs";
 import { loadEnv } from "./src/loadenv.mjs";
 
@@ -25,6 +25,12 @@ if (!hasProvider()) {
   log.warn("EDITH will pair and run REAL tools, but its reasoning/coding loop needs a provider.");
 } else {
   log.info(`Brain ready: ${providerName()}`);
+  // Pre-load the local model in the background so the first goal is quick.
+  warmOllama().then((w) => {
+    if (!w.configured) return;
+    if (w.ok) log.info(`Ollama ${w.model} loaded (${w.seconds}s) — ready.`);
+    else log.warn(`Ollama ${w.model}: ${w.error}`);
+  });
 }
 
 startServer({ port, ws });

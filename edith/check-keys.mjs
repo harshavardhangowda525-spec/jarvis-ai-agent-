@@ -17,7 +17,7 @@ if (!loadEnv(envFile)) {
 }
 
 console.log("Checking EDITH's AI keys…\n");
-const results = await checkProviders();
+const results = await checkProviders((msg) => console.log(msg));
 if (!results.length) {
   console.log("No AI keys found in edith/.env. Add at least one (see .env.example).");
   process.exit(1);
