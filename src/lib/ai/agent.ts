@@ -52,8 +52,8 @@ export async function* runAgent(
   input: AgentInput,
 ): AsyncGenerator<AgentEvent, void, unknown> {
   // Your own Ollama brain (unlimited) leads whenever the PC gateway is online.
-  const brain = await getLiveBrain(input.userId).catch(() => null);
-  const configs = getAiConfigs(input.preferredProvider ?? undefined, brain);
+  // Looked up in parallel with the prompt's own data (awaited below).
+  const brainLookup = getLiveBrain(input.userId).catch(() => null);
   const db = getDb();
 
   const isEv = input.agent === "ev";
@@ -109,6 +109,7 @@ export async function* runAgent(
     });
   }
 
+  const configs = getAiConfigs(input.preferredProvider ?? undefined, await brainLookup);
   const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {

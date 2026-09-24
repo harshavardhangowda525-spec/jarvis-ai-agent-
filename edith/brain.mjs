@@ -21,6 +21,7 @@ import crypto from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "./src/loadenv.mjs";
+import { toNativeChat, NativeToOpenAI, describeTimings, ndjson } from "./src/ollama-native.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.resolve(__dirname, ".env"));
@@ -33,6 +34,11 @@ const JARVIS = read("JARVIS_URL").replace(/\/+$/, "");
 const FIXED_URL = read("BRAIN_PUBLIC_URL").replace(/\/+$/, ""); // e.g. an ngrok static domain
 const KEY_FILE = path.resolve(__dirname, ".brain-key");
 const HEARTBEAT_MS = 120_000;
+// Speed settings (see src/ollama-native.mjs for why these matter).
+const NATIVE = read("BRAIN_NATIVE") !== "0"; // talk to Ollama's native API
+const NUM_CTX = Math.max(2048, Number(read("BRAIN_CTX")) || 8192);
+const KEEP_ALIVE = read("BRAIN_KEEP_ALIVE") || "24h";
+let NO_THINK = false; // set when the model supports "thinking" (turned off for speed)
 
 const say = (...a) => console.log(...a);
 const die = (msg) => { console.error(`\n✗ ${msg}\n`); process.exit(1); };
@@ -71,13 +77,119 @@ async function checkOllama() {
 }
 async function warmUp() {
   // An empty prompt loads the model; keep_alive keeps it in memory so replies
-  // don't pay a 10–30s load time each time.
+  // don't pay a 10–30s load time each time. The context size must match what
+  // chat requests use, or Ollama would reload the model on the first question.
   await fetch(`${OLLAMA}/api/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: MODEL, prompt: "", keep_alive: "24h" }),
+    body: JSON.stringify({ model: MODEL, prompt: "", keep_alive: KEEP_ALIVE, ...(NATIVE ? { options: { num_ctx: NUM_CTX } } : {}) }),
     signal: AbortSignal.timeout(120_000),
   }).catch(() => {});
+}
+
+/** Does this model "think" before answering (qwen3, deepseek-r1, …)? */
+async function detectThinking() {
+  try {
+    const r = await fetch(`${OLLAMA}/api/show`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: MODEL, name: MODEL }), signal: AbortSignal.timeout(10_000),
+    });
+    const d = await r.json();
+    return Array.isArray(d?.capabilities) && d.capabilities.includes("thinking");
+  } catch { return false; }
+}
+
+/** Measure real speed once at startup and say what would make it faster. */
+async function speedCheck() {
+  let gpuShare = null;
+  try {
+    const ps = await (await fetch(`${OLLAMA}/api/ps`, { signal: AbortSignal.timeout(5000) })).json();
+    const m = (ps?.models ?? []).find((x) => [x.name, x.model].some((n) => n === MODEL || n === `${MODEL}:latest`));
+    if (m?.size) gpuShare = (m.size_vram ?? 0) / m.size;
+  } catch { /* older Ollama */ }
+  let tps = null;
+  try {
+    const r = await fetch(`${OLLAMA}/api/chat`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL, stream: false, keep_alive: KEEP_ALIVE, ...(NO_THINK ? { think: false } : {}),
+        messages: [{ role: "user", content: "Say hello in five words." }],
+        options: { num_ctx: NUM_CTX, num_predict: 24 },
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+    const d = await r.json();
+    if (d?.eval_count && d?.eval_duration) tps = d.eval_count / (d.eval_duration / 1e9);
+  } catch { /* reported below as unknown */ }
+
+  const where = gpuShare == null ? "" : gpuShare >= 0.99 ? "fully on the GPU" : gpuShare <= 0.01 ? "on the CPU only (no GPU)" : `${Math.round(gpuShare * 100)}% on the GPU, the rest on the CPU`;
+  say(`  Speed: ${tps ? `${tps.toFixed(1)} tokens/sec` : "unknown"}${where ? ` · running ${where}` : ""}`);
+  if (tps != null && tps < 12) {
+    say("  Tip: that's slow for voice. A smaller model answers 2–3× faster:");
+    say("         ollama pull qwen2.5:3b     then set OLLAMA_MODEL=qwen2.5:3b in edith/.env");
+    if (gpuShare != null && gpuShare < 0.99 && gpuShare > 0.01) say(`       The model doesn't fit in GPU memory — a smaller model or BRAIN_CTX=4096 lets it run fully on the GPU.`);
+  }
+}
+
+function readBody(req, limit = 8 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const parts = [];
+    req.on("data", (c) => { size += c.length; if (size > limit) { reject(new Error("too large")); req.destroy(); } else parts.push(c); });
+    req.on("end", () => resolve(Buffer.concat(parts).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
+/**
+ * /v1/chat/completions through Ollama's native API (keep_alive, num_ctx and
+ * think=false can only be set there), answered in OpenAI format. Returns
+ * Ollama's final timing line for the log.
+ */
+async function nativeChat(req, res, onFirstToken) {
+  const json = (code, body) => { if (!res.headersSent) { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); } else res.end(); };
+  let body;
+  try { body = JSON.parse(await readBody(req)); } catch { json(400, { error: { message: "Invalid JSON body" } }); return null; }
+  const nreq = toNativeChat(body, { model: MODEL, numCtx: NUM_CTX, keepAlive: KEEP_ALIVE, noThink: NO_THINK });
+
+  const ac = new AbortController();
+  res.on("close", () => { if (!res.writableFinished) ac.abort(); }); // JARVIS gave up → stop generating
+  let up;
+  try {
+    up = await fetch(`${OLLAMA}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nreq), signal: ac.signal });
+  } catch {
+    json(502, { error: { message: "Ollama isn't reachable on the PC." } }); return null;
+  }
+  if (!up.ok) {
+    const text = await up.text().catch(() => "");
+    let message = text;
+    try { message = JSON.parse(text).error ?? text; } catch { /* plain text */ }
+    json(up.status, { error: { message: message || `Ollama HTTP ${up.status}` } });
+    return null;
+  }
+
+  const conv = new NativeToOpenAI(nreq.model);
+  try {
+    if (nreq.stream) {
+      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" });
+      let first = true;
+      for await (const obj of ndjson(up.body)) {
+        if (obj.error) { res.write(`data: ${JSON.stringify({ error: { message: String(obj.error) } })}\n\n`); break; }
+        for (const c of conv.push(obj)) {
+          if (first) { first = false; onFirstToken(); }
+          res.write(`data: ${JSON.stringify(c)}\n\n`);
+        }
+      }
+      res.write("data: [DONE]\n\n");
+      res.end();
+    } else {
+      let err = null;
+      for await (const obj of ndjson(up.body)) { if (obj.error) { err = String(obj.error); break; } conv.push(obj); }
+      if (err) json(500, { error: { message: err } }); else json(200, conv.completion());
+    }
+  } catch {
+    if (!res.writableEnded) res.end(); // client went away mid-answer
+  }
+  return conv.final;
 }
 
 // ---- gateway ----------------------------------------------------------------
@@ -97,11 +209,18 @@ const server = http.createServer((req, res) => {
   const stamp = () => new Date().toLocaleTimeString();
   const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
   let firstByte = 0;
+  let timings = "";
   say(`  ${stamp()}  ← request from JARVIS (${url.pathname.replace("/v1/", "")})`);
-  res.on("finish", () => say(`  ${stamp()}  ✓ answered in ${secs()}s${firstByte ? ` (thinking ${firstByte.toFixed(1)}s before the first word)` : ""}`));
+  res.on("finish", () => say(`  ${stamp()}  ✓ answered in ${secs()}s${firstByte ? ` (first word after ${firstByte.toFixed(1)}s)` : ""}${timings ? ` — ${timings}` : ""}`));
   res.on("close", () => {
     if (!res.writableFinished) say(`  ${stamp()}  ✗ JARVIS stopped waiting after ${secs()}s — the model is too slow for its time limit (see OLLAMA_TIMEOUT_MS or use a smaller model).`);
   });
+  if (NATIVE && req.method === "POST" && url.pathname === "/v1/chat/completions") {
+    nativeChat(req, res, () => { firstByte = (Date.now() - t0) / 1000; })
+      .then((final) => { timings = describeTimings(final); })
+      .catch(() => { if (!res.headersSent) json(500, { error: { message: "Gateway error" } }); else res.end(); });
+    return;
+  }
   const up = client.request(
     { hostname: upstream.hostname, port: upstream.port, path: url.pathname + url.search, method: req.method,
       headers: { "content-type": req.headers["content-type"] ?? "application/json", accept: req.headers.accept ?? "*/*" } },
@@ -205,8 +324,10 @@ async function diagnose() {
 // ---- main ---------------------------------------------------------------------
 say(`\nJARVIS brain gateway — model ${MODEL}`);
 await checkOllama();
-say("  Loading the model into memory…");
+if (NATIVE) NO_THINK = await detectThinking();
+say(`  Loading the model into memory…${NATIVE ? ` (context ${NUM_CTX} tokens, kept loaded ${KEEP_ALIVE}${NO_THINK ? ", thinking off for speed" : ""})` : ""}`);
 await warmUp();
+if (NATIVE) await speedCheck();
 setInterval(warmUp, 20 * 60_000).unref(); // keep it resident
 
 await new Promise((resolve, reject) => { server.once("error", reject); server.listen(PORT, "127.0.0.1", resolve); })

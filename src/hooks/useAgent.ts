@@ -19,6 +19,10 @@ export interface ActivityItem {
 
 interface UseAgentOptions {
   onAssistantComplete?: (text: string) => void;
+  /** Each piece of reply text as it streams in (e.g. to start speaking early). */
+  onTextDelta?: (delta: string) => void;
+  /** Always fires when a turn stops — finished, failed or aborted. */
+  onTurnEnd?: () => void;
   onNavigate?: (path: string) => void;
   onOpen?: (url: string) => void;
   /** Fired for every tool result (used e.g. to drive EV's operating state). */
@@ -38,7 +42,7 @@ const nextId = () => `m${Date.now()}_${idc++}`;
  * and exposes messages, the live-activity feed, and the currently streaming
  * assistant text. Voice and text share this same flow.
  */
-export function useAgent({ onAssistantComplete, onNavigate, onOpen, onTool }: UseAgentOptions = {}) {
+export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onNavigate, onOpen, onTool }: UseAgentOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -146,6 +150,7 @@ export function useAgent({ onAssistantComplete, onNavigate, onOpen, onTool }: Us
                 break;
               case "text":
                 finalText += ev.delta;
+                onTextDelta?.(ev.delta);
                 setMessages((m) =>
                   m.map((x) =>
                     x.id === assistantId ? { ...x, content: x.content + ev.delta } : x,
@@ -219,9 +224,10 @@ export function useAgent({ onAssistantComplete, onNavigate, onOpen, onTool }: Us
       } finally {
         setStreaming(false);
         abortRef.current = null;
+        onTurnEnd?.();
       }
     },
-    [onAssistantComplete, onNavigate, onOpen, onTool, pushActivity, setConversation, streaming],
+    [onAssistantComplete, onTextDelta, onTurnEnd, onNavigate, onOpen, onTool, pushActivity, setConversation, streaming],
   );
 
   return {

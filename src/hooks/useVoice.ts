@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { takeSentences } from "@/lib/voice/sentences";
 
 /**
  * useVoice — the JARVIS realtime voice engine (client side).
@@ -26,6 +27,14 @@ export type VoiceStatus =
   | "recording" // capturing speech
   | "processing" // transcribing
   | "speaking"; // playing JARVIS reply
+
+/** A reply being spoken while it's still streaming in (see speakStream). */
+export interface SpeechStream {
+  /** Add newly-arrived reply text; finished sentences start playing right away. */
+  push: (delta: string) => void;
+  /** The reply is complete — speak what's left, then go back to listening. */
+  end: () => void;
+}
 
 /** Which agent's voice this hook speaks with — selects a distinct timbre. */
 export type VoiceProfile = "jarvis" | "ev" | "darwin" | "edith";
@@ -80,6 +89,10 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   const lastVoiceAtRef = useRef<number>(0);
   const capturingRef = useRef(false);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
+  // Bumped whenever speech is stopped (barge-in, a new reply…) so queued
+  // sentences from an older reply know not to play.
+  const speechGenRef = useRef(0);
+  const cancelPlaybackRef = useRef<(() => void) | null>(null); // ends the current streamed clip
 
   // Free browser speech-to-text (Web Speech API) — used when ElevenLabs STT
   // isn't configured, so voice input works with no key and no cost.
@@ -398,6 +411,8 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
 
   // --- Public: speak (streaming TTS) -------------------------------------
   const stopSpeaking = useCallback(() => {
+    speechGenRef.current++;
+    cancelPlaybackRef.current?.();
     const el = audioElRef.current;
     if (el) {
       el.pause();
@@ -535,6 +550,89 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     [fail, setStatusBoth, stopSpeaking, speakBrowser, stopRecognition, startRecognition],
   );
 
+  /**
+   * Speak a reply WHILE it streams in: each finished sentence is sent to TTS
+   * immediately (the next one is fetched while the current one plays), so the
+   * voice starts after the first sentence instead of after the whole answer.
+   */
+  const speakStream = useCallback((): SpeechStream => {
+    const noop: SpeechStream = { push: () => {}, end: () => {} };
+    if (!enabledRef.current || mutedRef.current || !audioElRef.current) return noop;
+    stopSpeaking(); // a new reply replaces anything still playing
+    const gen = speechGenRef.current;
+    const live = () => gen === speechGenRef.current && enabledRef.current && !mutedRef.current;
+
+    let buf = "";
+    let first = true;
+    let started = false;
+    let ended = false;
+    let serverTts = true;
+    let chain: Promise<void> = Promise.resolve();
+
+    const playBlob = (blob: Blob) => new Promise<void>((resolve) => {
+      const el = audioElRef.current;
+      if (!el) { resolve(); return; }
+      if (el.src) URL.revokeObjectURL(el.src);
+      el.src = URL.createObjectURL(blob);
+      const done = () => {
+        el.removeEventListener("ended", done);
+        el.removeEventListener("error", done);
+        if (cancelPlaybackRef.current === done) cancelPlaybackRef.current = null;
+        resolve();
+      };
+      cancelPlaybackRef.current = done; // stopSpeaking (barge-in) ends it
+      el.addEventListener("ended", done);
+      el.addEventListener("error", done);
+      el.play().catch(() => done());
+    });
+
+    const enqueue = (text: string) => {
+      if (!started) {
+        started = true;
+        setTranscript("");
+        if (browserSTTRef.current) stopRecognition(); // don't hear our own voice
+        setStatusBoth("speaking");
+      }
+      // Start fetching this sentence's audio now, in parallel with playback.
+      const audio: Promise<Blob | null> = serverTts
+        ? fetch("/api/voice/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, agent: profileRef.current }),
+          }).then((r) => (r.ok ? r.blob() : null)).catch(() => null)
+        : Promise.resolve(null);
+      chain = chain.then(async () => {
+        if (!live()) return;
+        const blob = await audio;
+        if (!live()) return;
+        if (blob) await playBlob(blob);
+        else { serverTts = false; await speakBrowser(text); } // free browser voice
+      });
+    };
+
+    return {
+      push(delta) {
+        if (ended || !live()) return;
+        buf += delta;
+        const r = takeSentences(buf, first);
+        buf = r.rest;
+        for (const piece of r.pieces) { first = false; enqueue(piece); }
+      },
+      end() {
+        if (ended) return;
+        ended = true;
+        if (!live()) return;
+        for (const piece of takeSentences(buf, first, true).pieces) enqueue(piece);
+        buf = "";
+        chain.then(() => {
+          if (!started || !live()) return;
+          if (statusRef.current === "speaking") setStatusBoth("listening");
+          if (browserSTTRef.current) startRecognition();
+        });
+      },
+    };
+  }, [setStatusBoth, speakBrowser, startRecognition, stopRecognition, stopSpeaking]);
+
   const toggleMute = useCallback(() => {
     setMuted((m) => {
       const next = !m;
@@ -612,6 +710,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     supported,
     init,
     speak,
+    speakStream,
     stopSpeaking,
     stop,
     toggleMute,

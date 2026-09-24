@@ -10,7 +10,7 @@ import {
 import { Orb, type OrbState, orbStateLabel } from "@/components/orb";
 import { HudPanel } from "@/components/hud/panel";
 import { Waveform } from "@/components/hud/visuals";
-import { useVoice } from "@/hooks/useVoice";
+import { useVoice, type SpeechStream } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import { useDeviceMetrics } from "@/hooks/useDeviceMetrics";
 import { useWakeWord } from "@/hooks/useWakeWord";
@@ -122,15 +122,28 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     autoListen: true,
     voiceProfile: evPhase === "off" ? "jarvis" : "ev",
   });
+  // The reply is spoken sentence by sentence while it streams in, so JARVIS
+  // starts talking after the first sentence rather than the whole answer.
+  const speechRef = useRef<SpeechStream | null>(null);
   const agent = useAgent({
+    onTextDelta: (delta) => {
+      if (!(voiceStarted && !voice.muted && voice.enabled)) return;
+      if (!speechRef.current) speechRef.current = voice.speakStream();
+      speechRef.current.push(delta);
+    },
     onAssistantComplete: (text) => {
       // EV prepares content by presenting "CONTENT READY …" — that's the signal
       // it's waiting for the user's approval before any external action.
       if (evActiveRef.current && /content ready|awaiting (your )?approval|for your approval/i.test(text)) {
         setEvAwaitingApproval(true);
       }
-      if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text);
+      const stream = speechRef.current;
+      speechRef.current = null;
+      if (stream) stream.end();
+      else if (voiceStarted && !voice.muted && voice.enabled) voice.speak(text);
     },
+    // Failed / aborted turn: finish whatever was already being spoken.
+    onTurnEnd: () => { speechRef.current?.end(); speechRef.current = null; },
     onTool: (t) => {
       if (!evActiveRef.current) return;
       if (t.status === "error") { flashEv("error"); return; }

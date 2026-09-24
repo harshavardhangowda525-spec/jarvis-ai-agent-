@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { capabilities } from "@/lib/env";
+import { capabilities, env } from "@/lib/env";
 import { runAgent, type AgentEvent } from "@/lib/ai/agent";
 import { agentRequestSchema } from "@/lib/validation";
 import { fail, handleError, rateLimit } from "@/lib/api";
@@ -23,48 +23,48 @@ export async function POST(req: NextRequest) {
     const rl = rateLimit(`agent:${user.id}`, 40, 60_000);
     if (!rl.allowed) return fail("You're sending messages too quickly.", 429);
 
-    if (!capabilities.ai) {
+    // A PC brain (OLLAMA_API_KEY set) can be the only brain — no cloud key needed.
+    if (!capabilities.ai && !env.ollamaApiKey) {
       return fail("The AI model is not configured. Set AI_API_KEY.", 503);
     }
 
     const { conversationId, message, agent } = agentRequestSchema.parse(await req.json());
     const db = getDb();
 
-    // Resolve or create the conversation (ownership enforced).
-    let convo = conversationId
-      ? await db.conversation.findFirst({
-          where: { id: conversationId, userId: user.id },
-        })
-      : null;
-    if (!convo) {
-      convo = await db.conversation.create({
-        data: { userId: user.id, title: truncate(message, 60) },
-      });
-    }
-
-    const profile = await db.profile.findUnique({ where: { userId: user.id } });
+    // Independent lookups run in parallel — every round trip here is time
+    // before the first word. Ownership of the conversation is enforced.
+    const [found, profile] = await Promise.all([
+      conversationId ? db.conversation.findFirst({ where: { id: conversationId, userId: user.id } }) : null,
+      db.profile.findUnique({ where: { userId: user.id } }),
+    ]);
+    const convo = found ?? await db.conversation.create({
+      data: { userId: user.id, title: truncate(message, 60) },
+    });
 
     // Load recent history (last 20 turns) for context. Newest first + reverse:
     // "asc + take" would return the OLDEST 40 messages of a long conversation.
-    const priorRows = (await db.message.findMany({
-      where: { conversationId: convo.id, role: { in: ["user", "assistant"] } },
-      orderBy: { createdAt: "desc" },
-      take: 40,
-    })).reverse();
+    const priorRows = found
+      ? (await db.message.findMany({
+          where: { conversationId: convo.id, role: { in: ["user", "assistant"] } },
+          orderBy: { createdAt: "desc" },
+          take: 40,
+        })).reverse()
+      : [];
     const history = priorRows.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
     }));
 
-    // Persist the incoming user message.
-    await db.message.create({
+    // Persist the incoming user message without holding up the reply (it's
+    // awaited before the assistant message is saved, so the order is kept).
+    const savedUserMessage = db.message.create({
       data: {
         conversationId: convo.id,
         userId: user.id,
         role: "user",
         content: message,
       },
-    });
+    }).catch((e) => console.error("[agent route] persist user message:", e));
 
     const encoder = new TextEncoder();
     const convoId = convo.id;
@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
 
         // Persist the assistant reply + conversation bookkeeping.
         try {
+          await savedUserMessage;
           await db.message.create({
             data: {
               conversationId: convoId,
