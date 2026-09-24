@@ -24,6 +24,7 @@ interface Integration {
   available: boolean;
   status: string;
   kind?: "oauth" | "key";
+  callbackUrl?: string;
 }
 interface SessionRow {
   id: string;
@@ -298,6 +299,23 @@ export function SettingsClient() {
           Integrations activate only after a successful OAuth authorization. Configure a
           provider's client credentials to make it connectable.
         </p>
+        {integrations.filter((it) => it.kind !== "key" && it.callbackUrl).length > 0 && (
+          <div className="mt-3 space-y-1.5">
+            <div className="text-[11px] font-medium text-muted-foreground">
+              Redirect URLs — paste the one you need into the provider&apos;s &ldquo;Authorized redirect URIs&rdquo;:
+            </div>
+            {integrations.filter((it) => it.kind !== "key" && it.callbackUrl).map((it) => (
+              <div key={it.id} className="flex items-center gap-2 rounded-lg bg-muted/30 px-2.5 py-1.5">
+                <span className="w-28 shrink-0 text-[11px] text-muted-foreground">{it.label}</span>
+                <code className="min-w-0 flex-1 truncate text-[11px] text-accent" title={it.callbackUrl}>{it.callbackUrl}</code>
+                <button type="button" onClick={() => navigator.clipboard?.writeText(it.callbackUrl!).catch(() => {})}
+                  className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-accent/50 hover:text-accent">
+                  Copy
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Security */}
