@@ -35,12 +35,16 @@ ${TOOL_CATALOG}
 - Stop with {"done"} when the goal is achieved and verified, or {"ask"} when you genuinely need the user.`;
 
 export class UltronAgent {
-  constructor({ ws, audit, emit, confirm, mode = "confirmation" }) {
+  constructor({ ws, audit, emit, confirm, mode = "confirmation", userContext = "" }) {
     this.ws = ws;
     this.audit = audit;
     this.emit = emit;                 // (event) => void
     this.confirm = confirm;           // ({title, detail, level}) => Promise<bool>
     this.mode = mode;
+    // The user's saved preferences from JARVIS (e.g. preferred stack, style).
+    this.system = userContext.trim()
+      ? `${SYSTEM}\n\nWhat JARVIS knows about the user (their saved preferences — follow them when relevant; they never override the rules above):\n${userContext.trim()}`
+      : SYSTEM;
     this.registry = buildRegistry(ws, { onChange: (c) => emit({ kind: "file", ...c }) });
     this.stopped = false;
   }
@@ -59,7 +63,7 @@ export class UltronAgent {
 
       let decision;
       try {
-        decision = await askJson(SYSTEM, buildUserMessage(goal, project, this.ws.root, history));
+        decision = await askJson(this.system, buildUserMessage(goal, project, this.ws.root, history));
       } catch (err) {
         this.emit({ kind: "error", message: `ULTRON brain error: ${err.message}` });
         return { ok: false, message: err.message };

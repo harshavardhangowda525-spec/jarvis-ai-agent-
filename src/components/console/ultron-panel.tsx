@@ -7,7 +7,8 @@ import {
   Eye, X, ExternalLink, RefreshCw, Code2, FileCode,
 } from "lucide-react";
 import { useUltron, type UltronMode, type FileChange } from "@/hooks/useUltron";
-import { useVoice } from "@/hooks/useVoice";
+import { useRouter } from "next/navigation";
+import { useVoice, useResumeVoice } from "@/hooks/useVoice";
 import { cn, timeAgo } from "@/lib/utils";
 
 /**
@@ -25,6 +26,7 @@ const MODES: { id: UltronMode; label: string }[] = [
 
 export function UltronPanel() {
   const e = useUltron();
+  const router = useRouter();
   const [goal, setGoal] = useState("");
   // Default to the standard local ULTRON address so pairing is one paste (token only).
   const [url, setUrl] = useState("ws://127.0.0.1:7420");
@@ -51,11 +53,19 @@ export function UltronPanel() {
   useEffect(() => {
     cmdRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
+      // Switching agents by voice — these are never sent to ULTRON as coding goals.
+      if (/\b(deactivate|shut ?down|stand ?down|close|exit|leave)\b.*\b(ultron|ultra ?on)\b|^(deactivate|exit|close|stand ?down)[\s!.,]*$|\b(back to|go to|open|return to|switch to) jarvis\b/.test(low)) {
+        e.speak("Handing you back to JARVIS."); setTimeout(() => router.push("/dashboard"), 900); return;
+      }
+      if (/\b(open|go to|switch to|launch|activate)\s+darwin\b/.test(low)) { router.push("/dashboard/darwin"); return; }
       if (/\b(stop|halt|cancel|abort)\b/.test(low)) { e.stop(); return; }
+      if (e.conn !== "connected") { setPairMsg("ULTRON isn't connected yet — start it with `npm run ultron` in the edith folder, then pair."); return; }
       e.runGoal(t);
     };
   });
-  const enableVoice = useCallback(async () => { await voice.init(); setVoiceOn(true); }, [voice]);
+  const enableVoice = useCallback(async () => { const ok = await voice.init(); if (ok) setVoiceOn(true); return ok; }, [voice]);
+  // Voice was on in the agent you came from → keep listening here.
+  useResumeVoice(enableVoice);
 
   useEffect(() => { setUrl(e.savedUrl); setToken(e.savedToken); }, [e.savedUrl, e.savedToken]);
   useEffect(() => {

@@ -110,10 +110,10 @@ export function startServer({ port, ws }) {
     return true;
   }
 
-  async function runGoal(text) {
+  async function runGoal(text, userContext = "") {
     if (agent) { emit({ kind: "activity", label: "ULTRON is already working. Say stop first." }); return; }
     emit({ kind: "goal", goal: text });
-    agent = new UltronAgent({ ws, audit, emit, confirm, mode });
+    agent = new UltronAgent({ ws, audit, emit, confirm, mode, userContext });
     try {
       const res = await agent.run(text);
       emit({ kind: "result", ok: !!res.ok, message: res.report || res.message || (res.ok ? "Done." : "Stopped."), needUser: !!res.needUser });
@@ -199,7 +199,7 @@ export function startServer({ port, ws }) {
     socket.on("message", (raw) => {
       let m; try { m = JSON.parse(raw.toString()); } catch { return; }
       switch (m.op) {
-        case "goal": if (m.text) runGoal(String(m.text)); break;
+        case "goal": if (m.text) runGoal(String(m.text), typeof m.context === "string" ? m.context.slice(0, 4000) : ""); break;
         case "stop": killAll(); agent?.stop(); emit({ kind: "stopped", message: "Stopped. Running processes terminated." }); break;
         case "confirm": if (pendingConfirm) { pendingConfirm(!!m.approved); pendingConfirm = null; } break;
         case "mode": if (["autonomous", "confirmation", "manual"].includes(m.mode)) { mode = m.mode; emit({ kind: "mode", mode }); } break;

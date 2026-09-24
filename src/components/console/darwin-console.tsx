@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Mic, MicOff, Loader2, ChevronLeft, ChevronRight, LogOut } from "lucide-react";
-import { useVoice } from "@/hooks/useVoice";
+import { useVoice, useResumeVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import { cn, timeAgo } from "@/lib/utils";
 import { GENERATE_LEADS_RE, parseLeadCommand } from "@/lib/darwin/command";
@@ -193,6 +193,8 @@ export function DarwinConsole() {
   }, [agent, form, lastForm, speak]);
 
   async function enableVoice() { const ok = await voice.init(); if (ok) setVoiceStarted(true); return ok; }
+  // Voice was on in the agent you came from → keep listening here.
+  useResumeVoice(enableVoice);
 
   const state: DarwinState = (() => {
     if (voice.status === "denied" || voice.status === "error") return "ERROR";

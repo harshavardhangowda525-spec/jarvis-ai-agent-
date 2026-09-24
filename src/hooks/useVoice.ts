@@ -28,6 +28,38 @@ export type VoiceStatus =
   | "processing" // transcribing
   | "speaking"; // playing JARVIS reply
 
+// Voice stays ON when you switch between agents (JARVIS → DARWIN → ULTRON …):
+// each agent screen has its own voice engine, so the "on" choice is remembered
+// for this browser tab and every screen switches its mic back on when it opens.
+// Muting or stopping voice clears it.
+const VOICE_ON_KEY = "jarvis.voice.on";
+export function voiceWasOn(): boolean {
+  try { return sessionStorage.getItem(VOICE_ON_KEY) === "1"; } catch { return false; }
+}
+function rememberVoiceOn(on: boolean) {
+  try { if (on) sessionStorage.setItem(VOICE_ON_KEY, "1"); else sessionStorage.removeItem(VOICE_ON_KEY); } catch { /* storage blocked */ }
+}
+
+/**
+ * Call once in an agent screen: if voice was on in the previous screen, turn it
+ * on here too (after the previous screen has released the microphone). Returns
+ * true while that's in progress, so a wake-word listener can stay out of the way.
+ */
+export function useResumeVoice(start: () => unknown, delayMs = 350): boolean {
+  const startRef = useRef(start);
+  startRef.current = start;
+  const [resuming, setResuming] = useState(() => typeof window !== "undefined" && voiceWasOn());
+  useEffect(() => {
+    if (!voiceWasOn()) { setResuming(false); return; }
+    setResuming(true);
+    const t = setTimeout(async () => {
+      try { await startRef.current(); } finally { setResuming(false); }
+    }, delayMs);
+    return () => clearTimeout(t);
+  }, [delayMs]);
+  return resuming;
+}
+
 /** A reply being spoken while it's still streaming in (see speakStream). */
 export interface SpeechStream {
   /** Add newly-arrived reply text; finished sentences start playing right away. */
@@ -264,6 +296,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         const err = e?.error;
         if (err === "not-allowed" || err === "service-not-allowed") {
           wantRecogRef.current = false;
+          rememberVoiceOn(false);
           fail("Microphone permission denied for speech recognition.", "denied");
         } else if (err === "network") {
           // Chrome's recognizer needs internet; surface it briefly.
@@ -366,6 +399,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     if (browserSTTRef.current) {
       enabledRef.current = true;
       setEnabledState(true);
+      rememberVoiceOn(true);
       setStatusBoth(autoListen ? "listening" : "idle");
       if (autoListen) startRecognition();
       return true;
@@ -385,6 +419,18 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       const ctx = new AC();
       audioCtxRef.current = ctx;
+      // Started without a click (e.g. voice resumed after switching agents or a
+      // reload) the browser may keep audio paused until the next interaction.
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+        const wake = () => {
+          ctx.resume().catch(() => {});
+          window.removeEventListener("pointerdown", wake);
+          window.removeEventListener("keydown", wake);
+        };
+        window.addEventListener("pointerdown", wake);
+        window.addEventListener("keydown", wake);
+      }
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 1024;
@@ -394,10 +440,12 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
 
       enabledRef.current = true;
       setEnabledState(true);
+      rememberVoiceOn(true);
       setStatusBoth(autoListen ? "listening" : "idle");
       if (rafRef.current == null) rafRef.current = requestAnimationFrame(loop);
       return true;
     } catch (e: any) {
+      rememberVoiceOn(false);
       if (e?.name === "NotAllowedError" || e?.name === "SecurityError") {
         fail("Microphone permission was denied.", "denied");
       } else if (e?.name === "NotFoundError") {
@@ -636,6 +684,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   const toggleMute = useCallback(() => {
     setMuted((m) => {
       const next = !m;
+      rememberVoiceOn(!next); // a muted mic stays muted in the next agent too
       mutedRef.current = next;
       streamRef.current?.getAudioTracks().forEach((t) => (t.enabled = !next));
       if (next) {
@@ -669,6 +718,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
 
   // --- Public: stop (put JARVIS to sleep, release the mic) ---------------
   const stop = useCallback(() => {
+    rememberVoiceOn(false);
     if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
     stopCapture();
     stopRecognition();

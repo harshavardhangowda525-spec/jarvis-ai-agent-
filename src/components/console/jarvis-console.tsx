@@ -10,7 +10,7 @@ import {
 import { Orb, type OrbState, orbStateLabel } from "@/components/orb";
 import { HudPanel } from "@/components/hud/panel";
 import { Waveform } from "@/components/hud/visuals";
-import { useVoice, type SpeechStream } from "@/hooks/useVoice";
+import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import { useDeviceMetrics } from "@/hooks/useDeviceMetrics";
 import { useWakeWord } from "@/hooks/useWakeWord";
@@ -293,6 +293,23 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         launchUltron();
         return;
       }
+      // "Learn my preferences" / "learn from our past chats" → save lasting facts
+      // from earlier conversations as memories (shared by every agent and brain).
+      if (/\blearn\b.*\b(my preferences|about me|from (our|my) (past |old |previous )?(chats|conversations))\b/.test(low)) {
+        const say = (m: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(m); } catch { /* ignore */ } } };
+        say("Reading our past chats. This can take a minute.");
+        fetch("/api/memories/learn", { method: "POST" })
+          .then(async (r) => {
+            const j = await r.json().catch(() => ({}));
+            const msg = !r.ok ? (j.error || "I couldn't read our past chats right now.")
+              : j.data.scanned === 0 ? "There are no past chats to learn from yet."
+              : `Done — I learned ${j.data.added.length} new thing${j.data.added.length === 1 ? "" : "s"} about you${j.data.alreadyKnown ? ` and already knew ${j.data.alreadyKnown}` : ""}. You can see them on the Memory page.`;
+            agent.appendLocalExchange(t, msg);
+            say(msg);
+          })
+          .catch(() => { agent.appendLocalExchange(t, "I couldn't reach the server."); say("I couldn't reach the server."); });
+        return;
+      }
       // "DARWIN", "open DARWIN", "activate DARWIN" → open the lead-gen/CRM console.
       if (/^darwin[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+darwin\b|\bdarwin[,\s]+(online|wake up|come online)\b/.test(low)) {
         launchDarwin();
@@ -311,10 +328,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchUltron, launchDarwin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase]);
+  }, [agent, sleep, launchUltron, launchDarwin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase, voice, voiceStarted]);
 
+  // Voice was on in the agent you just left → switch it back on here.
+  const resumingVoice = useResumeVoice(enableVoice);
   const wake = useWakeWord({
-    enabled: !voiceStarted,
+    // The "hey Jarvis" listener only runs while voice is off, and stays out of
+    // the way while voice is being resumed (two recognizers would fight).
+    enabled: !voiceStarted && !resumingVoice,
     onWake: async () => { const ok = await enableVoice(); if (ok && voiceConfigured) setTimeout(() => voice.speak("Yes?"), 350); },
   });
 

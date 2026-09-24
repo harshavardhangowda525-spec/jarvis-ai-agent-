@@ -4,6 +4,7 @@ import type OpenAI from "openai";
 import { getAiConfigs, getAnthropicClient, getOpenAiClient } from "./client";
 import { getLiveBrain } from "./brain";
 import { trimHistoryForLocal } from "./history";
+import { explicitMemory, loadMemories, memoryPromptBlock, saveMemory } from "./user-memory";
 import { env } from "@/lib/env";
 import { buildSystemPrompt } from "./prompt";
 import { availableTools, getTool } from "@/lib/tools/registry";
@@ -61,6 +62,22 @@ export async function* runAgent(
   const isEv = input.agent === "ev";
   const isDarwin = input.agent === "darwin";
 
+  // "Remember that …" / "From now on …" is saved straight away, so it's kept
+  // even if the model (especially a small local one) forgets to call the tool.
+  let memoryNote = "";
+  const fact = explicitMemory(input.message);
+  if (fact) {
+    const res = await saveMemory(input.userId, fact, { source: "user" }).catch(() => null);
+    if (res?.saved) yield { type: "tool", name: "memory", status: "ok", summary: `Saved to memory: ${fact}` };
+    memoryNote = res?.saved || (res && res.reason === "duplicate")
+      ? `\n\n(The user's latest message is already saved in long-term memory as: "${fact}". Just confirm briefly — don't call the memory tool for it.)`
+      : res && res.reason === "secret"
+        ? "\n\n(The user asked you to remember something that looks like a secret — it was NOT stored. Say so briefly.)"
+        : "";
+  }
+  // Everything the user has told JARVIS — shared by every agent and every brain.
+  const memoriesLookup = loadMemories(input.userId, 60).catch(() => []);
+
   let system: string;
   if (isEv) {
     // EV's marketing brain: its own personality, mission, memory + honesty rules.
@@ -97,19 +114,19 @@ export async function* runAgent(
       emailAvailable: emailReady,
     });
   } else {
-    const memories = await db.memory.findMany({
-      where: { userId: input.userId },
-      orderBy: { updatedAt: "desc" },
-      take: 40,
-      select: { key: true, content: true },
-    });
     system = buildSystemPrompt({
       assistantName: input.assistantName,
       userDisplayName: input.displayName,
       timezone: input.timezone,
-      memories,
+      memories: await memoriesLookup,
     });
   }
+  if (isEv || isDarwin) {
+    // EV and DARWIN share JARVIS's memory of the user (preferences, business…).
+    system += memoryPromptBlock(await memoriesLookup,
+      `# What you know about ${input.displayName || "the user"} (shared memory with JARVIS — use it to personalise; never contradict it)`);
+  }
+  system += memoryNote;
 
   const configs = getAiConfigs(input.preferredProvider ?? undefined, await brainLookup);
   const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : undefined);

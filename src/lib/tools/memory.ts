@@ -2,8 +2,7 @@ import { z } from "zod";
 import type { ToolDefinition } from "./types";
 import { ToolError } from "./types";
 import { getDb } from "@/lib/db";
-
-const SENSITIVE = /(password|api[\s_-]?key|secret|token|ssn|credit\s?card|cvv|pin\b)/i;
+import { saveMemory } from "@/lib/ai/user-memory";
 
 const schema = z.object({
   action: z
@@ -42,20 +41,12 @@ export const memoryTool: ToolDefinition<z.infer<typeof schema>> = {
     switch (input.action) {
       case "remember": {
         if (!input.content) throw new ToolError("Nothing to remember was provided.");
-        if (SENSITIVE.test(input.content)) {
-          throw new ToolError(
-            "I won't store passwords, keys, or other secrets in memory.",
-          );
+        const res = await saveMemory(ctx.userId, input.content, { key: input.key, source: "user" });
+        if (!res.saved && res.reason === "secret") {
+          throw new ToolError("I won't store passwords, keys, or other secrets in memory.");
         }
-        const mem = await db.memory.create({
-          data: {
-            userId: ctx.userId,
-            key: input.key || null,
-            content: input.content.trim(),
-            source: "user",
-          },
-        });
-        return { data: { id: mem.id, stored: true }, summary: "Saved to memory." };
+        if (!res.saved) return { data: { stored: false, alreadyKnown: true }, summary: "Already in memory." };
+        return { data: { id: res.id, stored: true }, summary: "Saved to memory." };
       }
       case "recall": {
         const mems = await db.memory.findMany({

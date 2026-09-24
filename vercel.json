@@ -17,6 +17,9 @@
     },
     "src/app/api/darwin/find-new-leads/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/memories/learn/route.ts": {
+      "maxDuration": 300
     }
   }
 }

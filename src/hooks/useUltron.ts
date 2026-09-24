@@ -192,7 +192,24 @@ export function useUltron() {
   const send = useCallback((obj: Record<string, unknown>) => {
     const ws = wsRef.current; if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }, []);
-  const runGoal = useCallback((text: string) => { if (text.trim()) send({ op: "goal", text: text.trim() }); }, [send]);
+  // What JARVIS remembers about the user travels with every goal, so ULTRON
+  // follows the same preferences (the local runtime has no database of its own).
+  const prefsRef = useRef<string | null>(null);
+  const loadPrefs = useCallback(async () => {
+    try {
+      const r = await fetch("/api/memories");
+      if (!r.ok) return "";
+      const mems: { key: string | null; content: string }[] = (await r.json()).data?.memories ?? [];
+      prefsRef.current = mems.slice(0, 60).map((m) => `- ${m.key ? `${m.key}: ` : ""}${m.content}`).join("\n").slice(0, 4000);
+    } catch { prefsRef.current = prefsRef.current ?? ""; }
+    return prefsRef.current ?? "";
+  }, []);
+  useEffect(() => { void loadPrefs(); }, [loadPrefs]);
+  const runGoal = useCallback(async (text: string) => {
+    if (!text.trim()) return;
+    const context = await loadPrefs(); // fresh each time — memories can change mid-session
+    send({ op: "goal", text: text.trim(), ...(context ? { context } : {}) });
+  }, [send, loadPrefs]);
   const setMode = useCallback((m: UltronMode) => { send({ op: "mode", mode: m }); setModeState(m); }, [send]);
   const stop = useCallback(() => send({ op: "stop" }), [send]);
   const answerConfirm = useCallback((approved: boolean) => { send({ op: "confirm", approved }); setConfirm(null); }, [send]);
