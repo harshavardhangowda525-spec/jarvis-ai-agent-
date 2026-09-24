@@ -1,13 +1,13 @@
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { DISPLAY_INTEGRATIONS, isProviderConfigured, isKeyIntegrationConfigured, callbackUrl } from "@/lib/integrations/providers";
+import { DISPLAY_INTEGRATIONS, isProviderConfigured, isKeyIntegrationConfigured, callbackUrl, requestOrigin } from "@/lib/integrations/providers";
 import { ok, handleError } from "@/lib/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /** List integrations with their availability + connection status for this user. */
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const user = await requireUser();
     const rows = await getDb().integration.findMany({
@@ -38,7 +38,7 @@ export async function GET() {
         available: configured, // OAuth credentials present in env
         // The exact redirect URI to register with the provider (e.g. Google Cloud
         // → Credentials → Authorized redirect URIs). Must match character for character.
-        callbackUrl: callbackUrl(d.id),
+        callbackUrl: callbackUrl(d.id, requestOrigin(req)),
         status: row?.status ?? "disconnected",
         connectedAt: row?.status === "connected" ? row.updatedAt : null,
       };

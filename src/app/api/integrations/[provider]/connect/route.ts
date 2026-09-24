@@ -5,6 +5,7 @@ import {
   getProvider,
   isProviderConfigured,
   callbackUrl,
+  requestOrigin,
 } from "@/lib/integrations/providers";
 import { fail, handleError } from "@/lib/api";
 import { randomUUID } from "node:crypto";
@@ -16,7 +17,7 @@ export const runtime = "nodejs";
  * `state` is a short-lived signed token binding the flow to this user, so the
  * callback can't be forged (CSRF protection).
  */
-export async function GET(_req: NextRequest, { params }: { params: { provider: string } }) {
+export async function GET(req: NextRequest, { params }: { params: { provider: string } }) {
   try {
     const user = await requireUser();
     const provider = getProvider(params.provider);
@@ -37,7 +38,7 @@ export async function GET(_req: NextRequest, { params }: { params: { provider: s
 
     const url = new URL(provider.authorizeUrl);
     url.searchParams.set("client_id", provider.clientId);
-    url.searchParams.set("redirect_uri", callbackUrl(provider.id));
+    url.searchParams.set("redirect_uri", callbackUrl(provider.id, requestOrigin(req)));
     url.searchParams.set("response_type", "code");
     if (provider.scopes.length) url.searchParams.set("scope", provider.scopes.join(" "));
     url.searchParams.set("state", state);

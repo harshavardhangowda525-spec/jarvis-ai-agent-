@@ -108,6 +108,25 @@ export function isProviderConfigured(id: string): boolean {
   return !!p && p.clientId.length > 0 && p.clientSecret.length > 0;
 }
 
-export function callbackUrl(id: string): string {
-  return `${env.appUrl}/api/integrations/${id}/callback`;
+/**
+ * The site's address as the user is actually visiting it (e.g.
+ * https://jarvis-ai-agent-self.vercel.app). OAuth uses THIS rather than APP_URL,
+ * so the redirect always matches the domain in the address bar — a renamed
+ * domain or a stale APP_URL can't cause "redirect_uri_mismatch".
+ * OAUTH_REDIRECT_BASE pins it explicitly if ever needed.
+ */
+export function requestOrigin(req: Request): string {
+  const pinned = (process.env.OAUTH_REDIRECT_BASE ?? "").trim().replace(/\/+$/, "");
+  if (pinned) return pinned;
+  const h = req.headers;
+  const host = (h.get("x-forwarded-host") ?? h.get("host") ?? "").split(",")[0].trim();
+  if (!host) return env.appUrl;
+  const local = /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host);
+  const proto = (h.get("x-forwarded-proto") ?? "").split(",")[0].trim() || (local ? "http" : "https");
+  return `${proto}://${host}`;
+}
+
+/** The redirect URI for a provider — register exactly this with the provider. */
+export function callbackUrl(id: string, origin: string = env.appUrl): string {
+  return `${origin}/api/integrations/${id}/callback`;
 }

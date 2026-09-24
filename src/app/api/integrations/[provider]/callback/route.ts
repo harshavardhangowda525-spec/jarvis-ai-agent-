@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession } from "@/lib/auth/jwt";
 import { getDb } from "@/lib/db";
-import { env } from "@/lib/env";
-import { getProvider, isProviderConfigured, callbackUrl } from "@/lib/integrations/providers";
+import { getProvider, isProviderConfigured, callbackUrl, requestOrigin } from "@/lib/integrations/providers";
 
 export const runtime = "nodejs";
 
@@ -14,7 +13,9 @@ export const runtime = "nodejs";
 export async function GET(req: NextRequest, { params }: { params: { provider: string } }) {
   // Query params must come BEFORE the hash, or the browser treats them as part
   // of the fragment and the page can't read them.
-  const base = `${env.appUrl}/dashboard/settings`;
+  // Same domain the flow started on (the callback URL is built from it too).
+  const origin = requestOrigin(req);
+  const base = `${origin}/dashboard/settings`;
   const provider = getProvider(params.provider);
 
   const fail = (reason: string) =>
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest, { params }: { params: { provider: st
         code,
         client_id: provider.clientId,
         client_secret: provider.clientSecret,
-        redirect_uri: callbackUrl(provider.id),
+        redirect_uri: callbackUrl(provider.id, origin), // must equal the one sent at connect
       }),
       signal: AbortSignal.timeout(15_000),
     });
