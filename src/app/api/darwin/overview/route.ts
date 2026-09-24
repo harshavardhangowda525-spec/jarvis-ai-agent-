@@ -18,7 +18,7 @@ export async function GET() {
     const [leads, dueFollowUps, recentActivity, pendingApprovals, emailReady] = await Promise.all([
       db.darwinLead.findMany({
         where: { userId: user.id },
-        select: { stage: true, source: true, website: true, phone: true, email: true, verifiedFields: true, opportunityType: true, leadScore: true },
+        select: { stage: true, source: true, website: true, phone: true, email: true, verifiedFields: true, opportunityType: true, leadScore: true, nextFollowUpAt: true },
       }),
       db.darwinFollowUp.findMany({
         where: { userId: user.id, status: "pending", dueAt: { lte: now } },
@@ -39,7 +39,22 @@ export async function GET() {
     // Intelligence stats — derived from REAL leads only.
     const WEAK = new Set(["outdated_website", "weak_digital_presence", "website_redesign", "poor_mobile"]);
     let noWebsite = 0, weakWebsite = 0, highPotential = 0, contactable = 0, verified = 0;
+    // CRM metrics (legacy stages fold into the new ones: won→converted, lost→not interested).
+    const crm = { total: leads.length, new: 0, noWebsite: 0, withPhone: 0, contacted: 0, followUps: 0, followUpsDue: 0, interested: 0, converted: 0, notInterested: 0 };
+    const CLOSED = new Set(["converted", "won", "not_interested", "lost"]);
+    const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999);
     for (const l of leads) {
+      if (l.stage === "new") crm.new++;
+      if (!l.website) crm.noWebsite++;
+      if (l.phone) crm.withPhone++;
+      if (l.stage === "contacted") crm.contacted++;
+      if (l.stage === "interested") crm.interested++;
+      if (l.stage === "converted" || l.stage === "won") crm.converted++;
+      if (l.stage === "not_interested" || l.stage === "lost") crm.notInterested++;
+      if (!CLOSED.has(l.stage) && (l.stage === "follow_up" || l.nextFollowUpAt)) {
+        crm.followUps++;
+        if (l.nextFollowUpAt && l.nextFollowUpAt <= endOfToday) crm.followUpsDue++;
+      }
       byStage[l.stage] = (byStage[l.stage] ?? 0) + 1;
       bySource[l.source] = (bySource[l.source] ?? 0) + 1;
       if (!l.website) noWebsite++;
@@ -58,6 +73,7 @@ export async function GET() {
       hasData,
       hasConnectedDiscovery,
       emailReady,
+      crm,
       totals: { leads: leads.length, dueFollowUps: dueFollowUps.length, pendingApprovals },
       intelligence: {
         businessesFound: leads.length,

@@ -25,6 +25,8 @@ export const DARWIN_STAGES = [
   "won",
   "lost",
   "follow_up",
+  "not_interested",
+  "converted",
 ] as const;
 export type DarwinStage = (typeof DARWIN_STAGES)[number];
 
@@ -40,7 +42,13 @@ export const STAGE_LABEL: Record<DarwinStage, string> = {
   won: "WON",
   lost: "LOST",
   follow_up: "FOLLOW-UP",
+  not_interested: "NOT INTERESTED",
+  converted: "CONVERTED",
 };
+
+/** The lead statuses shown in DARWIN's CRM (the others remain for the AI tools). */
+export const CRM_STATUSES = ["new", "contacted", "follow_up", "interested", "not_interested", "converted"] as const;
+export type CrmStatus = (typeof CRM_STATUSES)[number];
 
 /** Opportunity categories — these are AI ANALYSIS, never presented as fact. */
 export const DARWIN_OPPORTUNITIES = [

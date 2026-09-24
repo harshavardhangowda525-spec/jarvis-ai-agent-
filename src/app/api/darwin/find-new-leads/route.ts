@@ -4,35 +4,32 @@ import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { findNewLeads } from "@/lib/darwin/discovery";
 import { GeoapifyError, geoapifyHttpStatus } from "@/lib/darwin/geoapify";
-import type { LeadFilter } from "@/lib/darwin/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const schema = z.object({
-  category: z.string().trim().max(80).optional(),
-  location: z.string().trim().min(1).max(120),
+  category: z.string().trim().min(2).max(80),
+  location: z.string().trim().min(2).max(120),
+  limit: z.number().int().min(1).max(50).default(20),
+  filter: z.enum(["all", "no_website", "has_website", "phone", "no_phone"]).default("all"),
   radiusKm: z.number().min(0.5).max(50).optional(),
-  limit: z.number().int().min(1).max(60).optional(),
-  hasWebsite: z.boolean().optional(),
-  noWebsite: z.boolean().optional(),
-  needsPhone: z.boolean().optional(),
 });
 
-/** Legacy form endpoint — now the same Geoapify discovery as /api/darwin/find-new-leads. */
+/**
+ * FIND NEW LEADS — real Geoapify businesses the user has never been shown,
+ * continuing from where the same search stopped last time. The Geoapify key
+ * stays on the server; the browser only ever talks to this route.
+ */
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
     const rl = rateLimit(`darwin-find:${user.id}`, 10, 60_000);
     if (!rl.allowed) return fail(`Too many searches — try again in ${rl.retryAfter}s.`, 429);
-    const b = schema.parse(await req.json());
-    const filter: LeadFilter = b.noWebsite && !b.hasWebsite ? "no_website" : b.hasWebsite && !b.noWebsite ? "has_website" : b.needsPhone ? "phone" : "all";
+    const body = schema.parse(await req.json());
     try {
-      return ok(await findNewLeads({
-        userId: user.id, category: b.category || "businesses", location: b.location,
-        limit: Math.min(b.limit ?? 20, 50), filter, radiusKm: b.radiusKm,
-      }));
+      return ok(await findNewLeads({ userId: user.id, ...body }));
     } catch (err) {
       if (err instanceof GeoapifyError) return fail(err.message, geoapifyHttpStatus(err.kind), { kind: err.kind });
       throw err;

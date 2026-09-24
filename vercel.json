@@ -3,9 +3,20 @@
   "buildCommand": "prisma generate && node scripts/migrate-deploy.mjs && next build",
   "framework": "nextjs",
   "functions": {
-    "src/app/api/agent/route.ts": { "maxDuration": 60 },
-    "src/app/api/files/analyze/route.ts": { "maxDuration": 60 },
-    "src/app/api/voice/tts/route.ts": { "maxDuration": 30 },
-    "src/app/api/voice/stt/route.ts": { "maxDuration": 30 }
+    "src/app/api/agent/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/files/analyze/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/voice/tts/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/voice/stt/route.ts": {
+      "maxDuration": 30
+    },
+    "src/app/api/darwin/find-new-leads/route.ts": {
+      "maxDuration": 60
+    }
   }
 }

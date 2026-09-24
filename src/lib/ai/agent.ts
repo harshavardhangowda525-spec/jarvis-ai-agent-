@@ -16,7 +16,6 @@ import { resolveIgCreds } from "@/lib/ev/instagram";
 import { darwinConfigured } from "@/lib/ev/darwin";
 import { capabilities } from "@/lib/env";
 import { buildDarwinSystemPrompt } from "@/lib/darwin/prompt";
-import { hasDiscoverySource } from "@/lib/darwin/sources";
 import { emailChannelReady } from "@/lib/darwin/email";
 
 export type AgentEvent =
@@ -87,12 +86,12 @@ export async function* runAgent(
     for (const l of leads) byStage[l.stage] = (byStage[l.stage] ?? 0) + 1;
     const crmSummary = leads.length
       ? `CRM: ${leads.length} real leads (${Object.entries(byStage).map(([s, n]) => `${n} ${s}`).join(", ")}). ${dueFollowUps} follow-up(s) due now.`
-      : "CRM is empty — no leads discovered yet. Use darwin_search once a source is connected.";
+      : "CRM is empty — no leads discovered yet. Use darwin_search to find real businesses.";
     system = buildDarwinSystemPrompt({
       userDisplayName: input.displayName,
       timezone: input.timezone,
       crmSummary,
-      discoveryAvailable: hasDiscoverySource(),
+      discoveryAvailable: !!env.geoapifyApiKey,
       emailAvailable: emailReady,
     });
   } else {

@@ -2,17 +2,21 @@ import "server-only";
 import { z } from "zod";
 import type { ToolDefinition } from "../types";
 import { ToolError } from "../types";
-import { discoverLeads, LeadSourceError } from "@/lib/darwin/sources";
-import { upsertLeads } from "@/lib/darwin/store";
+import { findNewLeads } from "@/lib/darwin/discovery";
+import { GeoapifyError } from "@/lib/darwin/geoapify";
 
 /**
- * darwin_search — find REAL businesses from a connected source (Google Places),
- * dedupe them, and store them in the CRM. Reports the ACTUAL number found; never
- * pads with fabricated leads.
+ * darwin_search — find NEW real local businesses via Geoapify Places. Leads the
+ * user has already been shown are skipped (persistent history), and asking again
+ * continues where the last search stopped. Reports the ACTUAL counts; never
+ * pads with fabricated leads or invents phone numbers.
  */
 const schema = z.object({
-  query: z.string().min(2).max(300).describe("Natural search, e.g. 'cafes in Bengaluru with a website'. Include business type + location."),
-  limit: z.number().int().min(1).max(60).optional().describe("Max leads to find (default 20). Google returns up to 60."),
+  category: z.string().min(2).max(80).describe("Business type, e.g. 'gyms', 'cafes', 'dentists', 'salons'."),
+  location: z.string().min(2).max(120).describe("City, area, neighbourhood, postcode or 'lat,lon', e.g. 'Indiranagar, Bangalore'."),
+  limit: z.number().int().min(1).max(50).optional().describe("How many NEW leads to find (default 20)."),
+  filter: z.enum(["all", "no_website", "has_website", "phone", "no_phone"]).optional()
+    .describe("Only businesses with no website listed / a website / a phone / no phone. Default all."),
 });
 
 type Input = z.infer<typeof schema>;
@@ -20,36 +24,40 @@ type Input = z.infer<typeof schema>;
 export const darwinSearchTool: ToolDefinition<Input> = {
   name: "darwin_search",
   description:
-    "Find REAL businesses from connected lead sources (Google Places or Foursquare Places) and store them in the CRM with duplicate protection. " +
-    "Returns the actual number of real businesses found — never fabricates or pads results. If no source is connected it says so.",
+    "Find NEW real local businesses (Geoapify Places) for a category + location and save them to the CRM. " +
+    "Previously discovered businesses are skipped automatically, and repeating the same search continues further out. " +
+    "Returns the real number found — never fabricates leads or phone numbers.",
   schema,
   agentScope: "darwin",
-  activityLabel: "Searching real lead sources",
+  activityLabel: "Searching Geoapify for new leads",
   async execute(input, ctx) {
-    ctx.activity(`Searching connected sources for “${input.query}”…`);
-    let raws;
+    ctx.activity(`Searching Geoapify for ${input.category} near ${input.location}…`);
     try {
-      raws = await discoverLeads({ query: input.query, limit: input.limit ?? 20 });
+      const r = await findNewLeads({
+        userId: ctx.userId, category: input.category, location: input.location,
+        limit: input.limit ?? 20, filter: input.filter ?? "all",
+      });
+      return {
+        data: {
+          newCount: r.newCount, skippedDuplicates: r.skippedDuplicates, exhausted: r.exhausted, stoppedReason: r.stoppedReason,
+          near: r.center.label,
+          leads: r.leads.slice(0, 20).map((l) => ({ id: l.id, name: l.businessName, phone: l.phone ?? "Phone unavailable", website: l.website, address: l.address })),
+        },
+        summary: r.message,
+      };
     } catch (err) {
-      if (err instanceof LeadSourceError) throw new ToolError(err.message);
+      if (err instanceof GeoapifyError) throw new ToolError(err.message);
       throw err;
     }
-    if (raws.length === 0) {
-      return { data: { found: 0, created: 0, duplicates: 0 }, summary: `No real businesses matched “${input.query}”. Nothing was added (no fabricated leads).` };
-    }
-    ctx.activity(`Found ${raws.length} — de-duplicating and saving…`);
-    const r = await upsertLeads(ctx.userId, raws);
-    return {
-      data: {
-        found: raws.length, created: r.created, duplicates: r.duplicates,
-        source: raws[0]?.source, leadIds: r.leadIds.slice(0, 50),
-      },
-      summary: `Found ${raws.length} real business${raws.length === 1 ? "" : "es"} (source: ${raws[0]?.source}). Added ${r.created} new, skipped ${r.duplicates} duplicate${r.duplicates === 1 ? "" : "s"}.`,
-    };
   },
   inputSchema: {
     type: "object",
-    properties: { query: { type: "string" }, limit: { type: "number" } },
-    required: ["query"],
+    properties: {
+      category: { type: "string" },
+      location: { type: "string" },
+      limit: { type: "number" },
+      filter: { type: "string", enum: ["all", "no_website", "has_website", "phone", "no_phone"] },
+    },
+    required: ["category", "location"],
   },
 };

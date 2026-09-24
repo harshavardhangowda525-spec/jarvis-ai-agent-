@@ -14,7 +14,7 @@
  */
 import { execSync } from "node:child_process";
 
-const raw = process.env.DIRECT_URL || process.env.DATABASE_URL || "";
+const raw = process.env.DIRECT_URL || process.env.DATABASE_URL_UNPOOLED || process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL || "";
 if (!raw) {
   console.warn("[migrate] No DATABASE_URL set — skipping migrate deploy.");
   process.exit(0);
@@ -28,6 +28,7 @@ try {
   execSync("prisma migrate deploy", {
     stdio: "inherit",
     env: { ...process.env, DATABASE_URL: directUrl },
+    timeout: 120_000, // never let a sleeping/unreachable DB hang the deploy
   });
   console.log("[migrate] Migrations applied.");
 } catch (err) {

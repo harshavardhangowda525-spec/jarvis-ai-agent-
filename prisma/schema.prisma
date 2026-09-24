@@ -34,6 +34,7 @@ model User {
   darwinActivities DarwinActivity[]
   darwinFollowUps  DarwinFollowUp[]
   darwinMessages   DarwinMessage[]
+  darwinSearchCursors DarwinSearchCursor[]
 
   @@index([email])
 }
@@ -247,8 +248,16 @@ model DarwinLead {
   sourceUrl      String?
   discoveredAt   DateTime  @default(now())
   lastVerifiedAt DateTime?
+  // Location (real coordinates from the source — never guessed)
+  latitude       Float?
+  longitude      Float?
+  // Seen again in a later discovery (dedup keeps firstDiscovered = discoveredAt)
+  lastSeenAt     DateTime?
   // CRM
-  stage          String    @default("new") // new|qualified|contacted|replied|interested|demo|proposal|negotiation|won|lost|follow_up
+  stage          String    @default("new") // new|contacted|follow_up|interested|not_interested|converted (+ legacy: qualified|replied|demo|proposal|negotiation|won|lost)
+  lastContactedAt DateTime?
+  salesValue     Float? // expected deal value (user-entered)
+  serviceInterest String? // e.g. "Website", "Mobile app" (user-entered)
   assignedTo     String?
   opportunityType String? // no_website | outdated_website | no_app | ... (AI analysis)
   notes          String?   @db.Text
@@ -270,6 +279,34 @@ model DarwinLead {
   @@index([userId, stage, nextFollowUpAt])
   @@index([userId, discoveredAt])
   @@index([userId, fingerprint])
+  @@index([userId, sourceRef])
+}
+
+// Where a "FIND NEW LEADS" search left off, so the next click continues the
+// discovery instead of re-reading the same first results. One row per user +
+// normalized (category, location, filter, radius).
+model DarwinSearchCursor {
+  id          String   @id @default(cuid())
+  userId      String
+  queryKey    String
+  category    String
+  location    String
+  filter      String   @default("all")
+  centerLat   Float?
+  centerLon   Float?
+  placeLabel  String?
+  baseRadiusM Int      @default(5000)
+  radiusStep  Int      @default(0) // index into the widening-radius schedule
+  offset      Int      @default(0) // Geoapify result offset within the current radius
+  exhausted   Boolean  @default(false)
+  backlog     Json? // qualifying leads found but not yet shown (returned next time)
+  totalNew    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, queryKey])
 }
 
 /// Real activity log — only actual events (discovered, stage change, message sent…).
