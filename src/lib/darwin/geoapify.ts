@@ -120,6 +120,9 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** Turn what the user typed ("gyms", "coaching centers", "tattoo studios") into a search plan. */
 export function categoryPlan(input: string): CategoryPlan {
   const t = input.trim().toLowerCase();
+  if (!t || /^(all |any |local |small )?(business(es)?|compan(y|ies)|shops?|stores?|leads?|places?)$/.test(t)) {
+    return { categories: BROAD, label: "Local business" };
+  }
   for (const [re, plan] of CATEGORY_MAP) if (re.test(t)) return { ...plan };
   // Free text: search broadly, filtered by the most meaningful word (singular).
   const word = t.split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !/^(shops?|stores?|centers?|centres?|services?|the|and|near)$/.test(w))[0] ?? t;

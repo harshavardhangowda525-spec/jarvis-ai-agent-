@@ -269,3 +269,23 @@ d("findNewLeads (integration)", () => {
       .rejects.toBeInstanceOf(GeoapifyError);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Voice / typed commands
+// ---------------------------------------------------------------------------
+import { parseLeadCommand, GENERATE_LEADS_RE } from "@/lib/darwin/command";
+
+describe("parseLeadCommand", () => {
+  it.each([
+    ["find 20 gyms in Bangalore without a website", { filter: "no_website", limit: 20, category: "gyms", location: "Bangalore" }],
+    ["get me dentists near Koramangala with phone numbers", { filter: "phone", category: "dentists", location: "Koramangala" }],
+    ["find 15 coaching centres in HSR Layout, Bangalore that don't have a website", { filter: "no_website", limit: 15, category: "coaching centres", location: "HSR Layout, Bangalore" }],
+    ["find real estate agents in Pune with a website", { filter: "has_website", category: "real estate agents", location: "Pune" }],
+    ["generate leads for gyms in Delhi", { category: "gyms", location: "Delhi" }],
+    ["search for salons in 560038", { category: "salons", location: "560038" }],
+    ["generate new leads", {}],
+  ])("%s", (text, expected) => {
+    expect(GENERATE_LEADS_RE.test(text)).toBe(true);
+    expect(parseLeadCommand(text)).toEqual(expected);
+  });
+});

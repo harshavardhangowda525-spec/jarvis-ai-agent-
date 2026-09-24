@@ -4,6 +4,7 @@ import { ok, handleError } from "@/lib/api";
 import { listSources } from "@/lib/darwin/sources";
 import { emailChannelReady } from "@/lib/darwin/email";
 import { DARWIN_STAGES } from "@/lib/darwin/config";
+import { capabilities } from "@/lib/env";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,6 +75,7 @@ export async function GET() {
       hasConnectedDiscovery,
       emailReady,
       crm,
+      geoapifyReady: capabilities.geoapify,
       totals: { leads: leads.length, dueFollowUps: dueFollowUps.length, pendingApprovals },
       intelligence: {
         businessesFound: leads.length,

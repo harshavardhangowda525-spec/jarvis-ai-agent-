@@ -21,7 +21,8 @@ const schema = z.object({
   serviceInterest: z.string().trim().max(120).nullable().optional(),
 });
 
-const toDate = (v: string | null | undefined) => (v === undefined ? undefined : v === null ? null : new Date(v));
+// Date-only values are stored at noon UTC so they show as the same calendar day in any timezone.
+const toDate = (v: string | null | undefined) => (v === undefined ? undefined : v === null ? null : new Date(/^\d{4}-\d{2}-\d{2}$/.test(v) ? `${v}T12:00:00Z` : v));
 const label = (s: string) => STAGE_LABEL[s as keyof typeof STAGE_LABEL] ?? s.toUpperCase();
 
 /** Update a lead's CRM fields (status, notes, follow-up, contact date, deal). */
