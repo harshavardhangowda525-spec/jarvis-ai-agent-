@@ -10,7 +10,7 @@ import path from "node:path";
 const MAX_READ = 200_000; // chars returned to the model
 
 export function makeFsTools(ws, onChange) {
-  // Include a content preview so the UI can stream the code as EDITH writes it.
+  // Include a content preview so the UI can stream the code as ULTRON writes it.
   const change = (kind, rel, content) =>
     onChange?.({ kind, path: rel, preview: content != null ? String(content).slice(0, 6000) : undefined });
 

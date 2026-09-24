@@ -1,6 +1,6 @@
 /**
  * Workspace isolation. Every file/terminal operation is confined to the active
- * workspace root. Paths that resolve outside it are rejected. This is EDITH's
+ * workspace root. Paths that resolve outside it are rejected. This is ULTRON's
  * primary safety boundary: it can only touch the workspace the user selected.
  */
 import path from "node:path";
@@ -12,8 +12,8 @@ const DEFAULT_ROOT = path.resolve(__dirname, "../workspaces");
 
 export class Workspace {
   constructor(root) {
-    // EDITH_WORKSPACE can point at an existing project; otherwise use ./workspaces.
-    this.root = path.resolve(root || process.env.EDITH_WORKSPACE || DEFAULT_ROOT);
+    // ULTRON_WORKSPACE can point at an existing project; otherwise use ./workspaces.
+    this.root = path.resolve(root || process.env.ULTRON_WORKSPACE || DEFAULT_ROOT);
     fs.mkdirSync(this.root, { recursive: true });
   }
 

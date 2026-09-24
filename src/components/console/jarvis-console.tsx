@@ -78,7 +78,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const router = useRouter();
   const [voiceConfigured, setVoiceConfigured] = useState<boolean | null>(null);
   const [voiceStarted, setVoiceStarted] = useState(false);
-  const [launchingEdith, setLaunchingEdith] = useState(false);
+  const [launchingUltron, setLaunchingUltron] = useState(false);
   const [humanoidPhase, setHumanoidPhase] = useState<"off" | "in" | "active" | "out">("off");
   // EV marketing agent — cinematic overlay presentation of the same JARVIS brain.
   const [evPhase, setEvPhase] = useState<"off" | "in" | "active" | "out">("off");
@@ -171,10 +171,10 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   });
 
   const sleep = useCallback(() => { voice.stop(); setVoiceStarted(false); }, [voice]);
-  const launchEdith = useCallback(() => {
-    setLaunchingEdith(true);
-    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Bringing EDITH online.");
-    setTimeout(() => router.push("/dashboard/edith"), 1900);
+  const launchUltron = useCallback(() => {
+    setLaunchingUltron(true);
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Bringing ULTRON online.");
+    setTimeout(() => router.push("/dashboard/ultron"), 1900);
   }, [router, voice, voiceStarted]);
   const launchDarwin = useCallback(() => {
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Opening DARWIN. Lead systems online.");
@@ -286,9 +286,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // Humanoid View mode switch (works from either mode).
       if (/\b(open|show|activate|enter|start)\s+(the\s+)?humanoid(\s+view)?\b|\bhumanoid view\b|\bshow yourself\b/.test(low)) { openHumanoid(); return; }
       if (/\b(get me |go |take me )?back to (the )?normal( interface| view)?\b|\b(close|exit|leave)\s+humanoid\b|\bnormal (interface|view|mode)\b/.test(low)) { closeHumanoid(); return; }
-      // "EDITH", "open EDITH", "activate EDITH", "developer mode" → launch EDITH.
-      if (/^edith[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+edith\b|\bedith[,\s]+(come online|wake up|online|developer mode)\b|\bdeveloper mode\b/.test(low)) {
-        launchEdith();
+      // "ULTRON", "open ULTRON", "activate ULTRON", "developer mode" → launch ULTRON.
+      // Also catches common mishearings ("ultra on", "altron") and the old name EDITH.
+      const U = "(?:ultron|ultra[\\s-]?on|altron|ultran|edith)";
+      if (new RegExp(`^${U}[\\s!.,]*$|\\b(open|launch|activate|start|switch to|go to|bring up)\\s+${U}\\b|\\b${U}[,\\s]+(come online|wake up|online|developer mode)\\b|\\bdeveloper mode\\b`).test(low)) {
+        launchUltron();
         return;
       }
       // "DARWIN", "open DARWIN", "activate DARWIN" → open the lead-gen/CRM console.
@@ -309,7 +311,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchEdith, launchDarwin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase]);
+  }, [agent, sleep, launchUltron, launchDarwin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase]);
 
   const wake = useWakeWord({
     enabled: !voiceStarted,
@@ -380,7 +382,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     e?.preventDefault();
     const t = input.trim(); if (!t) return;
     setInput("");
-    // Route typed commands through the same handler as voice, so "open EDITH",
+    // Route typed commands through the same handler as voice, so "open ULTRON",
     // "read my screen", "go to sleep" etc. trigger their shortcuts too.
     sendRef.current(t);
   }
@@ -444,7 +446,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
   return (
     <div className="jarvis-scene relative min-h-[calc(100vh-4rem)] overflow-hidden bg-[#02060e]">
-      {launchingEdith && <EdithLaunchOverlay />}
+      {launchingUltron && <UltronLaunchOverlay />}
       {evPhase !== "off" && (
         <EvView
           state={evState}
@@ -770,30 +772,30 @@ function IconBtn({ children, onClick, label, disabled, type = "button" }: {
   );
 }
 
-/** Cinematic transition played when the user says "EDITH" — a portal that
- *  expands into the EDITH dashboard. Pure CSS/SVG, ~1.9s. */
-function EdithLaunchOverlay() {
+/** Cinematic transition played when the user says "ULTRON" — a portal that
+ *  expands into the ULTRON dashboard. Pure CSS/SVG, ~1.9s. */
+function UltronLaunchOverlay() {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-background/95 backdrop-blur-md animate-fade-in">
       <div className="pointer-events-none absolute inset-0 [background:radial-gradient(circle_at_center,hsl(var(--accent)/0.15),transparent_60%)]" />
       <div className="relative flex flex-col items-center">
         <svg viewBox="0 0 400 400" style={{ width: "min(70vmin,520px)", height: "min(70vmin,520px)" }}>
           <defs>
-            <radialGradient id="edith-launch" cx="50%" cy="50%" r="50%">
+            <radialGradient id="ultron-launch" cx="50%" cy="50%" r="50%">
               <stop offset="0%" stopColor="rgb(120,200,255)" stopOpacity="0.9" />
               <stop offset="40%" stopColor="rgb(120,200,255)" stopOpacity="0.2" />
               <stop offset="100%" stopColor="rgb(120,200,255)" stopOpacity="0" />
             </radialGradient>
           </defs>
-          <circle cx="200" cy="200" r="150" fill="url(#edith-launch)" style={{ transformOrigin: "200px 200px", animation: "edith-bar 1.9s ease-out forwards" }} />
+          <circle cx="200" cy="200" r="150" fill="url(#ultron-launch)" style={{ transformOrigin: "200px 200px", animation: "ultron-bar 1.9s ease-out forwards" }} />
           {[190, 150, 110, 70].map((r, i) => (
             <circle key={r} cx="200" cy="200" r={r} fill="none" stroke="rgb(120,200,255)" strokeOpacity={0.4 - i * 0.06} strokeWidth="1.5"
               strokeDasharray={i % 2 ? "4 8" : undefined}
-              style={{ transformOrigin: "200px 200px", animation: `edith-spin ${6 + i * 3}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
+              style={{ transformOrigin: "200px 200px", animation: `ultron-spin ${6 + i * 3}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
           ))}
         </svg>
         <div className="absolute flex flex-col items-center">
-          <div className="hud-display text-3xl tracking-[0.5em] text-foreground text-glow">EDITH</div>
+          <div className="hud-display text-3xl tracking-[0.5em] text-foreground text-glow">ULTRON</div>
           <div className="hud-label mt-2 text-[10px] tracking-[0.4em] text-accent-bright animate-hud-pulse">BRINGING ONLINE…</div>
         </div>
       </div>
@@ -832,7 +834,7 @@ function JarvisSphere({ state, level = 0 }: { state: OrbState; level?: number })
         {/* outer reticle ring with tick marks */}
         <circle cx="200" cy="200" r="170" fill="none" stroke={`rgb(${color})`} strokeOpacity="0.25" strokeWidth="1" />
         <g stroke={`rgb(${color})`} strokeOpacity="0.5" strokeWidth="1.5"
-           style={active ? { transformOrigin: "200px 200px", animation: "edith-spin 40s linear infinite" } : undefined}>
+           style={active ? { transformOrigin: "200px 200px", animation: "ultron-spin 40s linear infinite" } : undefined}>
           {Array.from({ length: 60 }).map((_, i) => {
             const a = (i / 60) * Math.PI * 2;
             const r1 = 168, r2 = i % 5 === 0 ? 156 : 162;
@@ -844,7 +846,7 @@ function JarvisSphere({ state, level = 0 }: { state: OrbState; level?: number })
         {[150, 138].map((r, i) => (
           <circle key={r} cx="200" cy="200" r={r} fill="none" stroke={`rgb(${color})`} strokeOpacity="0.5" strokeWidth="2"
             strokeDasharray={i ? "120 400" : "200 340"} strokeLinecap="round"
-            style={active ? { transformOrigin: "200px 200px", animation: `edith-spin ${14 + i * 8}s linear infinite ${i ? "reverse" : ""}` } : undefined} />
+            style={active ? { transformOrigin: "200px 200px", animation: `ultron-spin ${14 + i * 8}s linear infinite ${i ? "reverse" : ""}` } : undefined} />
         ))}
 
         {/* the glass sphere */}
@@ -852,7 +854,7 @@ function JarvisSphere({ state, level = 0 }: { state: OrbState; level?: number })
         {/* inner concentric rings */}
         {[100, 80, 58, 34].map((r) => (
           <circle key={r} cx="200" cy="200" r={r} fill="none" stroke="#dff3ff" strokeOpacity={0.18} strokeWidth="1"
-            style={active ? { transformOrigin: "200px 200px", animation: `edith-spin ${20 + r / 4}s linear infinite ${r % 2 ? "reverse" : ""}` } : undefined} />
+            style={active ? { transformOrigin: "200px 200px", animation: `ultron-spin ${20 + r / 4}s linear infinite ${r % 2 ? "reverse" : ""}` } : undefined} />
         ))}
         {/* crosshair ticks */}
         <g stroke="#dff3ff" strokeOpacity="0.4" strokeWidth="1">
@@ -895,7 +897,7 @@ function MiniEq({ active, level = 0 }: { active: boolean; level?: number }) {
             height: active ? `${Math.min(100, h + level * 120)}%` : "22%",
             opacity: active ? 0.9 : 0.4,
             transition: "height 120ms ease",
-            animation: active ? `edith-bar 700ms ease-in-out ${i * 90}ms infinite alternate` : undefined,
+            animation: active ? `ultron-bar 700ms ease-in-out ${i * 90}ms infinite alternate` : undefined,
           }} />
       ))}
     </div>

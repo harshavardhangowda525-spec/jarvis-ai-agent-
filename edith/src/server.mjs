@@ -1,7 +1,7 @@
 /**
- * EDITH local control server. Same safety posture as the Operator:
+ * ULTRON local control server. Same safety posture as the Operator:
  *  - binds to 127.0.0.1 ONLY,
- *  - requires a pairing TOKEN (no web page can drive EDITH without it),
+ *  - requires a pairing TOKEN (no web page can drive ULTRON without it),
  *  - reports a REAL first-run capability check (provider, git, node, python,
  *    deploy providers) — nothing is marked available unless it actually is.
  */
@@ -13,7 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { log } from "./log.mjs";
 import { providerName, providerSummary, hasProvider } from "./provider.mjs";
-import { EdithAgent } from "./agent.mjs";
+import { UltronAgent } from "./agent.mjs";
 import { Audit } from "./audit.mjs";
 import { killAll } from "./tools/terminal.mjs";
 import { capabilityCheck } from "./capabilities.mjs";
@@ -22,7 +22,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN_FILE = path.resolve(__dirname, "../.edith-token");
 
 export function getToken() {
-  if (process.env.EDITH_TOKEN) return process.env.EDITH_TOKEN.trim();
+  if (process.env.ULTRON_TOKEN) return process.env.ULTRON_TOKEN.trim();
   try { const t = fs.readFileSync(TOKEN_FILE, "utf8").trim(); if (t) return t; } catch { /* create below */ }
   const token = crypto.randomBytes(16).toString("hex");
   try { fs.writeFileSync(TOKEN_FILE, token, { mode: 0o600 }); } catch { /* ignore */ }
@@ -34,7 +34,7 @@ export { capabilityCheck };
 /**
  * Origins allowed to auto-read the pairing token over HTTP (`GET /pair`).
  * Localhost is trusted by default; add your deployed app (e.g. your Vercel URL)
- * via EDITH_ALLOWED_ORIGINS="https://your-app.vercel.app" (comma-separated).
+ * via ULTRON_ALLOWED_ORIGINS="https://your-app.vercel.app" (comma-separated).
  * A page from any OTHER origin gets 403 — it can't silently grab the token.
  */
 const MIME = {
@@ -77,7 +77,7 @@ function allowedOrigins() {
     "http://localhost:3000", "http://127.0.0.1:3000",
     "http://localhost:5173", "http://127.0.0.1:5173",
   ];
-  const extra = (process.env.EDITH_ALLOWED_ORIGINS || "")
+  const extra = (process.env.ULTRON_ALLOWED_ORIGINS || "")
     .split(",").map((s) => s.trim()).filter(Boolean);
   return new Set([...defaults, ...extra]);
 }
@@ -111,9 +111,9 @@ export function startServer({ port, ws }) {
   }
 
   async function runGoal(text) {
-    if (agent) { emit({ kind: "activity", label: "EDITH is already working. Say stop first." }); return; }
+    if (agent) { emit({ kind: "activity", label: "ULTRON is already working. Say stop first." }); return; }
     emit({ kind: "goal", goal: text });
-    agent = new EdithAgent({ ws, audit, emit, confirm, mode });
+    agent = new UltronAgent({ ws, audit, emit, confirm, mode });
     try {
       const res = await agent.run(text);
       emit({ kind: "result", ok: !!res.ok, message: res.report || res.message || (res.ok ? "Done." : "Stopped."), needUser: !!res.needUser });
@@ -149,7 +149,7 @@ export function startServer({ port, ws }) {
     const u = new URL(req.url, `http://127.0.0.1:${port}`);
     if (req.method === "GET" && u.pathname === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, service: "edith", brain: providerName() }));
+      res.end(JSON.stringify({ ok: true, service: "ultron", brain: providerName() }));
       return;
     }
     if (req.method === "GET" && u.pathname === "/pair") {
@@ -157,7 +157,7 @@ export function startServer({ port, ws }) {
         res.writeHead(403, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           error: "origin_not_allowed",
-          hint: "Add this origin to EDITH_ALLOWED_ORIGINS in edith/.env, then restart EDITH.",
+          hint: "Add this origin to ULTRON_ALLOWED_ORIGINS in edith/.env, then restart ULTRON.",
         }));
         return;
       }
@@ -165,7 +165,7 @@ export function startServer({ port, ws }) {
       res.end(JSON.stringify({ token, url: `ws://127.0.0.1:${port}`, brain: providerName() }));
       return;
     }
-    // Live preview of the site EDITH built — serves files from the workspace,
+    // Live preview of the site ULTRON built — serves files from the workspace,
     // read-only and path-escape-safe, so the dashboard can iframe it.
     if (req.method === "GET" && (u.pathname === "/preview" || u.pathname.startsWith("/preview/"))) {
       let rel = decodeURIComponent(u.pathname.replace(/^\/preview\/?/, ""));
@@ -216,26 +216,26 @@ export function startServer({ port, ws }) {
   httpServer.listen(port, "127.0.0.1", () => {
     const caps = capabilityCheck(ws);
     log.info("");
-    log.info(`  EDITH is listening on ws://127.0.0.1:${port}`);
+    log.info(`  ULTRON is listening on ws://127.0.0.1:${port}`);
     log.info(`  Workspace: ${ws.root}`);
     log.info(`  Brain: ${providerName()}`);
     log.info(`  Providers (in order): ${providerSummary()}`);
     log.info(`  node ${caps.node.ok ? "✓" : "✗"}  git ${caps.git.ok ? "✓" : "✗"}  python ${caps.python.ok ? "✓" : "✗"}`);
     log.info("");
-    log.info("  Pair JARVIS (Dashboard → EDITH):");
-    log.info("     • Local dashboard auto-pairs — just open Dashboard → EDITH.");
+    log.info("  Pair JARVIS (Dashboard → ULTRON):");
+    log.info("     • Local dashboard auto-pairs — just open Dashboard → ULTRON.");
     log.info(`     • Or paste manually →  URL: ws://127.0.0.1:${port}   TOKEN: ${token}`);
-    if ((process.env.EDITH_ALLOWED_ORIGINS || "").trim()) {
-      log.info(`     • Auto-pair enabled for: ${process.env.EDITH_ALLOWED_ORIGINS}`);
+    if ((process.env.ULTRON_ALLOWED_ORIGINS || "").trim()) {
+      log.info(`     • Auto-pair enabled for: ${process.env.ULTRON_ALLOWED_ORIGINS}`);
     } else {
-      log.info("     • To auto-pair from your deployed app, set EDITH_ALLOWED_ORIGINS to its URL.");
+      log.info("     • To auto-pair from your deployed app, set ULTRON_ALLOWED_ORIGINS to its URL.");
     }
     log.info("");
   });
 
   httpServer.on("error", (err) => {
     if (err.code === "EADDRINUSE") {
-      log.error(`Port ${port} is already in use — another EDITH may be running. Stop it (or set EDITH_PORT) and retry.`);
+      log.error(`Port ${port} is already in use — another ULTRON may be running. Stop it (or set ULTRON_PORT) and retry.`);
       process.exit(1);
     }
     log.error(`Server error: ${err.message}`);

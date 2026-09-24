@@ -33,7 +33,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard", label: "Command Center", icon: Terminal },
   { href: "/dashboard/operator", label: "Operator", icon: MousePointerClick },
-  { href: "/dashboard/edith", label: "EDITH", icon: Code2 },
+  { href: "/dashboard/ultron", label: "ULTRON", icon: Code2 },
   { href: "/dashboard/darwin", label: "DARWIN", icon: Radar },
   { href: "/dashboard/memory", label: "AI Agents", icon: Bot },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },

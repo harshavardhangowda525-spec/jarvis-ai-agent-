@@ -3,7 +3,7 @@
  * stderr, exit code, and duration. No fabricated output. Long output is
  * truncated for the model but the real exit code is always reported.
  *
- * Running processes are tracked so EDITH can be interrupted (STOP).
+ * Running processes are tracked so ULTRON can be interrupted (STOP).
  */
 import { spawn } from "node:child_process";
 

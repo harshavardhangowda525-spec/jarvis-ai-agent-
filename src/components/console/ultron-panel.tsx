@@ -6,27 +6,27 @@ import {
   AlertTriangle, Check, Loader2, ChevronUp, Cpu, Mic, MicOff,
   Eye, X, ExternalLink, RefreshCw, Code2, FileCode,
 } from "lucide-react";
-import { useEdith, type EdithMode, type FileChange } from "@/hooks/useEdith";
+import { useUltron, type UltronMode, type FileChange } from "@/hooks/useUltron";
 import { useVoice } from "@/hooks/useVoice";
 import { cn, timeAgo } from "@/lib/utils";
 
 /**
- * EDITH dashboard — the sci-fi HUD from the reference: a glowing orb with a live
+ * ULTRON dashboard — the sci-fi HUD from the reference: a glowing orb with a live
  * waveform at the center, an Activity Stream (left), Execution/Status (right), a
  * UTC clock header, and voice-command / activity-timeline waveforms along the
- * bottom. Every value is REAL runtime state from the local EDITH runtime — the
+ * bottom. Every value is REAL runtime state from the local ULTRON runtime — the
  * orb reacts to connection/work state, the streams show actual tool activity.
  */
-const MODES: { id: EdithMode; label: string }[] = [
+const MODES: { id: UltronMode; label: string }[] = [
   { id: "autonomous", label: "Auto" },
   { id: "confirmation", label: "Confirm" },
   { id: "manual", label: "Manual" },
 ];
 
-export function EdithPanel() {
-  const e = useEdith();
+export function UltronPanel() {
+  const e = useUltron();
   const [goal, setGoal] = useState("");
-  // Default to the standard local EDITH address so pairing is one paste (token only).
+  // Default to the standard local ULTRON address so pairing is one paste (token only).
   const [url, setUrl] = useState("ws://127.0.0.1:7420");
   const [token, setToken] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -37,17 +37,17 @@ export function EdithPanel() {
   const [codeOpen, setCodeOpen] = useState(false);
   const clock = useUtcClock();
 
-  // Auto-open the live coding popup when EDITH starts working.
+  // Auto-open the live coding popup when ULTRON starts working.
   const wasWorking = useRef(false);
   useEffect(() => {
     if (e.working && !wasWorking.current) setCodeOpen(true);
     wasWorking.current = e.working;
   }, [e.working]);
 
-  // Hands-free: spoken commands → EDITH. A ref keeps the callback fresh so the
+  // Hands-free: spoken commands → ULTRON. A ref keeps the callback fresh so the
   // voice hook always calls the latest runGoal/stop without re-initializing.
   const cmdRef = useRef<(t: string) => void>(() => {});
-  const voice = useVoice({ onTranscript: (t) => cmdRef.current(t), autoListen: true, voiceProfile: "edith" });
+  const voice = useVoice({ onTranscript: (t) => cmdRef.current(t), autoListen: true, voiceProfile: "ultron" });
   useEffect(() => {
     cmdRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
@@ -70,9 +70,9 @@ export function EdithPanel() {
   const connectedRef = useRef(connected);
   connectedRef.current = connected;
   useEffect(() => {
-    setPairMsg("Auto-detecting local EDITH…");
+    setPairMsg("Auto-detecting local ULTRON…");
     const t = setTimeout(() => {
-      if (!connectedRef.current) setPairMsg("No local EDITH detected yet. Run `cd edith && npm run edith`, then click Auto-detect & pair.");
+      if (!connectedRef.current) setPairMsg("No local ULTRON detected yet. Run `cd edith && npm run ultron`, then click Auto-detect & pair.");
     }, 16000);
     return () => clearTimeout(t);
   }, []);
@@ -80,7 +80,7 @@ export function EdithPanel() {
   const orbState: OrbMode = !connected ? "offline" : e.working ? "working" : e.confirm ? "await" : "online";
 
   return (
-    <div className="edith-root relative min-h-[calc(100vh-4rem)] overflow-hidden">
+    <div className="ultron-root relative min-h-[calc(100vh-4rem)] overflow-hidden">
       {/* ambient background glows */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>
         <div className="absolute left-1/2 top-1/2 h-[70vmin] w-[70vmin] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(var(--accent)/0.18),transparent_60%)] blur-2xl" />
@@ -90,8 +90,8 @@ export function EdithPanel() {
       {/* ===== HEADER ===== */}
       <div className="relative z-10 flex items-center justify-between px-4 pt-3">
         <div className="hud-panel box-glow-soft flex items-center gap-2.5 rounded-xl px-3 py-2">
-          <EdithLogo />
-          <span className="hud-display text-lg tracking-[0.3em] text-foreground text-glow">EDITH</span>
+          <UltronLogo />
+          <span className="hud-display text-lg tracking-[0.3em] text-foreground text-glow">ULTRON</span>
           <span className={cn("hud-label ml-1 flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px]",
             connected ? "bg-success/15 text-success" : "bg-muted-foreground/15 text-muted-foreground")}>
             <span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-success animate-hud-pulse" : "bg-muted-foreground/50")} />
@@ -102,7 +102,7 @@ export function EdithPanel() {
         <div className="hud-panel box-glow-soft flex items-center gap-2 rounded-xl px-3 py-2">
           <span className="hud-display text-sm tracking-widest text-accent-bright">{clock} UTC</span>
           {connected ? <Wifi className="h-4 w-4 text-accent" /> : <WifiOff className="h-4 w-4 text-muted-foreground" />}
-          <button onClick={() => e.setMuted(!e.muted)} title={e.muted ? "Unmute EDITH" : "Mute EDITH"} className="rounded p-0.5 hover:bg-accent/10">
+          <button onClick={() => e.setMuted(!e.muted)} title={e.muted ? "Unmute ULTRON" : "Mute ULTRON"} className="rounded p-0.5 hover:bg-accent/10">
             {e.muted ? <VolumeX className="h-4 w-4 text-muted-foreground" /> : <Volume2 className="h-4 w-4 text-accent" />}
           </button>
           <button onClick={() => setShowSettings((s) => !s)} title="Systems" className="rounded p-0.5 hover:bg-accent/10"><Cpu className="h-4 w-4 text-accent" /></button>
@@ -111,9 +111,9 @@ export function EdithPanel() {
 
       {/* ===== CENTER ORB ===== */}
       <div className="pointer-events-none absolute inset-0 z-0 flex flex-col items-center justify-center">
-        <EdithOrb state={orbState} />
+        <UltronOrb state={orbState} />
         <div className="mt-2 text-center">
-          <div className="hud-display text-2xl tracking-[0.4em] text-foreground text-glow">EDITH</div>
+          <div className="hud-display text-2xl tracking-[0.4em] text-foreground text-glow">ULTRON</div>
           <div className="hud-label text-[10px] tracking-[0.3em] text-accent/80">
             {orbState === "offline" ? "OFFLINE" : orbState === "working" ? "EXECUTING" : orbState === "await" ? "AWAITING CONFIRMATION" : "ONLINE"}
           </div>
@@ -124,7 +124,7 @@ export function EdithPanel() {
       <div className="absolute left-4 top-24 z-10 hidden w-72 lg:block">
         <GlassPanel title="Activity Stream">
           <div className="max-h-[46vh] space-y-1.5 overflow-y-auto pr-1">
-            {e.activity.length === 0 && <p className="text-[11px] text-muted-foreground">{connected ? "Awaiting a command." : "Activate EDITH to begin."}</p>}
+            {e.activity.length === 0 && <p className="text-[11px] text-muted-foreground">{connected ? "Awaiting a command." : "Activate ULTRON to begin."}</p>}
             {e.activity.slice(0, 20).map((a) => (
               <div key={a.id} className="rounded-lg border border-accent/10 bg-accent/[0.04] px-2.5 py-1.5">
                 <div className="flex items-start gap-1.5">
@@ -183,20 +183,20 @@ export function EdithPanel() {
       {/* ===== PAIRING OVERLAY ===== */}
       {!connected && (
         <div className="absolute left-1/2 top-1/2 z-30 w-[min(92vw,24rem)] -translate-x-1/2 translate-y-28">
-          <GlassPanel title="Activate EDITH">
+          <GlassPanel title="Activate ULTRON">
             <p className="mb-2 text-[11px] text-muted-foreground">
-              Start EDITH on your machine (<code className="text-accent">cd edith &amp;&amp; npm run edith</code>), then just click Auto-detect — no copy/paste.
+              Start ULTRON on your machine (<code className="text-accent">cd edith &amp;&amp; npm run ultron</code>), then just click Auto-detect — no copy/paste.
             </p>
 
-            {/* Preferred path: auto-read the token from local EDITH's /pair. */}
+            {/* Preferred path: auto-read the token from local ULTRON's /pair. */}
             <button
               onClick={async () => {
-                setPairMsg("Detecting local EDITH…");
+                setPairMsg("Detecting local ULTRON…");
                 const r = await e.autoPair(url.trim() || undefined);
                 if (r.ok) { setPairMsg(""); return; }
                 setPairMsg(
-                  r.reason === "unreachable" ? "No local EDITH found. Run `npm run edith`, then retry."
-                  : r.reason === "origin" ? "This site isn't allow-listed. Add it to EDITH_ALLOWED_ORIGINS, or paste the token below."
+                  r.reason === "unreachable" ? "No local ULTRON found. Run `npm run ultron`, then retry."
+                  : r.reason === "origin" ? "This site isn't allow-listed. Add it to ULTRON_ALLOWED_ORIGINS, or paste the token below."
                   : "Couldn't auto-pair — paste the token below.",
                 );
                 setShowManual(true);
@@ -231,7 +231,7 @@ export function EdithPanel() {
               <PlugZap className="h-4 w-4" /> {e.conn === "connecting" ? "Linking…" : "Activate"}
             </button>
 
-            {/* URL is auto-filled; reveal it only if EDITH runs on a custom host/port. */}
+            {/* URL is auto-filled; reveal it only if ULTRON runs on a custom host/port. */}
             <div className="mt-2 flex items-center justify-between text-[10px] text-muted-foreground">
               <span className="truncate">Connecting to <code className="text-accent/80">{url || "ws://127.0.0.1:7420"}</code></span>
               <button onClick={() => setShowAdvanced((v) => !v)} className="ml-2 shrink-0 underline decoration-dotted hover:text-accent">
@@ -289,7 +289,7 @@ export function EdithPanel() {
           <form onSubmit={(ev) => { ev.preventDefault(); e.runGoal(goal); setGoal(""); }} className="hud-panel box-glow-soft flex items-center gap-2 rounded-xl px-2 py-1.5">
             <Equalizer active={e.working || voice.status === "recording"} bars={16} className="h-6 w-16 shrink-0" />
             <input value={goal} onChange={(ev) => setGoal(ev.target.value)} disabled={!connected || e.working}
-              placeholder={connected ? (voiceOn ? "Speak or type a command…" : "Command EDITH…") : "Activate first"} className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50" />
+              placeholder={connected ? (voiceOn ? "Speak or type a command…" : "Command ULTRON…") : "Activate first"} className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50" />
             <button type="button" onClick={() => (voiceOn ? voice.toggleMute() : enableVoice())} disabled={!connected}
               title={voiceOn ? (voice.muted ? "Mic muted — tap to unmute" : "Listening — tap to mute") : "Enable hands-free voice"}
               className={cn("flex h-8 w-8 items-center justify-center rounded border transition disabled:opacity-40",
@@ -308,17 +308,17 @@ export function EdithPanel() {
         </div>
       </div>
 
-      {/* live coding stream — liquid-glass popup while EDITH writes files */}
-      {codeOpen && <EdithBuildStream files={e.files} working={e.working} onDismiss={() => setCodeOpen(false)} />}
+      {/* live coding stream — liquid-glass popup while ULTRON writes files */}
+      {codeOpen && <UltronBuildStream files={e.files} working={e.working} onDismiss={() => setCodeOpen(false)} />}
 
       {/* live website preview — liquid-glass popup */}
-      {e.preview && <EdithPreview url={e.preview.url} path={e.preview.path} onDismiss={e.dismissPreview} />}
+      {e.preview && <UltronPreview url={e.preview.url} path={e.preview.path} onDismiss={e.dismissPreview} />}
 
       {/* floating actions (re-open after dismiss) */}
       {connected && (
         <div className="absolute bottom-24 right-4 z-30 flex flex-col items-end gap-2">
           {!codeOpen && e.files.length > 0 && (
-            <button onClick={() => setCodeOpen(true)} title="Show the code EDITH is writing"
+            <button onClick={() => setCodeOpen(true)} title="Show the code ULTRON is writing"
               className="flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent backdrop-blur-md transition hover:bg-accent/20">
               <Code2 className="h-3.5 w-3.5" /> Code
             </button>
@@ -335,8 +335,8 @@ export function EdithPanel() {
   );
 }
 
-/** Liquid-glass popup that streams the CODE as EDITH writes each file. */
-function EdithBuildStream({ files, working, onDismiss }: { files: FileChange[]; working: boolean; onDismiss: () => void }) {
+/** Liquid-glass popup that streams the CODE as ULTRON writes each file. */
+function UltronBuildStream({ files, working, onDismiss }: { files: FileChange[]; working: boolean; onDismiss: () => void }) {
   const coded = useMemo(() => files.filter((f) => f.preview && f.preview.trim()), [files]);
   const [selId, setSelId] = useState<string | null>(null);
   // Follow the latest file while building unless the user pinned one.
@@ -371,7 +371,7 @@ function EdithBuildStream({ files, working, onDismiss }: { files: FileChange[]; 
               {working ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Code2 className="h-3.5 w-3.5" />}
             </span>
             <span className="hud-label text-[10px] tracking-[0.28em] text-accent/80">
-              {working ? "EDITH · WRITING CODE" : "EDITH · CODE"} {coded.length ? `· ${coded.length} file${coded.length === 1 ? "" : "s"}` : ""}
+              {working ? "ULTRON · WRITING CODE" : "ULTRON · CODE"} {coded.length ? `· ${coded.length} file${coded.length === 1 ? "" : "s"}` : ""}
             </span>
           </div>
           <button onClick={onDismiss} title="Close" className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-white/10 hover:text-foreground"><X className="h-4 w-4" /></button>
@@ -403,7 +403,7 @@ function EdithBuildStream({ files, working, onDismiss }: { files: FileChange[]; 
             </pre>
           ) : (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              {working ? "Analyzing… code will stream here as EDITH writes files." : "No code written yet."}
+              {working ? "Analyzing… code will stream here as ULTRON writes files." : "No code written yet."}
             </div>
           )}
         </div>
@@ -412,9 +412,9 @@ function EdithBuildStream({ files, working, onDismiss }: { files: FileChange[]; 
   );
 }
 
-/** Liquid-glass popup that shows a LIVE preview of the site EDITH built,
- *  served from the local EDITH workspace. */
-function EdithPreview({ url, path, onDismiss }: { url: string; path: string; onDismiss: () => void }) {
+/** Liquid-glass popup that shows a LIVE preview of the site ULTRON built,
+ *  served from the local ULTRON workspace. */
+function UltronPreview({ url, path, onDismiss }: { url: string; path: string; onDismiss: () => void }) {
   const [nonce, setNonce] = useState(0);
   const src = `${url}${url.includes("?") ? "&" : "?"}_=${nonce}`;
   return (
@@ -481,7 +481,7 @@ function Dot({ tone }: { tone: string }) {
   return <span className={cn("mt-1 h-1.5 w-1.5 shrink-0 rounded-full", c)} />;
 }
 
-function EdithLogo() {
+function UltronLogo() {
   return (
     <svg viewBox="0 0 32 32" className="h-6 w-6">
       <circle cx="16" cy="16" r="14" fill="none" stroke="hsl(var(--accent)/0.4)" strokeWidth="1.5" />
@@ -492,32 +492,32 @@ function EdithLogo() {
 }
 
 /** The central glowing orb with concentric rings + a live audio waveform. */
-function EdithOrb({ state }: { state: OrbMode }) {
+function UltronOrb({ state }: { state: OrbMode }) {
   const color = state === "offline" ? "120,132,150" : state === "working" ? "251,191,36" : state === "await" ? "167,139,250" : "120,200,255";
   const active = state === "working" || state === "online";
   return (
     <div className="relative" style={{ width: "min(56vmin,460px)", height: "min(56vmin,460px)" }}>
       <svg viewBox="0 0 400 400" className="h-full w-full">
         <defs>
-          <radialGradient id="edith-core" cx="50%" cy="50%" r="50%">
+          <radialGradient id="ultron-core" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor={`rgb(${color})`} stopOpacity="0.9" />
             <stop offset="35%" stopColor={`rgb(${color})`} stopOpacity="0.25" />
             <stop offset="100%" stopColor={`rgb(${color})`} stopOpacity="0" />
           </radialGradient>
         </defs>
         {/* soft core glow */}
-        <circle cx="200" cy="200" r="150" fill="url(#edith-core)" />
+        <circle cx="200" cy="200" r="150" fill="url(#ultron-core)" />
         {/* concentric rings */}
         {[190, 160, 128, 96].map((r, i) => (
           <circle key={r} cx="200" cy="200" r={r} fill="none" stroke={`rgb(${color})`} strokeOpacity={0.15 + i * 0.08} strokeWidth={1.2}
             strokeDasharray={i % 2 ? "3 7" : undefined}
-            style={active ? { transformOrigin: "200px 200px", animation: `edith-spin ${18 + i * 6}s linear infinite ${i % 2 ? "reverse" : ""}` } : undefined} />
+            style={active ? { transformOrigin: "200px 200px", animation: `ultron-spin ${18 + i * 6}s linear infinite ${i % 2 ? "reverse" : ""}` } : undefined} />
         ))}
         {/* tilted orbital ellipses */}
         {[0, 60, 120].map((deg) => (
           <ellipse key={deg} cx="200" cy="200" rx="188" ry="66" fill="none" stroke={`rgb(${color})`} strokeOpacity="0.18" strokeWidth="1"
             transform={`rotate(${deg} 200 200)`}
-            style={active ? { transformOrigin: "200px 200px", animation: `edith-spin 26s linear infinite` } : undefined} />
+            style={active ? { transformOrigin: "200px 200px", animation: `ultron-spin 26s linear infinite` } : undefined} />
         ))}
       </svg>
       {/* central waveform */}
@@ -544,7 +544,7 @@ function Equalizer({ active, bars = 32, className, color }: { active: boolean; b
             background: c,
             opacity: active ? 0.85 : 0.35,
             transition: "height 200ms ease",
-            animation: active ? `edith-bar 900ms ease-in-out ${i * 40}ms infinite alternate` : undefined,
+            animation: active ? `ultron-bar 900ms ease-in-out ${i * 40}ms infinite alternate` : undefined,
           }} />
       ))}
     </div>

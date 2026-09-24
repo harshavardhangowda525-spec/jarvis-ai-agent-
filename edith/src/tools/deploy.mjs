@@ -1,5 +1,5 @@
 /**
- * Real deployment providers for EDITH. Each adapter:
+ * Real deployment providers for ULTRON. Each adapter:
  *   1. is "connected" only when its credential env var is actually present,
  *   2. runs the provider's REAL CLI to deploy the current workspace,
  *   3. extracts the live deployment URL from the CLI output,

@@ -1,14 +1,15 @@
 {
-  "name": "jarvis-edith",
+  "name": "jarvis-ultron",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "EDITH \u2014 JARVIS's local software-development subagent runtime. Real filesystem, terminal, git, build and test tools on the user's machine.",
+  "description": "ULTRON \u2014 JARVIS's local software-development subagent runtime. Real filesystem, terminal, git, build and test tools on the user's machine.",
   "bin": {
-    "jarvis-edith": "run.mjs"
+    "jarvis-ultron": "run.mjs"
   },
   "scripts": {
     "start": "node run.mjs",
+    "ultron": "node run.mjs",
     "edith": "node run.mjs",
     "selftest": "node selftest.mjs",
     "check": "node check-keys.mjs",

@@ -170,8 +170,8 @@ body {
 }
 @keyframes chev-flow { 0% { opacity: 0.2; } 50% { opacity: 1; } 100% { opacity: 0.2; } }
 @keyframes dash-flow { to { stroke-dashoffset: -1000; } }
-@keyframes edith-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes edith-bar { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }
+@keyframes ultron-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes ultron-bar { from { transform: scaleY(0.35); } to { transform: scaleY(1); } }
 @keyframes jv-indet { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
 @keyframes breathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-1.2%) scale(1.012); } }
 @keyframes sway { 0%,100% { transform: rotate(-0.8deg); } 50% { transform: rotate(0.8deg); } }

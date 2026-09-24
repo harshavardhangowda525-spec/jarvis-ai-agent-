@@ -324,7 +324,7 @@ function DarwinBoot({ fading }: { fading: boolean }) {
       {/* assembling rings + hex */}
       <div className="relative mb-6 h-40 w-40">
         <span className="absolute inset-0 rounded-full border border-accent/30" style={{ animation: "dw-ring-in .8s ease both" }} />
-        <span className="absolute inset-3 rounded-full border border-dashed border-accent/40" style={{ animation: "edith-spin 4s linear infinite, dw-ring-in .9s ease both" }} />
+        <span className="absolute inset-3 rounded-full border border-dashed border-accent/40" style={{ animation: "ultron-spin 4s linear infinite, dw-ring-in .9s ease both" }} />
         <span className="absolute inset-8 rounded-full border border-accent-bright/50" style={{ animation: "dw-ring-in 1s ease both" }} />
         <span className="absolute inset-0 flex items-center justify-center">
           <span className="flex h-16 w-16 items-center justify-center text-lg font-semibold text-white"
@@ -392,7 +392,7 @@ function NeuralSphere({ active, level }: { active: boolean; level: number }) {
         <defs>
           <radialGradient id="dw-glow" cx="50%" cy="45%" r="55%"><stop offset="0%" stopColor={AB} stopOpacity="0.22" /><stop offset="55%" stopColor={P} stopOpacity="0.10" /><stop offset="100%" stopColor={A} stopOpacity="0" /></radialGradient>
         </defs>
-        <g style={{ transformOrigin: "130px 150px", animation: `edith-spin ${active ? 26 : 60}s linear infinite` }}>
+        <g style={{ transformOrigin: "130px 150px", animation: `ultron-spin ${active ? 26 : 60}s linear infinite` }}>
           <g stroke={A} strokeOpacity={active ? 0.28 : 0.16} strokeWidth="0.5">
             {edges.map(([a, b], i) => <line key={i} x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y} />)}
           </g>
@@ -402,7 +402,7 @@ function NeuralSphere({ active, level }: { active: boolean; level: number }) {
           ))}
         </g>
         {/* scanning ring */}
-        <ellipse cx="130" cy="150" rx="100" ry="94" fill="none" stroke={AB} strokeOpacity={active ? 0.5 : 0.25} strokeWidth="1" strokeDasharray="4 10" style={{ transformOrigin: "130px 150px", animation: `edith-spin ${active ? 7 : 20}s linear infinite` }} />
+        <ellipse cx="130" cy="150" rx="100" ry="94" fill="none" stroke={AB} strokeOpacity={active ? 0.5 : 0.25} strokeWidth="1" strokeDasharray="4 10" style={{ transformOrigin: "130px 150px", animation: `ultron-spin ${active ? 7 : 20}s linear infinite` }} />
       </svg>
       {/* DARWIN AI hex badge */}
       <div className="absolute flex flex-col items-center">

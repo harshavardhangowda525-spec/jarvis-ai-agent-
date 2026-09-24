@@ -1,5 +1,5 @@
 /**
- * LLM provider for EDITH's reasoning + code generation.
+ * LLM provider for ULTRON's reasoning + code generation.
  * Standalone, reuses the same env keys as JARVIS. First configured
  * OpenAI-compatible provider wins. No fake fallback engine — if nothing is
  * configured, the agent reports it honestly.
@@ -31,8 +31,8 @@ function resolveChain() {
     ["ollama", ollamaModel ? "ollama" : "", `${ollamaBase}/v1`, ollamaModel],
   ];
   // Your own Ollama model is the brain whenever it's configured (unlimited);
-  // cloud keys follow as backup. An explicit EDITH_AI_PROVIDER still wins.
-  const preferred = read("EDITH_AI_PROVIDER").toLowerCase() || (ollamaModel ? "ollama" : "") || read("AI_PROVIDER").toLowerCase();
+  // cloud keys follow as backup. An explicit ULTRON_AI_PROVIDER still wins.
+  const preferred = read("ULTRON_AI_PROVIDER").toLowerCase() || (ollamaModel ? "ollama" : "") || read("AI_PROVIDER").toLowerCase();
   const configured = order.filter((p) => p[1]).map(([provider, apiKey, baseUrl, model]) => ({ provider, apiKey, baseUrl, model }));
   // Move the preferred provider to the front if it's configured.
   const i = configured.findIndex((p) => p.provider === preferred);
@@ -71,11 +71,11 @@ export function hasProvider() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// A single EDITH action can carry a whole file's contents inside the JSON
+// A single ULTRON action can carry a whole file's contents inside the JSON
 // (e.g. write_file for an HTML/CSS page), so the completion budget must be
 // generous or the JSON gets truncated mid-string and won't parse. Configurable
-// via EDITH_MAX_TOKENS. gpt-oss / gemini support far more than this default.
-const MAX_TOKENS = Math.max(2048, Number(process.env.EDITH_MAX_TOKENS || 8192));
+// via ULTRON_MAX_TOKENS. gpt-oss / gemini support far more than this default.
+const MAX_TOKENS = Math.max(2048, Number(process.env.ULTRON_MAX_TOKENS || 8192));
 
 // Providers that answered with a "this won't fix itself soon" error — no billing
 // (402), bad/unauthorised key (401/403) or unknown model (404). We skip them for
@@ -149,7 +149,7 @@ const OLLAMA_TIMEOUT_MS = Math.max(30_000, Number(process.env.OLLAMA_TIMEOUT_MS 
 function timeoutFor(P) { return P.provider === "ollama" ? OLLAMA_TIMEOUT_MS : 60_000; }
 
 /**
- * Load the Ollama model into memory now (and keep it there for 24h) so EDITH's
+ * Load the Ollama model into memory now (and keep it there for 24h) so ULTRON's
  * first real step doesn't pay the 30–90s load time. Safe to call repeatedly.
  */
 export async function warmOllama() {
@@ -195,7 +195,7 @@ export async function askJson(system, user) {
   // at once during a multi-step build. Rather than aborting the whole goal, retry
   // the ENTIRE chain a few times with exponential backoff, but only while the
   // failures are transient (a hard 401/404 or a bad response won't self-heal).
-  const ROUNDS = Math.max(1, Number(process.env.EDITH_RETRY_ROUNDS || 3));
+  const ROUNDS = Math.max(1, Number(process.env.ULTRON_RETRY_ROUNDS || 3));
   let lastErr = "";
   const errors = new Map(); // provider -> short reason (latest), for a useful final message
 
@@ -318,7 +318,7 @@ function parseJson(text) {
   log.warn("Model returned non-JSON:", raw.slice(0, 200));
   throw new Error(
     looksTruncated
-      ? "The model's JSON was cut off (raise EDITH_MAX_TOKENS or use a larger model)."
+      ? "The model's JSON was cut off (raise ULTRON_MAX_TOKENS or use a larger model)."
       : "The model returned an unparseable response.",
   );
 }

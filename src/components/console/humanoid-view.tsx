@@ -174,7 +174,7 @@ function HoloOverlays({ listening, thinking, speaking, level }: { listening: boo
       <svg viewBox="0 0 300 200" className="absolute left-1/2 top-[6%] h-[34%] -translate-x-1/2" preserveAspectRatio="xMidYMid meet">
         {[0, 60, 120].map((deg, i) => (
           <ellipse key={deg} cx="150" cy="100" rx="120" ry="42" fill="none" stroke={A} strokeOpacity={thinking ? 0.34 : 0.14} strokeWidth="1"
-            transform={`rotate(${deg} 150 100)`} style={{ transformOrigin: "150px 100px", animation: `edith-spin ${20 + i * 6}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
+            transform={`rotate(${deg} 150 100)`} style={{ transformOrigin: "150px 100px", animation: `ultron-spin ${20 + i * 6}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
         ))}
         {listening && [90, 104].map((r) => <circle key={r} cx="150" cy="100" r={r} fill="none" stroke={AB} strokeOpacity="0.3" strokeWidth="1" className="animate-hud-pulse" />)}
       </svg>
@@ -184,7 +184,7 @@ function HoloOverlays({ listening, thinking, speaking, level }: { listening: boo
         <circle cx="100" cy="100" r="80" fill="url(#hv-core2)" />
         {[60, 46, 32].map((r, i) => (
           <circle key={r} cx="100" cy="100" r={r} fill="none" stroke={AB} strokeOpacity="0.3" strokeWidth="1.2"
-            style={{ transformOrigin: "100px 100px", animation: `edith-spin ${8 + i * 4}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
+            style={{ transformOrigin: "100px 100px", animation: `ultron-spin ${8 + i * 4}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
         ))}
         <circle cx="100" cy="100" r={14 + (speaking ? level * 26 : 0)} fill={AB} style={{ filter: `drop-shadow(0 0 10px ${AB})`, transition: "r 90ms linear" }} className={thinking ? "animate-hud-pulse" : ""} />
       </svg>
@@ -234,7 +234,7 @@ function Humanoid({ eyeColor, listening, thinking, speaking, level }: {
         {[0, 60, 120].map((deg, i) => (
           <ellipse key={deg} cx="150" cy="108" rx="86" ry="34" fill="none" stroke={A} strokeOpacity={thinking ? 0.45 : 0.2} strokeWidth="1"
             transform={`rotate(${deg} 150 108)`}
-            style={{ transformOrigin: "150px 108px", animation: `edith-spin ${20 + i * 6}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
+            style={{ transformOrigin: "150px 108px", animation: `ultron-spin ${20 + i * 6}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
         ))}
         {listening && [70, 80].map((r) => (
           <circle key={r} cx="150" cy="108" r={r} fill="none" stroke={AB} strokeOpacity="0.3" strokeWidth="1" className="animate-hud-pulse" />
@@ -305,7 +305,7 @@ function Humanoid({ eyeColor, listening, thinking, speaking, level }: {
         <circle cx="150" cy="270" r="46" fill="url(#hv-core)" />
         {[34, 26, 18].map((r, i) => (
           <circle key={r} cx="150" cy="270" r={r} fill="none" stroke={AB} strokeOpacity="0.5" strokeWidth="1"
-            style={{ transformOrigin: "150px 270px", animation: `edith-spin ${8 + i * 4}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
+            style={{ transformOrigin: "150px 270px", animation: `ultron-spin ${8 + i * 4}s linear infinite ${i % 2 ? "reverse" : ""}` }} />
         ))}
         <circle cx="150" cy="270" r={8 + (speaking ? level * 18 : 0)} fill={AB} style={{ filter: `drop-shadow(0 0 8px ${AB})`, transition: "r 90ms linear" }} className={thinking ? "animate-hud-pulse" : ""} />
       </g>
@@ -366,7 +366,7 @@ function CircularWave({ listening, speaking, thinking, level }: { listening: boo
             height: active ? `${Math.min(100, h + level * 130)}%` : thinking ? "35%" : "18%",
             opacity: active ? 0.95 : 0.45,
             transition: "height 110ms ease",
-            animation: active ? `edith-bar 640ms ease-in-out ${i * 80}ms infinite alternate` : thinking ? `edith-bar 1.4s ease-in-out ${i * 120}ms infinite alternate` : undefined,
+            animation: active ? `ultron-bar 640ms ease-in-out ${i * 80}ms infinite alternate` : thinking ? `ultron-bar 1.4s ease-in-out ${i * 120}ms infinite alternate` : undefined,
           }} />
       ))}
     </div>

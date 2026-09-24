@@ -3,34 +3,37 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Client for the local EDITH runtime (real dev subagent on the user's machine).
+ * Client for the local ULTRON runtime (real dev subagent on the user's machine).
  * Pairs over a token-protected localhost WebSocket, streams real events
  * (tools, terminal output, file changes, capability check), and relays goals +
  * control signals. URL/token persist in localStorage for one-time pairing.
  */
-export type EdithMode = "autonomous" | "confirmation" | "manual";
-export type EdithConn = "disconnected" | "connecting" | "connected" | "unauthorized";
+export type UltronMode = "autonomous" | "confirmation" | "manual";
+export type UltronConn = "disconnected" | "connecting" | "connected" | "unauthorized";
 
-export interface EdithLine { id: string; text: string; tone: "info" | "tool" | "ok" | "error" | "warn"; at: number }
-export interface EdithTask { id: string; label: string; status: "running" | "ok" | "error"; at: number }
+export interface UltronLine { id: string; text: string; tone: "info" | "tool" | "ok" | "error" | "warn"; at: number }
+export interface UltronTask { id: string; label: string; status: "running" | "ok" | "error"; at: number }
 export interface FileChange { id: string; kind: string; path: string; preview?: string }
 export interface TerminalEntry { id: string; command: string; exitCode: number | null; stdout?: string; stderr?: string; durationMs?: number }
 export interface Capabilities { [k: string]: any }
 export interface ConfirmReq { title: string; detail?: string; level?: string }
 
-const LS_URL = "jarvis.edith.url";
-const LS_TOKEN = "jarvis.edith.token";
+const LS_URL = "jarvis.ultron.url";
+const LS_TOKEN = "jarvis.ultron.token";
+// Pairing saved before the rename (EDITH → ULTRON) keeps working.
+const OLD_LS_URL = "jarvis.edith.url";
+const OLD_LS_TOKEN = "jarvis.edith.token";
 let seq = 0;
 const uid = () => `e${Date.now()}_${seq++}`;
 
-export function useEdith() {
-  const [conn, setConn] = useState<EdithConn>("disconnected");
+export function useUltron() {
+  const [conn, setConn] = useState<UltronConn>("disconnected");
   const [provider, setProvider] = useState<string | null>(null);
-  const [mode, setModeState] = useState<EdithMode>("confirmation");
+  const [mode, setModeState] = useState<UltronMode>("confirmation");
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [workspace, setWorkspace] = useState<string | null>(null);
-  const [activity, setActivity] = useState<EdithLine[]>([]);
-  const [tasks, setTasks] = useState<EdithTask[]>([]);
+  const [activity, setActivity] = useState<UltronLine[]>([]);
+  const [tasks, setTasks] = useState<UltronTask[]>([]);
   const [terminal, setTerminal] = useState<TerminalEntry[]>([]);
   const [files, setFiles] = useState<FileChange[]>([]);
   const [project, setProject] = useState<any>(null);
@@ -47,14 +50,14 @@ export function useEdith() {
 
   useEffect(() => { mutedRef.current = muted; }, [muted]);
 
-  /** Speak text in EDITH's own (British) voice via the shared TTS endpoint. */
+  /** Speak text in ULTRON's own (British) voice via the shared TTS endpoint. */
   const speak = useCallback(async (text: string) => {
     if (mutedRef.current || !text?.trim()) return;
     try {
       const res = await fetch("/api/voice/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.slice(0, 800), agent: "edith" }),
+        body: JSON.stringify({ text: text.slice(0, 800), agent: "ultron" }),
       });
       if (!res.ok) return; // voice not configured — stay silent, no error noise
       const blob = await res.blob();
@@ -67,12 +70,12 @@ export function useEdith() {
 
   useEffect(() => {
     try {
-      setSavedUrl(localStorage.getItem(LS_URL) || "ws://127.0.0.1:7420");
-      setSavedToken(localStorage.getItem(LS_TOKEN) || "");
+      setSavedUrl(localStorage.getItem(LS_URL) || localStorage.getItem(OLD_LS_URL) || "ws://127.0.0.1:7420");
+      setSavedToken(localStorage.getItem(LS_TOKEN) || localStorage.getItem(OLD_LS_TOKEN) || "");
     } catch { /* storage blocked */ }
   }, []);
 
-  const push = useCallback((text: string, tone: EdithLine["tone"]) => {
+  const push = useCallback((text: string, tone: UltronLine["tone"]) => {
     setActivity((a) => [{ id: uid(), text, tone, at: Date.now() }, ...a].slice(0, 80));
   }, []);
 
@@ -87,14 +90,14 @@ export function useEdith() {
     manualClose.current = false; setConn("connecting");
     let ws: WebSocket;
     try { ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`); }
-    catch { setConn("disconnected"); push("Invalid EDITH URL.", "error"); return; }
+    catch { setConn("disconnected"); push("Invalid ULTRON URL.", "error"); return; }
     wsRef.current = ws;
 
     ws.onopen = () => setConn("connected");
     ws.onclose = (e) => {
       wsRef.current = null;
       if (e.code === 4001) { setConn("unauthorized"); push("Pairing rejected — check the token.", "error"); return; }
-      if (!manualClose.current) { setConn("disconnected"); push("EDITH disconnected.", "warn"); }
+      if (!manualClose.current) { setConn("disconnected"); push("ULTRON disconnected.", "warn"); }
       setWorking(false);
     };
 
@@ -112,7 +115,7 @@ export function useEdith() {
             setTasks((t) => [{ id: uid(), label: m.label, status: "running" as const, at: Date.now() }, ...t].slice(0, 14));
             push(`${m.label}`, "tool");
           } else {
-            const st: EdithTask["status"] = m.status === "ok" ? "ok" : "error";
+            const st: UltronTask["status"] = m.status === "ok" ? "ok" : "error";
             setTasks((t) => {
               const i = t.findIndex((x) => x.label === m.label && x.status === "running");
               if (i < 0) return [{ id: uid(), label: m.label, status: st, at: Date.now() }, ...t].slice(0, 14);
@@ -139,9 +142,9 @@ export function useEdith() {
   }, [push, speak]);
 
   /**
-   * Auto-pair: ask the local EDITH for its token over the origin-locked HTTP
+   * Auto-pair: ask the local ULTRON for its token over the origin-locked HTTP
    * /pair endpoint and connect — no copy/paste. Returns why it failed so the UI
-   * can guide the user (EDITH not running, or this origin isn't allow-listed).
+   * can guide the user (ULTRON not running, or this origin isn't allow-listed).
    */
   const autoPair = useCallback(
     async (baseUrl?: string): Promise<{ ok: boolean; reason?: "unreachable" | "origin" | "no_token" | string }> => {
@@ -171,7 +174,7 @@ export function useEdith() {
     tried.current = true;
     const url = (savedUrl || "ws://127.0.0.1:7420").trim();
     // Reconnect instantly if we already have a token; otherwise auto-pair — and
-    // keep retrying for a bit, since EDITH may still be starting up when the
+    // keep retrying for a bit, since ULTRON may still be starting up when the
     // page loads. This makes the token auto-fill with zero clicks.
     if (savedToken) { connect(url, savedToken); return; }
     let attempts = 0;
@@ -180,7 +183,7 @@ export function useEdith() {
       attempts += 1;
       const r = await autoPair(url);
       if (r.ok || r.reason === "origin") return; // paired, or blocked (needs manual)
-      if (attempts < 6) setTimeout(tryPair, 2500); // EDITH not up yet — retry
+      if (attempts < 6) setTimeout(tryPair, 2500); // ULTRON not up yet — retry
     };
     tryPair();
   }, [savedUrl, savedToken, connect, autoPair]);
@@ -190,7 +193,7 @@ export function useEdith() {
     const ws = wsRef.current; if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
   }, []);
   const runGoal = useCallback((text: string) => { if (text.trim()) send({ op: "goal", text: text.trim() }); }, [send]);
-  const setMode = useCallback((m: EdithMode) => { send({ op: "mode", mode: m }); setModeState(m); }, [send]);
+  const setMode = useCallback((m: UltronMode) => { send({ op: "mode", mode: m }); setModeState(m); }, [send]);
   const stop = useCallback(() => send({ op: "stop" }), [send]);
   const answerConfirm = useCallback((approved: boolean) => { send({ op: "confirm", approved }); setConfirm(null); }, [send]);
   const refreshCaps = useCallback(() => send({ op: "capabilities" }), [send]);

@@ -71,9 +71,9 @@ export const env = {
   // JARVIS voice — defaults to "Daniel" (British male, authoritative). Override
   // with ELEVENLABS_VOICE_ID.
   elevenLabsVoiceId: read("ELEVENLABS_VOICE_ID") || "onwK4e9ZLuTAKqWW03F9",
-  // EDITH voice — a distinct British voice ("Alice", British female) so EDITH and
-  // JARVIS are easy to tell apart. Override with EDITH_VOICE_ID.
-  edithVoiceId: read("EDITH_VOICE_ID") || "Xb7hH8MSUJpSbSDYk0k2",
+  // ULTRON voice — deep and intense ("Callum") so ULTRON and JARVIS are easy to
+  // tell apart. Override with ULTRON_VOICE_ID (EDITH_VOICE_ID still works).
+  ultronVoiceId: read("ULTRON_VOICE_ID") || read("EDITH_VOICE_ID") || "N2lVS1w4EtoT3dr4eOWO",
   // EV voice — bright, energetic (marketing/growth agent). Defaults to "Aria".
   // Override with EV_VOICE_ID.
   evVoiceId: read("EV_VOICE_ID") || "9BWtsMINqrJLrRacOk9x",

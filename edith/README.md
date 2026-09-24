@@ -1,20 +1,25 @@
-# EDITH — JARVIS's software-development subagent
+# ULTRON — JARVIS's software-development subagent
 
-EDITH is JARVIS's specialist developer. It performs **real** development work —
+ULTRON is JARVIS's specialist developer. It performs **real** development work —
 reads/writes files, runs terminal commands, uses git, builds, tests, and (when
 providers are connected) deploys — on **your machine**, driven by natural-language
-goals. JARVIS stays the orchestrator; EDITH is the coder.
+goals. JARVIS stays the orchestrator; ULTRON is the coder.
+
+> ULTRON was previously called EDITH. Its folder is still `edith/` so existing
+> setups keep working (your `.env`, pairing token and brain key live here), and
+> the old `EDITH_*` settings and `npm run edith` still work. New names:
+> `ULTRON_*` settings and `npm run ultron`.
 
 ## Why it runs locally (not on Vercel)
 
 Real filesystem writes, a real terminal, dev servers, builds and deployments cannot
-run on Vercel serverless (ephemeral, read-only, seconds-long timeouts). So EDITH is a
+run on Vercel serverless (ephemeral, read-only, seconds-long timeouts). So ULTRON is a
 **local runtime** on your computer, and the JARVIS web UI pairs with it over a
 token-protected localhost WebSocket — exactly like the Operator.
 
 ```
-JARVIS Web UI ──ws://127.0.0.1:7420──► EDITH runtime (this)
-  Dashboard → EDITH                       real fs / terminal / git / build / deploy
+JARVIS Web UI ──ws://127.0.0.1:7420──► ULTRON runtime (this)
+  Dashboard → ULTRON                       real fs / terminal / git / build / deploy
 ```
 
 ## What's real (verified) vs. what needs credentials
@@ -28,20 +33,20 @@ commit hash, real build/test, blocked workspace-escape, and deploy honestly repo
   timing), git status/diff/log/init/commit, detect/install/build/test/lint, HTTP health
   check, capability check, the agentic coding loop, safety gating, audit log.
 - 🔌 Needs credentials (shown as "not connected" until set): deployment to Vercel /
-  Netlify / Cloudflare. Set the provider token and EDITH runs the provider's REAL CLI.
+  Netlify / Cloudflare. Set the provider token and ULTRON runs the provider's REAL CLI.
 
 ## Real deployment (Vercel, end-to-end)
 
-EDITH deploys through the provider's actual CLI and then **verifies the result** —
+ULTRON deploys through the provider's actual CLI and then **verifies the result** —
 no fabricated success:
 
 1. Set a token in `edith/.env` (get one at vercel.com → Account → Settings → Tokens):
    ```
    VERCEL_TOKEN=your_real_token
    ```
-2. Point EDITH at the project (`EDITH_WORKSPACE=/path/to/site`) and run `npm run edith`.
-3. Ask EDITH: **"deploy this to production"** (or "deploy it").
-4. EDITH will:
+2. Point ULTRON at the project (`ULTRON_WORKSPACE=/path/to/site`) and run `npm run ultron`.
+3. Ask ULTRON: **"deploy this to production"** (or "deploy it").
+4. ULTRON will:
    - run `npx vercel --prod --yes --token …` in the workspace (the real deploy),
    - extract the live `*.vercel.app` URL from the CLI output (skipping dashboard links),
    - **verify** it with real HTTP(S) checks — status code, latency, HTTPS — retrying a
@@ -58,13 +63,13 @@ Netlify (`NETLIFY_AUTH_TOKEN`) and Cloudflare (`CLOUDFLARE_API_TOKEN`) work the 
 ```bash
 cd edith
 npm install
-cp .env.example .env         # add a GROQ/GEMINI/etc. key; optionally EDITH_WORKSPACE
+cp .env.example .env         # add a GROQ/GEMINI/etc. key; optionally ULTRON_WORKSPACE
 npm run selftest             # prove the tool layer works (no key needed)
-npm run edith                # start the runtime
+npm run ultron                # start the runtime
 ```
 
-It prints a URL + TOKEN. In JARVIS → **Dashboard → EDITH**, paste both, click
-**Activate EDITH**, then give it a goal:
+It prints a URL + TOKEN. In JARVIS → **Dashboard → ULTRON**, paste both, click
+**Activate ULTRON**, then give it a goal:
 
 - "Create a simple website in ./cafe and run the build."
 - "Inspect this project and tell me what's wrong."
@@ -83,7 +88,7 @@ It prints a URL + TOKEN. In JARVIS → **Dashboard → EDITH**, paste both, clic
 - **Secrets**: never printed — terminal output is scanned and `KEY=value` secrets are
   redacted. Deploy tokens live in env only.
 - **Localhost + token**: the server binds to 127.0.0.1 and requires the pairing token,
-  so no web page can drive EDITH.
+  so no web page can drive ULTRON.
 - **Audit log**: every goal, tool call, and result is written to `.edith/audit.jsonl`
   in the workspace. Real events only.
 

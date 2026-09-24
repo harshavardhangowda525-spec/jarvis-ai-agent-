@@ -6,7 +6,7 @@ import fs from "node:fs";
  * unquoted value.
  */
 export function loadEnv(file) {
-  if (!fs.existsSync(file)) return false;
+  if (!fs.existsSync(file)) { aliasLegacyNames(); return false; }
   // Strip a UTF-8 BOM (Notepad adds one) so the first key isn't misread.
   const text = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
   for (const line of text.split("\n")) {
@@ -19,5 +19,18 @@ export function loadEnv(file) {
     else v = v.replace(/\s+#.*$/, "").trim(); // drop an inline "  # note" after an unquoted value
     if (!(k in process.env)) process.env[k] = v;
   }
+  aliasLegacyNames();
   return true;
+}
+
+/**
+ * ULTRON was called EDITH before — settings written with the old names
+ * (EDITH_TOKEN, EDITH_WORKSPACE, EDITH_ALLOWED_ORIGINS, …) keep working.
+ */
+export function aliasLegacyNames() {
+  for (const [k, v] of Object.entries(process.env)) {
+    if (!k.startsWith("EDITH_")) continue;
+    const nk = `ULTRON_${k.slice("EDITH_".length)}`;
+    if (!(nk in process.env)) process.env[nk] = v;
+  }
 }

@@ -2,7 +2,7 @@
 
 EV is a **standalone internal agent inside JARVIS**, dedicated to growing
 **Infinity Web & Apps** (websites from ₹4,999, apps from ₹55,000,
-@infinitywebapps). It does **not** replace or duplicate JARVIS, EDITH, or any
+@infinitywebapps). It does **not** replace or duplicate JARVIS, ULTRON, or any
 other agent — it reuses the exact same infrastructure and only swaps in its own
 brain, tools, memory, and a cinematic presentation layer.
 

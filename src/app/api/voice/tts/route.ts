@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
 
     // Fixed per-agent voice IDs; JARVIS honors the user's saved preference.
     const agentVoiceId: Record<string, string> = {
-      edith: env.edithVoiceId,
+      ultron: env.ultronVoiceId,
+      edith: env.ultronVoiceId, // former name
       ev: env.evVoiceId,
       darwin: env.darwinVoiceId,
     };
@@ -45,7 +46,8 @@ export async function POST(req: NextRequest) {
 
     // Each agent gets a characteristic cadence; JARVIS keeps the user's setting.
     const agentRate: Record<string, number | undefined> = {
-      edith: undefined,
+      ultron: 0.95,  // slow, deliberate
+      edith: 0.95,
       ev: 1.08,      // upbeat, energetic
       darwin: 1.0,   // warm, friendly, natural pace
     };

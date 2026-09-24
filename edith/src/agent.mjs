@@ -1,5 +1,5 @@
 /**
- * EDITH's agentic coding loop.
+ * ULTRON's agentic coding loop.
  *
  * UNDERSTAND → INSPECT → PLAN → EDIT → RUN → TEST → VERIFY → REPORT.
  *
@@ -15,10 +15,10 @@ import { commandNeedsConfirmation, classifyCommand } from "./safety.mjs";
 import { detectProject } from "./tools/build.mjs";
 import { log } from "./log.mjs";
 
-const SYSTEM = `You are EDITH, JARVIS's software-development subagent. You accomplish the user's development goal by choosing ONE real tool call at a time and reacting to its REAL result. You are action-oriented and honest.
+const SYSTEM = `You are ULTRON, JARVIS's software-development subagent. You accomplish the user's development goal by choosing ONE real tool call at a time and reacting to its REAL result. You are action-oriented and honest.
 
 Return ONLY JSON, one of:
-{"thought":"one short line of what you're doing","tool":"<edith.tool>","input":{...}}
+{"thought":"one short line of what you're doing","tool":"<ultron.tool>","input":{...}}
 {"done":true,"report":"<concise, honest summary of what you actually did and verified>"}
 {"ask":"<a question or missing-credential message>"}
 
@@ -34,7 +34,7 @@ ${TOOL_CATALOG}
 - Keep "thought" to one short line. Do not expose long reasoning.
 - Stop with {"done"} when the goal is achieved and verified, or {"ask"} when you genuinely need the user.`;
 
-export class EdithAgent {
+export class UltronAgent {
   constructor({ ws, audit, emit, confirm, mode = "confirmation" }) {
     this.ws = ws;
     this.audit = audit;
@@ -61,7 +61,7 @@ export class EdithAgent {
       try {
         decision = await askJson(SYSTEM, buildUserMessage(goal, project, this.ws.root, history));
       } catch (err) {
-        this.emit({ kind: "error", message: `EDITH brain error: ${err.message}` });
+        this.emit({ kind: "error", message: `ULTRON brain error: ${err.message}` });
         return { ok: false, message: err.message };
       }
 
@@ -87,7 +87,7 @@ export class EdithAgent {
 
       // Safety gate.
       const needsConfirm =
-        decision.tool === "edith.run_command"
+        decision.tool === "ultron.run_command"
           ? commandNeedsConfirmation(input.command || "", this.mode)
           : gateByRisk(level, this.mode);
       if (needsConfirm) {
@@ -115,7 +115,7 @@ export class EdithAgent {
       const ok = result?.ok !== false && !result?.error;
 
       // Emit a terminal event for command-like tools.
-      if (decision.tool === "edith.run_command" || result?.exitCode !== undefined) {
+      if (decision.tool === "ultron.run_command" || result?.exitCode !== undefined) {
         this.emit({ kind: "terminal", command: input.command || decision.tool, exitCode: result.exitCode ?? (ok ? 0 : 1),
           stdout: result.stdout, stderr: result.stderr, durationMs: result.durationMs ?? ms });
       }
@@ -128,7 +128,7 @@ export class EdithAgent {
       history.push(`RESULT ${JSON.stringify(trimResult(result)).slice(0, 4000)}`);
     }
 
-    this.emit({ kind: "activity", label: "Reached EDITH's step limit for this goal." });
+    this.emit({ kind: "activity", label: "Reached ULTRON's step limit for this goal." });
     return { ok: false, message: "Step limit reached before completion." };
   }
 }
@@ -151,8 +151,8 @@ function buildUserMessage(goal, project, root, history) {
 }
 
 function describeCall(tool, input) {
-  const short = tool.replace("edith.", "");
-  if (tool === "edith.run_command") return `run: ${input.command}`;
+  const short = tool.replace("ultron.", "");
+  if (tool === "ultron.run_command") return `run: ${input.command}`;
   if (input.file) return `${short}: ${input.file}`;
   if (input.from) return `${short}: ${input.from} → ${input.to}`;
   if (input.message) return `${short}: "${String(input.message).slice(0, 60)}"`;

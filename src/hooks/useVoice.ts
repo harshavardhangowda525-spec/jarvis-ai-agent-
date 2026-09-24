@@ -37,7 +37,7 @@ export interface SpeechStream {
 }
 
 /** Which agent's voice this hook speaks with — selects a distinct timbre. */
-export type VoiceProfile = "jarvis" | "ev" | "darwin" | "edith";
+export type VoiceProfile = "jarvis" | "ev" | "darwin" | "ultron";
 
 interface UseVoiceOptions {
   onTranscript: (text: string) => void;
@@ -58,8 +58,8 @@ const BROWSER_VOICE: Record<VoiceProfile, { rate: number; pitch: number; match: 
   // Warm, friendly male — like a sharp buddy. Natural pace, a touch lower than
   // JARVIS so the two are still easy to tell apart.
   darwin: { rate: 1.0, pitch: 0.82, match: /guy|david|alex|aaron|google uk english male|rishi/i, female: false },
-  // Composed British female for EDITH.
-  edith: { rate: 1.0, pitch: 1.02, match: /alice|kate|serena|hazel|google uk english female|sonia/i, female: true },
+  // Deep, cold and deliberate for ULTRON — the lowest of the male voices.
+  ultron: { rate: 0.94, pitch: 0.62, match: /george|thomas|fred|google uk english male|rishi/i, female: false },
 };
 
 // VAD tuning (normalized RMS 0..1)
@@ -199,7 +199,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       if (text) {
         onTranscript(text);
         // Fallback re-arm: if the consumer doesn't move the mic to "speaking"
-        // itself (e.g. EDITH speaks via its own TTS, not voice.speak), resume
+        // itself (e.g. ULTRON speaks via its own TTS, not voice.speak), resume
         // listening so the NEXT command is heard. Guarded on "processing" so it
         // never overrides a real speaking/recording transition.
         setTimeout(() => {

@@ -221,7 +221,7 @@ function EvCore(props: {
             strokeWidth={i === 0 ? 1.4 : 1}
             style={{
               transformOrigin: "200px 200px",
-              animation: `edith-spin ${(thinking ? 14 : 30) + i * (thinking ? 5 : 8)}s linear infinite ${i % 2 ? "reverse" : ""}`,
+              animation: `ultron-spin ${(thinking ? 14 : 30) + i * (thinking ? 5 : 8)}s linear infinite ${i % 2 ? "reverse" : ""}`,
             }}
           />
         ))}
@@ -230,7 +230,7 @@ function EvCore(props: {
         <circle
           cx="200" cy="200" r="182" fill="none" stroke={AB} strokeOpacity={generating || executing ? 0.7 : 0.3}
           strokeWidth="1.2" strokeDasharray="6 12"
-          style={{ transformOrigin: "200px 200px", animation: `edith-spin ${executing ? 6 : 18}s linear infinite` }}
+          style={{ transformOrigin: "200px 200px", animation: `ultron-spin ${executing ? 6 : 18}s linear infinite` }}
         />
 
         {/* rotating segments (arc brackets) */}
@@ -239,7 +239,7 @@ function EvCore(props: {
             key={deg} d="M200 36 A164 164 0 0 1 316 84" fill="none" stroke={AB}
             strokeOpacity={active ? 0.5 : 0.22} strokeWidth="2" strokeLinecap="round"
             transform={`rotate(${deg} 200 200)`}
-            style={{ transformOrigin: "200px 200px", animation: `edith-spin ${thinking ? 10 : 22}s linear infinite` }}
+            style={{ transformOrigin: "200px 200px", animation: `ultron-spin ${thinking ? 10 : 22}s linear infinite` }}
           />
         ))}
 
