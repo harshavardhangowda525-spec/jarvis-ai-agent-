@@ -66,22 +66,6 @@ d("agent speed behaviour", () => {
     expect(events.at(-1)).toMatchObject({ type: "done", text: "Hello there." });
   });
 
-  it("EV thinks with the PC brain first while it's online; JARVIS keeps the fast cloud model", async () => {
-    groqRateLimited = false;
-    const brain = { baseUrl: "https://my-pc.trycloudflare.com", model: "qwen2.5:3b" };
-    const ask = async (agent?: "ev") => {
-      calls.length = 0;
-      for await (const _ of runAgent({ userId, timezone: "UTC", assistantName: "JARVIS", displayName: "Harsha", history: [], message: "hi", agent, prefetch: { brain: Promise.resolve(brain) } })) { /* drain */ }
-      return calls[0].baseURL;
-    };
-    expect(await ask("ev")).toBe("https://my-pc.trycloudflare.com/v1");
-    expect(await ask()).toContain("groq");
-    // PC offline → EV simply uses the cloud.
-    calls.length = 0;
-    for await (const _ of runAgent({ userId, timezone: "UTC", assistantName: "JARVIS", displayName: null, history: [], message: "hi", agent: "ev", prefetch: { brain: Promise.resolve(null) } })) { /* drain */ }
-    expect(calls[0].baseURL).toContain("groq");
-  });
-
   it("after Groq rate-limits, the next message skips it instead of wasting a round trip", async () => {
     groqRateLimited = true;
     calls.length = 0;
@@ -93,5 +77,22 @@ d("agent speed behaviour", () => {
     expect(calls.map((c) => c.baseURL.includes("groq") ? "groq" : "other")).toEqual(["other"]); // parked
     const second = calls[0].params;
     expect(second.reasoning_effort).toBeUndefined(); // only for gpt-oss on Groq/Cerebras
+  });
+  it("EV uses Groq only — not the PC brain, and no other provider even when Groq is rate-limited", async () => {
+    const brain = { baseUrl: "https://my-pc.trycloudflare.com", model: "qwen2.5:3b" };
+    const ask = async (agent?: "ev") => {
+      calls.length = 0;
+      const events: AgentEvent[] = [];
+      for await (const ev of runAgent({ userId, timezone: "UTC", assistantName: "JARVIS", displayName: "Harsha", history: [], message: "hi", agent, prefetch: { brain: Promise.resolve(brain) } })) events.push(ev);
+      return { urls: calls.map((c) => c.baseURL), events };
+    };
+    groqRateLimited = false;
+    expect((await ask("ev")).urls).toEqual(["https://api.groq.com/openai/v1"]);
+    groqRateLimited = true; // Groq says 429 → EV reports it instead of switching provider
+    const limited = await ask("ev");
+    expect(limited.urls.every((u) => u.includes("groq"))).toBe(true);
+    expect(limited.events.at(-1)).toMatchObject({ type: "error" });
+    // JARVIS is unaffected: it still falls back.
+    expect((await ask()).urls.some((u) => !u.includes("groq"))).toBe(true);
   });
 });

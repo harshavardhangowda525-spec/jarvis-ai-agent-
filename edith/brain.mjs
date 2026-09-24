@@ -316,7 +316,7 @@ async function register(publicUrl) {
 function explainReg(res) {
   const setKey = `Add this on Vercel → Settings → Environment Variables, then Redeploy:\n    OLLAMA_API_KEY=${KEY}`;
   return {
-    "ok": "✓ Connected. EV now thinks with this PC's brain first. JARVIS and DARWIN use it as their unlimited backup\n    when the cloud is rate-limited (or first, if you chose \"Your PC (Ollama) first\" in Settings → AI).",
+    "ok": "✓ Connected. JARVIS and DARWIN use this PC's brain as their unlimited backup when the cloud is rate-limited\n    (or first, if you chose \"Your PC (Ollama) first\" in Settings → AI). EV uses Groq only.",
     "no-jarvis": `✗ JARVIS_URL isn't set. Add to edith/.env:  JARVIS_URL=https://your-app.vercel.app`,
     "key-missing": `✗ JARVIS doesn't have the brain key yet. ${setKey}`,
     "key-mismatch": `✗ The brain key on Vercel doesn't match this PC. ${setKey}`,

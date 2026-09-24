@@ -193,7 +193,7 @@ export function SettingsClient() {
               JARVIS uses this provider first, then automatically falls back to the
               others if it’s rate-limited. Cloud models answer in about a second;
               your PC (Ollama) is unlimited but much slower on a computer without a
-              graphics card. EV always uses your PC brain first while it&apos;s online.
+              graphics card. EV always uses Groq only.
               Only providers with keys configured are shown.
             </p>
           </Field>

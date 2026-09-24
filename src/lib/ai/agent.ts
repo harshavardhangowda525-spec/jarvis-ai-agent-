@@ -138,11 +138,8 @@ export async function* runAgent(
   }
   system += memoryNote;
 
-  // EV's brain is the PC (Ollama) whenever the gateway is online — cloud models
-  // are its backup. JARVIS and DARWIN keep the fastest cloud model first.
   const brain = await brainLookup;
-  const evOnBrain = isEv && !!brain && env.evBrainPriority === "first";
-  const configs = getAiConfigs(evOnBrain ? "ollama" : input.preferredProvider ?? undefined, brain);
+  const configs = isEv ? evConfigs(brain) : getAiConfigs(input.preferredProvider ?? undefined, brain);
   const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {
@@ -225,6 +222,20 @@ export async function* runAgent(
       return;
     }
   }
+}
+
+/**
+ * EV's brain. By default EV uses Groq ONLY — no other cloud model and not the PC
+ * brain (EV_PROVIDER changes this). If that provider isn't configured at all,
+ * EV falls back to the normal chain rather than going silent.
+ */
+function evConfigs(brain: BrainEndpoint | null): AiConfig[] {
+  const pick = env.evProvider;
+  if (pick === "auto") return getAiConfigs(undefined, brain);
+  if (pick === "ollama") return getAiConfigs(brain ? "ollama" : undefined, brain);
+  const all = getAiConfigs(pick, brain);
+  const only = all.filter((c) => c.provider === pick);
+  return only.length ? only : all;
 }
 
 // provider+model → time until which it's skipped (per server instance).
