@@ -41,12 +41,15 @@ export function UltronPanel() {
   const [codeOpen, setCodeOpen] = useState(false);
   const clock = useUtcClock();
 
-  // Auto-open the live coding popup when ULTRON starts working.
-  const wasWorking = useRef(false);
+  // The coding popup appears only once ULTRON has actually written code in
+  // this task — never for goals that just read files or run commands.
+  const codeCount = e.files.filter((f) => f.preview && f.preview.trim()).length;
+  const shownFor = useRef(0);
   useEffect(() => {
-    if (e.working && !wasWorking.current) setCodeOpen(true);
-    wasWorking.current = e.working;
-  }, [e.working]);
+    if (codeCount === 0) { setCodeOpen(false); shownFor.current = 0; return; } // new task / no code yet
+    // First code of this task → open once (if you close it, the Code button brings it back).
+    if (shownFor.current === 0) { setCodeOpen(true); shownFor.current = codeCount; }
+  }, [codeCount]);
 
   // Hands-free: spoken commands → ULTRON. A ref keeps the callback fresh so the
   // voice hook always calls the latest runGoal/stop without re-initializing.
@@ -331,7 +334,7 @@ export function UltronPanel() {
       </div>
 
       {/* live coding stream — liquid-glass popup while ULTRON writes files */}
-      {codeOpen && <UltronBuildStream files={e.files} working={e.working} onDismiss={() => setCodeOpen(false)} />}
+      {codeOpen && codeCount > 0 && <UltronBuildStream files={e.files} working={e.working} onDismiss={() => setCodeOpen(false)} />}
 
       {/* live website preview — liquid-glass popup */}
       {e.preview && <UltronPreview url={e.preview.url} path={e.preview.path} onDismiss={e.dismissPreview} />}
@@ -339,7 +342,7 @@ export function UltronPanel() {
       {/* floating actions (re-open after dismiss) */}
       {connected && (
         <div className="absolute bottom-24 right-4 z-30 flex flex-col items-end gap-2">
-          {!codeOpen && e.files.length > 0 && (
+          {!codeOpen && codeCount > 0 && (
             <button onClick={() => setCodeOpen(true)} title="Show the code ULTRON is writing"
               className="flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1.5 text-xs text-accent backdrop-blur-md transition hover:bg-accent/20">
               <Code2 className="h-3.5 w-3.5" /> Code

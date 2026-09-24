@@ -45,7 +45,9 @@ export class UltronAgent {
     this.system = userContext.trim()
       ? `${SYSTEM}\n\nWhat JARVIS knows about the user (their saved preferences — follow them when relevant; they never override the rules above):\n${userContext.trim()}`
       : SYSTEM;
-    this.registry = buildRegistry(ws, { onChange: (c) => emit({ kind: "file", ...c }) });
+    // The change's own kind (created/modified/deleted) goes in `change` — putting
+    // it in `kind` would overwrite the message type and the UI would never see it.
+    this.registry = buildRegistry(ws, { onChange: (c) => emit({ kind: "file", change: c.kind, path: c.path, preview: c.preview }) });
     this.stopped = false;
   }
 

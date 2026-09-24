@@ -47,6 +47,7 @@ export function useUltron() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mutedRef = useRef(false);
   const manualClose = useRef(false);
+  const lastReportRef = useRef("");
 
   useEffect(() => { mutedRef.current = muted; }, [muted]);
 
@@ -140,13 +141,22 @@ export function useUltron() {
         case "terminal":
           setTerminal((t) => [{ id: uid(), command: m.command, exitCode: m.exitCode, stdout: m.stdout, stderr: m.stderr, durationMs: m.durationMs }, ...t].slice(0, 40));
           break;
-        case "file": setFiles((f) => [{ id: uid(), kind: m.kind, path: m.path, preview: m.preview }, ...f].slice(0, 60)); break;
+        case "file":
+        // Older ULTRON runtimes sent the change type AS the message kind.
+        case "created": case "modified": case "deleted":
+          setFiles((f) => [{ id: uid(), kind: m.change ?? m.kind, path: m.path, preview: m.preview }, ...f].slice(0, 60));
+          break;
         case "confirm": setConfirm({ title: m.title, detail: m.detail, level: m.level }); push(`Awaiting confirmation: ${m.title}`, "warn"); break;
         case "cancelled": push(`Cancelled: ${m.label}`, "warn"); break;
         case "ask": push(`⚠ ${m.message}`, "warn"); setWorking(false); speak(m.message); break;
         case "stopped": push(m.message || "Stopped.", "warn"); setWorking(false); setConfirm(null); break;
-        case "report": push(`✓ ${m.report}`, "ok"); speak(m.report); break;
-        case "result": setWorking(false); setConfirm(null); push(`${m.ok ? "✓" : "✗"} ${m.message}`, m.ok ? "ok" : "error"); speak(m.message); break;
+        case "report": lastReportRef.current = m.report; push(`✓ ${m.report}`, "ok"); speak(m.report); break;
+        case "result":
+          setWorking(false); setConfirm(null);
+          // The result usually repeats the report word for word — show/say it once.
+          if (m.message !== lastReportRef.current) { push(`${m.ok ? "✓" : "✗"} ${m.message}`, m.ok ? "ok" : "error"); speak(m.message); }
+          lastReportRef.current = "";
+          break;
         case "preview": setPreview({ url: m.url, path: m.path }); push(`Preview ready: ${m.path}`, "ok"); break;
         case "error": push(`Error: ${m.message}`, "error"); setWorking(false); break;
         default: break;
