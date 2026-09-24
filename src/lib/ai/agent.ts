@@ -138,7 +138,11 @@ export async function* runAgent(
   }
   system += memoryNote;
 
-  const configs = getAiConfigs(input.preferredProvider ?? undefined, await brainLookup);
+  // EV's brain is the PC (Ollama) whenever the gateway is online — cloud models
+  // are its backup. JARVIS and DARWIN keep the fastest cloud model first.
+  const brain = await brainLookup;
+  const evOnBrain = isEv && !!brain && env.evBrainPriority === "first";
+  const configs = getAiConfigs(evOnBrain ? "ollama" : input.preferredProvider ?? undefined, brain);
   const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {

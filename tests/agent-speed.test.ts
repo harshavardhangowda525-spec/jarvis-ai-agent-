@@ -66,6 +66,22 @@ d("agent speed behaviour", () => {
     expect(events.at(-1)).toMatchObject({ type: "done", text: "Hello there." });
   });
 
+  it("EV thinks with the PC brain first while it's online; JARVIS keeps the fast cloud model", async () => {
+    groqRateLimited = false;
+    const brain = { baseUrl: "https://my-pc.trycloudflare.com", model: "qwen2.5:3b" };
+    const ask = async (agent?: "ev") => {
+      calls.length = 0;
+      for await (const _ of runAgent({ userId, timezone: "UTC", assistantName: "JARVIS", displayName: "Harsha", history: [], message: "hi", agent, prefetch: { brain: Promise.resolve(brain) } })) { /* drain */ }
+      return calls[0].baseURL;
+    };
+    expect(await ask("ev")).toBe("https://my-pc.trycloudflare.com/v1");
+    expect(await ask()).toContain("groq");
+    // PC offline → EV simply uses the cloud.
+    calls.length = 0;
+    for await (const _ of runAgent({ userId, timezone: "UTC", assistantName: "JARVIS", displayName: null, history: [], message: "hi", agent: "ev", prefetch: { brain: Promise.resolve(null) } })) { /* drain */ }
+    expect(calls[0].baseURL).toContain("groq");
+  });
+
   it("after Groq rate-limits, the next message skips it instead of wasting a round trip", async () => {
     groqRateLimited = true;
     calls.length = 0;
