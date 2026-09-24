@@ -34,6 +34,8 @@ export interface AgentInput {
   assistantName: string;
   displayName: string | null;
   history: { role: "user" | "assistant"; content: string }[];
+  /** Messages in the whole conversation (history may be only its tail). */
+  historyTotal?: number;
   message: string;
   /** Per-user preferred primary AI provider (from Settings); overrides env default. */
   preferredProvider?: string | null;
@@ -127,8 +129,18 @@ export async function* runAgent(
     // The local (Ollama) brain re-reads everything it's sent on a CPU, so give it
     // a short recent history and a tighter reply budget; cloud keeps the full window.
     const local = cfg.provider === "ollama";
-    const s: SharedCtx = { system, tools, ctx, activityQueue, model: cfg.model, maxTokens: local ? 1024 : 2048 };
-    const turnInput = local ? { ...input, history: trimHistoryForLocal(input.history, env.ollamaHistory) } : input;
+    const s: SharedCtx = {
+      system, tools, ctx, activityQueue, model: cfg.model,
+      // Spoken answers are short; a CPU writes only a few tokens a second.
+      maxTokens: local ? 512 : 2048,
+      // Headers arrive at once from the gateway, so the limit JARVIS enforces is
+      // "time until the FIRST WORD" — then it falls back to the cloud.
+      firstTokenMs: local ? cfg.timeoutMs : undefined,
+      leanTools: local,
+    };
+    const turnInput = local
+      ? { ...input, history: trimHistoryForLocal(input.history, env.ollamaHistory, 1200, input.historyTotal ?? input.history.length) }
+      : input;
     let committed = false;
     yield { type: "provider", name: cfg.provider };
     const gen =
@@ -171,6 +183,20 @@ interface SharedCtx {
   model: string;
   /** Reply budget per step (smaller for the local brain = faster answers). */
   maxTokens?: number;
+  /** Give up (and fall back) if no text/tool call arrives within this time. */
+  firstTokenMs?: number;
+  /** Shorter tool descriptions — less for a local model to read each turn. */
+  leanTools?: boolean;
+}
+
+/** First sentence of a tool description (the local model's prompt is read on a CPU). */
+const firstSentence = (d: string) => (d.match(/^.*?[.!?](?=\s|$)/)?.[0] ?? d).trim();
+
+class FirstTokenTimeout extends Error {
+  constructor(ms: number) {
+    super(`timed out — no reply within ${Math.round(ms / 1000)}s`);
+    this.name = "FirstTokenTimeout";
+  }
 }
 
 /** Runs one tool call and yields the corresponding events; returns the result string for the model. */
@@ -292,7 +318,7 @@ async function* openaiLoop(
     type: "function",
     function: {
       name: t.name,
-      description: t.description,
+      description: s.leanTools ? firstSentence(t.description) : t.description,
       parameters: t.inputSchema as Record<string, unknown>,
     },
   }));
@@ -312,6 +338,12 @@ async function* openaiLoop(
     // follow-up turn or reasoning models reject the request.
     const toolCalls: { id: string; name: string; args: string; extra?: unknown }[] = [];
 
+    const ac = new AbortController();
+    let timedOut = false;
+    let waiting = s.firstTokenMs
+      ? setTimeout(() => { timedOut = true; ac.abort(); }, s.firstTokenMs)
+      : null;
+    const gotFirstToken = () => { if (waiting) { clearTimeout(waiting); waiting = null; } };
     try {
       const stream = await client.chat.completions.create({
         model: s.model,
@@ -319,11 +351,12 @@ async function* openaiLoop(
         tools,
         messages,
         stream: true,
-      });
+      }, { signal: ac.signal });
 
       for await (const chunk of stream) {
         const delta = chunk.choices[0]?.delta;
         if (!delta) continue;
+        if (delta.content || delta.tool_calls) gotFirstToken();
         if (delta.content) {
           content += delta.content;
           finalText += delta.content;
@@ -341,9 +374,14 @@ async function* openaiLoop(
           }
         }
       }
+      // An aborted SDK stream just ends quietly — make the timeout an error so
+      // runAgent falls back to the next provider.
+      if (timedOut) throw new FirstTokenTimeout(s.firstTokenMs!);
     } catch (err) {
       // Propagate to runAgent so it can fall back to the next provider.
-      throw err;
+      throw timedOut ? new FirstTokenTimeout(s.firstTokenMs!) : err;
+    } finally {
+      gotFirstToken();
     }
 
     const calls = toolCalls.filter((c) => c && c.name);
@@ -388,7 +426,7 @@ async function* openaiLoop(
 /** One short phrase per failed provider (for the combined "all failed" message). */
 function shortReason(err: unknown, timeoutMs?: number): string {
   const e = err as { status?: number; name?: string; message?: string };
-  if (e?.name === "APIConnectionTimeoutError" || /timed? ?out/i.test(e?.message ?? "")) {
+  if (e?.name === "APIConnectionTimeoutError" || e?.name === "FirstTokenTimeout" || /timed? ?out/i.test(e?.message ?? "")) {
     return timeoutMs ? `didn't answer within ${Math.round(timeoutMs / 1000)}s` : "timed out";
   }
   if (e?.name === "APIConnectionError") return "unreachable";

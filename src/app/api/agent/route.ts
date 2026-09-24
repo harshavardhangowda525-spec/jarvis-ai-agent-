@@ -43,13 +43,14 @@ export async function POST(req: NextRequest) {
 
     // Load recent history (last 20 turns) for context. Newest first + reverse:
     // "asc + take" would return the OLDEST 40 messages of a long conversation.
-    const priorRows = found
-      ? (await db.message.findMany({
-          where: { conversationId: convo.id, role: { in: ["user", "assistant"] } },
-          orderBy: { createdAt: "desc" },
-          take: 40,
-        })).reverse()
-      : [];
+    const where = { conversationId: convo.id, role: { in: ["user", "assistant"] } };
+    const [recentRows, historyTotal] = found
+      ? await Promise.all([
+          db.message.findMany({ where, orderBy: { createdAt: "desc" }, take: 40 }),
+          db.message.count({ where }),
+        ])
+      : [[], 0];
+    const priorRows = recentRows.reverse();
     const history = priorRows.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
@@ -88,6 +89,7 @@ export async function POST(req: NextRequest) {
             assistantName: profile?.assistantName ?? "JARVIS",
             displayName: profile?.displayName ?? null,
             history,
+            historyTotal,
             message,
             preferredProvider: (profile as { aiProvider?: string | null } | null)?.aiProvider ?? null,
             agent: agent === "ev" ? "ev" : agent === "darwin" ? "darwin" : undefined,

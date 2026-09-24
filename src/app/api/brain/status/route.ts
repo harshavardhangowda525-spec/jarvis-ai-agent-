@@ -14,6 +14,8 @@ export async function GET() {
     keyConfigured: env.ollamaApiKey.length > 0,
     build: sha.slice(0, 7),
     environment: process.env.VERCEL_ENV || "local",
+    // How long JARVIS waits for this PC's first word before using the cloud.
+    firstWordTimeoutSec: Math.round(env.ollamaTimeoutMs / 1000),
     hint: env.ollamaApiKey
       ? "OLLAMA_API_KEY is set on this deployment."
       : "OLLAMA_API_KEY is NOT set on this deployment. Add it in Vercel → Settings → Environment Variables (tick Production), then redeploy.",

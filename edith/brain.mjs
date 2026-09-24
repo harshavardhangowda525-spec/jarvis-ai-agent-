@@ -153,32 +153,51 @@ async function nativeChat(req, res, onFirstToken) {
 
   const ac = new AbortController();
   res.on("close", () => { if (!res.writableFinished) ac.abort(); }); // JARVIS gave up → stop generating
+
+  // Streaming: answer with headers RIGHT AWAY and send a keep-alive comment every
+  // few seconds while the model reads the prompt. On a CPU that reading can take
+  // longer than a proxy/SDK will wait for silent headers; JARVIS enforces its own
+  // "first word" limit instead (and falls back to the cloud if it's exceeded).
+  let ping = null;
+  const sse = (obj) => res.write(`data: ${JSON.stringify(obj)}\n\n`);
+  const sseError = (message) => { sse({ error: { message } }); res.end(); };
+  if (nreq.stream) {
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" });
+    res.write(": reading the prompt\n\n");
+    ping = setInterval(() => res.write(": still reading\n\n"), 5000);
+  }
+  const stopPing = () => { if (ping) { clearInterval(ping); ping = null; } };
+
   let up;
   try {
     up = await fetch(`${OLLAMA}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nreq), signal: ac.signal });
   } catch {
-    json(502, { error: { message: "Ollama isn't reachable on the PC." } }); return null;
+    stopPing();
+    if (nreq.stream) sseError("Ollama isn't reachable on the PC."); else json(502, { error: { message: "Ollama isn't reachable on the PC." } });
+    return null;
   }
   if (!up.ok) {
+    stopPing();
     const text = await up.text().catch(() => "");
     let message = text;
     try { message = JSON.parse(text).error ?? text; } catch { /* plain text */ }
-    json(up.status, { error: { message: message || `Ollama HTTP ${up.status}` } });
+    message = message || `Ollama HTTP ${up.status}`;
+    if (nreq.stream) sseError(message); else json(up.status, { error: { message } });
     return null;
   }
 
   const conv = new NativeToOpenAI(nreq.model);
   try {
     if (nreq.stream) {
-      res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" });
       let first = true;
       for await (const obj of ndjson(up.body)) {
-        if (obj.error) { res.write(`data: ${JSON.stringify({ error: { message: String(obj.error) } })}\n\n`); break; }
+        if (obj.error) { stopPing(); sse({ error: { message: String(obj.error) } }); break; }
         for (const c of conv.push(obj)) {
-          if (first) { first = false; onFirstToken(); }
-          res.write(`data: ${JSON.stringify(c)}\n\n`);
+          if (first) { first = false; stopPing(); onFirstToken(); }
+          sse(c);
         }
       }
+      stopPing();
       res.write("data: [DONE]\n\n");
       res.end();
     } else {
@@ -187,6 +206,7 @@ async function nativeChat(req, res, onFirstToken) {
       if (err) json(500, { error: { message: err } }); else json(200, conv.completion());
     }
   } catch {
+    stopPing();
     if (!res.writableEnded) res.end(); // client went away mid-answer
   }
   return conv.final;
@@ -213,7 +233,7 @@ const server = http.createServer((req, res) => {
   say(`  ${stamp()}  ← request from JARVIS (${url.pathname.replace("/v1/", "")})`);
   res.on("finish", () => say(`  ${stamp()}  ✓ answered in ${secs()}s${firstByte ? ` (first word after ${firstByte.toFixed(1)}s)` : ""}${timings ? ` — ${timings}` : ""}`));
   res.on("close", () => {
-    if (!res.writableFinished) say(`  ${stamp()}  ✗ JARVIS stopped waiting after ${secs()}s — the model is too slow for its time limit (see OLLAMA_TIMEOUT_MS or use a smaller model).`);
+    if (!res.writableFinished) say(`  ${stamp()}  ✗ JARVIS stopped waiting after ${secs()}s${firstByte ? "" : " before the first word"} and used a cloud model instead. A smaller model (see the Speed tip above) answers sooner.`);
   });
   if (NATIVE && req.method === "POST" && url.pathname === "/v1/chat/completions") {
     nativeChat(req, res, () => { firstByte = (Date.now() - t0) / 1000; })
@@ -321,6 +341,17 @@ async function diagnose() {
   say("  (Keep this window open — it retries every 2 minutes and prints ✓ as soon as JARVIS accepts the key.)");
 }
 
+/** How long the live app waits for this PC's first word (OLLAMA_TIMEOUT_MS on Vercel). */
+async function showWaitLimit() {
+  try {
+    const r = await fetch(`${JARVIS}/api/brain/status`, { signal: AbortSignal.timeout(10_000) });
+    const sec = (await r.json().catch(() => ({})))?.data?.firstWordTimeoutSec;
+    if (!sec) return; // older deployment
+    say(`  JARVIS waits up to ${sec}s for this PC's first word, then uses a cloud model.`);
+    if (sec < 90) say("  (That's short for a CPU. Delete OLLAMA_TIMEOUT_MS on Vercel — or set it to 180000 — and redeploy.)");
+  } catch { /* offline */ }
+}
+
 // ---- main ---------------------------------------------------------------------
 say(`\nJARVIS brain gateway — model ${MODEL}`);
 await checkOllama();
@@ -348,6 +379,7 @@ lastRegOk = res === "ok";
 say(`\n  Brain URL: ${publicUrl}`);
 say(`  ${explainReg(res)}`);
 if (res !== "ok") await diagnose();
+else await showWaitLimit();
 if (FRESH_KEY && res !== "ok") say(`  (Your brain key is saved in edith/.brain-key — keep it private.)`);
 say("\n  Keep this window open. Ctrl+C to stop.\n");
 
