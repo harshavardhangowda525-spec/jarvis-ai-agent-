@@ -3,17 +3,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // env.ts reads process.env at import time → set vars, then import fresh.
 async function loadEnv(vars: Record<string, string>) {
   vi.resetModules();
-  for (const k of ["GROQ_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "OLLAMA_API_KEY", "OLLAMA_BASE_URL", "OLLAMA_MODEL", "AI_PROVIDER", "AI_MODEL", "OPENROUTER_API_KEY", "CEREBRAS_API_KEY", "AI_API_KEY"]) delete process.env[k];
+  for (const k of ["GROQ_API_KEY", "GEMINI_API_KEY", "OPENAI_API_KEY", "OLLAMA_API_KEY", "OLLAMA_BASE_URL", "OLLAMA_MODEL", "AI_PROVIDER", "AI_MODEL", "OPENROUTER_API_KEY", "CEREBRAS_API_KEY", "AI_API_KEY", "BRAIN_PRIORITY"]) delete process.env[k];
   Object.assign(process.env, vars);
   return import("@/lib/env");
 }
 
 describe("Ollama brain in the provider chain", () => {
-  it("puts a live brain FIRST, with /v1, its model, the shared key and cloud fallbacks after", async () => {
+  it("keeps the fastest cloud model first and a live PC brain as the unlimited backup", async () => {
     const { resolveAiConfigs } = await loadEnv({ GROQ_API_KEY: "gsk_x", OPENAI_API_KEY: "sk-openai", OLLAMA_API_KEY: "brain_secret", AI_PROVIDER: "groq" });
     const chain = resolveAiConfigs(undefined, { baseUrl: "https://abc.trycloudflare.com", model: "qwen2.5-coder:7b" });
-    expect(chain.map((c) => c.provider)).toEqual(["ollama", "groq", "openai"]);
-    expect(chain[0]).toMatchObject({
+    expect(chain.map((c) => c.provider)).toEqual(["groq", "openai", "ollama"]);
+    expect(chain.at(-1)).toMatchObject({
       baseUrl: "https://abc.trycloudflare.com/v1",
       model: "qwen2.5-coder:7b",
       apiKey: "brain_secret", // never the OpenAI key
@@ -21,9 +21,23 @@ describe("Ollama brain in the provider chain", () => {
     });
   });
 
-  it("wins over a provider picked in Settings while the PC is online", async () => {
+  it("puts the PC brain first when chosen in Settings or with BRAIN_PRIORITY=first", async () => {
+    let { resolveAiConfigs } = await loadEnv({ GROQ_API_KEY: "gsk_x", OLLAMA_API_KEY: "k" });
+    expect(resolveAiConfigs("ollama", { baseUrl: "https://abc.trycloudflare.com" }).map((c) => c.provider)).toEqual(["ollama", "groq"]);
+    ({ resolveAiConfigs } = await loadEnv({ GROQ_API_KEY: "gsk_x", OLLAMA_API_KEY: "k", BRAIN_PRIORITY: "first" }));
+    expect(resolveAiConfigs(undefined, { baseUrl: "https://abc.trycloudflare.com" })[0].provider).toBe("ollama");
+    // …but a cloud pick in Settings still wins over BRAIN_PRIORITY
+    expect(resolveAiConfigs("groq", { baseUrl: "https://abc.trycloudflare.com" })[0].provider).toBe("groq");
+  });
+
+  it("an old AI_PROVIDER=ollama doesn't force the slow PC brain first", async () => {
+    const { resolveAiConfigs } = await loadEnv({ GROQ_API_KEY: "gsk_x", OLLAMA_API_KEY: "k", AI_PROVIDER: "ollama" });
+    expect(resolveAiConfigs(undefined, { baseUrl: "https://abc.trycloudflare.com" }).map((c) => c.provider)).toEqual(["groq", "ollama"]);
+  });
+
+  it("with the PC offline and a picked provider missing, the PC choice is ignored", async () => {
     const { resolveAiConfigs } = await loadEnv({ GROQ_API_KEY: "gsk_x", OLLAMA_API_KEY: "k" });
-    expect(resolveAiConfigs("groq", { baseUrl: "https://abc.trycloudflare.com" })[0].provider).toBe("ollama");
+    expect(resolveAiConfigs("ollama", null).map((c) => c.provider)).toEqual(["groq"]);
   });
 
   it("drops out entirely when the PC is offline (no brain, no static URL)", async () => {

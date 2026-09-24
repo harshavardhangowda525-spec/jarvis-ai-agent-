@@ -3,6 +3,8 @@ import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { capabilities, env } from "@/lib/env";
 import { runAgent, type AgentEvent } from "@/lib/ai/agent";
+import { getLiveBrain } from "@/lib/ai/brain";
+import { loadMemories } from "@/lib/ai/user-memory";
 import { agentRequestSchema } from "@/lib/validation";
 import { fail, handleError, rateLimit } from "@/lib/api";
 import { truncate } from "@/lib/utils";
@@ -18,6 +20,7 @@ export const maxDuration = 300;
  * and text share this exact conversation context.
  */
 export async function POST(req: NextRequest) {
+  const startedAt = Date.now();
   try {
     const user = await requireUser();
     const rl = rateLimit(`agent:${user.id}`, 40, 60_000);
@@ -31,26 +34,25 @@ export async function POST(req: NextRequest) {
     const { conversationId, message, agent } = agentRequestSchema.parse(await req.json());
     const db = getDb();
 
-    // Independent lookups run in parallel — every round trip here is time
-    // before the first word. Ownership of the conversation is enforced.
-    const [found, profile] = await Promise.all([
+    // Everything before the first word runs in ONE parallel batch — each
+    // sequential database round trip is time the user waits. The agent's own
+    // lookups (PC brain, memories) start now too. Ownership is enforced by userId.
+    const prefetch = {
+      brain: getLiveBrain(user.id).catch(() => null),
+      memories: loadMemories(user.id, 60).catch(() => []),
+    };
+    const where = { conversationId: conversationId ?? "", userId: user.id, role: { in: ["user", "assistant"] } };
+    const [found, profile, recentRows, historyTotal] = await Promise.all([
       conversationId ? db.conversation.findFirst({ where: { id: conversationId, userId: user.id } }) : null,
       db.profile.findUnique({ where: { userId: user.id } }),
+      // Newest first + reverse: "asc + take" would return the OLDEST 40 messages.
+      conversationId ? db.message.findMany({ where, orderBy: { createdAt: "desc" }, take: 40 }) : [],
+      conversationId ? db.message.count({ where }) : 0,
     ]);
     const convo = found ?? await db.conversation.create({
       data: { userId: user.id, title: truncate(message, 60) },
     });
-
-    // Load recent history (last 20 turns) for context. Newest first + reverse:
-    // "asc + take" would return the OLDEST 40 messages of a long conversation.
-    const where = { conversationId: convo.id, role: { in: ["user", "assistant"] } };
-    const [recentRows, historyTotal] = found
-      ? await Promise.all([
-          db.message.findMany({ where, orderBy: { createdAt: "desc" }, take: 40 }),
-          db.message.count({ where }),
-        ])
-      : [[], 0];
-    const priorRows = recentRows.reverse();
+    const priorRows = found ? recentRows.reverse() : [];
     const history = priorRows.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content,
@@ -89,8 +91,10 @@ export async function POST(req: NextRequest) {
             assistantName: profile?.assistantName ?? "JARVIS",
             displayName: profile?.displayName ?? null,
             history,
-            historyTotal,
+            historyTotal: found ? historyTotal : 0,
             message,
+            startedAt,
+            prefetch,
             preferredProvider: (profile as { aiProvider?: string | null } | null)?.aiProvider ?? null,
             agent: agent === "ev" ? "ev" : agent === "darwin" ? "darwin" : undefined,
           })) {

@@ -183,14 +183,16 @@ export function SettingsClient() {
               onChange={(e) => saveAiProvider(e.target.value)}
               className="h-10 w-full rounded-lg border border-input bg-background/60 px-3 text-sm"
             >
-              <option value="">Default (automatic)</option>
+              <option value="">Default — fastest cloud model first, your PC as backup</option>
               {ai.providers.map((p) => (
                 <option key={p.id} value={p.id}>{p.label}</option>
               ))}
             </select>
             <p className="mt-2 text-[11px] text-muted-foreground">
               JARVIS uses this provider first, then automatically falls back to the
-              others if it’s rate-limited. Only providers with keys configured are shown.
+              others if it’s rate-limited. Cloud models answer in about a second;
+              your PC (Ollama) is unlimited but much slower on a computer without a
+              graphics card. Only providers with keys configured are shown.
             </p>
           </Field>
         )}

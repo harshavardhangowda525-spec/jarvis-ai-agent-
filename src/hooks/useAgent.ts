@@ -10,6 +10,9 @@ export interface ChatMessage {
   links?: { url: string; label: string }[];
 }
 
+/** How long the last answer took (ms from sending the message). */
+export interface AgentTiming { provider: string; model: string; setupMs: number; firstWordMs: number | null; totalMs: number; clientMs: number | null }
+
 export interface ActivityItem {
   id: string;
   label: string;
@@ -47,6 +50,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onNaviga
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [activeProvider, setActiveProvider] = useState<string | null>(null);
+  const [lastTiming, setLastTiming] = useState<AgentTiming | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const conversationIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -102,6 +106,8 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onNaviga
 
       const ac = new AbortController();
       abortRef.current = ac;
+      const sentAt = performance.now();
+      let firstWordAt: number | null = null;
 
       try {
         const res = await fetch("/api/agent", {
@@ -150,6 +156,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onNaviga
                 break;
               case "text":
                 finalText += ev.delta;
+                firstWordAt ??= performance.now();
                 onTextDelta?.(ev.delta);
                 setMessages((m) =>
                   m.map((x) =>
@@ -179,6 +186,13 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onNaviga
                 break;
               case "provider":
                 setActiveProvider(ev.name);
+                break;
+              case "timing":
+                // Server-side numbers + what the user actually waited (incl. network).
+                setLastTiming({
+                  provider: ev.provider, model: ev.model, setupMs: ev.setupMs, firstWordMs: ev.firstWordMs, totalMs: ev.totalMs,
+                  clientMs: firstWordAt != null ? Math.round(firstWordAt - sentAt) : null,
+                });
                 break;
               case "navigate":
                 onNavigate?.(ev.path);
@@ -235,6 +249,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onNaviga
     activity,
     streaming,
     activeProvider,
+    lastTiming,
     conversationId,
     send,
     reset,

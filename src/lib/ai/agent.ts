@@ -4,7 +4,8 @@ import type OpenAI from "openai";
 import { getAiConfigs, getAnthropicClient, getOpenAiClient } from "./client";
 import { getLiveBrain } from "./brain";
 import { trimHistoryForLocal } from "./history";
-import { explicitMemory, loadMemories, memoryPromptBlock, saveMemory } from "./user-memory";
+import { explicitMemory, loadMemories, memoryPromptBlock, saveMemory, type MemoryRow } from "./user-memory";
+import type { AiConfig, BrainEndpoint } from "@/lib/env";
 import { env } from "@/lib/env";
 import { buildSystemPrompt } from "./prompt";
 import { availableTools, getTool } from "@/lib/tools/registry";
@@ -26,6 +27,8 @@ export type AgentEvent =
   | { type: "navigate"; path: string }
   | { type: "open"; url: string; label: string }
   | { type: "provider"; name: string }
+  /** Where the time went: server prep, first word, whole answer (ms from request start). */
+  | { type: "timing"; provider: string; model: string; setupMs: number; firstWordMs: number | null; totalMs: number }
   | { type: "done"; text: string }
   | { type: "error"; message: string };
 
@@ -37,6 +40,10 @@ export interface AgentInput {
   history: { role: "user" | "assistant"; content: string }[];
   /** Messages in the whole conversation (history may be only its tail). */
   historyTotal?: number;
+  /** When the request arrived (for the timing report). */
+  startedAt?: number;
+  /** Lookups the route already started in parallel with its own queries. */
+  prefetch?: { brain?: Promise<BrainEndpoint | null>; memories?: Promise<MemoryRow[]> };
   message: string;
   /** Per-user preferred primary AI provider (from Settings); overrides env default. */
   preferredProvider?: string | null;
@@ -56,7 +63,8 @@ export async function* runAgent(
 ): AsyncGenerator<AgentEvent, void, unknown> {
   // Your own Ollama brain (unlimited) leads whenever the PC gateway is online.
   // Looked up in parallel with the prompt's own data (awaited below).
-  const brainLookup = getLiveBrain(input.userId).catch(() => null);
+  const startedAt = input.startedAt ?? Date.now();
+  const brainLookup = input.prefetch?.brain ?? getLiveBrain(input.userId).catch(() => null);
   const db = getDb();
 
   const isEv = input.agent === "ev";
@@ -66,8 +74,10 @@ export async function* runAgent(
   // even if the model (especially a small local one) forgets to call the tool.
   let memoryNote = "";
   const fact = explicitMemory(input.message);
+  let savedNow = false;
   if (fact) {
     const res = await saveMemory(input.userId, fact, { source: "user" }).catch(() => null);
+    savedNow = !!res?.saved;
     if (res?.saved) yield { type: "tool", name: "memory", status: "ok", summary: `Saved to memory: ${fact}` };
     memoryNote = res?.saved || (res && res.reason === "duplicate")
       ? `\n\n(The user's latest message is already saved in long-term memory as: "${fact}". Just confirm briefly — don't call the memory tool for it.)`
@@ -76,7 +86,7 @@ export async function* runAgent(
         : "";
   }
   // Everything the user has told JARVIS — shared by every agent and every brain.
-  const memoriesLookup = loadMemories(input.userId, 60).catch(() => []);
+  const memoriesLookup = (!savedNow && input.prefetch?.memories) || loadMemories(input.userId, 60).catch(() => []);
 
   let system: string;
   if (isEv) {
@@ -141,11 +151,25 @@ export async function* runAgent(
   // output (e.g. rate-limited), fall back to the next — but never re-run after
   // text or a tool has already been committed (avoids duplicate side effects).
   const failures: string[] = []; // "Ollama: didn't answer in 150s" — shown if all fail
-  for (let i = 0; i < configs.length; i++) {
-    const cfg = configs[i];
+  // Skip providers that just rate-limited us / rejected the key — retrying them
+  // on every message only adds a wasted round trip before the one that answers.
+  const now = Date.now();
+  const available = configs.filter((c) => (parkedUntil.get(parkKey(c)) ?? 0) <= now);
+  const chain = available.length ? available : configs;
+  let setupMs = -1;
+  let firstWordAt: number | null = null;
+  const timing = (cfg: AiConfig): AgentEvent => ({
+    type: "timing", provider: cfg.provider, model: cfg.model,
+    setupMs: Math.max(0, setupMs), firstWordMs: firstWordAt ? firstWordAt - startedAt : null, totalMs: Date.now() - startedAt,
+  });
+  for (let i = 0; i < chain.length; i++) {
+    const cfg = chain[i];
     // The local (Ollama) brain re-reads everything it's sent on a CPU, so give it
-    // a short recent history and a tighter reply budget; cloud keeps the full window.
+    // a short recent history and a tighter reply budget. Cloud gets a longer
+    // (but still bounded) window: less to read = a faster first word and fewer
+    // free-tier "tokens per minute" rate limits.
     const local = cfg.provider === "ollama";
+    const total = input.historyTotal ?? input.history.length;
     const s: SharedCtx = {
       system, tools, ctx, activityQueue, model: cfg.model,
       // Spoken answers are short; a CPU writes only a few tokens a second.
@@ -154,11 +178,18 @@ export async function* runAgent(
       // "time until the FIRST WORD" — then it falls back to the cloud.
       firstTokenMs: local ? cfg.timeoutMs : undefined,
       leanTools: local,
+      // gpt-oss "thinks" before answering; a low effort keeps the first word quick.
+      reasoningEffort: /gpt-oss/i.test(cfg.model) && ["groq", "cerebras"].includes(cfg.provider) && !["none", "off", "default"].includes(env.reasoningEffort)
+        ? env.reasoningEffort : undefined,
     };
-    const turnInput = local
-      ? { ...input, history: trimHistoryForLocal(input.history, env.ollamaHistory, 1200, input.historyTotal ?? input.history.length) }
-      : input;
+    const turnInput = {
+      ...input,
+      history: local
+        ? trimHistoryForLocal(input.history, env.ollamaHistory, 1200, total)
+        : trimHistoryForLocal(input.history, 16, 2000, total),
+    };
     let committed = false;
+    if (setupMs < 0) setupMs = Date.now() - startedAt;
     yield { type: "provider", name: cfg.provider };
     const gen =
       cfg.kind === "anthropic"
@@ -168,15 +199,19 @@ export async function* runAgent(
       for await (const ev of gen) {
         if (ev.type === "text" || ev.type === "tool" || ev.type === "navigate" || ev.type === "open") {
           committed = true;
+          firstWordAt ??= Date.now();
         }
+        if (ev.type === "done") { yield timing(cfg); yield ev; return; }
         yield ev;
-        if (ev.type === "done") return;
       }
+      yield timing(cfg);
       return;
     } catch (err) {
       console.error(`[agent] provider ${cfg.provider} failed:`, err);
+      const park = parkFor(err);
+      if (park) parkedUntil.set(parkKey(cfg), Date.now() + park);
       failures.push(`${label(cfg.provider)}: ${shortReason(err, cfg.timeoutMs)}`);
-      const next = configs[i + 1];
+      const next = chain[i + 1];
       if (!committed && next) {
         yield { type: "activity", label: `${label(cfg.provider)} ${shortReason(err, cfg.timeoutMs)} — switching to ${label(next.provider)}…` };
         continue;
@@ -186,6 +221,21 @@ export async function* runAgent(
       return;
     }
   }
+}
+
+// provider+model → time until which it's skipped (per server instance).
+const parkedUntil = new Map<string, number>();
+const parkKey = (c: AiConfig) => `${c.provider}:${c.model}`;
+
+/** How long to skip a provider after this error (0 = don't). */
+function parkFor(err: unknown): number {
+  const e = err as { status?: number; headers?: Record<string, string> | Headers };
+  const h = e?.headers as any;
+  const retryAfter = Number(typeof h?.get === "function" ? h.get("retry-after") : h?.["retry-after"]);
+  if (e?.status === 429) return Math.min(Math.max(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 20_000, 5_000), 10 * 60_000);
+  if (e?.status === 401 || e?.status === 403 || e?.status === 404) return 10 * 60_000; // bad key / model gone
+  if (e?.status === 402) return 30 * 60_000; // needs billing
+  return 0;
 }
 
 function label(provider: string): string {
@@ -204,6 +254,8 @@ interface SharedCtx {
   firstTokenMs?: number;
   /** Shorter tool descriptions — less for a local model to read each turn. */
   leanTools?: boolean;
+  /** reasoning_effort for reasoning models (e.g. gpt-oss on Groq/Cerebras). */
+  reasoningEffort?: string;
 }
 
 /** First sentence of a tool description (the local model's prompt is read on a CPU). */
@@ -368,6 +420,7 @@ async function* openaiLoop(
         tools,
         messages,
         stream: true,
+        ...(s.reasoningEffort ? { reasoning_effort: s.reasoningEffort as "low" } : {}),
       }, { signal: ac.signal });
 
       for await (const chunk of stream) {

@@ -66,6 +66,13 @@ export const env = {
   ollamaTimeoutMs: Math.max(10_000, Number(read("OLLAMA_TIMEOUT_MS")) || 150_000),
   // Recent messages sent to the local model each turn (fewer = faster on a CPU).
   ollamaHistory: Math.max(0, Number(read("OLLAMA_HISTORY")) || 8),
+  // Where the PC brain sits in the chain: "fallback" (default) = the fastest
+  // cloud model answers and the PC brain is the unlimited backup; "first" = the
+  // PC brain answers first (unlimited, but a CPU is slow). Per-user Settings
+  // ("Your PC (Ollama) first") override this.
+  brainPriority: read("BRAIN_PRIORITY").toLowerCase() === "first" ? "first" : "fallback",
+  // Reasoning models (gpt-oss) think before answering; "low" keeps replies quick.
+  reasoningEffort: read("AI_REASONING_EFFORT").toLowerCase() || "low",
 
   elevenLabsApiKey: read("ELEVENLABS_API_KEY"),
   // JARVIS voice — defaults to "Daniel" (British male, authoritative). Override
@@ -207,13 +214,15 @@ export const AI_PROVIDER_LABELS: Record<string, string> = {
   openrouter: "OpenRouter",
   openai: "OpenAI",
   anthropic: "Anthropic (Claude)",
-  ollama: "Ollama (local)",
+  ollama: "Your PC (Ollama) first — unlimited, slower",
 };
 
 /** Providers that actually have credentials configured, in fallback order. */
 export function listConfiguredProviders(): { id: string; label: string }[] {
   return AI_FALLBACK_ORDER
-    .filter((p) => buildAiConfig(p) !== null)
+    // The PC brain has no static URL (the gateway registers it live), so it's
+    // offered whenever its key is set.
+    .filter((p) => buildAiConfig(p) !== null || (p === "ollama" && env.ollamaApiKey.length > 0))
     .map((p) => ({ id: p, label: AI_PROVIDER_LABELS[p] ?? p }));
 }
 
@@ -281,11 +290,18 @@ function buildAiConfig(provider: string, brain?: BrainEndpoint | null): AiConfig
  * an automatic fallback. AI_MODEL overrides only the primary provider's model.
  */
 export function resolveAiConfigs(primaryOverride?: string, brain?: BrainEndpoint | null): AiConfig[] {
-  // A live Ollama brain (your own PC, unlimited) is always the primary when it's
-  // online; cloud providers follow as automatic fallback. Otherwise a per-user
-  // pick (from Settings) wins over the env default, as long as it's configured.
-  const override = brain ? "ollama" : (primaryOverride ?? "").toLowerCase();
-  const primary = override && buildAiConfig(override, brain) ? override : env.aiProvider;
+  // Speed first: the fastest configured cloud model answers, and a live PC brain
+  // (unlimited, but slow on a CPU) is the automatic backup at the end of the
+  // chain. Choosing "Your PC (Ollama) first" in Settings — or BRAIN_PRIORITY=first
+  // — puts the PC brain in front again. Otherwise a per-user pick wins over the
+  // env default, as long as it's configured.
+  const picked = (primaryOverride ?? "").toLowerCase();
+  const brainFirst = !!brain && (picked === "ollama" || (!picked && env.brainPriority === "first"));
+  const override = brainFirst ? "ollama" : picked === "ollama" ? "" : picked;
+  // An old AI_PROVIDER=ollama doesn't force a live PC brain first — speed wins
+  // unless the PC was chosen explicitly (Settings or BRAIN_PRIORITY=first).
+  const envPrimary = brain && !brainFirst && env.aiProvider === "ollama" ? "" : env.aiProvider;
+  const primary = override && buildAiConfig(override, brain) ? override : envPrimary;
   const order = [
     ...(primary && AI_FALLBACK_ORDER.includes(primary) ? [primary] : []),
     ...AI_FALLBACK_ORDER.filter((p) => p !== primary),

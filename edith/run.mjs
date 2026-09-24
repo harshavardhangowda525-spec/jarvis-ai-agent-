@@ -20,12 +20,15 @@ if (!hasProvider()) {
   log.warn("ULTRON will pair and run REAL tools, but its reasoning/coding loop needs a provider.");
 } else {
   log.info(`Brain ready: ${providerName()}`);
-  // Pre-load the local model in the background so the first goal is quick.
-  warmOllama().then((w) => {
-    if (!w.configured) return;
-    if (w.ok) log.info(`Ollama ${w.model} loaded (${w.seconds}s) — ready.`);
-    else log.warn(`Ollama ${w.model}: ${w.error}`);
-  });
+  // Pre-load the local model only when it answers FIRST — as the backup it'd
+  // just hold several GB of memory (and slow the PC down) until it's needed.
+  if (providerName().startsWith("ollama")) {
+    warmOllama().then((w) => {
+      if (!w.configured) return;
+      if (w.ok) log.info(`Ollama ${w.model} loaded (${w.seconds}s) — ready.`);
+      else log.warn(`Ollama ${w.model}: ${w.error}`);
+    });
+  }
 }
 
 startServer({ port, ws });

@@ -30,9 +30,11 @@ function resolveChain() {
     // Last resort: local model, never rate-limited or billed.
     ["ollama", ollamaModel ? "ollama" : "", `${ollamaBase}/v1`, ollamaModel],
   ];
-  // Your own Ollama model is the brain whenever it's configured (unlimited);
-  // cloud keys follow as backup. An explicit ULTRON_AI_PROVIDER still wins.
-  const preferred = read("ULTRON_AI_PROVIDER").toLowerCase() || (ollamaModel ? "ollama" : "") || read("AI_PROVIDER").toLowerCase();
+  // Speed first: cloud keys answer (seconds per step instead of tens of seconds
+  // on a CPU) and your Ollama model is the unlimited backup at the end. Set
+  // BRAIN_PRIORITY=first (or ULTRON_AI_PROVIDER=ollama) to put Ollama first.
+  const brainFirst = read("BRAIN_PRIORITY").toLowerCase() === "first" && ollamaModel ? "ollama" : "";
+  const preferred = read("ULTRON_AI_PROVIDER").toLowerCase() || brainFirst || read("AI_PROVIDER").toLowerCase();
   const configured = order.filter((p) => p[1]).map(([provider, apiKey, baseUrl, model]) => ({ provider, apiKey, baseUrl, model }));
   // Move the preferred provider to the front if it's configured.
   const i = configured.findIndex((p) => p.provider === preferred);

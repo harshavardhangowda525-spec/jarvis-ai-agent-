@@ -11,6 +11,8 @@ import { Orb, type OrbState, orbStateLabel } from "@/components/orb";
 import { HudPanel } from "@/components/hud/panel";
 import { Waveform } from "@/components/hud/visuals";
 import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
+import { instantAnswer } from "@/lib/instant";
+import type { AgentTiming } from "@/hooks/useAgent";
 import { useAgent } from "@/hooks/useAgent";
 import { useDeviceMetrics } from "@/hooks/useDeviceMetrics";
 import { useWakeWord } from "@/hooks/useWakeWord";
@@ -67,6 +69,19 @@ interface Stats {
   recentActivity: { tool: string; status: string; at: string }[];
   upcoming: { id: string; title: string; dueAt: string; priority: string }[];
   activeTasks: { id: string; title: string; priority: string }[];
+}
+
+/** Tooltip: where the time of the last answer went. */
+function timingDetail(t: AgentTiming): string {
+  const lines = [
+    `First word after ${(((t.clientMs ?? t.firstWordMs) ?? 0) / 1000).toFixed(2)}s (${t.provider} · ${t.model})`,
+    `• server prep (login, database): ${(t.setupMs / 1000).toFixed(2)}s`,
+    t.firstWordMs != null ? `• model's first word: ${((t.firstWordMs - t.setupMs) / 1000).toFixed(2)}s` : "",
+    `• whole answer: ${(t.totalMs / 1000).toFixed(2)}s`,
+  ];
+  if (t.setupMs > 700) lines.push("Server prep is slow — put your Vercel functions in the same region as your database (Vercel → Settings → Functions → Region).");
+  if (t.provider === "ollama" && (t.firstWordMs ?? 0) > 3000) lines.push("Your PC brain is the slow part — a cloud model (Settings → AI) answers in about a second.");
+  return lines.filter(Boolean).join("\n");
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -326,6 +341,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         fetchWeatherRef.current(parseWeatherPlace(t));
         return;
       }
+      // Time, date and plain arithmetic are answered right here — instantly,
+      // with no AI round trip (EV keeps its own conversation).
+      const instant = evActiveRef.current ? null : instantAnswer(t);
+      if (instant) {
+        agent.appendLocalExchange(t, instant);
+        if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(instant); } catch { /* ignore */ } }
+        return;
+      }
       agent.send(t);
     };
   }, [agent, sleep, launchUltron, launchDarwin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase, voice, voiceStarted]);
@@ -541,8 +564,15 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           <div className="relative flex flex-col items-center">
             <JarvisSphere state={orbState} level={voice.level} />
             {agent.activeProvider && (
-              <span className="hud-label mt-3 rounded-full border border-accent/25 bg-accent/8 px-2 py-0.5 text-[8px] text-accent">
+              <span className="hud-label mt-3 rounded-full border border-accent/25 bg-accent/8 px-2 py-0.5 text-[8px] text-accent"
+                title={agent.lastTiming ? timingDetail(agent.lastTiming) : undefined}>
                 {PROVIDER_LABELS[agent.activeProvider] ?? agent.activeProvider}
+                {/* How long you waited for the first word of the last answer. */}
+                {!agent.streaming && agent.lastTiming?.clientMs != null && (
+                  <span className={cn("ml-1.5", agent.lastTiming.clientMs <= 1500 ? "text-success" : agent.lastTiming.clientMs <= 4000 ? "text-warning" : "text-destructive")}>
+                    ⚡ {agent.lastTiming.clientMs < 1000 ? `${agent.lastTiming.clientMs}ms` : `${(agent.lastTiming.clientMs / 1000).toFixed(1)}s`}
+                  </span>
+                )}
               </span>
             )}
           </div>
