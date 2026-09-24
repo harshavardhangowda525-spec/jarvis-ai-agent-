@@ -50,9 +50,22 @@ export function useUltron() {
 
   useEffect(() => { mutedRef.current = muted; }, [muted]);
 
-  /** Speak text in ULTRON's own (British) voice via the shared TTS endpoint. */
+  // When hands-free voice is on, ULTRON speaks through the shared voice engine,
+  // which pauses the microphone while it talks — otherwise the mic hears
+  // ULTRON's own report and sends it back as a new goal, over and over.
+  const speakerRef = useRef<((text: string) => unknown) | null>(null);
+  const setSpeaker = useCallback((fn: ((text: string) => unknown) | null) => { speakerRef.current = fn; }, []);
+  const lastSpokenRef = useRef<{ text: string; at: number }>({ text: "", at: 0 });
+  /** What ULTRON said in the last `withinMs` (to ignore it if the mic echoes it back). */
+  const recentlySpoken = useCallback((withinMs = 20_000) => (Date.now() - lastSpokenRef.current.at < withinMs ? lastSpokenRef.current.text : ""), []);
+
+  /** Speak text in ULTRON's own voice via the shared TTS endpoint. */
   const speak = useCallback(async (text: string) => {
     if (mutedRef.current || !text?.trim()) return;
+    // ULTRON often reports and then states the same result — say it once.
+    if (lastSpokenRef.current.text === text && Date.now() - lastSpokenRef.current.at < 5000) return;
+    lastSpokenRef.current = { text, at: Date.now() };
+    if (speakerRef.current) { speakerRef.current(text.slice(0, 800)); return; }
     try {
       const res = await fetch("/api/voice/tts", {
         method: "POST",
@@ -219,7 +232,7 @@ export function useUltron() {
 
   return {
     conn, provider, mode, caps, workspace, activity, tasks, terminal, files, project, confirm, working, preview,
-    savedUrl, savedToken, muted, setMuted, speak,
+    savedUrl, savedToken, muted, setMuted, speak, setSpeaker, recentlySpoken,
     connect, disconnect, autoPair, runGoal, setMode, stop, answerConfirm, refreshCaps, requestPreview, dismissPreview,
   };
 }

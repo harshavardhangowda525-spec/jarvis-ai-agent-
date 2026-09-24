@@ -9,8 +9,9 @@
 import "./src/env-init.mjs"; // must stay first — loads edith/.env before other modules read it
 import { Workspace } from "./src/workspace.mjs";
 import { startServer } from "./src/server.mjs";
-import { hasProvider, providerName, warmOllama } from "./src/provider.mjs";
+import { hasProvider, providerName, providerSummary, warmOllama } from "./src/provider.mjs";
 import { log } from "./src/log.mjs";
+import { lowerOllamaPriority } from "./src/os-priority.mjs";
 
 const port = Number(process.env.ULTRON_PORT || 7420);
 const ws = new Workspace(process.argv[2] || process.env.ULTRON_WORKSPACE);
@@ -29,6 +30,12 @@ if (!hasProvider()) {
       else log.warn(`Ollama ${w.model}: ${w.error}`);
     });
   }
+}
+
+// If this PC's Ollama is in the chain, keep it from freezing Chrome/Windows.
+if (providerSummary().includes("ollama(")) {
+  lowerOllamaPriority();
+  setInterval(lowerOllamaPriority, 120_000).unref();
 }
 
 startServer({ port, ws });

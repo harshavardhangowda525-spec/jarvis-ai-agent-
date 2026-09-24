@@ -548,11 +548,17 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     return () => clearInterval(id);
   }, []);
 
+  // Each speak() takes a number; only the LATEST one may hand the mic back
+  // when it finishes — otherwise an earlier reply ending would re-open the mic
+  // while a newer one is still playing, and the mic would hear it.
+  const speakSeqRef = useRef(0);
   const speak = useCallback(
     async (text: string): Promise<void> => {
       if (!enabledRef.current || mutedRef.current) return;
       const el = audioElRef.current;
       if (!el || !text.trim()) return;
+      const seq = ++speakSeqRef.current;
+      const latest = () => seq === speakSeqRef.current;
       // Pause the recognizer while JARVIS speaks so it doesn't hear its own voice.
       setTranscript("");
       if (browserSTTRef.current) stopRecognition();
@@ -567,10 +573,12 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         // free built-in browser voice instead of going silent.
         if (!res || !res.ok) {
           await speakBrowser(text);
+          if (!latest()) return;
           if (enabledRef.current && !mutedRef.current && statusRef.current === "speaking") setStatusBoth("listening");
           if (browserSTTRef.current && enabledRef.current && !mutedRef.current) startRecognition();
           return;
         }
+        if (!latest()) return; // a newer reply took over while this one loaded
         const blob = await res.blob();
         stopSpeaking();
         const url = URL.createObjectURL(blob);
@@ -588,11 +596,13 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       } catch {
         fail("Could not play the reply.", "error");
       } finally {
-        if (enabledRef.current && !mutedRef.current && statusRef.current === "speaking") {
-          setStatusBoth("listening");
+        if (latest()) {
+          if (enabledRef.current && !mutedRef.current && statusRef.current === "speaking") {
+            setStatusBoth("listening");
+          }
+          // Resume the free recognizer once JARVIS has finished speaking.
+          if (browserSTTRef.current && enabledRef.current && !mutedRef.current) startRecognition();
         }
-        // Resume the free recognizer once JARVIS has finished speaking.
-        if (browserSTTRef.current && enabledRef.current && !mutedRef.current) startRecognition();
       }
     },
     [fail, setStatusBoth, stopSpeaking, speakBrowser, stopRecognition, startRecognition],

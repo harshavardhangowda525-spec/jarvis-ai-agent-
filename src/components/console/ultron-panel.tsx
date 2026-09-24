@@ -24,6 +24,8 @@ const MODES: { id: UltronMode; label: string }[] = [
   { id: "manual", label: "Manual" },
 ];
 
+const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
 export function UltronPanel() {
   const e = useUltron();
   const router = useRouter();
@@ -60,12 +62,22 @@ export function UltronPanel() {
       if (/\b(open|go to|switch to|launch|activate)\s+darwin\b/.test(low)) { router.push("/dashboard/darwin"); return; }
       if (/\b(stop|halt|cancel|abort)\b/.test(low)) { e.stop(); return; }
       if (e.conn !== "connected") { setPairMsg("ULTRON isn't connected yet — start it with `npm run ultron` in the edith folder, then pair."); return; }
+      // Echo guard: the mic picking up what ULTRON just said is not a new goal.
+      const said = norm(e.recentlySpoken());
+      if (said && norm(t).length > 3 && said.includes(norm(t))) return;
+      // One goal at a time — a new spoken goal while ULTRON works would be rejected anyway.
+      if (e.working) { e.speak("I'm still working on the last task. Say stop to cancel it."); return; }
       e.runGoal(t);
     };
   });
   const enableVoice = useCallback(async () => { const ok = await voice.init(); if (ok) setVoiceOn(true); return ok; }, [voice]);
   // Voice was on in the agent you came from → keep listening here.
   useResumeVoice(enableVoice);
+  // While hands-free voice is on, ULTRON talks through the voice engine so the
+  // mic pauses during its reports (no hearing itself).
+  const { setSpeaker } = e;
+  const voiceSpeak = voice.speak;
+  useEffect(() => { setSpeaker(voiceOn ? (text: string) => voiceSpeak(text) : null); }, [voiceOn, voiceSpeak, setSpeaker]);
 
   useEffect(() => { setUrl(e.savedUrl); setToken(e.savedToken); }, [e.savedUrl, e.savedToken]);
   useEffect(() => {

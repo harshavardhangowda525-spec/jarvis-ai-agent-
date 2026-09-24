@@ -22,6 +22,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "./src/loadenv.mjs";
 import { toNativeChat, NativeToOpenAI, describeTimings, ndjson } from "./src/ollama-native.mjs";
+import { lowerOllamaPriority } from "./src/os-priority.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.resolve(__dirname, ".env"));
@@ -124,6 +125,7 @@ async function speedCheck() {
 
   const where = gpuShare == null ? "" : gpuShare >= 0.99 ? "fully on the GPU" : gpuShare <= 0.01 ? "on the CPU only (no GPU)" : `${Math.round(gpuShare * 100)}% on the GPU, the rest on the CPU`;
   say(`  Speed: ${tps ? `${tps.toFixed(1)} tokens/sec` : "unknown"}${where ? ` · running ${where}` : ""}`);
+  if (process.platform === "win32" && process.env.BRAIN_LOW_PRIORITY !== "0") say("  Ollama runs at below-normal priority, so Chrome and Windows stay responsive while it thinks.");
   if (tps != null && tps < 12) {
     say("  Tip: that's slow for voice. A smaller model answers 2–3× faster:");
     say("         ollama pull qwen2.5:3b     then set OLLAMA_MODEL=qwen2.5:3b in edith/.env");
@@ -355,9 +357,12 @@ async function showWaitLimit() {
 // ---- main ---------------------------------------------------------------------
 say(`\nJARVIS brain gateway — model ${MODEL}`);
 await checkOllama();
+// Keep the PC responsive: Ollama yields the CPU to Chrome/Windows (Windows only).
+lowerOllamaPriority();
 if (NATIVE) NO_THINK = await detectThinking();
 say(`  Loading the model into memory…${NATIVE ? ` (context ${NUM_CTX} tokens, kept loaded ${KEEP_ALIVE}${NO_THINK ? ", thinking off for speed" : ""})` : ""}`);
 await warmUp();
+lowerOllamaPriority(); // the model runner exists now
 if (NATIVE) await speedCheck();
 setInterval(warmUp, 20 * 60_000).unref(); // keep it resident
 
@@ -384,6 +389,7 @@ if (FRESH_KEY && res !== "ok") say(`  (Your brain key is saved in edith/.brain-k
 say("\n  Keep this window open. Ctrl+C to stop.\n");
 
 setInterval(async () => {
+  lowerOllamaPriority(); // catches a runner restarted since the last check
   const r = await register(publicUrl);
   if ((r === "ok") !== lastRegOk) say(`  ${new Date().toLocaleTimeString()}  ${explainReg(r)}`);
   lastRegOk = r === "ok";
