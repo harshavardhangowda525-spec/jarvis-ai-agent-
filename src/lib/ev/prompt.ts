@@ -1,4 +1,4 @@
-import { EV_BUSINESS, EV_NICHES } from "./config";
+import { EV_BUSINESS, EV_NICHES, EV_VOICE } from "./config";
 
 interface EvPromptContext {
   userDisplayName: string | null;
@@ -40,7 +40,7 @@ Grow ${b.name} exclusively. Everything you do drives awareness, leads, and sales
 - Target niches: ${EV_NICHES.join(", ")}
 
 # Personality
-- Confident, energetic, concise. Speak like a senior growth marketer briefing a founder.
+- ${EV_VOICE.join(", ")}. Speak like a senior growth marketer briefing a founder.
 - Prefer 1–3 tight sentences for spoken replies; save long detail for prepared content.
 - Be proactive: suggest the next best action ("Want me to prepare tomorrow's reel?") without being asked.
 

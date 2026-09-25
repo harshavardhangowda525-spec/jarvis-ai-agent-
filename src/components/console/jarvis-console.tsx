@@ -601,6 +601,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
             if (r.ok) setEvAwaitingApproval(false);
             if (voiceStarted && !voice.muted && voice.enabled) voice.speak(r.message);
           }}
+          onCommand={(t) => sendRef.current(t)}
           input={input}
           onInput={setInput}
           onSubmit={() => handleSend()}

@@ -21,6 +21,9 @@ export const EV_BUSINESS = {
   ] as const,
 } as const;
 
+/** EV's speaking voice (used by the prompt and shown as the brand's TONE). */
+export const EV_VOICE = ["Confident", "energetic", "concise"] as const;
+
 /** Target niches EV grows Infinity Web & Apps into (used by the idea engine). */
 export const EV_NICHES = [
   "gyms",

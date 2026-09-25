@@ -1,17 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Mic, MicOff, Send, Power, X, ExternalLink, ImageIcon, Instagram, Loader2, Check } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Mic, MicOff, Send, Power, X, ExternalLink, Loader2, Check, PenLine } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StudioCanvas, type StudioCanvasHandle } from "@/components/console/ev/studio-canvas";
+import type { PublishPhase, StudioMode } from "@/components/console/ev/studio-engine";
+import {
+  EV_PIPELINE, STARTER_FORMATS, compact, formatFromText, formatOfKind, kindLabel, liveStage,
+  type CreativeFormat, type StudioData, type StudioItem,
+} from "@/lib/ev/studio";
 
 /**
- * EV — the cinematic AI-presence dashboard. This is ONLY a presentation layer:
- * it reuses the existing JARVIS voice, agent stream and command router. There is
- * no backend, no fake data — the central hologram and the two glass panels react
- * to EV's real operating state and the real command being processed.
+ * EV — the creative studio. A presentation layer only: it reuses the JARVIS
+ * voice, agent stream and command router. The canvas (motion) reacts to EV's
+ * real operating state; every number on the page comes from EV's content memory
+ * or the connected Instagram account, and sits apart from the motion.
  *
- * Visual hierarchy (nothing else competes): 1) central hologram, 2) EV ACTIVITY,
- * 3) COMMAND.
+ * Hierarchy: 1) the creative canvas, 2) the preview / approval, 3) the command.
  */
 
 export type EvState =
@@ -20,17 +25,17 @@ export type EvState =
 
 export interface EvViewProps {
   state: EvState;
-  /** Current EV activity line (bottom-left panel). */
+  /** Current EV activity line. */
   activity: string;
-  /** Current command being processed (bottom-right panel). */
+  /** Current command being processed. */
   command: string;
   /** Voice input level 0..1 for reactive motion. */
   level: number;
   /** Transition phase driven by the console. */
   phase: "in" | "active" | "out";
-  /** A freshly generated EV image to reveal as a liquid-glass message. */
+  /** A freshly generated EV image / video, shown in the creative canvas. */
   image: { url: string } | null;
-  /** Caption/context shown with the image (EV's latest reply). */
+  /** EV's latest reply (holds the caption for the creative). */
   caption?: string;
   onDismissImage: () => void;
   /** Bumped by the console when you say "publish" — triggers the Instagram post. */
@@ -39,6 +44,8 @@ export interface EvViewProps {
   captionOverride?: string;
   /** Reports the real publish outcome back (so EV can say it out loud). */
   onPublishResult?: (r: { ok: boolean; message: string }) => void;
+  /** Send a command to EV as if you'd said it (APPROVE on text content). */
+  onCommand?: (text: string) => void;
   input: string;
   onInput: (v: string) => void;
   onSubmit: () => void;
@@ -48,257 +55,476 @@ export interface EvViewProps {
   onSleep: () => void;
 }
 
-export function EvView(props: EvViewProps) {
-  const { state, level, phase } = props;
-  const listening = state === "LISTENING";
-  const thinking = state === "THINKING";
-  const generating = state === "GENERATING";
-  const executing = state === "EXECUTING";
-  const waiting = state === "WAITING_FOR_APPROVAL";
-  const success = state === "SUCCESS";
-  const error = state === "ERROR";
+const STATE_WORD: Record<EvState, string> = {
+  IDLE: "STUDIO READY", LISTENING: "LISTENING", THINKING: "CONCEPTING", GENERATING: "CREATING",
+  WAITING_FOR_APPROVAL: "AWAITING APPROVAL", EXECUTING: "PRODUCING", SUCCESS: "DONE", ERROR: "INTERRUPTED",
+};
 
-  const wrapAnim =
-    phase === "in" ? "ev-materialize 1.4s cubic-bezier(0.22,1,0.36,1) both"
-    : phase === "out" ? "ev-dissolve 0.9s ease-in both"
-    : undefined;
+/** What the canvas should be doing, from EV's real activity line. */
+function modeOf(activity: string): StudioMode {
+  if (/\bvideo\b/i.test(activity) || /\b(generat|render|produc)\w*\s+(a\s+|the\s+)?(marketing\s+)?reel\b/i.test(activity)) return "video";
+  if (/\bimage\b|\bvisual\b|\bgraphic\b/i.test(activity)) return "image";
+  if (/\bcaption\b/i.test(activity)) return "caption";
+  return "none";
+}
+
+interface LogEntry { id: number; at: Date; text: string; tone: "info" | "ok" | "warn" }
+
+export function EvView(props: EvViewProps) {
+  const { state, phase, image } = props;
+  const canvas = useRef<StudioCanvasHandle>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [publish, setPublish] = useState<PublishPhase>("idle");
+  const [mediaAspect, setMediaAspect] = useState<number | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [selectedFormat, setSelectedFormat] = useState<CreativeFormat | null>(null);
+  const { data, reload } = useStudioData();
+
+  // EV's reply only counts once it's EV's (not JARVIS's last line from before EV opened).
+  const initialCaption = useRef(props.caption ?? "");
+  const reply = props.caption && props.caption !== initialCaption.current ? props.caption : "";
+
+  const approval = !!image || state === "WAITING_FOR_APPROVAL";
+  const mode = modeOf(props.activity);
+  const commandFormat = useMemo(() => formatFromText(props.command), [props.command]);
+  useEffect(() => { setSelectedFormat(null); setSelected(null); }, [props.command]);
+  const format = selectedFormat ?? commandFormat ?? (mode === "video" ? "reel" : null);
+
+  // anchors: the media sits inside the canvas frame, the approval panel beside it
+  const mediaEl = useRef<HTMLDivElement | null>(null);
+  const sideEl = useRef<HTMLDivElement | null>(null);
+  const syncAnchors = useCallback(() => canvas.current?.setAnchors(mediaEl.current, sideEl.current), []);
+  const setMediaEl = useCallback((el: HTMLDivElement | null) => { mediaEl.current = el; syncAnchors(); }, [syncAnchors]);
+  const setSideEl = useCallback((el: HTMLDivElement | null) => { sideEl.current = el; syncAnchors(); }, [syncAnchors]);
+  useEffect(() => { if (!image) { setMediaAspect(null); setPublish("idle"); } }, [image]);
+
+  // Tiny activity stream — real events only.
+  const [log, setLog] = useState<LogEntry[]>([]);
+  const logId = useRef(0);
+  const push = useCallback((text: string, tone: LogEntry["tone"] = "info") => {
+    setLog((l) => (l[0]?.text === text ? l : [{ id: ++logId.current, at: new Date(), text, tone }, ...l].slice(0, 5)));
+  }, []);
+  useEffect(() => {
+    const a = props.activity.trim();
+    if (a && !/^(idle|listening…|speaking…)$/i.test(a)) push(a.replace(/…$/, ""), state === "ERROR" ? "warn" : "info");
+  }, [props.activity, state, push]);
+  useEffect(() => { if (image) push(/kind=video|\.mp4|\.webm|\.mov/i.test(image.url) ? "Video ready for review" : "Creative ready for review", "ok"); }, [image, push]);
+  useEffect(() => { if (state === "SUCCESS") void reload(); }, [state, reload]);
+
+  const onPublishStatus = useCallback((s: PublishPhase, message?: string) => {
+    setPublish(s);
+    if (s === "publishing") push("Publishing to Instagram");
+    if (s === "done") { push("Published to Instagram", "ok"); void reload(); }
+    if (s === "error" && message) push(message, "warn");
+  }, [push, reload]);
+
+  const focusInput = useCallback((prefill?: string) => {
+    if (prefill != null) props.onInput(prefill);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [props]);
+
+  const stage = liveStage(state, { hasMedia: !!image, publish });
+  const hideSides = approval;
 
   return (
     <div
-      className="fixed inset-0 z-40 overflow-hidden bg-[#03070f]"
-      style={{ animation: phase === "in" ? "fade-in .4s ease" : undefined }}
-      aria-label="EV interface"
+      className="fixed inset-0 z-40 overflow-hidden bg-[#05040d] text-white"
+      style={{ animation: phase === "out" ? "ev-dissolve 0.9s ease-in both" : phase === "in" ? "fade-in .4s ease" : undefined }}
+      aria-label="EV creative studio"
+      data-ev-state={state}
     >
-      {/* ambient depth */}
-      <div className="pointer-events-none absolute inset-0" aria-hidden>
-        <div className="absolute left-1/2 top-1/2 h-[78vmin] w-[78vmin] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(var(--accent)/0.12),transparent_62%)] blur-3xl" />
-        <ScanBeam />
-        <AmbientDust />
-      </div>
+      <StudioCanvas
+        ref={canvas}
+        className="absolute inset-0 h-full w-full"
+        state={state}
+        mode={image ? "none" : mode}
+        format={format}
+        mediaAspect={image ? (mediaAspect ?? (/kind=video|\.mp4|\.webm|\.mov/i.test(image.url) ? 9 / 16 : 0.8)) : null}
+        focus={approval}
+        publish={publish}
+        level={props.level}
+        headline={props.command}
+        brand={data?.brand ?? []}
+      />
+      {/* soft vignette */}
+      <div className="pointer-events-none absolute inset-0" aria-hidden
+        style={{ background: "radial-gradient(ellipse at 50% 46%, transparent 45%, rgba(3,2,10,0.55) 100%)" }} />
 
-      {/* minimal top marker */}
-      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-center pt-5">
-        <div className="flex items-center gap-2 opacity-80">
-          <span className={cn("h-1.5 w-1.5 rounded-full", error ? "bg-warning" : "bg-accent animate-hud-pulse")} />
-          <span className="hud-display text-sm tracking-[0.55em] text-foreground/85">EV</span>
+      {/* emblem label (the emblem itself is drawn by the canvas) */}
+      <div className="absolute left-[60px] top-[26px] z-20 md:left-[80px] md:top-[30px]" style={{ animation: "ev-rise .8s ease .7s both" }}>
+        <div className="flex items-baseline gap-2">
+          <span className="ev-grad-text text-lg font-semibold tracking-[0.42em]">EV</span>
+          <span className="hidden text-[10px] tracking-[0.3em] text-white/45 sm:inline">CREATIVE STUDIO</span>
+        </div>
+        <div className="mt-0.5 flex items-center gap-1.5 text-[10px] tracking-[0.28em] text-white/60">
+          <span className={cn("h-1.5 w-1.5 rounded-full", state === "ERROR" ? "bg-[#ff5878]" : "bg-[#60e4ff] ev-pulse-dot")} />
+          <span data-ev-word>{STATE_WORD[state]}</span>
         </div>
       </div>
 
-      {/* ===== CENTRAL HOLOGRAM ===== */}
-      <div className="absolute inset-0 z-0 flex items-center justify-center" style={{ animation: wrapAnim }}>
-        <div
-          className={cn("relative", error && "animate-[ev-glitch_0.5s_steps(2)_infinite]")}
-          style={{ animation: !error ? "ev-breathe 6s ease-in-out infinite" : undefined }}
-        >
-          <EvCore
-            listening={listening} thinking={thinking} generating={generating}
-            executing={executing} waiting={waiting} success={success} error={error}
-            level={level}
-          />
+      {/* LIVE METRICS — real numbers only, kept apart from the motion */}
+      <div className="absolute right-4 top-4 z-20 md:right-8 md:top-6" style={{ animation: "ev-rise .8s ease 2.8s both" }}>
+        <div className={cn("transition duration-500", hideSides && "pointer-events-none opacity-20 blur-[3px]")}>
+          <LiveMetrics data={data} />
         </div>
       </div>
 
-      {/* subtle light trails hologram → panels */}
-      <TrailLines />
+      {/* idea stream (right) */}
+      <div className="absolute right-6 top-[19%] z-20 hidden w-[min(300px,24vw)] md:block" style={{ animation: "ev-rise 1s ease 2.4s both" }}>
+        <div className={cn("transition duration-500", hideSides && "pointer-events-none scale-95 opacity-[0.12] blur-[4px]")}>
+        <IdeaStream
+          items={data?.recent ?? null}
+          selected={selected}
+          onSelect={(id, fmt) => { setSelected(id); setSelectedFormat(id ? fmt : null); }}
+          onUse={(text) => focusInput(text)}
+        />
+        </div>
+      </div>
 
-      {/* generated image reveals as a liquid-glass message */}
-      {props.image && (
-        <EvImageMessage url={props.image.url} caption={props.caption} onDismiss={props.onDismissImage}
-          publishSignal={props.publishSignal} captionOverride={props.captionOverride} onPublishResult={props.onPublishResult} />
+      {/* EV's words / caption as a glass text surface (right, lower) */}
+      {reply && !approval && (
+        <div className="absolute bottom-[150px] right-6 z-20 hidden w-[min(320px,26vw)] md:block">
+          <TextSurface text={reply} streaming={state === "THINKING" || state === "GENERATING" || state === "EXECUTING"} />
+        </div>
       )}
 
-      {/* ===== SPEC 1 — EV ACTIVITY (bottom-left) ===== */}
-      <div className="absolute bottom-6 left-4 z-20 md:bottom-10 md:left-10" style={{ animation: "ev-panel-in .6s ease .3s both" }}>
-        <GlassPanel title="EV ACTIVITY">
-          <div className="flex items-center gap-2">
-            <StateDot state={state} />
-            <span className="text-sm text-foreground/90">{props.activity || "Idle"}</span>
-          </div>
-        </GlassPanel>
-      </div>
-
-      {/* ===== SPEC 2 — COMMAND (bottom-right) ===== */}
-      <div className="absolute bottom-6 right-4 z-20 text-right md:bottom-10 md:right-10" style={{ animation: "ev-panel-in .6s ease .45s both" }}>
-        <GlassPanel title="COMMAND" align="right">
-          <span className={cn("text-sm", props.command ? "text-foreground/90" : "text-muted-foreground")}>
-            {props.command ? `“${props.command}”` : "Awaiting command…"}
-          </span>
-        </GlassPanel>
-      </div>
-
-      {/* minimal voice-first control (no chat box) */}
-      <form
-        onSubmit={(e) => { e.preventDefault(); props.onSubmit(); }}
-        className="absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-accent/15 bg-white/[0.03] px-2 py-1.5 backdrop-blur-xl"
-        style={{ boxShadow: "0 8px 40px -14px hsl(var(--accent)/0.5)" }}
-      >
-        <button
-          type="button" onClick={props.onMic}
-          title={props.voiceStarted ? (props.muted ? "Unmute" : "Mute") : "Enable voice"}
-          className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-full border transition",
-            props.voiceStarted && !props.muted
-              ? "border-accent bg-accent/15 text-accent animate-hud-pulse"
-              : "border-border text-muted-foreground hover:border-accent/50",
-          )}
-        >
-          {props.voiceStarted && props.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-        </button>
-        <input
-          value={props.input}
-          onChange={(e) => props.onInput(e.target.value)}
-          placeholder={listening ? "Listening…" : "Speak to EV"}
-          className="w-40 min-w-0 bg-transparent text-sm text-foreground/90 outline-none placeholder:text-muted-foreground/70 focus:w-56 md:w-48 md:focus:w-72"
-          style={{ transition: "width 200ms ease" }}
-        />
-        {props.input.trim() && (
-          <button type="submit" className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/15 text-accent transition hover:bg-accent/25">
-            <Send className="h-4 w-4" />
-          </button>
-        )}
-        {props.voiceStarted && (
-          <button type="button" onClick={props.onSleep} title="Sleep" className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground hover:text-accent">
-            <Power className="h-4 w-4" />
-          </button>
-        )}
-      </form>
-    </div>
-  );
-}
-
-/* ---------------- central holographic neural core ---------------- */
-
-function EvCore(props: {
-  listening: boolean; thinking: boolean; generating: boolean; executing: boolean;
-  waiting: boolean; success: boolean; error: boolean; level: number;
-}) {
-  const { listening, thinking, generating, executing, waiting, success, error, level } = props;
-  const A = "hsl(var(--accent))";
-  const AB = "hsl(var(--accent-bright))";
-  const active = listening || thinking || generating || executing;
-
-  // Outer ring expands slightly while listening; core brightens while generating.
-  const outerScale = listening ? 1.06 + level * 0.12 : 1;
-  const coreGlow = generating || success ? 1 : waiting ? 0.85 : 0.7;
-
-  // Orbital particles (abstract AI presence — light + energy, never a face).
-  const particles = useMemo(
-    () => Array.from({ length: 22 }, (_, i) => ({
-      a: (360 / 22) * i,
-      r: 96 + (i % 5) * 26,
-      d: 10 + (i % 6) * 3,
-      s: 1.4 + (i % 4) * 0.7,
-    })),
-    [],
-  );
-
-  return (
-    <div className="relative h-[62vmin] w-[62vmin] max-h-[560px] max-w-[560px]">
-      {/* volumetric glow */}
-      <div
-        className="absolute inset-0 rounded-full"
-        style={{
-          background: `radial-gradient(circle, hsl(var(--accent-bright)/${0.16 * coreGlow}), transparent 60%)`,
-          filter: "blur(28px)",
-        }}
-      />
-
-      {/* rotating concentric rings (different speeds while thinking) */}
-      <svg viewBox="0 0 400 400" className="absolute inset-0 h-full w-full" style={{ transform: `scale(${outerScale})`, transition: "transform 200ms ease" }}>
-        <defs>
-          <radialGradient id="ev-core-g" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor={AB} stopOpacity={0.95 * coreGlow} />
-            <stop offset="55%" stopColor={A} stopOpacity="0.16" />
-            <stop offset="100%" stopColor={A} stopOpacity="0" />
-          </radialGradient>
-        </defs>
-
-        {/* thin concentric rings */}
-        {[196, 168, 140, 112].map((r, i) => (
-          <circle
-            key={r} cx="200" cy="200" r={r} fill="none" stroke={A}
-            strokeOpacity={0.14 + (i === 0 ? (listening ? 0.35 : 0.1) : 0.06)}
-            strokeWidth={i === 0 ? 1.4 : 1}
-            style={{
-              transformOrigin: "200px 200px",
-              animation: `ultron-spin ${(thinking ? 14 : 30) + i * (thinking ? 5 : 8)}s linear infinite ${i % 2 ? "reverse" : ""}`,
-            }}
-          />
-        ))}
-
-        {/* dashed energy ring — flows while generating/executing */}
-        <circle
-          cx="200" cy="200" r="182" fill="none" stroke={AB} strokeOpacity={generating || executing ? 0.7 : 0.3}
-          strokeWidth="1.2" strokeDasharray="6 12"
-          style={{ transformOrigin: "200px 200px", animation: `ultron-spin ${executing ? 6 : 18}s linear infinite` }}
-        />
-
-        {/* rotating segments (arc brackets) */}
-        {[0, 90, 180, 270].map((deg) => (
-          <path
-            key={deg} d="M200 36 A164 164 0 0 1 316 84" fill="none" stroke={AB}
-            strokeOpacity={active ? 0.5 : 0.22} strokeWidth="2" strokeLinecap="round"
-            transform={`rotate(${deg} 200 200)`}
-            style={{ transformOrigin: "200px 200px", animation: `ultron-spin ${thinking ? 10 : 22}s linear infinite` }}
-          />
-        ))}
-
-        {/* neural network web (static abstract geometry) */}
-        <g stroke={A} strokeOpacity={thinking || generating ? 0.32 : 0.16} strokeWidth="0.6" fill="none">
-          <path d="M120 150 L200 120 L286 156 L262 244 L176 276 L118 232 Z" />
-          <path d="M200 120 L176 276 M120 150 L262 244 M286 156 L118 232" />
-        </g>
-        {/* neural nodes */}
-        <g fill={AB} style={{ filter: `drop-shadow(0 0 4px ${AB})` }}>
-          {[[120,150],[200,120],[286,156],[262,244],[176,276],[118,232]].map(([x,y],i)=>(
-            <circle key={i} cx={x} cy={y} r={thinking ? 3 : 2}
-              className={thinking || generating ? "animate-hud-pulse" : ""}
-              style={{ animationDelay: `${i * 0.2}s` }} />
-          ))}
-        </g>
-
-        {/* inner core */}
-        <circle cx="200" cy="200" r="72" fill="url(#ev-core-g)" style={{ animation: "ev-core-pulse 3.4s ease-in-out infinite" }} />
-        <circle
-          cx="200" cy="200" r={22 + level * 40 * (listening ? 1 : generating ? 0.6 : 0.2)}
-          fill={AB} style={{ filter: `drop-shadow(0 0 14px ${AB})`, transition: "r 90ms linear", opacity: coreGlow }}
-          className={waiting ? "animate-hud-pulse" : ""}
-        />
-
-        {/* success ripple */}
-        {success && (
-          <circle cx="200" cy="200" r="90" fill="none" stroke={AB} strokeOpacity="0.7" strokeWidth="2"
-            style={{ transformOrigin: "200px 200px", animation: "hud-glow-pulse 1s ease-out" }} />
-        )}
-      </svg>
-
-      {/* orbital particles — pulled inward while listening */}
-      <div className="absolute inset-0" aria-hidden>
-        <div className="absolute left-1/2 top-1/2 h-0 w-0">
-          {particles.map((p, i) => (
-            <span
-              key={i}
-              className="absolute block rounded-full"
-              style={{
-                width: 3, height: 3,
-                background: i % 3 === 0 ? AB : A,
-                boxShadow: `0 0 6px ${i % 3 === 0 ? AB : A}`,
-                // @ts-expect-error CSS custom props
-                "--a": `${p.a}deg`,
-                "--r": `${listening ? p.r * 0.7 : p.r}px`,
-                animation: `ev-orbit ${p.d * (executing ? 0.5 : 1)}s linear infinite`,
-                opacity: active ? 0.95 : 0.55,
-                transition: "opacity 300ms ease",
-              }}
-            />
-          ))}
+      {/* tiny activity stream (left, lower) */}
+      <div className="absolute bottom-[140px] left-6 z-20 hidden w-60 md:block" style={{ animation: "ev-rise .8s ease 3s both" }}>
+        <div className={cn("transition duration-500", hideSides && "opacity-25 blur-[2px]")}>
+          <ActivityStream log={log} />
         </div>
       </div>
+
+      {/* the real generated media, glued into the canvas frame */}
+      {image && (
+        <div ref={setMediaEl} className="absolute z-10 overflow-hidden" style={{ left: "50%", top: "40%", width: 0, height: 0 }}>
+          <Media url={image.url} onAspect={setMediaAspect} />
+        </div>
+      )}
+
+      {/* approval scene */}
+      {approval && (
+        <div ref={setSideEl} className="absolute z-30 w-auto md:w-[330px]" style={{ left: "60%", top: "50%" }}>
+          {image ? (
+            <MediaApproval
+              url={image.url}
+              caption={reply || props.caption}
+              onDismiss={props.onDismissImage}
+              publishSignal={props.publishSignal}
+              captionOverride={props.captionOverride}
+              onPublishResult={props.onPublishResult}
+              onStatus={onPublishStatus}
+            />
+          ) : (
+            <TextApproval
+              text={reply}
+              onApprove={() => { props.onCommand?.("Approve it"); push("Approved", "ok"); }}
+              onEdit={() => focusInput("Change it: ")}
+              canApprove={!!props.onCommand}
+            />
+          )}
+        </div>
+      )}
+
+      {/* pipeline + command (bottom) */}
+      <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col items-center gap-3 px-4 pb-4 md:pb-6">
+        {!approval && (
+          <div className="w-full md:hidden" style={{ animation: "ev-rise .8s ease 2.4s both" }}>
+            {reply
+              ? <div className="mb-1 max-h-[22vh] overflow-hidden"><TextSurface text={reply} /></div>
+              : <IdeaChips items={data?.recent ?? null} onUse={(text) => focusInput(text)} onPreview={(f) => setSelectedFormat(f)} />}
+          </div>
+        )}
+        <div className={cn("w-full max-w-[620px]", approval && "hidden sm:block")} style={{ animation: "ev-rise .8s ease 2.6s both" }}>
+          <div className={cn("transition duration-500", approval && publish === "idle" && "opacity-60")}>
+            <Pipeline counts={data?.pipeline ?? null} live={stage} published={publish === "done"} />
+          </div>
+        </div>
+        <form
+          onSubmit={(e) => { e.preventDefault(); props.onSubmit(); }}
+          className="ev-glass flex w-full max-w-[560px] items-center gap-2 rounded-full px-2 py-1.5"
+          style={{ animation: "ev-rise .8s ease 1.8s both" }}
+        >
+          <VoiceGlyph level={props.level} active={props.voiceStarted && !props.muted} listening={state === "LISTENING"} />
+          <button
+            type="button" onClick={props.onMic}
+            title={props.voiceStarted ? (props.muted ? "Unmute" : "Mute") : "Enable voice"}
+            className={cn(
+              "flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition",
+              props.voiceStarted && !props.muted ? "border-[#60e4ff]/70 bg-[#60e4ff]/10 text-[#9ff0ff]" : "border-white/15 text-white/60 hover:border-[#a78bfa]/60",
+            )}
+          >
+            {props.voiceStarted && props.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </button>
+          <input
+            ref={inputRef}
+            value={props.input}
+            onChange={(e) => props.onInput(e.target.value)}
+            placeholder={state === "LISTENING" ? "Listening…" : "Tell EV what to create…"}
+            className="min-w-0 flex-1 bg-transparent text-sm text-white/90 outline-none placeholder:text-white/40"
+          />
+          {props.input.trim() && (
+            <button type="submit" title="Send" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#60e4ff]/30 to-[#ff5cd6]/30 text-white transition hover:brightness-125">
+              <Send className="h-4 w-4" />
+            </button>
+          )}
+          {props.voiceStarted && (
+            <button type="button" onClick={props.onSleep} title="Sleep" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/50 hover:text-[#ff5cd6]">
+              <Power className="h-4 w-4" />
+            </button>
+          )}
+        </form>
+      </div>
     </div>
   );
 }
 
-/* ---------------- liquid-glass image message ---------------- */
+/* ---------------- real data ---------------- */
+
+function useStudioData() {
+  const [data, setData] = useState<StudioData | null>(null);
+  const alive = useRef(true);
+  const reload = useCallback(async () => {
+    try {
+      const res = await fetch("/api/ev/studio", { cache: "no-store" });
+      if (!res.ok) return;
+      const j = await res.json();
+      if (alive.current && j?.data) setData(j.data as StudioData);
+    } catch { /* offline — keep what we have */ }
+  }, []);
+  useEffect(() => {
+    alive.current = true;
+    void reload();
+    const id = setInterval(() => void reload(), 90_000);
+    return () => { alive.current = false; clearInterval(id); };
+  }, [reload]);
+  return { data, reload };
+}
+
+function LiveMetrics({ data }: { data: StudioData | null }) {
+  const ig = data?.instagram;
+  return (
+    <div className="ev-glass max-w-[44vw] rounded-2xl px-3 py-2 text-right sm:min-w-[180px] sm:max-w-none sm:px-3.5 sm:py-2.5" data-ev-metrics>
+      <div className="flex items-center justify-end gap-1.5 text-[9px] tracking-[0.3em] text-white/45">
+        <span className="h-1 w-1 rounded-full bg-[#60e4ff]" /> LIVE METRICS
+      </div>
+      {!data ? (
+        <div className="mt-1 text-[11px] text-white/40">Loading…</div>
+      ) : !ig || !ig.connected ? (
+        <div className="mt-1 text-[11px] leading-snug text-white/55">Instagram not connected<br /><span className="hidden text-white/35 sm:inline">no live audience numbers</span></div>
+      ) : "error" in ig ? (
+        <div className="mt-1 text-[11px] text-[#ffb3c4]">{ig.error}</div>
+      ) : (
+        <div className="mt-1.5 grid grid-cols-2 gap-x-4 gap-y-1 text-left">
+          <Metric label="FOLLOWERS" value={compact(ig.followers)} />
+          <Metric label="POSTS" value={compact(ig.mediaCount)} />
+          <Metric label={`LIKES · LAST ${ig.recentPosts}`} value={compact(ig.recentLikes)} />
+          <Metric label={`COMMENTS · LAST ${ig.recentPosts}`} value={compact(ig.recentComments)} />
+        </div>
+      )}
+      {data && (
+        <div className="mt-2 hidden border-t border-white/10 pt-1.5 text-[10px] text-white/45 sm:block">
+          EV memory · {data.totals.items} piece{data.totals.items === 1 ? "" : "s"} · {data.totals.last7Days} this week
+        </div>
+      )}
+    </div>
+  );
+}
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[8px] tracking-[0.18em] text-white/40">{label}</div>
+      <div className="text-sm font-semibold tabular-nums text-white/90">{value}</div>
+    </div>
+  );
+}
+
+/* ---------------- idea stream ---------------- */
+
+function IdeaStream({ items, selected, onSelect, onUse }: {
+  items: StudioItem[] | null;
+  selected: string | null;
+  onSelect: (id: string | null, fmt: CreativeFormat | null) => void;
+  onUse: (text: string) => void;
+}) {
+  const real = items && items.length > 0;
+  return (
+    <div data-ev-ideas>
+      <div className="mb-3 text-[9px] tracking-[0.34em] text-white/40">{real ? "IDEA STREAM · EV MEMORY" : "START A CREATIVE"}</div>
+      <div className="flex flex-col gap-2.5">
+        {real
+          ? items!.slice(0, 5).map((it, i) => {
+            const isSel = selected === it.id;
+            const dim = selected && !isSel;
+            return (
+              <div key={it.id} className="ev-float" style={{ animationDelay: `${i * 0.7}s` }}>
+                <button
+                  type="button"
+                  onClick={() => onSelect(isSel ? null : it.id, formatOfKind(it.kind))}
+                  className={cn("ev-idea group block w-full text-left", isSel && "ev-idea-on", dim && "ev-idea-dim")}
+                >
+                  <span className="ev-kinetic block text-[13px] font-semibold tracking-[0.2em]">{kindLabel(it.kind)}</span>
+                  <span className="mt-0.5 block truncate text-[12px] text-white/60">{it.title}</span>
+                  <span className="ev-meta mt-1 block text-[10px] tracking-[0.12em] text-white/40">
+                    {it.status.toUpperCase()}{it.niche ? ` · ${it.niche}` : ""} · {ago(it.createdAt)}
+                  </span>
+                </button>
+                {isSel && (
+                  <div className="ev-glass mt-2 rounded-xl p-3 text-[12px] text-white/75" style={{ animation: "ev-rise .45s ease both" }}>
+                    {it.mediaUrl && !it.isVideo && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={it.mediaUrl} alt="" className="mb-2 max-h-32 w-full rounded-lg object-cover" />
+                    )}
+                    {it.excerpt ? <p className="line-clamp-4 leading-snug">{it.excerpt}</p> : <p className="text-white/40">No text stored for this piece.</p>}
+                    <button type="button" onClick={() => onUse(`Create a new ${it.kind} based on: ${it.title}`)}
+                      className="mt-2 rounded-full border border-white/15 px-3 py-1 text-[11px] tracking-[0.12em] text-white/80 hover:border-[#60e4ff]/60">
+                      USE AS BRIEF
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })
+          : STARTER_FORMATS.map((f, i) => (
+            <div key={f.label} className="ev-float" style={{ animationDelay: `${i * 0.7}s` }}>
+              <button type="button" onClick={() => { onSelect(null, null); onUse(f.command); }}
+                onMouseEnter={() => onSelect(`starter:${i}`, f.format)} onMouseLeave={() => onSelect(null, null)}
+                className={cn("ev-idea block w-full text-left", selected && selected !== `starter:${i}` && "ev-idea-dim")}>
+                <span className="ev-kinetic block text-[13px] font-semibold tracking-[0.2em]">{f.label}</span>
+                <span className="ev-meta mt-0.5 block text-[10px] tracking-[0.12em] text-white/40">tap to brief EV</span>
+              </button>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function ago(iso: string) {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 90) return "just now";
+  if (s < 5400) return `${Math.round(s / 60)}m ago`;
+  if (s < 129600) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
+}
+
+/** Phone: the idea stream as a row of swipeable chips. */
+function IdeaChips({ items, onUse, onPreview }: { items: StudioItem[] | null; onUse: (text: string) => void; onPreview: (f: CreativeFormat | null) => void }) {
+  const list = items && items.length
+    ? items.slice(0, 6).map((it) => ({ key: it.id, label: kindLabel(it.kind), sub: it.title, command: `Create a new ${it.kind} based on: ${it.title}`, format: formatOfKind(it.kind) }))
+    : STARTER_FORMATS.map((f) => ({ key: f.label, label: f.label, sub: "tap to brief EV", command: f.command, format: f.format }));
+  return (
+    <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]" data-ev-chips>
+      {list.map((c) => (
+        <button key={c.key} type="button" onClick={() => { onPreview(c.format); onUse(c.command); }}
+          className="ev-glass shrink-0 rounded-2xl px-3 py-2 text-left" style={{ maxWidth: 200 }}>
+          <span className="ev-kinetic block text-[11px] font-semibold tracking-[0.18em]">{c.label}</span>
+          <span className="block truncate text-[11px] text-white/55">{c.sub}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- pipeline ---------------- */
+
+function Pipeline({ counts, live, published }: { counts: Record<string, number> | null; live: string | null; published: boolean }) {
+  const idx = live ? EV_PIPELINE.indexOf(live as (typeof EV_PIPELINE)[number]) : -1;
+  const pct = (i: number) => (i / (EV_PIPELINE.length - 1)) * 100;
+  return (
+    <div className="relative px-3" data-ev-pipeline>
+      <div className="relative h-5">
+        <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-[#60e4ff]/10 via-[#a78bfa]/40 to-[#ff5cd6]/20" />
+        {idx >= 0 && (
+          <div className="absolute top-1/2 h-px -translate-y-1/2 bg-gradient-to-r from-[#60e4ff] to-[#ff5cd6] transition-all duration-700"
+            style={{ left: 0, width: `${pct(idx)}%`, boxShadow: "0 0 10px #a78bfa" }} />
+        )}
+        {/* the particle travelling toward the live stage */}
+        <span className="ev-pipe-dot absolute top-1/2" style={{ ["--to" as string]: `${idx >= 0 ? pct(idx) : 100}%` }} />
+        {published && <span className="ev-pipe-flash absolute inset-x-0 top-1/2 h-[2px] -translate-y-1/2" />}
+        {EV_PIPELINE.map((s, i) => (
+          <span key={s} className={cn("absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full border transition",
+            i === idx ? "ev-live-node border-white bg-white" : i < idx ? "border-[#a78bfa] bg-[#a78bfa]/60" : "border-white/30 bg-[#05040d]")}
+            style={{ left: `${pct(i)}%` }} />
+        ))}
+      </div>
+      <div className="relative mt-1 h-7">
+        {EV_PIPELINE.map((s, i) => (
+          <div key={s} className="absolute -translate-x-1/2 text-center" style={{ left: `${pct(i)}%` }}>
+            <div className={cn("text-[7.5px] tracking-[0.08em] sm:text-[9px] sm:tracking-[0.2em]", i === idx ? "text-white" : "text-white/40")}>{s}</div>
+            <div className="text-[10px] tabular-nums text-white/60" title="Pieces at this stage in EV's memory">{counts ? counts[s] : "·"}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- activity + text ---------------- */
+
+function ActivityStream({ log }: { log: LogEntry[] }) {
+  return (
+    <div data-ev-activity>
+      <div className="mb-2 text-[9px] tracking-[0.34em] text-white/40">ACTIVITY</div>
+      <div className="relative flex flex-col gap-1.5 border-l border-white/10 pl-3">
+        {log.length === 0 && <div className="text-[11px] text-white/35">Waiting for your first brief.</div>}
+        {log.map((e, i) => (
+          <div key={e.id} className="truncate text-[11px] leading-tight" title={e.text} style={{ opacity: 1 - i * 0.16, animation: "ev-rise .5s ease both" }}>
+            <span className={cn("mr-1.5 inline-block h-1 w-1 rounded-full align-middle", e.tone === "ok" ? "bg-[#60e4ff]" : e.tone === "warn" ? "bg-[#ff5878]" : "bg-[#a78bfa]")} />
+            <span className="text-white/75">{e.text}</span>
+            <span className="ml-1.5 text-[9px] tabular-nums text-white/30">{e.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Word particles → sentences → a glass text surface. */
+function TextSurface({ text, streaming }: { text: string; streaming?: boolean }) {
+  const hasCaption = /(^|\n)\s*\**\s*caption\s*\**\s*[:：]/i.test(text);
+  const shown = (hasCaption ? extractCaption(text) : text.replace(/\*\*/g, "")).slice(0, 420);
+  const words = shown.split(/(\s+)/);
+  return (
+    <div className="ev-glass rounded-2xl px-4 py-3" data-ev-text>
+      <div className="mb-1.5 text-[9px] tracking-[0.34em] text-white/40">{hasCaption ? "CAPTION" : "EV"}</div>
+      <p className="max-h-44 overflow-hidden whitespace-pre-wrap text-[13px] leading-relaxed text-white/85">
+        {words.map((w, i) => (/^\s+$/.test(w) ? w : <span key={i} className="ev-word" style={{ animationDelay: `${Math.min(i, 60) * 0.018}s` }}>{w}</span>))}
+        {streaming && <span className="ml-0.5 inline-block h-3 w-[2px] animate-pulse bg-white/70 align-middle" />}
+      </p>
+    </div>
+  );
+}
+
+function VoiceGlyph({ level, active, listening }: { level: number; active: boolean; listening: boolean }) {
+  const amp = active ? (listening ? 1 : 0.5) : 0.15;
+  return (
+    <div className="ml-1 flex h-7 w-7 shrink-0 items-center justify-center gap-[2px]" aria-hidden title="Voice">
+      {[0.55, 0.85, 1, 0.8, 0.5].map((k, i) => (
+        <span key={i} className="w-[2px] rounded-full bg-gradient-to-t from-[#60e4ff] to-[#ff5cd6] transition-[height] duration-100"
+          style={{ height: `${Math.max(3, Math.min(22, 3 + level * 40 * k * amp + (active ? (i % 2) * 2 : 0)))}px`, opacity: active ? 0.95 : 0.4 }} />
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- media + approval ---------------- */
+
+function Media({ url, onAspect }: { url: string; onAspect: (a: number) => void }) {
+  const isVideo = /kind=video|\.mp4|\.webm|\.mov/i.test(url);
+  return (
+    <div className="ev-media-in absolute inset-0">
+      {isVideo ? (
+        <video src={url} controls autoPlay loop playsInline className="h-full w-full object-cover"
+          onLoadedMetadata={(e) => { const v = e.currentTarget; if (v.videoWidth && v.videoHeight) onAspect(v.videoWidth / v.videoHeight); }} />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="EV generated marketing creative" className="ev-kenburns h-full w-full select-none object-cover"
+          onLoad={(e) => { const im = e.currentTarget; if (im.naturalWidth && im.naturalHeight) onAspect(im.naturalWidth / im.naturalHeight); }} />
+      )}
+    </div>
+  );
+}
 
 /**
  * Pull the Instagram caption out of EV's reply. EV presents content as
@@ -321,13 +547,20 @@ export function extractCaption(text?: string): string {
   return parts.join("\n\n").slice(0, 2200);
 }
 
-function EvImageMessage({ url, caption, onDismiss, publishSignal, captionOverride, onPublishResult }: {
+/**
+ * READY TO PUBLISH — the real Instagram publish flow for the creative on the
+ * canvas. APPROVE is the explicit approval; nothing posts without it (or a
+ * spoken "publish").
+ */
+function MediaApproval({ url, caption, onDismiss, publishSignal, captionOverride, onPublishResult, onStatus }: {
   url: string; caption?: string; onDismiss: () => void;
   publishSignal?: number; captionOverride?: string; onPublishResult?: (r: { ok: boolean; message: string }) => void;
+  onStatus: (s: PublishPhase, message?: string) => void;
 }) {
   const isVideo = /kind=video|\.mp4|\.webm|\.mov/i.test(url);
   const [cap, setCap] = useState(() => extractCaption(caption));
   const edited = useRef(false);
+  const capRef = useRef<HTMLTextAreaElement>(null);
   const [status, setStatus] = useState<"idle" | "publishing" | "done" | "error">("idle");
   const [msg, setMsg] = useState("");
   const [containerId, setContainerId] = useState<string | undefined>();
@@ -335,6 +568,8 @@ function EvImageMessage({ url, caption, onDismiss, publishSignal, captionOverrid
   // EV's reply often lands after the image — keep the draft caption in sync
   // until you edit it yourself.
   useEffect(() => { if (!edited.current) setCap(extractCaption(caption)); }, [caption]);
+  const statusCb = useRef(onStatus); statusCb.current = onStatus;
+  useEffect(() => { statusCb.current(status, msg); }, [status, msg]);
 
   async function publish(textArg?: string) {
     const text = (textArg ?? cap).trim();
@@ -367,192 +602,76 @@ function EvImageMessage({ url, caption, onDismiss, publishSignal, captionOverrid
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publishSignal]);
 
+  const busy = status === "publishing" || status === "done";
+  const title = status === "done" ? "PUBLISHED" : status === "publishing" ? "PUBLISHING" : "READY TO PUBLISH";
   return (
-    <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center p-4">
-      <div
-        className="pointer-events-auto relative flex max-h-[90vh] w-full max-w-sm flex-col overflow-y-auto overflow-x-hidden rounded-3xl border border-white/15"
-        style={{
-          transformOrigin: "center bottom",
-          animation: "ev-holo-in 0.9s cubic-bezier(0.22,1,0.36,1) both",
-          background: "linear-gradient(145deg, hsl(0 0% 100% / 0.10), hsl(210 60% 12% / 0.28))",
-          backdropFilter: "blur(26px) saturate(1.3)",
-          WebkitBackdropFilter: "blur(26px) saturate(1.3)",
-          boxShadow: "0 24px 80px -24px hsl(var(--accent)/0.6), inset 0 1px 0 hsl(0 0% 100% / 0.22), inset 0 0 40px -20px hsl(var(--accent)/0.5)",
-        }}
-      >
-        {/* one-shot holo scan line on entrance */}
-        <div className="pointer-events-none absolute inset-x-0 z-10 h-px" aria-hidden
-          style={{ background: "linear-gradient(90deg, transparent, hsl(var(--accent-bright)), transparent)", boxShadow: "0 0 12px hsl(var(--accent-bright))", animation: "ev-holo-scan 0.9s ease-out both" }} />
-        {/* moving sheen — the "liquid glass" highlight */}
-        <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-          <div
-            className="absolute -inset-y-8 left-0 w-1/3"
-            style={{
-              background: "linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.14), transparent)",
-              animation: "ev-sheen 4.5s ease-in-out infinite",
-            }}
-          />
+    <div className="ev-glass ev-approval relative max-h-[calc(100dvh-250px)] overflow-y-auto rounded-3xl p-4 md:max-h-[80vh]" data-ev-approval>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-[9px] tracking-[0.34em] text-white/45">{isVideo ? "REEL · VIDEO" : "CREATIVE · IMAGE"}</div>
+          <div key={title} className="ev-grad-text mt-0.5 text-base font-semibold tracking-[0.28em]" style={{ animation: "ev-rise .5s ease both" }}>{title}</div>
         </div>
-
-        {/* header */}
-        <div className="relative flex items-center justify-between px-4 pt-3">
-          <div className="flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full border border-accent/40 bg-accent/15 text-accent">
-              <ImageIcon className="h-3.5 w-3.5" />
-            </span>
-            <span className="hud-label text-[10px] tracking-[0.28em] text-accent/80">{isVideo ? "EV · VIDEO READY" : "EV · IMAGE READY"}</span>
-          </div>
-          <button
-            onClick={onDismiss}
-            title="Dismiss"
-            className="flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* media inside an inner glass frame */}
-        <div className="relative mx-4 mt-3 overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-          {isVideo ? (
-            <video src={url} controls autoPlay loop playsInline className="mx-auto block max-h-[38vh] w-full object-contain" />
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={url} alt="EV generated marketing image" className="mx-auto block max-h-[38vh] w-full select-none object-contain" />
-          )}
-        </div>
-
-        {/* editable caption for publishing */}
-        <div className="relative px-4 pt-3">
-          <textarea
-            value={cap}
-            onChange={(e) => { edited.current = true; setCap(e.target.value); }}
-            rows={3}
-            placeholder="Write the Instagram caption…"
-            disabled={status === "publishing" || status === "done"}
-            className="max-h-28 w-full resize-none rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm leading-relaxed text-foreground/90 outline-none transition focus:border-accent/50 disabled:opacity-60"
-          />
-        </div>
-
-        {/* publish status message */}
-        {msg && (
-          <p className={cn("relative px-4 pt-2 text-[11px] leading-snug", status === "error" ? "text-warning" : status === "done" ? "text-success" : "text-muted-foreground")}>
-            {msg}
-          </p>
-        )}
-
-        {/* actions */}
-        <div className="relative flex items-center justify-between gap-2 px-4 py-3">
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-muted-foreground transition hover:text-foreground"
-          >
-            <ExternalLink className="h-3.5 w-3.5" /> Open full
-          </a>
-          <button
-            onClick={() => publish()}
-            disabled={status === "publishing" || status === "done"}
-            className={cn(
-              "flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs font-medium transition disabled:opacity-60",
-              status === "done"
-                ? "bg-success/20 text-success"
-                : "bg-gradient-to-r from-[#833ab4] via-[#fd1d1d] to-[#fcb045] text-white hover:brightness-110",
-            )}
-            title="Publish to Instagram"
-          >
-            {status === "publishing" ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              : status === "done" ? <Check className="h-3.5 w-3.5" />
-              : <Instagram className="h-3.5 w-3.5" />}
-            {status === "publishing" ? "Publishing…" : status === "done" ? "Published" : isVideo ? "Publish Reel" : "Publish to Instagram"}
-          </button>
-        </div>
+        <button onClick={onDismiss} title="Dismiss" className="flex h-7 w-7 items-center justify-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white">
+          <X className="h-4 w-4" />
+        </button>
       </div>
-    </div>
-  );
-}
 
-/* ---------------- supporting UI ---------------- */
+      <label className="mt-3 block text-[9px] tracking-[0.3em] text-white/40">CAPTION</label>
+      <textarea
+        ref={capRef}
+        value={cap}
+        onChange={(e) => { edited.current = true; setCap(e.target.value); }}
+        rows={5}
+        placeholder="Write the Instagram caption…"
+        disabled={busy}
+        className="mt-1 max-h-40 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[13px] leading-relaxed text-white/90 outline-none transition focus:border-[#60e4ff]/50 disabled:opacity-60"
+      />
 
-function GlassPanel({ title, children, align = "left" }: { title: string; children: React.ReactNode; align?: "left" | "right" }) {
-  return (
-    <div
-      className={cn(
-        "min-w-[180px] max-w-[260px] rounded-xl border border-accent/15 bg-white/[0.03] px-4 py-3 backdrop-blur-xl",
-        align === "right" && "text-right",
+      {msg && (
+        <p className={cn("mt-2 text-[11px] leading-snug", status === "error" ? "text-[#ffb3c4]" : status === "done" ? "text-[#9ff0ff]" : "text-white/55")}>{msg}</p>
       )}
-      style={{ boxShadow: "0 8px 40px -16px hsl(var(--accent)/0.5), inset 0 1px 0 hsl(0 0% 100% / 0.05)" }}
-    >
-      <div className="hud-label text-[10px] tracking-[0.28em] text-accent/70">{title}</div>
-      <div className="mt-1.5">{children}</div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <button
+          onClick={() => publish()}
+          disabled={busy}
+          className={cn("ev-approve relative flex flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-full px-4 py-2 text-xs font-semibold tracking-[0.18em] transition disabled:opacity-70",
+            status === "done" ? "bg-[#60e4ff]/20 text-[#9ff0ff]" : "bg-gradient-to-r from-[#60e4ff] via-[#a78bfa] to-[#ff5cd6] text-[#0a0620] hover:brightness-110")}
+          title="Approve and publish to Instagram"
+        >
+          {status === "publishing" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : status === "done" ? <Check className="h-3.5 w-3.5" /> : null}
+          {status === "publishing" ? "PUBLISHING…" : status === "done" ? "PUBLISHED" : "APPROVE & PUBLISH"}
+        </button>
+        <button onClick={() => capRef.current?.focus()} disabled={busy} title="Edit the caption"
+          className="flex items-center gap-1 rounded-full border border-white/15 px-3 py-2 text-xs tracking-[0.14em] text-white/75 transition hover:border-white/40 disabled:opacity-50">
+          <PenLine className="h-3.5 w-3.5" /> EDIT
+        </button>
+        <a href={url} target="_blank" rel="noopener noreferrer" title="Open full size"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/15 text-white/60 transition hover:text-white">
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      </div>
+      <p className="mt-2 text-[10px] text-white/35">Posts to Instagram only when you approve.</p>
     </div>
   );
 }
 
-const STATE_COLOR: Record<EvState, string> = {
-  IDLE: "hsl(var(--muted-foreground))",
-  LISTENING: "hsl(var(--accent))",
-  THINKING: "hsl(var(--accent-bright))",
-  GENERATING: "hsl(var(--accent-bright))",
-  WAITING_FOR_APPROVAL: "hsl(var(--warning))",
-  EXECUTING: "hsl(var(--accent))",
-  SUCCESS: "hsl(var(--success))",
-  ERROR: "hsl(var(--warning))",
-};
-
-function StateDot({ state }: { state: EvState }) {
-  const pulse = state !== "IDLE";
+/** Text-only content EV is holding for approval (no media yet). */
+function TextApproval({ text, onApprove, onEdit, canApprove }: { text: string; onApprove: () => void; onEdit: () => void; canApprove: boolean }) {
   return (
-    <span
-      className={cn("h-2 w-2 shrink-0 rounded-full", pulse && "animate-hud-pulse")}
-      style={{ background: STATE_COLOR[state], boxShadow: `0 0 8px ${STATE_COLOR[state]}` }}
-    />
-  );
-}
-
-/** Subtle animated light trails linking the hologram to the two panels. */
-function TrailLines() {
-  return (
-    <svg className="pointer-events-none absolute inset-0 z-10 hidden h-full w-full md:block" aria-hidden>
-      <line x1="42%" y1="52%" x2="14%" y2="88%" stroke="hsl(var(--accent))" strokeOpacity="0.25" strokeWidth="1" strokeDasharray="4 8" style={{ animation: "ev-trail 6s linear infinite" }} />
-      <line x1="58%" y1="52%" x2="86%" y2="88%" stroke="hsl(var(--accent))" strokeOpacity="0.25" strokeWidth="1" strokeDasharray="4 8" style={{ animation: "ev-trail 6s linear infinite reverse" }} />
-    </svg>
-  );
-}
-
-function ScanBeam() {
-  return (
-    <div
-      className="absolute left-1/2 top-1/2 h-[90vmin] w-[90vmin] -translate-x-1/2 -translate-y-1/2"
-      style={{
-        background: "conic-gradient(from 0deg, transparent 0deg, hsl(var(--accent)/0.06) 30deg, transparent 60deg)",
-        borderRadius: "50%",
-        animation: "ev-scan 12s linear infinite",
-      }}
-    />
-  );
-}
-
-function AmbientDust() {
-  const dots = useMemo(
-    () => Array.from({ length: 26 }, () => ({
-      x: Math.random() * 100, y: Math.random() * 100,
-      d: 6 + Math.random() * 10, delay: Math.random() * 6, s: 1 + Math.random() * 2,
-    })),
-    [],
-  );
-  return (
-    <div className="absolute inset-0">
-      {dots.map((p, i) => (
-        <span
-          key={i}
-          className="absolute rounded-full bg-accent/40"
-          style={{
-            left: `${p.x}%`, top: `${p.y}%`, width: p.s, height: p.s,
-            animation: `drift ${p.d}s ease-in-out ${p.delay}s infinite`,
-          }}
-        />
-      ))}
+    <div className="ev-approval flex flex-col gap-3" data-ev-approval>
+      <div className="ev-grad-text text-base font-semibold tracking-[0.28em]" style={{ animation: "ev-rise .5s ease both" }}>READY FOR APPROVAL</div>
+      {text && <TextSurface text={text} />}
+      <div className="flex items-center gap-2">
+        {canApprove && (
+          <button onClick={onApprove} className="ev-approve relative flex flex-1 items-center justify-center gap-1.5 overflow-hidden rounded-full bg-gradient-to-r from-[#60e4ff] via-[#a78bfa] to-[#ff5cd6] px-4 py-2 text-xs font-semibold tracking-[0.18em] text-[#0a0620] hover:brightness-110">
+            <Check className="h-3.5 w-3.5" /> APPROVE
+          </button>
+        )}
+        <button onClick={onEdit} className="flex items-center gap-1 rounded-full border border-white/15 px-3 py-2 text-xs tracking-[0.14em] text-white/75 transition hover:border-white/40">
+          <PenLine className="h-3.5 w-3.5" /> EDIT
+        </button>
+      </div>
     </div>
   );
 }
