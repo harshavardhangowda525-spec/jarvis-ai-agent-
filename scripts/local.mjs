@@ -96,8 +96,9 @@ process.on("SIGTERM", stopAll);
 
 // ---- 1. settings ----------------------------------------------------------------
 say("\nJARVIS — running everything on this PC\n");
+// Same precedence as Next.js: .env.local wins over .env.
 const envFile = [".env.local", ".env"].map((f) => path.join(ROOT, f)).find((f) => fs.existsSync(f));
-const appEnv = envFile ? readEnv(envFile) : {};
+const appEnv = { ...readEnv(path.join(ROOT, ".env")), ...readEnv(path.join(ROOT, ".env.local")) };
 const edithEnv = readEnv(path.join(EDITH, ".env"));
 if (!appEnv.DATABASE_URL || !appEnv.AUTH_SECRET) {
   die(
@@ -109,7 +110,27 @@ if (!appEnv.DATABASE_URL || !appEnv.AUTH_SECRET) {
     "  Then run  npm run local  again.",
   );
 }
+// Vercel won't hand out values marked "Sensitive" — `vercel env pull` writes a
+// blank/placeholder instead, which only fails later at login. Catch it here.
+const dbUrl = appEnv.DATABASE_URL.trim();
+if (!/^postgres(ql)?:\/\//i.test(dbUrl)) {
+  const shown = dbUrl ? `"${dbUrl.slice(0, 12)}…"` : "empty";
+  die(
+    `DATABASE_URL in .env.local isn't a database address (it starts with ${shown}).\n` +
+    "  Vercel doesn't copy values marked \"Sensitive\" to your PC. Paste the real one by hand:\n" +
+    "    1. Open console.neon.tech → your project → Dashboard → Connect (or Connection string).\n" +
+    "    2. Copy the connection string that starts with postgresql://  (the pooled one is fine).\n" +
+    "       Copy ONLY the address — not the  psql '…'  wrapper around it.\n" +
+    "    3. In .env.local, set the line to:   DATABASE_URL=\"postgresql://…\"\n" +
+    "  (Or on Vercel → Settings → Environment Variables → DATABASE_URL → the eye icon, if it's shown.)\n" +
+    "  Then run  npm run local  again.",
+  );
+}
 say(`  Settings: ${path.basename(envFile)} (same database as your Vercel app)`);
+// Other keys that came through blank (Sensitive on Vercel) — worth copying by hand.
+const IMPORTANT = ["GROQ_API_KEY", "GEMINI_API_KEY", "ELEVENLABS_API_KEY", "GEOAPIFY_API_KEY", "GOOGLE_CLIENT_SECRET", "INSTAGRAM_ACCESS_TOKEN", "MAGIC_HOUR_API_KEY", "OLLAMA_API_KEY"];
+const blank = IMPORTANT.filter((k) => k in appEnv && (!appEnv[k].trim() || /^\[?(sensitive|encrypted|hidden)\]?$/i.test(appEnv[k].trim())));
+if (blank.length) say(`  Note: these came through empty (marked Sensitive on Vercel): ${blank.join(", ")}.\n        Copy their values into .env.local if you want those features on this PC.`);
 
 // ---- 2. dependencies ------------------------------------------------------------------
 // Install when ANY listed package is missing — an older node_modules (from before
@@ -172,6 +193,7 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
     } : {}),
     // EV's images must stay publicly reachable for Instagram — keep the Vercel address.
     APP_URL: appEnv.APP_URL || edithEnv.JARVIS_URL || "",
+    DATABASE_URL: dbUrl,
   },
 });
 const local = `http://localhost:${PORT}`;
