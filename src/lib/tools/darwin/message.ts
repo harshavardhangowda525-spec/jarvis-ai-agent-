@@ -28,6 +28,16 @@ export const darwinMessageTool: ToolDefinition<Input> = {
   agentScope: "darwin",
   requiresConfirmation: true, // external send — confirm before acting
   activityLabel: "Sending outreach",
+  async emailPreview(input, ctx) {
+    const msg = await getDb().darwinMessage.findFirst({ where: { id: input.messageId, userId: ctx.userId }, include: { lead: true } });
+    if (!msg || msg.channel !== "email" || !msg.lead.email || msg.status === "sent" || msg.status === "delivered") return null;
+    return {
+      to: msg.lead.email,
+      subject: input.subject || msg.subject || `A quick idea for ${msg.lead.businessName}`,
+      body: msg.body,
+      label: msg.lead.businessName,
+    };
+  },
   async execute(input, ctx) {
     const db = getDb();
     const msg = await db.darwinMessage.findFirst({ where: { id: input.messageId, userId: ctx.userId }, include: { lead: true } });
@@ -56,7 +66,7 @@ export const darwinMessageTool: ToolDefinition<Input> = {
         await db.darwinLead.update({ where: { id: lead.id }, data: { stage: "contacted" } });
       }
       await logActivity(ctx.userId, "message_sent", `Emailed ${lead.businessName} (${lead.email}).`, lead.id, { externalId });
-      return { data: { messageId: msg.id, status: "sent", externalId }, summary: `✅ Sent email to ${lead.businessName} (${lead.email}).` };
+      return { data: { messageId: msg.id, status: "sent", externalId, gmailId: externalId }, summary: `✅ Sent email to ${lead.businessName} (${lead.email}).` };
     } catch (err) {
       const reason = err instanceof EmailNotConnected ? "COMMUNICATION SERVICE NOT CONNECTED" : (err as Error).message;
       await db.darwinMessage.update({ where: { id: msg.id }, data: { status: "failed", error: reason } }).catch(() => {});

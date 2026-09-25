@@ -14,6 +14,7 @@ import {
   type SearchForm, type SessionStats, type CrmMetrics, type BannerState,
 } from "./darwin/panels";
 import { LeadTable, type TableRequest } from "./darwin/lead-table";
+import { EmailComposePopup, useEmailPopups } from "./email-popup";
 
 // Phrases that close DARWIN and return to JARVIS.
 const DEACTIVATE_RE = /\b(deactivate|de-activate|shut ?down|power down|close|exit|leave|stand ?down|log ?off)\b.*\bdarwin\b|\bdarwin[,\s]+(deactivate|shut ?down|stand ?down|close|exit|off)\b|^(deactivate|shut ?down|power down|exit|close|stand ?down|back to jarvis|go to jarvis|open jarvis|return to jarvis)[\s!.,]*$/i;
@@ -95,7 +96,10 @@ export function DarwinConsole() {
     if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(text); } catch { /* ignore */ } }
   }, [voice, voiceStarted]);
 
+  // Outreach emails open in the liquid-glass compose popup and type out live.
+  const emails = useEmailPopups();
   const agent = useAgent({
+    onEmail: emails.push,
     onAssistantComplete: (text) => { speak(text); loadOverview(); },
     // The agent ran a discovery itself → refresh and show the full history.
     onTool: (t) => {
@@ -305,6 +309,8 @@ export function DarwinConsole() {
 
       <ActivityStream items={overview?.recentActivity ?? []} connected={overview?.geoapifyReady ?? false} />
       </div>
+
+      {emails.current && <EmailComposePopup key={emails.current.id} email={emails.current} waiting={emails.waiting} onClose={emails.close} />}
     </div>
   );
 }

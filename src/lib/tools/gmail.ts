@@ -42,6 +42,10 @@ export const gmailTool: ToolDefinition<z.infer<typeof schema>> = {
     required: ["action"],
   },
   activityLabel: "Accessing Gmail",
+  emailPreview: (input) =>
+    input.action === "send" && input.to && input.subject && input.body
+      ? { to: input.to, subject: input.subject, body: input.body }
+      : null,
   async execute(input, ctx) {
     const token = await getGoogleAccessToken(ctx.userId);
     const auth = { Authorization: `Bearer ${token}` };
@@ -114,7 +118,8 @@ export const gmailTool: ToolDefinition<z.infer<typeof schema>> = {
       signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new ToolError("Couldn't send the email.");
-    return { data: { sent: true, to: input.to }, summary: `Email sent to ${input.to}.` };
+    const sent: any = await res.json().catch(() => ({}));
+    return { data: { sent: true, to: input.to, gmailId: sent?.id ?? null }, summary: `Email sent to ${input.to}.` };
   },
 };
 

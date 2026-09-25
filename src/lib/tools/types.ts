@@ -26,6 +26,15 @@ export interface ToolResult {
   summary?: string;
 }
 
+/** An outgoing email, shown to the user live while it's being sent. */
+export interface EmailPreview {
+  to: string;
+  subject: string;
+  body: string;
+  /** Optional context, e.g. the lead's business name. */
+  label?: string;
+}
+
 export interface ToolDefinition<Input = unknown> {
   name: string;
   /** Natural-language description the model uses to decide when to call it. */
@@ -49,6 +58,12 @@ export interface ToolDefinition<Input = unknown> {
   agentScope?: "ev" | "darwin";
   /** Short label shown in the activity panel while running. */
   activityLabel: string;
+  /**
+   * For tools that SEND an email: what's about to go out (or null when this
+   * call isn't a send). The UI types it out in the compose popup while the real
+   * send runs, then shows the provider's real result.
+   */
+  emailPreview?: (input: Input, ctx: ToolContext) => Promise<EmailPreview | null> | EmailPreview | null;
   execute: (input: Input, ctx: ToolContext) => Promise<ToolResult>;
 }
 

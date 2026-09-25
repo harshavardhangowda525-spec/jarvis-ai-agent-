@@ -12,6 +12,7 @@ import { HudPanel } from "@/components/hud/panel";
 import { Waveform } from "@/components/hud/visuals";
 import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
 import { instantAnswer } from "@/lib/instant";
+import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import type { AgentTiming } from "@/hooks/useAgent";
 import { useAgent } from "@/hooks/useAgent";
 import { useDeviceMetrics } from "@/hooks/useDeviceMetrics";
@@ -140,6 +141,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   // The reply is spoken sentence by sentence while it streams in, so JARVIS
   // starts talking after the first sentence rather than the whole answer.
   const speechRef = useRef<SpeechStream | null>(null);
+  // Emails being sent open in the liquid-glass compose popup and type out live.
+  const emails = useEmailPopups();
   const agent = useAgent({
     onTextDelta: (delta) => {
       if (!(voiceStarted && !voice.muted && voice.enabled)) return;
@@ -159,6 +162,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     },
     // Failed / aborted turn: finish whatever was already being spoken.
     onTurnEnd: () => { speechRef.current?.end(); speechRef.current = null; },
+    onEmail: emails.push,
     onTool: (t) => {
       if (!evActiveRef.current) return;
       if (t.status === "error") { flashEv("error"); return; }
@@ -538,6 +542,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
       {/* live weather — animated liquid-glass popup */}
       {weather && <WeatherPopup data={weather} onClose={() => setWeather(null)} />}
+      {emails.current && <EmailComposePopup key={emails.current.id} email={emails.current} waiting={emails.waiting} onClose={emails.close} />}
 
       {/* ambient glows */}
       <div className="pointer-events-none absolute inset-0" aria-hidden>

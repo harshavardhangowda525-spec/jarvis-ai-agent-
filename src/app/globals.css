@@ -254,6 +254,7 @@ body {
 @keyframes dw-scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes dw-scrim-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes dw-pop-in { 0% { opacity: 0; transform: translateY(28px) scale(0.9); filter: blur(14px); } 60% { opacity: 1; filter: blur(0); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes caret-blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
 @keyframes dw-row-in { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
 @keyframes dw-card-in { 0% { opacity: 0; transform: translateX(-14px) scale(0.98); filter: blur(6px); } 100% { opacity: 1; transform: translateX(0) scale(1); filter: blur(0); } }
 

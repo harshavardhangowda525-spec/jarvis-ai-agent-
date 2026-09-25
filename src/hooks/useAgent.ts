@@ -26,6 +26,8 @@ interface UseAgentOptions {
   onTextDelta?: (delta: string) => void;
   /** Always fires when a turn stops — finished, failed or aborted. */
   onTurnEnd?: () => void;
+  /** An email being sent (compose popup): "sending" with the email, then "sent"/"failed". */
+  onEmail?: (e: { id: string; phase: "sending" | "sent" | "failed"; to?: string; subject?: string; body?: string; label?: string; gmailId?: string | null; error?: string }) => void;
   onNavigate?: (path: string) => void;
   onOpen?: (url: string) => void;
   /** Fired for every tool result (used e.g. to drive EV's operating state). */
@@ -45,7 +47,7 @@ const nextId = () => `m${Date.now()}_${idc++}`;
  * and exposes messages, the live-activity feed, and the currently streaming
  * assistant text. Voice and text share this same flow.
  */
-export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onNavigate, onOpen, onTool }: UseAgentOptions = {}) {
+export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onTool }: UseAgentOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -187,6 +189,9 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onNaviga
               case "provider":
                 setActiveProvider(ev.name);
                 break;
+              case "email":
+                onEmail?.(ev);
+                break;
               case "timing":
                 // Server-side numbers + what the user actually waited (incl. network).
                 setLastTiming({
@@ -241,7 +246,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onNaviga
         onTurnEnd?.();
       }
     },
-    [onAssistantComplete, onTextDelta, onTurnEnd, onNavigate, onOpen, onTool, pushActivity, setConversation, streaming],
+    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onTool, pushActivity, setConversation, streaming],
   );
 
   return {

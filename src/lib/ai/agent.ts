@@ -27,6 +27,12 @@ export type AgentEvent =
   | { type: "navigate"; path: string }
   | { type: "open"; url: string; label: string }
   | { type: "provider"; name: string }
+  /**
+   * An email being sent: "sending" (with the full email, shown typing out in the
+   * compose popup while the real send runs), then "sent" or "failed" with the
+   * provider's real result. `id` ties the phases together.
+   */
+  | { type: "email"; id: string; phase: "sending" | "sent" | "failed"; to?: string; subject?: string; body?: string; label?: string; gmailId?: string | null; error?: string }
   /** Where the time went: server prep, first word, whole answer (ms from request start). */
   | { type: "timing"; provider: string; model: string; setupMs: number; firstWordMs: number | null; totalMs: number }
   | { type: "done"; text: string }
@@ -296,8 +302,16 @@ async function* runOneTool(
   }
   yield { type: "activity", label: tool.activityLabel };
   const started = Date.now();
+  let emailId = ""; // set when this call sends an email
   try {
     const parsed = tool.schema.parse(rawInput);
+    // Announce an outgoing email BEFORE sending, so the user watches it being
+    // written while the real send runs (a failed preview never blocks the send).
+    const preview = tool.emailPreview ? await Promise.resolve(tool.emailPreview(parsed, s.ctx)).catch(() => null) : null;
+    if (preview) {
+      emailId = `mail_${started.toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      yield { type: "email", id: emailId, phase: "sending", ...preview };
+    }
     const result = await tool.execute(parsed, s.ctx);
 
     while (s.activityQueue.length) {
@@ -310,6 +324,14 @@ async function* runOneTool(
     if (data && typeof data.openUrl === "string") {
       yield { type: "open", url: data.openUrl, label: String(data.label ?? "link") };
     }
+    if (emailId) {
+      // "Sent" only when the tool confirms the provider accepted it — never assumed.
+      const confirmed = !!data && (data.sent === true || data.status === "sent");
+      const gmailId = data && typeof data.gmailId === "string" ? data.gmailId : null;
+      yield confirmed
+        ? { type: "email", id: emailId, phase: "sent", gmailId }
+        : { type: "email", id: emailId, phase: "failed", error: result.summary ?? "The email wasn't sent." };
+    }
     yield {
       type: "tool",
       name: tool.name,
@@ -321,6 +343,7 @@ async function* runOneTool(
   } catch (err) {
     const message =
       err instanceof ToolError ? err.message : "The tool encountered an unexpected error.";
+    if (emailId) yield { type: "email", id: emailId, phase: "failed", error: message };
     yield { type: "tool", name: tool.name, status: "error", summary: message };
     await logTool(userId, tool.name, rawInput, null, "error", message, Date.now() - started);
     return { content: message, isError: true };
