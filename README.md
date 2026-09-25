@@ -243,8 +243,8 @@ npx vercel env pull .env.local --environment=production
 npm run local        # builds when the code changed, starts everything, opens http://localhost:3000
 ```
 
-- The PC brain answers first (cloud keys are the backup); EV follows `EV_PROVIDER`
-  (Groq only by default). The Ollama model comes from `edith/.env` (`OLLAMA_MODEL`).
+- JARVIS runs only on the PC brain; EV, DARWIN and ULTRON run only on Groq (see
+  "Which brain each agent uses" below). The Ollama model comes from `edith/.env` (`OLLAMA_MODEL`).
 - EV's images keep your public Vercel address (`JARVIS_URL` in `edith/.env`, or
   `APP_URL`) so Instagram can still fetch them.
 - Google sign-in locally needs `http://localhost:3000/api/integrations/google/callback`
@@ -317,3 +317,17 @@ balancer / uptime monitor.
 
 Built as a real, deployable agent — not a mockup. Add a tool, and JARVIS can do
 something new.
+
+## Which brain each agent uses
+
+| Agent  | Setting             | Default  | Meaning                                  |
+| ------ | ------------------- | -------- | ---------------------------------------- |
+| JARVIS | `JARVIS_PROVIDER`   | `ollama` | your PC brain (Ollama) only              |
+| EV     | `EV_PROVIDER`       | `groq`   | Groq only                                |
+| DARWIN | `DARWIN_PROVIDER`   | `groq`   | Groq only                                |
+| ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `groq` | Groq only                  |
+
+A provider id means that provider and nothing else — if it's offline or out of
+quota, the agent says so instead of quietly answering with another model.
+`auto` restores the old behaviour: every configured provider, fastest first,
+with automatic fallback.

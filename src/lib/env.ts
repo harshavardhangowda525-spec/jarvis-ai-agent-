@@ -74,10 +74,13 @@ export const env = {
   // PC brain answers first (unlimited, but a CPU is slow). Per-user Settings
   // ("Your PC (Ollama) first") override this.
   brainPriority: read("BRAIN_PRIORITY").toLowerCase() === "first" ? "first" : "fallback",
-  // Which brain EV (marketing) uses: "groq" (default) = Groq ONLY, no other
-  // provider; "ollama" = the PC brain first; "auto" = the normal fastest-first
-  // chain like JARVIS. Any other provider id (e.g. "gemini") = that one only.
+  // Which brain each agent uses. A provider id = that provider ONLY (no other
+  // model is ever tried); "auto" = the normal fastest-first chain with every
+  // configured provider (and, for JARVIS, the per-user Settings pick).
+  //   JARVIS → your PC brain (Ollama) only · EV and DARWIN → Groq only.
+  jarvisProvider: read("JARVIS_PROVIDER").toLowerCase() || "ollama",
   evProvider: read("EV_PROVIDER").toLowerCase() || "groq",
+  darwinProvider: read("DARWIN_PROVIDER").toLowerCase() || "groq",
   // Reasoning models (gpt-oss) think before answering; "low" keeps replies quick.
   reasoningEffort: read("AI_REASONING_EFFORT").toLowerCase() || "low",
 

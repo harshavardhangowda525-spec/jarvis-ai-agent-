@@ -14,7 +14,7 @@ export async function GET() {
     keyConfigured: env.ollamaApiKey.length > 0,
     build: sha.slice(0, 7),
     environment: process.env.VERCEL_ENV || "local",
-    // How long JARVIS waits for this PC's first word before using the cloud.
+    // How long JARVIS waits for this PC's first word before giving up.
     firstWordTimeoutSec: Math.round(env.ollamaTimeoutMs / 1000),
     hint: env.ollamaApiKey
       ? "OLLAMA_API_KEY is set on this deployment."

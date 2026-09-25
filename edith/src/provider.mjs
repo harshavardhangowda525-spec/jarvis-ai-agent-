@@ -30,16 +30,24 @@ function resolveChain() {
     // Last resort: local model, never rate-limited or billed.
     ["ollama", ollamaModel ? "ollama" : "", `${ollamaBase}/v1`, ollamaModel],
   ];
-  // Speed first: cloud keys answer (seconds per step instead of tens of seconds
-  // on a CPU) and your Ollama model is the unlimited backup at the end. Set
-  // BRAIN_PRIORITY=first (or ULTRON_AI_PROVIDER=ollama) to put Ollama first.
-  const brainFirst = read("BRAIN_PRIORITY").toLowerCase() === "first" && ollamaModel ? "ollama" : "";
-  const preferred = read("ULTRON_AI_PROVIDER").toLowerCase() || brainFirst || read("AI_PROVIDER").toLowerCase();
   const configured = order.filter((p) => p[1]).map(([provider, apiKey, baseUrl, model]) => ({ provider, apiKey, baseUrl, model }));
+  // ULTRON runs on ONE provider — Groq by default (ULTRON_AI_PROVIDER picks
+  // another, e.g. "ollama"). No silent switch to a different model.
+  const only = onlyProvider();
+  if (only !== "auto") return configured.filter((p) => p.provider === only);
+  // "auto": every configured provider. Speed first — cloud keys answer and your
+  // Ollama model is the unlimited backup; BRAIN_PRIORITY=first puts Ollama first.
+  const brainFirst = read("BRAIN_PRIORITY").toLowerCase() === "first" && ollamaModel ? "ollama" : "";
+  const preferred = brainFirst || read("AI_PROVIDER").toLowerCase();
   // Move the preferred provider to the front if it's configured.
   const i = configured.findIndex((p) => p.provider === preferred);
   if (i > 0) configured.unshift(configured.splice(i, 1)[0]);
   return configured;
+}
+
+/** "groq" (default), another provider id, or "auto" for the whole chain. */
+export function onlyProvider() {
+  return read("ULTRON_AI_PROVIDER").toLowerCase() || "groq";
 }
 
 function resolveProvider() {
@@ -187,7 +195,14 @@ export async function warmOllama() {
  */
 export async function askJson(system, user) {
   const providers = chain();
-  if (!providers.length) throw new Error("No AI provider configured (set GROQ_API_KEY, MISTRAL_API_KEY, GITHUB_MODELS_TOKEN, SAMBANOVA_API_KEY, GEMINI/CEREBRAS/OPENROUTER/OPENAI, or OLLAMA_MODEL).");
+  if (!providers.length) {
+    const only = onlyProvider();
+    throw new Error(only === "groq"
+      ? "ULTRON runs only on Groq, and GROQ_API_KEY isn't set — add it to edith/.env (free at console.groq.com)."
+      : only === "auto"
+        ? "No AI provider configured (set GROQ_API_KEY, MISTRAL_API_KEY, GITHUB_MODELS_TOKEN, SAMBANOVA_API_KEY, GEMINI/CEREBRAS/OPENROUTER/OPENAI, or OLLAMA_MODEL)."
+        : `ULTRON is set to use only "${only}" (ULTRON_AI_PROVIDER), but it isn't configured.`);
+  }
 
   // Groq (and some others) reject json_object mode unless the prompt literally
   // contains the word "json". Guarantee it so we never eat a needless 400.
@@ -297,7 +312,7 @@ export async function askJson(system, user) {
     break; // nothing transient to wait on, or out of rounds
   }
   const detail = [...errors.entries()].map(([name, why]) => `${name}: ${why}`).join(" · ");
-  const hint = [...errors.values()].every((w) => /quota|billing|invalid|not allowed|rate-limited/.test(w))
+  const hint = onlyProvider() === "auto" && [...errors.values()].every((w) => /quota|billing|invalid|not allowed|rate-limited/.test(w))
     ? " — add another free key (MISTRAL_API_KEY, GITHUB_MODELS_TOKEN, SAMBANOVA_API_KEY) or run a local model with OLLAMA_MODEL in edith/.env."
     : "";
   throw new Error(`All AI providers failed. ${detail || `Last: ${lastErr}`}${hint}`);

@@ -145,7 +145,12 @@ export async function* runAgent(
   system += memoryNote;
 
   const brain = await brainLookup;
-  const configs = isEv ? evConfigs(brain) : getAiConfigs(input.preferredProvider ?? undefined, brain);
+  const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : "jarvis", brain, input.preferredProvider);
+  if (!brainPick.configs.length) {
+    yield { type: "error", message: brainPick.missing ?? "No AI provider is configured." };
+    return;
+  }
+  const configs = brainPick.configs;
   const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {
@@ -230,18 +235,36 @@ export async function* runAgent(
   }
 }
 
+const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN" } as const;
+
 /**
- * EV's brain. By default EV uses Groq ONLY — no other cloud model and not the PC
- * brain (EV_PROVIDER changes this). If that provider isn't configured at all,
- * EV falls back to the normal chain rather than going silent.
+ * Which brain each agent runs on (set per agent in env):
+ *   JARVIS → JARVIS_PROVIDER, default "ollama" = your PC brain ONLY
+ *   EV     → EV_PROVIDER,     default "groq"   = Groq ONLY
+ *   DARWIN → DARWIN_PROVIDER, default "groq"   = Groq ONLY
+ * A provider id means that provider and nothing else — no silent switch to
+ * another model. "auto" = every configured provider, fastest first (JARVIS
+ * also honours the per-user Settings pick). If the one provider isn't set up,
+ * `missing` says exactly what to do instead of quietly using something else.
  */
-function evConfigs(brain: BrainEndpoint | null): AiConfig[] {
-  const pick = env.evProvider;
-  if (pick === "auto") return getAiConfigs(undefined, brain);
-  if (pick === "ollama") return getAiConfigs("ollama", brain); // PC first when reachable, cloud as backup
-  const all = getAiConfigs(pick, brain);
-  const only = all.filter((c) => c.provider === pick);
-  return only.length ? only : all;
+export function agentConfigs(
+  agent: keyof typeof AGENT_NAMES,
+  brain: BrainEndpoint | null,
+  preferred?: string | null,
+): { configs: AiConfig[]; missing?: string } {
+  const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : env.jarvisProvider;
+  if (pick === "auto") return { configs: getAiConfigs((agent === "jarvis" && preferred) || undefined, brain) };
+  const configs = getAiConfigs(pick, brain).filter((c) => c.provider === pick);
+  if (configs.length) return { configs };
+  const name = AGENT_NAMES[agent];
+  return {
+    configs,
+    missing: pick === "ollama"
+      ? `${name} runs only on your PC brain (Ollama), and it isn't connected right now. On your PC, start it with "npm run brain" (or "npm run local") and ask again.`
+      : pick === "groq"
+        ? `${name} runs only on Groq, and GROQ_API_KEY isn't set. Add it (free at console.groq.com) to your Vercel environment variables or .env.local, then restart.`
+        : `${name} is set to use only "${pick}", but that provider isn't configured.`,
+  };
 }
 
 // provider+model → time until which it's skipped (per server instance).

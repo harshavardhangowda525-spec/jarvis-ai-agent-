@@ -181,16 +181,18 @@ if (await up(`${OLLAMA}/api/tags`)) {
     say("  Ollama gateway already running on this PC — using it.");
   } else {
     start("brain", ["brain.mjs"], { cwd: EDITH, env: { BRAIN_LOCAL_ONLY: "1", OLLAMA_API_KEY: brainKey, OLLAMA_MODEL: model, BRAIN_PORT: String(BRAIN_PORT) } });
-    if (!(await waitFor(`http://127.0.0.1:${BRAIN_PORT}/health`, 180))) say("  (the brain is still loading the model — JARVIS will use the cloud until it's ready)");
+    if (!(await waitFor(`http://127.0.0.1:${BRAIN_PORT}/health`, 180))) say("  (the brain is still loading the model — JARVIS answers once it's ready)");
   }
   brainUrl = `http://127.0.0.1:${BRAIN_PORT}`;
 } else {
-  say("  Ollama isn't running — JARVIS will use your cloud keys only. (Open the Ollama app and restart to use your PC brain.)");
+  say("  Ollama isn't running — JARVIS runs only on your PC brain, so open the Ollama app and restart this.");
 }
 
 // ---- 5. ULTRON runtime ------------------------------------------------------------------------------
+// ULTRON runs on Groq only by default — lend it the app's key if edith/.env has none.
+const groqKey = [edithEnv.GROQ_API_KEY, appEnv.GROQ_API_KEY].find((v) => v && !isPlaceholder(v)) || "";
 if (await up("http://127.0.0.1:7420/health")) say("  ULTRON already running — using it.");
-else start("ultron", ["run.mjs"], { cwd: EDITH, env: { ULTRON_ALLOWED_ORIGINS: [edithEnv.ULTRON_ALLOWED_ORIGINS || edithEnv.EDITH_ALLOWED_ORIGINS, `http://localhost:${PORT}`].filter(Boolean).join(",") } });
+else start("ultron", ["run.mjs"], { cwd: EDITH, env: { ...(groqKey ? { GROQ_API_KEY: groqKey } : {}), ULTRON_ALLOWED_ORIGINS: [edithEnv.ULTRON_ALLOWED_ORIGINS || edithEnv.EDITH_ALLOWED_ORIGINS, `http://localhost:${PORT}`].filter(Boolean).join(",") } });
 
 // ---- 6. the web app (every agent) ------------------------------------------------------------------
 const nextBin = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
@@ -201,7 +203,7 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
       OLLAMA_BASE_URL: brainUrl,                               // straight to the PC brain
       OLLAMA_API_KEY: brainKey,
       OLLAMA_MODEL: model,
-      BRAIN_PRIORITY: appEnv.BRAIN_PRIORITY || "first",        // PC brain first, cloud as backup
+      BRAIN_PRIORITY: appEnv.BRAIN_PRIORITY || "first",        // only matters with JARVIS_PROVIDER=auto
     } : {}),
     // EV's images must stay publicly reachable for Instagram — keep the Vercel address.
     APP_URL: appEnv.APP_URL || edithEnv.JARVIS_URL || "",
@@ -212,7 +214,9 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
 const local = `http://localhost:${PORT}`;
 if (await waitFor(`${local}/login`, 120)) {
   say(`\n  ✓ JARVIS is running on this PC: ${local}`);
-  say(`    Brain: ${brainUrl ? `your PC (Ollama ${model}) first, cloud as backup` : "cloud only"} · EV: ${appEnv.EV_PROVIDER || "groq"}`);
+  const only = (v, d) => (v || d).toLowerCase() === "auto" ? "all providers" : `${v || d} only`;
+  say(`    Brains: JARVIS ${only(appEnv.JARVIS_PROVIDER, brainUrl ? `ollama (${model})` : "ollama")} · EV ${only(appEnv.EV_PROVIDER, "groq")} · DARWIN ${only(appEnv.DARWIN_PROVIDER, "groq")} · ULTRON ${only(edithEnv.ULTRON_AI_PROVIDER, "groq")}`);
+  if (!groqKey) say("    ! GROQ_API_KEY is empty in .env.local — EV, DARWIN and ULTRON need it (free at console.groq.com).");
   say("    Log in with your usual account. Keep this window open — Ctrl+C stops everything.\n");
   if (!process.argv.includes("--no-open")) {
     if (win) spawn(`start "" "${local}"`, { shell: true, stdio: "ignore", detached: true });

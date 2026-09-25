@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest";
 
-vi.hoisted(() => { process.env.GROQ_API_KEY = "gsk_test"; delete process.env.AI_PROVIDER; });
+vi.hoisted(() => { process.env.GROQ_API_KEY = "gsk_test"; process.env.JARVIS_PROVIDER = "auto"; delete process.env.AI_PROVIDER; });
 
 // The model: first asks to send an email via the gmail tool, then says it's done.
 let step = 0;

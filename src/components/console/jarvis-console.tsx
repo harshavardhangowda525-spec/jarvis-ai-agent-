@@ -81,7 +81,7 @@ function timingDetail(t: AgentTiming): string {
     `• whole answer: ${(t.totalMs / 1000).toFixed(2)}s`,
   ];
   if (t.setupMs > 700) lines.push("Server prep is slow — put your Vercel functions in the same region as your database (Vercel → Settings → Functions → Region).");
-  if (t.provider === "ollama" && (t.firstWordMs ?? 0) > 3000) lines.push("Your PC brain is the slow part — a cloud model (Settings → AI) answers in about a second.");
+  if (t.provider === "ollama" && (t.firstWordMs ?? 0) > 3000) lines.push("Your PC brain is the slow part — a smaller Ollama model (e.g. qwen2.5:1.5b) or a GPU answers faster.");
   return lines.filter(Boolean).join("\n");
 }
 
