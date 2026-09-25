@@ -244,10 +244,16 @@ export function useUltron() {
   const prefsRef = useRef<string | null>(null);
   const loadPrefs = useCallback(async () => {
     try {
-      const r = await fetch("/api/memories");
-      if (!r.ok) return "";
+      const [r, me] = await Promise.all([
+        fetch("/api/memories"),
+        fetch("/api/auth/me").then((x) => (x.ok ? x.json() : null)).catch(() => null),
+      ]);
+      // ULTRON talks to you like a friend — it should know your name.
+      const name: string = me?.data?.displayName || "";
+      const nameLine = name ? `- The user's name is ${name}.\n` : "";
+      if (!r.ok) { prefsRef.current = nameLine.trim(); return prefsRef.current; }
       const mems: { key: string | null; content: string }[] = (await r.json()).data?.memories ?? [];
-      prefsRef.current = mems.slice(0, 60).map((m) => `- ${m.key ? `${m.key}: ` : ""}${m.content}`).join("\n").slice(0, 4000);
+      prefsRef.current = (nameLine + mems.slice(0, 60).map((m) => `- ${m.key ? `${m.key}: ` : ""}${m.content}`).join("\n")).slice(0, 4000);
     } catch { prefsRef.current = prefsRef.current ?? ""; }
     return prefsRef.current ?? "";
   }, []);
