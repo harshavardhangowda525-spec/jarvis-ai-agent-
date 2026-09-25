@@ -323,11 +323,12 @@ something new.
 | Agent  | Setting             | Default  | Meaning                                  |
 | ------ | ------------------- | -------- | ---------------------------------------- |
 | JARVIS | `JARVIS_PROVIDER`   | `ollama` | your PC brain (Ollama) only              |
-| EV     | `EV_PROVIDER`       | `groq`   | Groq only                                |
-| DARWIN | `DARWIN_PROVIDER`   | `groq`   | Groq only                                |
-| ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `groq` | Groq only                  |
+| EV     | `EV_PROVIDER`       | `groq,gemini` | Groq, Gemini as backup              |
+| DARWIN | `DARWIN_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
+| ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `groq,gemini` | Groq, Gemini as backup |
 
-A provider id means that provider and nothing else — if it's offline or out of
-quota, the agent says so instead of quietly answering with another model.
+A provider id (or comma list, tried in that order) means those providers and
+nothing else — if they're all offline or out of quota, the agent says so
+instead of quietly answering with another model.
 `auto` restores the old behaviour: every configured provider, fastest first,
 with automatic fallback.

@@ -214,9 +214,12 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
 const local = `http://localhost:${PORT}`;
 if (await waitFor(`${local}/login`, 120)) {
   say(`\n  ✓ JARVIS is running on this PC: ${local}`);
-  const only = (v, d) => (v || d).toLowerCase() === "auto" ? "all providers" : `${v || d} only`;
-  say(`    Brains: JARVIS ${only(appEnv.JARVIS_PROVIDER, brainUrl ? `ollama (${model})` : "ollama")} · EV ${only(appEnv.EV_PROVIDER, "groq")} · DARWIN ${only(appEnv.DARWIN_PROVIDER, "groq")} · ULTRON ${only(edithEnv.ULTRON_AI_PROVIDER, "groq")}`);
-  if (!groqKey) say("    ! GROQ_API_KEY is empty in .env.local — EV, DARWIN and ULTRON need it (free at console.groq.com).");
+  const only = (v, d) => (v || d).toLowerCase() === "auto" ? "all providers" : (v || d).split(/[\s,>]+/).filter(Boolean).join(" → ");
+  say(`    Brains: JARVIS ${only(appEnv.JARVIS_PROVIDER, brainUrl ? `ollama (${model})` : "ollama")} · EV ${only(appEnv.EV_PROVIDER, "groq,gemini")} · DARWIN ${only(appEnv.DARWIN_PROVIDER, "groq,gemini")} · ULTRON ${only(edithEnv.ULTRON_AI_PROVIDER, "groq,gemini")}`);
+  const geminiKey = [edithEnv.GEMINI_API_KEY, appEnv.GEMINI_API_KEY].find((v) => v && !isPlaceholder(v));
+  if (!groqKey && !geminiKey) say("    ! GROQ_API_KEY and GEMINI_API_KEY are both empty in .env.local — EV, DARWIN and ULTRON need at least one.");
+  else if (!groqKey) say("    ! GROQ_API_KEY is empty — EV, DARWIN and ULTRON will use Gemini only.");
+  else if (!geminiKey) say("    (No GEMINI_API_KEY — EV, DARWIN and ULTRON have no backup when Groq is busy. Free at aistudio.google.com/apikey.)");
   say("    Log in with your usual account. Keep this window open — Ctrl+C stops everything.\n");
   if (!process.argv.includes("--no-open")) {
     if (win) spawn(`start "" "${local}"`, { shell: true, stdio: "ignore", detached: true });

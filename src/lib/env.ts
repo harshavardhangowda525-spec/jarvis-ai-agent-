@@ -77,10 +77,12 @@ export const env = {
   // Which brain each agent uses. A provider id = that provider ONLY (no other
   // model is ever tried); "auto" = the normal fastest-first chain with every
   // configured provider (and, for JARVIS, the per-user Settings pick).
-  //   JARVIS → your PC brain (Ollama) only · EV and DARWIN → Groq only.
+  //   JARVIS → your PC brain (Ollama) only · EV and DARWIN → Groq, then Gemini.
   jarvisProvider: read("JARVIS_PROVIDER").toLowerCase() || "ollama",
-  evProvider: read("EV_PROVIDER").toLowerCase() || "groq",
-  darwinProvider: read("DARWIN_PROVIDER").toLowerCase() || "groq",
+  // A comma list = those providers in that order, nothing else (Groq, then
+  // Gemini as the backup when Groq is rate-limited or down).
+  evProvider: read("EV_PROVIDER").toLowerCase() || "groq,gemini",
+  darwinProvider: read("DARWIN_PROVIDER").toLowerCase() || "groq,gemini",
   // Reasoning models (gpt-oss) think before answering; "low" keeps replies quick.
   reasoningEffort: read("AI_REASONING_EFFORT").toLowerCase() || "low",
 

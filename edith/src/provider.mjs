@@ -44,10 +44,10 @@ function resolveChain() {
     groq.tpm = Math.max(2000, Number(read("GROQ_TPM")) || 8000); // free-plan tokens/minute for gpt-oss-120b
     groq.slack = 0;
   }
-  // ULTRON runs on ONE provider — Groq by default (ULTRON_AI_PROVIDER picks
-  // another, e.g. "ollama"). No silent switch to a different model.
-  const only = onlyProvider();
-  if (only !== "auto") return configured.filter((p) => p.provider === only);
+  // ULTRON runs on the providers listed in ULTRON_AI_PROVIDER, in that order —
+  // by default Groq, with Gemini as the backup. Nothing else is used.
+  const list = providerList();
+  if (!list.includes("auto")) return list.map((name) => configured.find((p) => p.provider === name)).filter(Boolean);
   // "auto": every configured provider. Speed first — cloud keys answer and your
   // Ollama model is the unlimited backup; BRAIN_PRIORITY=first puts Ollama first.
   const brainFirst = read("BRAIN_PRIORITY").toLowerCase() === "first" && ollamaModel ? "ollama" : "";
@@ -58,9 +58,22 @@ function resolveChain() {
   return configured;
 }
 
-/** "groq" (default), another provider id, or "auto" for the whole chain. */
+/** "groq,gemini" (default), another provider id / comma list, or "auto" for the whole chain. */
 export function onlyProvider() {
-  return read("ULTRON_AI_PROVIDER").toLowerCase() || "groq";
+  return read("ULTRON_AI_PROVIDER").toLowerCase() || "groq,gemini";
+}
+export function providerList() {
+  return onlyProvider().split(/[\s,>]+/).filter(Boolean);
+}
+const KEY_FOR = { groq: "GROQ_API_KEY (free at console.groq.com)", gemini: "GEMINI_API_KEY (free at aistudio.google.com/apikey)" };
+/** What to tell the user when none of ULTRON's providers is set up. */
+export function missingProviderMessage() {
+  const list = providerList();
+  if (list.includes("auto")) return "No AI provider configured (set GROQ_API_KEY, GEMINI_API_KEY, MISTRAL_API_KEY, GITHUB_MODELS_TOKEN, SAMBANOVA_API_KEY, CEREBRAS/OPENROUTER/OPENAI, or OLLAMA_MODEL).";
+  if (list.every((p) => KEY_FOR[p])) {
+    return `ULTRON runs on ${list.map((p) => p[0].toUpperCase() + p.slice(1)).join(", then ")}, and none of them is set up — add ${list.map((p) => KEY_FOR[p]).join(" or ")} to edith/.env or the app's .env.local.`;
+  }
+  return `ULTRON_AI_PROVIDER=${onlyProvider()} — none of those providers is configured in edith/.env.`;
 }
 
 function resolveProvider() {
@@ -252,14 +265,7 @@ export async function warmOllama() {
  */
 export async function askJson(system, user, { onWait } = {}) {
   const providers = chain();
-  if (!providers.length) {
-    const only = onlyProvider();
-    throw new Error(only === "groq"
-      ? "ULTRON runs only on Groq, and GROQ_API_KEY isn't set — add it to edith/.env (free at console.groq.com)."
-      : only === "auto"
-        ? "No AI provider configured (set GROQ_API_KEY, MISTRAL_API_KEY, GITHUB_MODELS_TOKEN, SAMBANOVA_API_KEY, GEMINI/CEREBRAS/OPENROUTER/OPENAI, or OLLAMA_MODEL)."
-        : `ULTRON is set to use only "${only}" (ULTRON_AI_PROVIDER), but it isn't configured.`);
-  }
+  if (!providers.length) throw new Error(missingProviderMessage());
 
   // Groq (and some others) reject json_object mode unless the prompt literally
   // contains the word "json". Guarantee it so we never eat a needless 400.
@@ -356,9 +362,18 @@ export async function askJson(system, user, { onWait } = {}) {
                 i -= 1; nextProvider = true; break;
               }
             }
-            // Per-minute tokens used up by earlier steps → wait as long as Groq asks (up to ~75s).
+            // Per-minute tokens used up by earlier steps: with a backup (Gemini)
+            // available, rest Groq for as long as it asks and use the backup now;
+            // otherwise wait it out (up to ~75s).
             if (res.status === 429 && !/request too large/i.test(text)) {
               const secs = waitSeconds(res, text) || 20;
+              const backup = providers.some((q) => q !== P && !isDead(q.provider));
+              if (backup) {
+                dead.set(P.provider, { until: Date.now() + secs * 1000, reason: "rate-limited" });
+                log.info(`Groq per-minute limit reached — using the backup for the next ${secs}s.`);
+                errors.set(P.provider, "rate-limited");
+                nextProvider = true; break;
+              }
               if (secs <= 75 && waits < 3) {
                 waits += 1; errors.delete(P.provider);
                 log.info(`Groq per-minute limit reached — waiting ${secs}s.`);

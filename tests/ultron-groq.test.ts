@@ -11,7 +11,11 @@ const realFetch = globalThis.fetch;
 
 function fakeGroq(opts: { goodKeys: string[]; limit?: number; rateLimitOnce?: number; underCount?: number }) {
   let limited = false;
-  globalThis.fetch = (async (_url: string, init: any) => {
+  globalThis.fetch = (async (url: string, init: any) => {
+    if (String(url).includes("generativelanguage")) {
+      calls.push({ key: "gemini", maxTokens: JSON.parse(init.body).max_tokens, promptChars: 0 });
+      return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: '{"done":true,"report":"from gemini"}' } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     const key = String(init.headers.Authorization).replace("Bearer ", "");
     const body = JSON.parse(init.body);
     const promptChars = body.messages.map((m: any) => m.content).join("").length;
@@ -33,9 +37,10 @@ function fakeGroq(opts: { goodKeys: string[]; limit?: number; rateLimitOnce?: nu
   }) as typeof fetch;
 }
 
-async function loadProvider(keys: { source: string; key: string }[]) {
+async function loadProvider(keys: { source: string; key: string }[], gemini = false) {
   vi.resetModules();
   process.env.GROQ_API_KEY = keys[0]?.key ?? "";
+  if (gemini) process.env.GEMINI_API_KEY = "AIza_test"; else delete process.env.GEMINI_API_KEY;
   delete process.env.ULTRON_AI_PROVIDER;
   delete process.env.ULTRON_MAX_TOKENS;
   (globalThis as any).__ULTRON_GROQ_KEYS__ = keys;
@@ -89,5 +94,25 @@ describe("ULTRON on Groq", () => {
     expect(await p.askJson(SYSTEM, STEP, { onWait: (s: number) => waited.push(s) })).toEqual({ done: true, report: "ok" });
     expect(waited).toEqual([1]);
     expect(calls).toHaveLength(2);
+  });
+
+  it("with a Gemini key, a Groq rate limit switches to Gemini right away (no waiting)", async () => {
+    fakeGroq({ goodKeys: ["gsk_good"], rateLimitOnce: 30 });
+    const p = await loadProvider([{ source: ".env.local", key: "gsk_good" }], true);
+    const waited: number[] = [];
+    expect(await p.askJson(SYSTEM, STEP, { onWait: (s: number) => waited.push(s) })).toEqual({ done: true, report: "from gemini" });
+    expect(waited).toEqual([]);
+    expect(calls.map((c) => c.key)).toEqual(["gsk_good", "gemini"]);
+  });
+
+  it("a rejected Groq key falls back to Gemini", async () => {
+    fakeGroq({ goodKeys: [] });
+    const p = await loadProvider([{ source: "edith/.env", key: "gsk_old" }], true);
+    expect(await p.askJson(SYSTEM, STEP)).toEqual({ done: true, report: "from gemini" });
+  });
+
+  it("the default chain is Groq then Gemini", async () => {
+    const p = await loadProvider([{ source: ".env.local", key: "gsk_good" }], true);
+    expect(p.providerSummary()).toMatch(/^groq\(.+\) → gemini\(/);
   });
 });

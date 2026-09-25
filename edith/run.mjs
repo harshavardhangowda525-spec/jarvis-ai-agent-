@@ -9,7 +9,7 @@
 import "./src/env-init.mjs"; // must stay first — loads edith/.env before other modules read it
 import { Workspace } from "./src/workspace.mjs";
 import { startServer } from "./src/server.mjs";
-import { askJson, groqFirst, groqKeySource, hasProvider, onlyProvider, providerName, providerSummary, warmOllama } from "./src/provider.mjs";
+import { askJson, groqFirst, groqKeySource, hasProvider, missingProviderMessage, providerName, providerSummary, warmOllama } from "./src/provider.mjs";
 import { log } from "./src/log.mjs";
 import { lowerOllamaPriority } from "./src/os-priority.mjs";
 
@@ -17,11 +17,7 @@ const port = Number(process.env.ULTRON_PORT || 7420);
 const ws = new Workspace(process.argv[2] || process.env.ULTRON_WORKSPACE);
 
 if (!hasProvider()) {
-  log.warn(onlyProvider() === "groq"
-    ? "ULTRON runs only on Groq and GROQ_API_KEY isn't set — add it to edith/.env (free at console.groq.com)."
-    : onlyProvider() === "auto"
-      ? "No AI provider key found — set GROQ_API_KEY (or MISTRAL/GITHUB_MODELS_TOKEN/SAMBANOVA/GEMINI/OPENROUTER/CEREBRAS/OPENAI, or OLLAMA_MODEL) in edith/.env."
-      : `ULTRON_AI_PROVIDER=${onlyProvider()} isn't configured in edith/.env.`);
+  log.warn(missingProviderMessage());
   log.warn("ULTRON will pair and run REAL tools, but its reasoning/coding loop needs a provider.");
 } else {
   log.info(`Brain ready: ${providerName()}`);
