@@ -125,6 +125,9 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   // sentences from an older reply know not to play.
   const speechGenRef = useRef(0);
   const cancelPlaybackRef = useRef<(() => void) | null>(null); // ends the current streamed clip
+  // Loudness envelope of each spoken clip (decoded separately — playback itself is
+  // untouched), so visuals can follow the rhythm of JARVIS's own voice.
+  const envelopesRef = useRef(new Map<string, Float32Array>());
 
   // Free browser speech-to-text (Web Speech API) — used when ElevenLabs STT
   // isn't configured, so voice input works with no key and no cost.
@@ -552,6 +555,41 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   // when it finishes — otherwise an earlier reply ending would re-open the mic
   // while a newer one is still playing, and the mic would hear it.
   const speakSeqRef = useRef(0);
+  /** Decode a TTS clip and store its loudness every 30ms (best-effort, async). */
+  const trackEnvelope = useCallback((blob: Blob, url: string) => {
+    const Offline = typeof window !== "undefined" ? (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext) : null;
+    if (!Offline) return;
+    blob.arrayBuffer().then((buf) => new Offline(1, 1, 44100).decodeAudioData(buf)).then((audio: AudioBuffer) => {
+      const data = audio.getChannelData(0);
+      const win = Math.max(1, Math.round(audio.sampleRate * 0.03));
+      const env = new Float32Array(Math.ceil(data.length / win));
+      let peak = 0.0001;
+      for (let i = 0; i < env.length; i++) {
+        let sum = 0; const start = i * win; const end = Math.min(data.length, start + win);
+        for (let j = start; j < end; j++) sum += data[j] * data[j];
+        env[i] = Math.sqrt(sum / Math.max(1, end - start));
+        if (env[i] > peak) peak = env[i];
+      }
+      for (let i = 0; i < env.length; i++) env[i] = Math.min(1, env[i] / peak);
+      const map = envelopesRef.current;
+      map.set(url, env);
+      if (map.size > 6) map.delete(map.keys().next().value as string);
+    }).catch(() => { /* visuals fall back to a gentle rhythm */ });
+  }, []);
+
+  /**
+   * How loud JARVIS's voice is right now (0..1) — read on demand by animations
+   * (no re-renders). Follows the real clip when known, else a soft speech rhythm.
+   */
+  const getOutputLevel = useCallback((): number => {
+    if (statusRef.current !== "speaking") return 0;
+    const el = audioElRef.current;
+    const env = el && !el.paused ? envelopesRef.current.get(el.src) : undefined;
+    if (env && el) return env[Math.min(env.length - 1, Math.floor(el.currentTime / 0.03))] ?? 0;
+    const t = performance.now() / 1000;
+    return Math.max(0, 0.35 + 0.3 * Math.sin(t * 9.3) * Math.sin(t * 2.1) + 0.15 * Math.sin(t * 23));
+  }, []);
+
   const speak = useCallback(
     async (text: string): Promise<void> => {
       if (!enabledRef.current || mutedRef.current) return;
@@ -582,6 +620,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         const blob = await res.blob();
         stopSpeaking();
         const url = URL.createObjectURL(blob);
+        trackEnvelope(blob, url);
         el.src = url;
         await new Promise<void>((resolve) => {
           const done = () => {
@@ -605,7 +644,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         }
       }
     },
-    [fail, setStatusBoth, stopSpeaking, speakBrowser, stopRecognition, startRecognition],
+    [fail, setStatusBoth, stopSpeaking, speakBrowser, stopRecognition, startRecognition, trackEnvelope],
   );
 
   /**
@@ -631,7 +670,9 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       const el = audioElRef.current;
       if (!el) { resolve(); return; }
       if (el.src) URL.revokeObjectURL(el.src);
-      el.src = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
+      trackEnvelope(blob, url);
+      el.src = url;
       const done = () => {
         el.removeEventListener("ended", done);
         el.removeEventListener("error", done);
@@ -689,7 +730,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         });
       },
     };
-  }, [setStatusBoth, speakBrowser, startRecognition, stopRecognition, stopSpeaking]);
+  }, [setStatusBoth, speakBrowser, startRecognition, stopRecognition, stopSpeaking, trackEnvelope]);
 
   const toggleMute = useCallback(() => {
     setMuted((m) => {
@@ -761,6 +802,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   return {
     status,
     level,
+    getOutputLevel,
     muted,
     enabled,
     error,

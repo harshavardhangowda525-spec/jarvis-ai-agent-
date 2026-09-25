@@ -67,9 +67,10 @@ export function AppShell({
   const [build, setBuild] = useState<{ shortSha: string; env: string } | null>(null);
   const now = useClock();
 
-  // DARWIN and ULTRON are full-immersion screens — the nav rails fold away so
-  // the cinematic dashboard owns the whole viewport.
-  const immersive = pathname.startsWith("/dashboard/darwin") || pathname.startsWith("/dashboard/ultron");
+  // JARVIS, DARWIN and ULTRON are full-immersion screens — the nav rails fold
+  // away so the cinematic interface owns the whole viewport (JARVIS has its own
+  // systems menu).
+  const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/darwin") || pathname.startsWith("/dashboard/ultron");
 
   const name = user.displayName || user.email.split("@")[0];
 
