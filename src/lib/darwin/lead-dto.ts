@@ -8,6 +8,7 @@ export const LEAD_SELECT = {
   id: true, businessName: true, category: true, location: true, phone: true, website: true, email: true,
   latitude: true, longitude: true, stage: true, source: true, discoveredAt: true, lastSeenAt: true,
   lastContactedAt: true, nextFollowUpAt: true, notes: true, salesValue: true, serviceInterest: true, metadata: true,
+  instagram: true, opportunityType: true, leadScore: true,
 } as const;
 
 type LeadRow = {
@@ -15,6 +16,7 @@ type LeadRow = {
   website: string | null; email: string | null; latitude: number | null; longitude: number | null; stage: string;
   source: string; discoveredAt: Date; lastSeenAt: Date | null; lastContactedAt: Date | null; nextFollowUpAt: Date | null;
   notes: string | null; salesValue: number | null; serviceInterest: string | null; metadata: unknown;
+  instagram?: string | null; opportunityType?: string | null; leadScore?: number | null;
 };
 
 export function toLeadDTO(r: LeadRow): LeadDTO {
@@ -43,5 +45,8 @@ export function toLeadDTO(r: LeadRow): LeadDTO {
     notes: r.notes,
     salesValue: r.salesValue,
     serviceInterest: r.serviceInterest,
+    instagram: r.instagram ?? null,
+    opportunityType: r.opportunityType ?? null,
+    leadScore: typeof r.leadScore === "number" ? r.leadScore : null,
   };
 }

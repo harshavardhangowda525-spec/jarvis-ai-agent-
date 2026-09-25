@@ -41,6 +41,11 @@ export interface LeadDTO {
   notes: string | null;
   salesValue: number | null;
   serviceInterest: string | null;
+  instagram?: string | null;
+  /** Set by discovery ("no_website") or DARWIN's AI analysis (e.g. "outdated_website"). */
+  opportunityType?: string | null;
+  /** AI analysis score (0–100) when DARWIN qualified the lead — never a listed fact. */
+  leadScore?: number | null;
 }
 
 export interface FindLeadsResult {

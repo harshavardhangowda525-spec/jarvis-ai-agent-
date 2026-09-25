@@ -373,3 +373,20 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .jv-kinetic > span, .jv-sweep, .jv-bar::before, .jv-bar-border { animation: none !important; opacity: 1; }
 }
+
+/* ---------- DARWIN intelligence map ---------- */
+.dw-glass {
+  background: linear-gradient(160deg, rgba(255,255,255,.06), rgba(12,22,40,.55));
+  backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%);
+  box-shadow: 0 0 0 1px rgba(170,215,255,.12), 0 24px 70px -30px rgba(40,140,255,.45), inset 0 1px 0 rgba(255,255,255,.08);
+}
+.dw-bare, .dw-bare:focus, .dw-bare:focus-visible { border: 0; box-shadow: none; outline: none; }
+.dw-bare::-webkit-inner-spin-button { opacity: .3; }
+@keyframes dw-feed-in { from { opacity: 0; transform: translateY(10px); filter: blur(3px); } to { transform: none; filter: none; } }
+@keyframes dw-layer-in { from { opacity: 0; transform: translateX(-12px) scale(.97); filter: blur(4px); clip-path: inset(0 100% 0 0 round 16px); } to { opacity: 1; transform: none; filter: none; clip-path: inset(0 0 0 0 round 16px); } }
+@keyframes dw-bar-in { from { width: 0; } }
+.dw-flow-line { background: linear-gradient(90deg, rgba(255,255,255,.08), rgba(140,210,255,.5), rgba(255,255,255,.08)); background-size: 200% 100%; animation: dw-flow 4s linear infinite; }
+@keyframes dw-flow { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+.dw-flow-dot { left: var(--from); animation: dw-flow-dot 1.5s cubic-bezier(.4,0,.2,1) forwards; }
+@keyframes dw-flow-dot { 0% { left: var(--from); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: var(--to); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .dw-flow-line, .dw-flow-dot { animation: none; } }

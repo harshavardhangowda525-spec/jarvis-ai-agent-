@@ -2,123 +2,206 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mic, MicOff, Loader2, ChevronLeft, ChevronRight, LogOut, MapPin } from "lucide-react";
+import { Mic, MicOff, Loader2, LogOut, MapPin, X, Radar, Instagram, Globe, ExternalLink, Database, RotateCw } from "lucide-react";
 import { useVoice, useResumeVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { GENERATE_LEADS_RE, MAP_REQUEST_RE, parseLeadCommand } from "@/lib/darwin/command";
 import type { FindLeadsResult, LeadDTO } from "@/lib/darwin/types";
-import { GlassPanel } from "./darwin/ui";
 import {
-  LeadSearchPanel, NewLeadsPanel, CrmPanel, FollowUpsPanel, ResultBanner,
-  type SearchForm, type SessionStats, type CrmMetrics, type BannerState,
-} from "./darwin/panels";
-import { LeadTable, type TableRequest } from "./darwin/lead-table";
+  leadIntel, pipelineCounts, pipelineStageOf, matchesFilters, toLocalMeters,
+  DEFAULT_FILTERS, KIND_LABEL, PIPELINE, type MapFilters, type PipelineStage,
+} from "@/lib/darwin/intel";
+import { type SearchForm, FollowUpsPanel } from "./darwin/panels";
+import { LeadTable, patchLead, type TableRequest } from "./darwin/lead-table";
+import { PhoneActions, STATUS_OPTIONS, normStage, statusTone, websiteHost, fmtDistance } from "./darwin/ui";
+import { DarwinMap, type DarwinMapHandle, type MapNodeInput } from "./darwin/darwin-map";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
+
+/**
+ * DARWIN — a living geographic intelligence map. Every node is a REAL business
+ * DARWIN discovered (placed at its real distance and bearing from the searched
+ * point); every analysis step and classification shows real listed data. The
+ * terrain around them is stylised, and the page says so.
+ */
 
 // Phrases that close DARWIN and return to JARVIS.
 const DEACTIVATE_RE = /\b(deactivate|de-activate|shut ?down|power down|close|exit|leave|stand ?down|log ?off)\b.*\bdarwin\b|\bdarwin[,\s]+(deactivate|shut ?down|stand ?down|close|exit|off)\b|^(deactivate|shut ?down|power down|exit|close|stand ?down|back to jarvis|go to jarvis|open jarvis|return to jarvis)[\s!.,]*$/i;
 
-type DarwinState = "IDLE" | "LISTENING" | "THINKING" | "SEARCHING" | "PROCESSING" | "WAITING_FOR_APPROVAL" | "COMPLETED" | "ERROR";
-
-const PROGRESS: Record<DarwinState, string> = {
-  IDLE: "18%", LISTENING: "40%", THINKING: "55%", SEARCHING: "72%",
-  PROCESSING: "72%", WAITING_FOR_APPROVAL: "60%", COMPLETED: "100%", ERROR: "30%",
-};
-
 interface Overview {
-  crm: CrmMetrics;
   geoapifyReady: boolean;
+  crm: { followUpsDue: number };
   totals: { leads: number; dueFollowUps: number; pendingApprovals: number };
   recentActivity: { id: string; type: string; detail: string; createdAt: string }[];
 }
+interface Place { lat: number; lon: number; label: string; radiusKm: number }
+interface FeedItem { id: number; text: string; tone: "info" | "ok" | "warn" | "hot" }
 
 const DEFAULT_FORM: SearchForm = { category: "", location: "", limit: 20, filter: "all", radiusKm: 5 };
 const FORM_KEY = "darwin.searchForm";
-const SESSION_KEY = "darwin.session";
+const PLACE_KEY = "darwin.place";
 
 // Per-viewer conveniences only — the lead history itself lives in the database.
-function readStore<T>(store: "local" | "session", key: string, fallback: T): T {
-  try {
-    const raw = (store === "local" ? window.localStorage : window.sessionStorage).getItem(key);
-    return raw ? { ...fallback, ...JSON.parse(raw) } : fallback;
-  } catch { return fallback; }
+function readStore<T>(key: string, fallback: T): T {
+  try { const raw = window.localStorage.getItem(key); return raw ? { ...fallback, ...JSON.parse(raw) } : fallback; } catch { return fallback; }
 }
-function writeStore(store: "local" | "session", key: string, v: unknown) {
-  try { (store === "local" ? window.localStorage : window.sessionStorage).setItem(key, JSON.stringify(v)); } catch { /* storage blocked */ }
-}
+function writeStore(key: string, v: unknown) { try { window.localStorage.setItem(key, JSON.stringify(v)); } catch { /* storage blocked */ } }
+
+const CYCLE3 = { any: "has", has: "none", none: "any" } as const;
+const FILTER_TEXT: Record<string, Record<string, string>> = {
+  website: { any: "Any", has: "Has website", none: "No website" },
+  phone: { any: "Any", has: "Has phone", none: "No phone" },
+  instagram: { any: "Any", has: "On Instagram", none: "No Instagram" },
+  quality: { any: "Any", weak: "Weak website (AI)" },
+  potential: { any: "Any", high: "High potential" },
+};
 
 export function DarwinConsole() {
   const router = useRouter();
+  const map = useRef<DarwinMapHandle>(null);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
   const [voiceStarted, setVoiceStarted] = useState(false);
   const [overview, setOverview] = useState<Overview | null>(null);
   const [followUps, setFollowUps] = useState<LeadDTO[]>([]);
   const [searching, setSearching] = useState(false);
-  const [boot, setBoot] = useState<"run" | "fade" | "done">("run");
   const [leaving, setLeaving] = useState(false);
+  const [intro, setIntro] = useState<{ online: boolean; done: boolean }>({ online: false, done: false });
+  const [onlineDone, setOnlineDone] = useState(false);
 
   const [form, setForm] = useState<SearchForm>(DEFAULT_FORM);
   const [lastForm, setLastForm] = useState<SearchForm | null>(null);
-  const [session, setSession] = useState<SessionStats>({ newFound: 0, skipped: 0, searches: 0 });
-  const [banner, setBanner] = useState<BannerState>(null);
-  const [searchLeads, setSearchLeads] = useState<LeadDTO[]>([]);
-  const [freshIds, setFreshIds] = useState<Set<string>>(new Set());
+  const [place, setPlace] = useState<Place | null>(null);
+  const [leads, setLeads] = useState<LeadDTO[]>([]);
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  const [summary, setSummary] = useState<{ found: number; verified: number; noSite: number; hot: number; skipped: number; message: string } | null>(null);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [filters, setFilters] = useState<MapFilters>(DEFAULT_FILTERS);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
+  const [crmOpen, setCrmOpen] = useState(false);
   const [tableRequest, setTableRequest] = useState<TableRequest | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const tableRef = useRef<HTMLDivElement>(null);
+  const [flows, setFlows] = useState<{ key: number; from: number; to: number }[]>([]);
+  const categoryRef = useRef<HTMLInputElement>(null);
+  const locationRef = useRef<HTMLInputElement>(null);
+  const feedSeq = useRef(0);
+  const prevStages = useRef(new Map<string, PipelineStage>());
 
   const sendRef = useRef<(t: string) => void>(() => {});
   const deactivateRef = useRef<() => void>(() => {});
   const runSearchRef = useRef<(f: SearchForm) => void>(() => {});
 
-  useEffect(() => {
-    const t1 = setTimeout(() => setBoot("fade"), 1900);
-    const t2 = setTimeout(() => setBoot("done"), 2600);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+  const pushFeed = useCallback((text: string, tone: FeedItem["tone"] = "info") => {
+    setFeed((f) => [...f.slice(-11), { id: ++feedSeq.current, text, tone }]);
   }, []);
 
-  // Restore the last form (this browser) and this tab's session counters.
+  // Restore the last form + place (this browser).
   useEffect(() => {
-    const f = readStore<SearchForm>("local", FORM_KEY, DEFAULT_FORM);
+    const f = readStore<SearchForm>(FORM_KEY, DEFAULT_FORM);
     setForm(f);
     if (f.category && f.location) setLastForm(f);
-    setSession(readStore<SessionStats>("session", SESSION_KEY, { newFound: 0, skipped: 0, searches: 0 }));
+    const p = readStore<Place | null>(PLACE_KEY, null as unknown as Place);
+    if (p && typeof p.lat === "number") setPlace(p);
   }, []);
 
+  const loadLeads = useCallback(async () => {
+    try {
+      const r = await fetch("/api/darwin/leads?limit=500");
+      const j = r.ok ? await r.json() : null;
+      if (j?.data?.leads) setLeads(j.data.leads);
+      return (j?.data?.leads ?? []) as LeadDTO[];
+    } catch { return [] as LeadDTO[]; }
+  }, []);
   const loadOverview = useCallback(() => {
     fetch("/api/darwin/overview").then((r) => (r.ok ? r.json() : null)).then((j) => j?.data && setOverview(j.data)).catch(() => {});
     fetch("/api/darwin/leads?followups=1&limit=6").then((r) => (r.ok ? r.json() : null)).then((j) => j?.data && setFollowUps(j.data.leads)).catch(() => {});
   }, []);
-  useEffect(() => { loadOverview(); const t = setInterval(loadOverview, 30000); return () => clearInterval(t); }, [loadOverview]);
+  useEffect(() => { loadOverview(); loadLeads(); const t = setInterval(loadOverview, 30000); return () => clearInterval(t); }, [loadOverview, loadLeads]);
+  // Seed the live feed with DARWIN's real recent activity.
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !overview) return;
+    seeded.current = true;
+    overview.recentActivity.slice(0, 5).reverse().forEach((a) => pushFeed(a.detail, /fail|lost/.test(a.type) ? "warn" : "info"));
+  }, [overview, pushFeed]);
 
   const voice = useVoice({ onTranscript: (t) => sendRef.current(t), autoListen: true, voiceProfile: "darwin" });
   const speak = useCallback((text: string) => {
     if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(text); } catch { /* ignore */ } }
   }, [voice, voiceStarted]);
 
+  // The place the map is centred on: the last search, else where your leads are.
+  const center: Place | null = useMemo(() => {
+    if (place) return place;
+    const withCoords = leads.filter((l) => l.latitude != null && l.longitude != null).slice(0, 80);
+    if (!withCoords.length) return null;
+    const lat = withCoords.reduce((s, l) => s + (l.latitude as number), 0) / withCoords.length;
+    const lon = withCoords.reduce((s, l) => s + (l.longitude as number), 0) / withCoords.length;
+    return { lat, lon, label: "Your leads", radiusKm: 5 };
+  }, [place, leads]);
+
+  const nodes: MapNodeInput[] = useMemo(() => {
+    if (!center) return [];
+    const maxM = center.radiusKm * 1000 * 3.5;
+    const out: MapNodeInput[] = [];
+    for (const l of leads) {
+      if (l.latitude == null || l.longitude == null) continue;
+      const m = toLocalMeters(l.latitude, l.longitude, center);
+      if (Math.hypot(m.x, m.y) > maxM) continue;
+      const i = leadIntel(l);
+      out.push({ id: l.id, name: l.businessName, x: m.x, y: m.y, kind: i.kind, score: i.score, checks: i.checks.map((c) => c.value), hasWebsite: !!l.website, hasPhone: !!l.phone, followUpAt: l.nextFollowUpAt ? new Date(l.nextFollowUpAt).getTime() : null });
+    }
+    return out;
+  }, [leads, center]);
+
+  useEffect(() => { if (center) map.current?.setPlace({ label: center.label, radiusM: center.radiusKm * 1000, hasCenter: true }); }, [center]);
+  useEffect(() => { map.current?.setLeads(nodes, fresh); }, [nodes, fresh]);
+  useEffect(() => {
+    const vis = new Set(leads.filter((l) => matchesFilters(l, filters)).map((l) => l.id));
+    map.current?.setVisible(Object.values(filters).every((v) => v === "any") ? null : vis);
+  }, [filters, leads]);
+
+  // Pipeline: when a lead's stage changes, a particle travels between stages.
+  const counts = useMemo(() => pipelineCounts(leads), [leads]);
+  useEffect(() => {
+    const prev = prevStages.current;
+    const moves: { from: number; to: number }[] = [];
+    for (const l of leads) {
+      const now = pipelineStageOf(l); const was = prev.get(l.id);
+      if (was && was !== now) moves.push({ from: PIPELINE.indexOf(was), to: PIPELINE.indexOf(now) });
+      prev.set(l.id, now);
+    }
+    if (moves.length) setFlows((f) => [...f, ...moves.slice(0, 6).map((m, i) => ({ key: Date.now() + i, ...m }))]);
+  }, [leads]);
+  useEffect(() => { if (!flows.length) return; const t = setTimeout(() => setFlows((f) => f.slice(1)), 1600); return () => clearTimeout(t); }, [flows]);
+
   // Outreach emails open in the liquid-glass compose popup and type out live.
   const emails = useEmailPopups();
   const agent = useAgent({
     onEmail: emails.push,
-    // "Open these leads in Google Maps" → a new tab (never replaces DARWIN). If
-    // the pop-up blocker stops it, the Maps links under the reply still work.
     onOpen: (url) => { try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* blocked — use the links */ } },
-    onAssistantComplete: (text) => { speak(text); loadOverview(); },
-    // The agent ran a discovery itself → refresh and show the full history.
+    onAssistantComplete: (text) => { speak(text); loadOverview(); loadLeads(); },
+    // The agent ran a discovery itself → show the new businesses arriving on the map.
     onTool: (t) => {
       if (t.name === "darwin_search" && t.status === "ok") {
-        loadOverview(); setRefreshKey((k) => k + 1);
-        setTableRequest({ tab: "all", nonce: Date.now() });
+        loadOverview();
+        loadLeads().then((all) => {
+          const recent = all.filter((l) => Date.now() - new Date(l.discoveredAt).getTime() < 120_000).map((l) => l.id);
+          setFresh(new Set(recent));
+        });
       }
+      if (/^darwin_(stage|followup|message|outreach)$/.test(t.name) && t.status === "ok") loadLeads();
     },
   });
 
-  // ---- FIND NEW LEADS --------------------------------------------------------
+  // ---- FIND NEW LEADS (real discovery) ----------------------------------------
   const runSearch = useCallback(async (f: SearchForm) => {
     if (searching) return;
     const clean = { ...f, category: f.category.trim(), location: f.location.trim() };
-    setForm(clean); setLastForm(clean); writeStore("local", FORM_KEY, clean);
-    setSearching(true); setBanner(null);
+    setForm(clean); setLastForm(clean); writeStore(FORM_KEY, clean);
+    setSearching(true); setSourceError(null); setSummary(null); setSelectedId(null); map.current?.select(null);
+    map.current?.setScanning(true);
+    pushFeed(`Scanning ${clean.location} for ${clean.category}…`);
     try {
       const res = await fetch("/api/darwin/find-new-leads", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -127,38 +210,42 @@ export function DarwinConsole() {
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
         const message = j.error === "Invalid request." ? "Enter a category and a location (at least 2 characters each)." : j.error || `Search failed (HTTP ${res.status}).`;
-        setBanner({ kind: "error", message });
-        speak(message);
+        // Input problems are just messages; a failing source gets the amber signal + retry.
+        if (res.status >= 500 || /geoapify|source|unavailable|rate|quota|network/i.test(message)) { map.current?.sourceError(); setSourceError(message); }
+        pushFeed(message, "warn"); speak(message);
         return;
       }
       const r = j.data as FindLeadsResult;
-      setBanner({ kind: "ok", result: r });
-      setSearchLeads(r.leads);
-      setFreshIds(new Set(r.leads.map((l) => l.id)));
-      setSession((s) => {
-        const n = { newFound: s.newFound + r.newCount, skipped: s.skipped + r.skippedDuplicates, searches: s.searches + 1 };
-        writeStore("session", SESSION_KEY, n);
-        return n;
-      });
+      const p: Place = { lat: r.center.lat, lon: r.center.lon, label: r.center.label || clean.location, radiusKm: r.radiusKm || clean.radiusKm };
+      setPlace(p); writeStore(PLACE_KEY, p);
+      await loadLeads();
+      setFresh(new Set(r.leads.map((l) => l.id)));
       loadOverview(); setRefreshKey((k) => k + 1);
-      if (r.newCount) setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 250);
+      const s = {
+        found: r.newCount,
+        verified: r.leads.filter((l) => l.phone || l.email || l.website).length,
+        noSite: r.leads.filter((l) => !l.website).length,
+        hot: r.leads.filter((l) => leadIntel(l).kind === "high_potential").length,
+        skipped: r.skippedDuplicates,
+        message: r.message,
+      };
+      // The summary appears once the map has revealed and analysed every business.
+      setTimeout(() => { map.current?.searchComplete(); setSummary(s); }, Math.min(9000, 1500 + r.leads.length * 250 + 3500));
+      if (!r.newCount) pushFeed(r.message, "warn");
       const withPhone = r.leads.filter((l) => l.phone).length;
-      speak(r.newCount
-        ? `${r.message.replace(/ · /g, ", ")} ${withPhone} of them ${withPhone === 1 ? "has" : "have"} a phone number.`
-        : r.message);
+      speak(r.newCount ? `${r.message.replace(/ · /g, ", ")} ${withPhone} of them ${withPhone === 1 ? "has" : "have"} a phone number.` : r.message);
     } catch {
-      setBanner({ kind: "error", message: "Network error — couldn't reach the server." });
-    } finally { setSearching(false); }
-  }, [searching, loadOverview, speak]);
+      map.current?.sourceError(); setSourceError("Network error — couldn't reach the server.");
+    } finally { setSearching(false); map.current?.setScanning(false); }
+  }, [searching, loadOverview, loadLeads, speak, pushFeed]);
   useEffect(() => { runSearchRef.current = runSearch; }, [runSearch]);
+  useEffect(() => { if (!summary) return; const t = setTimeout(() => setSummary(null), 9000); return () => clearTimeout(t); }, [summary]);
 
   // ---- deactivate → JARVIS ---------------------------------------------------
   const deactivate = useCallback(() => {
     if (leaving) return;
     setLeaving(true);
     const spoke = voiceStarted && !voice.muted && voice.enabled;
-    // Speak the goodbye (don't stop() first — that would cut it off). Navigating
-    // unmounts the console, whose cleanup releases the mic so JARVIS can take it.
     if (spoke) { try { voice.speak("Deactivating. Handing you back to JARVIS."); } catch { /* ignore */ } }
     setTimeout(() => router.push("/dashboard"), spoke ? 1100 : 300);
   }, [leaving, router, voice, voiceStarted]);
@@ -170,9 +257,7 @@ export function DarwinConsole() {
       const s = t.trim();
       if (!s) return;
       if (DEACTIVATE_RE.test(s)) { deactivateRef.current(); return; }
-
-      // "find 20 gyms in Bangalore without a website" / "generate new leads"
-      // → run the real discovery directly (deterministic, no agent round-trip).
+      // "find 20 gyms in Bangalore without a website" → run the real discovery directly.
       // "Show me the leads on Google Maps" goes to the agent (darwin_map) instead.
       if (GENERATE_LEADS_RE.test(s) && !MAP_REQUEST_RE.test(s)) {
         const p = parseLeadCommand(s);
@@ -188,8 +273,7 @@ export function DarwinConsole() {
           setForm(next);
           const ask = !next.category && !next.location ? "Sure — what kind of businesses, and where? For example: find 20 gyms in Bangalore."
             : !next.location ? `Got it, ${next.category}. Which city or area should I search?` : "What kind of businesses should I look for?";
-          setBanner({ kind: "error", message: ask });
-          speak(ask);
+          pushFeed(ask, "warn"); speak(ask);
           return;
         }
         speak(`On it — scanning for new ${next.category} in ${next.location}.`);
@@ -198,290 +282,340 @@ export function DarwinConsole() {
       }
       agent.send(s, { agent: "darwin" });
     };
-  }, [agent, form, lastForm, speak]);
+  }, [agent, form, lastForm, speak, pushFeed]);
 
   async function enableVoice() { const ok = await voice.init(); if (ok) setVoiceStarted(true); return ok; }
-  // Voice was on in the agent you came from → keep listening here.
   useResumeVoice(enableVoice);
 
-  const state: DarwinState = (() => {
-    if (voice.status === "denied" || voice.status === "error") return "ERROR";
-    if (searching) return "SEARCHING";
-    if ((overview?.totals.pendingApprovals ?? 0) > 0 && !agent.streaming) return "WAITING_FOR_APPROVAL";
-    if (agent.streaming) {
-      const label = agent.activity[0]?.label ?? "";
-      if (/search|find|source|discover/i.test(label)) return "SEARCHING";
-      if (agent.activity[0]?.kind === "tool") return "PROCESSING";
-      return "THINKING";
-    }
-    if (voice.status === "recording" || voice.status === "listening") return "LISTENING";
-    if (voice.status === "processing") return "THINKING";
-    return "IDLE";
-  })();
+  // ---- selected lead ------------------------------------------------------------
+  const selected = selectedId ? leads.find((l) => l.id === selectedId) ?? null : null;
+  const selectLead = useCallback((id: string | null) => { setSelectedId(id); map.current?.select(id); }, []);
+  const updateLead = useCallback(async (l: LeadDTO, body: Record<string, unknown>) => {
+    try {
+      const updated = await patchLead(l.id, body);
+      setLeads((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      if (body.stage) { map.current?.crmStream(updated.id); pushFeed(`${updated.businessName} → ${String(body.stage).replace(/_/g, " ")}`, "ok"); }
+      if ("nextFollowUpAt" in body) pushFeed(body.nextFollowUpAt ? `Follow-up scheduled — ${updated.businessName}` : `Follow-up cleared — ${updated.businessName}`, "ok");
+      loadOverview();
+    } catch (e) { pushFeed(e instanceof Error ? e.message : "Update failed.", "warn"); }
+  }, [loadOverview, pushFeed]);
 
-  const onLeadUpdated = useCallback((l: LeadDTO) => {
-    setSearchLeads((prev) => prev.map((x) => (x.id === l.id ? l : x)));
-    loadOverview();
-  }, [loadOverview]);
-
-  const showSlice = useCallback((p: { stage?: string; filter?: TableRequest["filter"]; q?: string }) => {
-    setTableRequest({ tab: "all", ...p, nonce: Date.now() });
-    setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-  }, []);
-
+  const state = searching ? `SCANNING ${(form.location || "").toUpperCase()}` : sourceError ? "DATA SOURCE UNAVAILABLE"
+    : agent.streaming ? (agent.activity[0]?.label ?? "THINKING").toUpperCase()
+    : voice.status === "recording" ? "LISTENING" : "MONITORING";
   const lastAssistant = useMemo(() => [...agent.messages].reverse().find((m) => m.role === "assistant"), [agent.messages]);
+  const canSearch = form.category.trim().length >= 2 && form.location.trim().length >= 2 && !searching;
+  const setF = <K extends keyof MapFilters>(k: K, v: MapFilters[K]) => setFilters((f) => ({ ...f, [k]: v }));
 
   return (
-    <div className="darwin-bg relative min-h-[calc(100vh-4rem)] overflow-hidden bg-[#04060d] px-3 pb-6 pt-4 md:px-6">
-      {boot !== "done" && <DarwinBoot fading={boot === "fade"} />}
+    <div className="relative h-[calc(100dvh-4rem)] select-none overflow-hidden bg-[#03050a] text-white">
+      <DarwinMap ref={map} anchorRef={anchorRef} className="absolute inset-0"
+        paused={crmOpen}
+        onIntro={(p) => setIntro((s) => ({ ...s, [p]: true }))}
+        onSelect={selectLead}
+        onEvent={(t, tone) => pushFeed(t, tone)} />
+
+      {/* vignette (composited, not repainted) */}
+      <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 55%, transparent 50%, rgba(0,0,0,.55) 100%)" }} />
+
+      {!intro.done && (
+        <button onClick={() => map.current?.skipIntro()} className="absolute bottom-5 right-5 z-30 text-[10px] uppercase tracking-[0.35em] text-white/25 hover:text-white/60">Skip</button>
+      )}
+      {intro.online && !onlineDone && <OnlineTitle onDone={() => setOnlineDone(true)} />}
 
       {leaving && (
-        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-[#04060d]/95 backdrop-blur-sm" style={{ animation: "dw-reveal .4s ease both" }}>
-          <span className="hud-label text-[11px] tracking-[0.4em] text-accent/80">DEACTIVATING DARWIN</span>
-          <span className="mt-2 text-xs text-muted-foreground">Returning to JARVIS…</span>
+        <div className="fixed inset-0 z-[70] flex flex-col items-center justify-center bg-[#03050a]/95 backdrop-blur-sm" style={{ animation: "dw-reveal .4s ease both" }}>
+          <span className="text-[11px] tracking-[0.4em] text-cyan-100/80">DEACTIVATING DARWIN</span>
+          <span className="mt-2 text-xs text-white/50">Returning to JARVIS…</span>
         </div>
       )}
 
-      <div style={boot === "done" ? { animation: "dw-reveal .7s ease both" } : { opacity: 0 }}>
-      <div className="pointer-events-none absolute inset-0" aria-hidden>
-        <div className="absolute left-1/2 top-1/3 h-[60vmin] w-[60vmin] -translate-x-1/2 rounded-full bg-[radial-gradient(circle,hsl(var(--accent)/0.12),transparent_62%)] blur-3xl" />
-        <Dust />
-      </div>
-
-      {/* header */}
-      <header className="relative z-10 mx-auto flex max-w-6xl flex-col items-center pt-1">
-        <h1 className="bg-gradient-to-r from-accent via-accent-bright to-accent bg-clip-text text-2xl font-light tracking-[0.35em] text-transparent md:text-3xl">DARWIN DASHBOARD</h1>
-        <div className="mt-1 flex flex-wrap items-center justify-center gap-3">
-          <span className="hud-label text-[10px] tracking-[0.3em] text-muted-foreground">STATUS: <span className="text-accent">{state.replace(/_/g, " ")}</span></span>
-          <div className="h-px w-40 overflow-hidden rounded-full bg-white/10">
-            <div className="h-full rounded-full bg-accent" style={{ width: PROGRESS[state], transition: "width .5s ease" }} />
+      {intro.done && (
+        <>
+          {/* ===== top-left: identity + live activity stream ===== */}
+          <div className="pointer-events-none absolute left-4 top-4 z-20 sm:left-6" style={{ animation: "ultron-emerge .8s ease both" }}>
+            <div className="text-[11px] tracking-[0.45em] text-white/80">DARWIN</div>
+            <div className="mt-0.5 flex items-center gap-1.5 text-[9px] tracking-[0.25em] text-cyan-100/55">
+              <span className={cn("h-1.5 w-1.5 rounded-full", searching ? "animate-pulse bg-sky-400" : sourceError ? "bg-amber-400" : "bg-cyan-300/70")} />
+              <span className="max-w-[60vw] truncate">{state}</span>
+            </div>
           </div>
-          <button onClick={() => (voiceStarted ? voice.toggleMute() : enableVoice())} title="Voice"
-            className={cn("flex h-7 w-7 items-center justify-center rounded-full border transition", voiceStarted && !voice.muted ? "border-accent bg-accent/15 text-accent animate-hud-pulse" : "border-border text-muted-foreground hover:border-accent/50")}>
-            {voiceStarted && voice.muted ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-          </button>
+          <ActivityFeed items={feed} />
+
+          {/* ===== top-center: search ===== */}
+          <div className="absolute inset-x-0 top-14 z-30 flex flex-col items-center px-3 sm:top-4" style={{ animation: "ultron-emerge .8s ease .1s both" }}>
+            <form onSubmit={(e) => { e.preventDefault(); if (canSearch) runSearch(form); }}
+              className="dw-glass flex w-full max-w-2xl items-center gap-1 rounded-full py-1 pl-4 pr-1">
+              <Radar className="h-3.5 w-3.5 shrink-0 text-cyan-200/60" />
+              <input ref={categoryRef} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} maxLength={80}
+                placeholder="gyms, cafes, dentists…" className="dw-bare min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[13px] text-white outline-none placeholder:text-white/30" />
+              <span className="h-4 w-px bg-white/10" />
+              <input ref={locationRef} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} maxLength={120}
+                placeholder="Bengaluru · Indiranagar · 560038" className="dw-bare min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[13px] text-white outline-none placeholder:text-white/30" />
+              <span className="hidden h-4 w-px bg-white/10 sm:block" />
+              <label className="hidden items-center gap-1 px-1 text-[10px] text-white/45 sm:flex">
+                <input type="number" min={1} max={50} value={form.limit} onChange={(e) => setForm({ ...form, limit: Math.min(Math.max(+e.target.value || 1, 1), 50) })}
+                  className="dw-bare w-9 bg-transparent text-right text-[12px] text-white outline-none" /> leads
+              </label>
+              <button type="button" onClick={() => (voiceStarted ? voice.toggleMute() : enableVoice())} title="Voice" aria-label="Voice"
+                className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition", voiceStarted && !voice.muted ? "text-cyan-200" : "text-white/40 hover:text-white/80")}>
+                {voiceStarted && voice.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+              <button type="submit" disabled={!canSearch}
+                className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-cyan-200/25 bg-cyan-200/10 px-4 text-[12px] text-cyan-50 transition hover:bg-cyan-200/20 disabled:opacity-40">
+                {searching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null} Scan
+              </button>
+            </form>
+            {overview && !overview.geoapifyReady && (
+              <p className="mt-1.5 text-[10px] text-amber-200/70">Geoapify isn’t configured — DARWIN shows only real data, so discovery is off until GEOAPIFY_API_KEY is set.</p>
+            )}
+            {/* agent reply */}
+            {(agent.streaming || lastAssistant?.content) && (
+              <div className="mt-2 max-w-2xl px-4 text-center text-[12px] text-white/75" style={{ animation: "ultron-word .4s ease both" }}>
+                {agent.streaming ? <span className="inline-flex items-center gap-2 text-white/50"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {agent.activity[0]?.label ?? "working…"}</span> : lastAssistant?.content}
+                {!agent.streaming && !!lastAssistant?.links?.length && (
+                  <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                    {lastAssistant.links.slice(0, 12).map((l, i) => (
+                      <a key={`${l.url}-${i}`} href={l.url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-[14rem] items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-white/80 hover:text-cyan-100">
+                        <MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{l.label}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* search complete: floating typography integrated into the map */}
+            {summary && (
+              <div className="pointer-events-none mt-3 flex flex-wrap justify-center gap-x-6 gap-y-1" style={{ animation: "ultron-word .8s ease both" }}>
+                {([["LEADS DISCOVERED", summary.found], ["VERIFIED", summary.verified], ["NO WEBSITE", summary.noSite], ["HIGH POTENTIAL", summary.hot]] as const).map(([k, v], i) => (
+                  <span key={k} className="text-center" style={{ animation: `ultron-word .7s ease ${i * 0.12}s both` }}>
+                    <span className={cn("block text-2xl font-extralight", k === "HIGH POTENTIAL" ? "text-cyan-200" : k === "NO WEBSITE" ? "text-amber-200/90" : "text-white/90")}>{v}</span>
+                    <span className="block text-[8px] tracking-[0.3em] text-white/45">{k}</span>
+                  </span>
+                ))}
+                {summary.skipped > 0 && <span className="w-full text-center text-[10px] text-white/35">{summary.skipped} previously discovered skipped</span>}
+              </div>
+            )}
+          </div>
+
+          {/* ===== top-right: deactivate (the emblem is drawn on the map) ===== */}
           <button onClick={deactivate} disabled={leaving} title="Deactivate DARWIN — back to JARVIS"
-            className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-[10px] uppercase tracking-wider text-muted-foreground transition hover:border-destructive/60 hover:text-destructive disabled:opacity-50">
-            <LogOut className="h-3 w-3" /> Deactivate
+            className="absolute right-[6.5rem] top-5 z-30 hidden items-center gap-1 rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/40 transition hover:text-white/80 sm:flex">
+            <LogOut className="h-3 w-3" /> Exit
           </button>
-        </div>
-      </header>
+          <button onClick={deactivate} aria-label="Deactivate DARWIN" className="absolute right-3 top-3 z-30 flex h-8 w-8 items-center justify-center rounded-full text-white/40 sm:hidden"><LogOut className="h-4 w-4" /></button>
 
-      {/* main grid: search · AI core · metrics */}
-      <div className="relative z-10 mx-auto mt-4 grid max-w-6xl grid-cols-1 gap-4 lg:grid-cols-[300px_1fr_310px]">
-        <LeadSearchPanel form={form} setForm={setForm} onSearch={() => runSearch(form)} searching={searching} geoapifyReady={overview ? overview.geoapifyReady : null} />
-        <div className="relative flex min-h-[320px] items-center justify-center lg:min-h-[420px]">
-          <GlassCylinder state={state} level={voice.level} />
-        </div>
-        <div className="space-y-3">
-          <NewLeadsPanel session={session} last={lastForm} onMore={() => lastForm && runSearch(lastForm)} searching={searching} />
-          <CrmPanel crm={overview?.crm ?? null} onPick={showSlice} />
-          <FollowUpsPanel items={followUps} dueCount={overview?.crm.followUpsDue ?? 0} onOpen={(l) => showSlice({ q: l.businessName })} />
-        </div>
-      </div>
+          {/* CRM icon on the map → the full CRM */}
+          <button onClick={() => setCrmOpen(true)} title="Open the CRM" aria-label="Open the CRM"
+            className="absolute right-[1.2rem] z-30 h-10 w-14 rounded-md" style={{ top: "calc(66% - 20px)" }} />
+          {(overview?.crm.followUpsDue ?? 0) > 0 && (
+            <button onClick={() => setCrmOpen(true)} className="absolute right-4 z-30 text-[9px] tracking-[0.2em] text-amber-200/80" style={{ top: "calc(66% + 22px)" }}>
+              {overview!.crm.followUpsDue} DUE
+            </button>
+          )}
 
-      {/* agent reply / subtitle */}
-      {(agent.streaming || lastAssistant) && (
-        <div className="relative z-10 mx-auto mt-3 max-w-3xl px-4 text-center text-xs text-foreground/80">
-          {agent.streaming ? <span className="inline-flex items-center gap-2 text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {agent.activity[0]?.label ?? "working…"}</span>
-            : lastAssistant?.content}
-          {!agent.streaming && !!lastAssistant?.links?.length && (
-            <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-              {lastAssistant.links.slice(0, 21).map((l, i) => (
-                <a key={`${l.url}-${i}`} href={l.url} target="_blank" rel="noopener noreferrer"
-                  className={cn("inline-flex max-w-[16rem] items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] backdrop-blur-md transition",
-                    i === 0 ? "border-accent/50 bg-accent/15 text-accent-bright hover:bg-accent/25" : "border-white/15 bg-white/5 text-foreground/80 hover:border-accent/40 hover:text-accent")}>
-                  <MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{l.label}</span>
-                </a>
-              ))}
+          {/* ===== source error ===== */}
+          {sourceError && (
+            <div className="absolute left-1/2 top-1/2 z-30 -translate-x-1/2 -translate-y-1/2 text-center" style={{ animation: "ultron-word .6s ease both" }}>
+              <div className="text-[13px] tracking-[0.4em] text-amber-200">DATA SOURCE UNAVAILABLE</div>
+              <p className="mx-auto mt-1 max-w-sm text-[11px] text-white/55">{sourceError}</p>
+              <button onClick={() => { const f = lastForm ?? form; setSourceError(null); if (f.category && f.location) runSearch(f); }}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-amber-200/30 bg-amber-200/10 px-4 py-1.5 text-[11px] text-amber-100 hover:bg-amber-200/20">
+                <RotateCw className="h-3.5 w-3.5" /> Retry
+              </button>
             </div>
           )}
-        </div>
+
+          {/* ===== empty state ===== */}
+          {!center && !searching && (
+            <div className="pointer-events-none absolute inset-x-0 top-[42%] z-10 text-center">
+              <p className="text-[12px] tracking-[0.3em] text-white/50">NO TERRITORY SCANNED YET</p>
+              <p className="mt-1 text-[11px] text-white/35">Type a category and a place above — or say “find 20 gyms in Bengaluru”.</p>
+            </div>
+          )}
+
+          {/* ===== selected business: a holographic layer beside its node ===== */}
+          <div ref={(el) => { anchorRef.current = el; map.current?.setAnchor(el); }} className="pointer-events-none absolute left-0 top-0 z-20 hidden md:block" style={{ opacity: 0, transition: "opacity .3s" }}>
+            {selected && (
+              <div className="pointer-events-auto absolute left-8 top-0 w-80 -translate-y-1/2" key={selected.id}>
+                <LeadLayer lead={selected} onClose={() => selectLead(null)} onUpdate={updateLead} onCrm={() => { setTableRequest({ tab: "all", q: selected.businessName, nonce: Date.now() }); setCrmOpen(true); }} />
+              </div>
+            )}
+          </div>
+          {selected && (
+            <div className="absolute inset-x-2 bottom-2 z-40 md:hidden" key={`m-${selected.id}`}>
+              <LeadLayer lead={selected} onClose={() => selectLead(null)} onUpdate={updateLead} onCrm={() => { setTableRequest({ tab: "all", q: selected.businessName, nonce: Date.now() }); setCrmOpen(true); }} />
+            </div>
+          )}
+
+          {/* ===== bottom: filters + lead flow ===== */}
+          <div className="absolute inset-x-0 bottom-3 z-20 flex flex-col items-center gap-3 px-2 sm:bottom-4" style={{ animation: "ultron-emerge .9s ease .2s both" }}>
+            <div className="dw-glass flex max-w-full gap-1 overflow-x-auto rounded-full p-1 text-[10px] tracking-[0.12em]" style={{ scrollbarWidth: "none" }}>
+              <Chip label="CATEGORY" value={form.category || "—"} onClick={() => categoryRef.current?.focus()} />
+              <Chip label="LOCATION" value={form.location || "—"} onClick={() => locationRef.current?.focus()} />
+              <Chip label="RADIUS" value={`${form.radiusKm} km`} onClick={() => setForm({ ...form, radiusKm: form.radiusKm >= 20 ? 2 : form.radiusKm >= 10 ? 20 : form.radiusKm >= 5 ? 10 : 5 })} />
+              <Chip label="WEBSITE" value={FILTER_TEXT.website[filters.website]} active={filters.website !== "any"} onClick={() => setF("website", CYCLE3[filters.website])} />
+              <Chip label="PHONE" value={FILTER_TEXT.phone[filters.phone]} active={filters.phone !== "any"} onClick={() => setF("phone", CYCLE3[filters.phone])} />
+              <Chip label="INSTAGRAM" value={FILTER_TEXT.instagram[filters.instagram]} active={filters.instagram !== "any"} onClick={() => setF("instagram", CYCLE3[filters.instagram])} />
+              <Chip label="QUALITY" value={FILTER_TEXT.quality[filters.quality]} active={filters.quality !== "any"} onClick={() => setF("quality", filters.quality === "any" ? "weak" : "any")} />
+              <Chip label="POTENTIAL" value={FILTER_TEXT.potential[filters.potential]} active={filters.potential !== "any"} onClick={() => setF("potential", filters.potential === "any" ? "high" : "any")} />
+            </div>
+            <LeadFlow counts={counts} flows={flows} />
+          </div>
+
+          <span className="pointer-events-none absolute bottom-1 right-3 z-10 hidden text-[8px] tracking-[0.2em] text-white/20 md:block">STYLISED TERRAIN · BUSINESS POSITIONS TO SCALE</span>
+
+          {/* live voice caption */}
+          {voiceStarted && !voice.muted && voice.transcript && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-32 z-30 flex justify-center px-6">
+              <span className="max-w-xl truncate text-[13px] text-white/80">“{voice.transcript}”</span>
+            </div>
+          )}
+        </>
       )}
 
-      {/* live voice caption */}
-      {voiceStarted && !voice.muted && (voice.status === "listening" || voice.status === "recording" || voice.status === "processing" || voice.transcript) && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-6 z-30 flex justify-center px-6">
-          <div className="flex max-w-xl items-center gap-2 rounded-full border border-accent/25 bg-black/50 px-4 py-1.5 backdrop-blur-md">
-            <span className={cn("h-2 w-2 shrink-0 rounded-full", voice.status === "recording" ? "bg-accent animate-hud-pulse" : voice.status === "processing" ? "bg-warning animate-hud-pulse" : "bg-accent/60 animate-hud-pulse")} />
-            <span className="truncate text-sm text-foreground/90">
-              {voice.transcript
-                ? <>“{voice.transcript}”</>
-                : voice.error && voice.status !== "recording" ? <span className="text-warning">{voice.error}</span>
-                : voice.status === "processing" ? "Thinking…"
-                : voice.status === "recording" ? "Listening…"
-                : "Listening… say “find 20 gyms in Bangalore without a website”"}
-            </span>
+      {/* ===== the full CRM (records, follow-ups, notes) ===== */}
+      {crmOpen && (
+        <div className="absolute inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-[2px]" onClick={() => setCrmOpen(false)}>
+          <div className="dw-glass h-full w-full max-w-5xl overflow-y-auto p-3 sm:p-5" onClick={(e) => e.stopPropagation()} style={{ animation: "ultron-drawer .45s cubic-bezier(.2,.9,.25,1) both", scrollbarWidth: "thin" }}>
+            <div className="mb-3 flex items-center gap-2">
+              <Database className="h-4 w-4 text-cyan-200/70" />
+              <span className="text-[11px] tracking-[0.35em] text-white/70">CRM</span>
+              <button onClick={() => setCrmOpen(false)} aria-label="Close" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full text-white/50 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-3">
+              {followUps.length > 0 && <FollowUpsPanel items={followUps} dueCount={overview?.crm.followUpsDue ?? 0} onOpen={(l) => setTableRequest({ tab: "all", q: l.businessName, nonce: Date.now() })} />}
+              <LeadTable searchLeads={leads.filter((l) => fresh.has(l.id))} freshIds={fresh} request={tableRequest} refreshKey={refreshKey}
+                onLeadUpdated={(l) => { setLeads((prev) => prev.map((x) => (x.id === l.id ? l : x))); loadOverview(); }} />
+            </div>
           </div>
         </div>
       )}
-
-      {/* result + leads */}
-      <div ref={tableRef} className="relative z-10 mx-auto mt-4 max-w-6xl scroll-mt-4 space-y-3">
-        <ResultBanner state={banner} onClose={() => setBanner(null)} />
-        <LeadTable searchLeads={searchLeads} freshIds={freshIds} request={tableRequest} onLeadUpdated={onLeadUpdated} refreshKey={refreshKey} />
-      </div>
-
-      <ActivityStream items={overview?.recentActivity ?? []} connected={overview?.geoapifyReady ?? false} />
-      </div>
 
       {emails.current && <EmailComposePopup key={emails.current.id} email={emails.current} waiting={emails.waiting} onClose={emails.close} />}
     </div>
   );
 }
 
-/* ================= BOOT SEQUENCE ================= */
-function DarwinBoot({ fading }: { fading: boolean }) {
-  const lines = ["INITIALIZING NEURAL CORE", "LINKING DATA SOURCES", "CALIBRATING LEAD INTELLIGENCE", "DARWIN ONLINE"];
+/* ---------------- pieces ---------------- */
+
+function OnlineTitle({ onDone }: { onDone: () => void }) {
+  useEffect(() => { const t = setTimeout(onDone, 2600); return () => clearTimeout(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div
-      className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-[#04060d]"
-      style={{ animation: fading ? "dw-boot-out .7s ease forwards" : undefined }}
-    >
-      {/* scanline sweep */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute inset-x-0 h-24 bg-[linear-gradient(to_bottom,transparent,hsl(var(--accent)/0.18),transparent)]" style={{ animation: "dw-scan 1.9s ease-in-out" }} />
-        <div className="absolute left-1/2 top-1/2 h-[70vmin] w-[70vmin] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,hsl(var(--accent)/0.14),transparent_60%)] blur-2xl" />
-      </div>
+    <div className="pointer-events-none absolute inset-x-0 top-[34%] z-30 text-center" style={{ animation: "jv-dissolve .6s ease 2s forwards" }}>
+      <div className="text-3xl font-extralight tracking-[0.6em] text-white" style={{ animation: "ultron-word 1s ease both", textShadow: "0 0 24px rgba(120,200,255,.7)" }}>DARWIN</div>
+      <div className="mt-2 text-[10px] tracking-[0.5em] text-cyan-100/70" style={{ animation: "ultron-word 1s ease .35s both" }}>LEAD INTELLIGENCE ONLINE</div>
+    </div>
+  );
+}
 
-      {/* assembling rings + hex */}
-      <div className="relative mb-6 h-40 w-40">
-        <span className="absolute inset-0 rounded-full border border-accent/30" style={{ animation: "dw-ring-in .8s ease both" }} />
-        <span className="absolute inset-3 rounded-full border border-dashed border-accent/40" style={{ animation: "ultron-spin 4s linear infinite, dw-ring-in .9s ease both" }} />
-        <span className="absolute inset-8 rounded-full border border-accent-bright/50" style={{ animation: "dw-ring-in 1s ease both" }} />
-        <span className="absolute inset-0 flex items-center justify-center">
-          <span className="flex h-16 w-16 items-center justify-center text-lg font-semibold text-white"
-            style={{ clipPath: "polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)", background: "linear-gradient(160deg, hsl(var(--accent)/0.5), hsl(280 70% 55% / 0.5))", boxShadow: "0 0 30px hsl(var(--accent-bright))", animation: "dw-hex-pop .6s .3s ease both" }}>
-            AI
-          </span>
-        </span>
-      </div>
-
-      <h1 className="bg-gradient-to-r from-accent via-accent-bright to-accent bg-clip-text text-3xl font-light tracking-[0.5em] text-transparent" style={{ animation: "dw-hex-pop .7s .2s ease both" }}>
-        DARWIN
-      </h1>
-      <div className="relative mt-4 h-4 w-72 text-center">
-        {lines.map((l, i) => (
-          <div key={l} className="hud-label absolute inset-x-0 text-[10px] tracking-[0.3em] text-accent/80" style={{ opacity: 0, animation: `dw-line 1.9s ${i * 0.45}s ease both` }}>
-            {l}
+/** A thin vertical live feed: events slide up, older ones dissolve. */
+function ActivityFeed({ items }: { items: FeedItem[] }) {
+  const shown = items.slice(-8);
+  return (
+    <div className="pointer-events-none absolute left-4 top-20 z-10 hidden w-56 flex-col gap-2 md:flex sm:left-6">
+      {shown.map((it, i) => {
+        const age = shown.length - 1 - i;
+        return (
+          <div key={it.id} className="flex items-start gap-2 text-[11px] leading-snug transition-opacity duration-700"
+            style={{ opacity: Math.max(0.12, 1 - age * 0.13), animation: "dw-feed-in .5s ease both" }}>
+            <span className={cn("mt-1.5 h-1 w-1 shrink-0 rounded-full", it.tone === "hot" ? "bg-cyan-300 shadow-[0_0_6px_rgba(120,220,255,.9)]" : it.tone === "warn" ? "bg-amber-300/80" : it.tone === "ok" ? "bg-sky-300/80" : "bg-white/40")} />
+            <span className={cn("truncate", it.tone === "hot" ? "text-cyan-100" : it.tone === "warn" ? "text-amber-100/70" : "text-white/65")}>{it.text}</span>
           </div>
+        );
+      })}
+      <span aria-hidden className="absolute -left-2 top-0 h-full w-px bg-gradient-to-b from-transparent via-white/15 to-transparent" />
+    </div>
+  );
+}
+
+function Chip({ label, value, active, onClick }: { label: string; value: string; active?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className={cn("flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 transition", active ? "bg-cyan-200/15 text-cyan-50" : "text-white/55 hover:bg-white/[0.06] hover:text-white/85")}>
+      <span>{label}</span>
+      {value !== "Any" && <span className={cn("max-w-[9rem] truncate normal-case tracking-normal", active ? "text-cyan-100" : "text-white/35")}>{value}</span>}
+    </button>
+  );
+}
+
+/** DISCOVERED → … → CLIENT as floating nodes joined by flowing light (real counts). */
+function LeadFlow({ counts, flows }: { counts: Record<PipelineStage, number>; flows: { key: number; from: number; to: number }[] }) {
+  const n = PIPELINE.length;
+  const pct = (i: number) => `${(i / (n - 1)) * 100}%`;
+  return (
+    <div className="relative hidden w-full max-w-4xl px-6 sm:block">
+      <div className="relative h-10">
+        <span aria-hidden className="dw-flow-line absolute left-0 right-0 top-[11px] h-px" />
+        {PIPELINE.map((s, i) => (
+          <div key={s} className="absolute top-0 flex -translate-x-1/2 flex-col items-center" style={{ left: pct(i) }}>
+            <span className={cn("flex h-[22px] w-[22px] items-center justify-center rounded-full border text-[9px]",
+              s === "HIGH POTENTIAL" ? "border-cyan-200/70 bg-cyan-200/15 text-cyan-50 shadow-[0_0_16px_rgba(120,220,255,.5)]" : s === "CLIENT" ? "border-amber-200/60 bg-amber-200/10 text-amber-100" : "border-white/25 bg-black/40 text-white/80")}>
+              {counts[s]}
+            </span>
+            <span className="mt-1 whitespace-nowrap text-[8px] tracking-[0.2em] text-white/45">{s}</span>
+          </div>
+        ))}
+        {flows.map((f) => (
+          <span key={f.key} aria-hidden className="dw-flow-dot absolute top-[8px] h-1.5 w-1.5 rounded-full bg-cyan-100 shadow-[0_0_10px_rgba(160,230,255,1)]"
+            style={{ ["--from" as string]: pct(f.from), ["--to" as string]: pct(f.to) }} />
         ))}
       </div>
     </div>
   );
 }
 
-/* ================= GLASS CYLINDER + NEURAL CORE ================= */
-function GlassCylinder({ state, level }: { state: DarwinState; level: number }) {
-  const searching = state === "SEARCHING" || state === "PROCESSING";
+/** The holographic information layer for one business — real data + CRM actions. */
+function LeadLayer({ lead, onClose, onUpdate, onCrm }: { lead: LeadDTO; onClose: () => void; onUpdate: (l: LeadDTO, body: Record<string, unknown>) => void; onCrm: () => void }) {
+  const intel = leadIntel(lead);
+  const [date, setDate] = useState(lead.nextFollowUpAt ? lead.nextFollowUpAt.slice(0, 10) : "");
+  const website = lead.website ? (lead.website.startsWith("http") ? lead.website : `https://${lead.website}`) : null;
   return (
-    <div className="relative flex flex-col items-center" style={{ animation: "ev-breathe 6s ease-in-out infinite" }}>
-      {/* capsule */}
-      <div className="relative h-[340px] w-[260px] overflow-hidden rounded-[42px] border border-white/15 md:h-[380px] md:w-[300px]"
-        style={{ background: "linear-gradient(160deg, hsl(0 0% 100% / 0.10), hsl(210 60% 12% / 0.30))", backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)", boxShadow: "0 30px 90px -30px hsl(var(--accent)/0.6), inset 0 1px 0 hsl(0 0% 100% / 0.25), inset 0 0 60px -30px hsl(var(--accent)/0.6)" }}>
-        {/* glass sheen */}
-        <div className="pointer-events-none absolute -left-1/3 top-0 h-full w-1/3 -skew-x-12 bg-white/10 blur-md" />
-        <NeuralSphere active={searching} level={level} />
-      </div>
-      {/* base */}
-      <div className="mt-1 h-3 w-[180px] rounded-[50%] bg-[radial-gradient(ellipse,hsl(var(--accent)/0.45),transparent_70%)] blur-[2px] md:w-[210px]" />
-      <div className="-mt-1 h-2 w-[150px] rounded-[50%] bg-black/50 blur-md" />
-    </div>
-  );
-}
-
-function NeuralSphere({ active, level }: { active: boolean; level: number }) {
-  const { nodes, edges } = useMemo(() => {
-    const N = 40, R = 96, cx = 130, cy = 150;
-    const nodes = Array.from({ length: N }, (_, i) => {
-      const a = (i * 137.5) * (Math.PI / 180);
-      const rr = R * Math.sqrt((i + 0.5) / N);
-      // Rounded so server and client serialize identical SVG attributes.
-      return { x: Math.round((cx + Math.cos(a) * rr) * 100) / 100, y: Math.round((cy + Math.sin(a) * rr * 0.92) * 100) / 100, r: 0.8 + (i % 4) * 0.5 };
-    });
-    const edges: [number, number][] = [];
-    for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
-      const dx = nodes[i].x - nodes[j].x, dy = nodes[i].y - nodes[j].y;
-      if (Math.hypot(dx, dy) < 34) edges.push([i, j]);
-    }
-    return { nodes, edges };
-  }, []);
-  const A = "hsl(var(--accent))"; const AB = "hsl(var(--accent-bright))"; const P = "hsl(280 80% 70%)";
-  return (
-    <div className="absolute inset-0 flex items-center justify-center">
-      <svg viewBox="0 0 260 300" className="h-full w-full">
-        {/* soft sphere glow */}
-        <circle cx="130" cy="150" r="104" fill="url(#dw-glow)" />
-        <defs>
-          <radialGradient id="dw-glow" cx="50%" cy="45%" r="55%"><stop offset="0%" stopColor={AB} stopOpacity="0.22" /><stop offset="55%" stopColor={P} stopOpacity="0.10" /><stop offset="100%" stopColor={A} stopOpacity="0" /></radialGradient>
-        </defs>
-        <g style={{ transformOrigin: "130px 150px", animation: `ultron-spin ${active ? 26 : 60}s linear infinite` }}>
-          <g stroke={A} strokeOpacity={active ? 0.28 : 0.16} strokeWidth="0.5">
-            {edges.map(([a, b], i) => <line key={i} x1={nodes[a].x} y1={nodes[a].y} x2={nodes[b].x} y2={nodes[b].y} />)}
-          </g>
-          {nodes.map((n, i) => (
-            <circle key={i} cx={n.x} cy={n.y} r={n.r} fill={i % 5 === 0 ? P : i % 2 ? AB : A}
-              style={{ filter: `drop-shadow(0 0 3px ${i % 2 ? AB : A})` }} className={active && i % 3 === 0 ? "animate-hud-pulse" : ""} />
-          ))}
-        </g>
-        {/* scanning ring */}
-        <ellipse cx="130" cy="150" rx="100" ry="94" fill="none" stroke={AB} strokeOpacity={active ? 0.5 : 0.25} strokeWidth="1" strokeDasharray="4 10" style={{ transformOrigin: "130px 150px", animation: `ultron-spin ${active ? 7 : 20}s linear infinite` }} />
-      </svg>
-      {/* DARWIN AI hex badge */}
-      <div className="absolute flex flex-col items-center">
-        <div className="relative flex h-16 w-16 items-center justify-center" style={{ clipPath: "polygon(50% 0, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)", background: "linear-gradient(160deg, hsl(var(--accent)/0.35), hsl(280 70% 55% / 0.35))", boxShadow: `0 0 24px ${AB}` }}>
-          <div className="text-center">
-            <div className="text-[8px] tracking-[0.3em] text-foreground/80">DARWIN</div>
-            <div className="text-lg font-semibold leading-none text-white">AI</div>
-          </div>
+    <div className="dw-glass rounded-2xl p-4 text-white" style={{ animation: "dw-layer-in .45s cubic-bezier(.2,.9,.25,1) both" }}>
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-medium leading-tight">{lead.businessName}</div>
+          <div className="mt-0.5 truncate text-[10px] text-white/45">{[lead.category, fmtDistance(lead.distanceM)].filter(Boolean).join(" · ")}</div>
         </div>
+        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[8px] tracking-[0.18em]", intel.kind === "high_potential" ? "bg-cyan-200/15 text-cyan-100" : intel.kind === "no_website" || intel.kind === "weak_website" ? "bg-amber-200/10 text-amber-100" : "bg-white/10 text-white/70")}>
+          {KIND_LABEL[intel.kind]}
+        </span>
+        <button onClick={onClose} aria-label="Close" className="-mr-1 -mt-1 flex h-7 w-7 items-center justify-center rounded-full text-white/40 hover:bg-white/10 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+      </div>
+      {lead.address && <p className="mt-2 text-[11px] text-white/55">{lead.address}</p>}
+
+      {/* what DARWIN checked — real listed data */}
+      <div className="mt-3 space-y-1.5">
+        {intel.checks.map((c) => (
+          <div key={c.key} className="flex items-center gap-2 text-[10px]">
+            <span className="w-20 shrink-0 tracking-[0.15em] text-white/40">{c.label}</span>
+            <span className="relative h-[3px] flex-1 overflow-hidden rounded-full bg-white/10">
+              {c.value != null && <span className={cn("absolute inset-y-0 left-0 rounded-full", c.key === "opportunity" ? "bg-violet-300" : "bg-cyan-300/80")} style={{ width: `${Math.round(c.value * 100)}%`, animation: "dw-bar-in .8s ease both" }} />}
+            </span>
+            <span className="w-28 shrink-0 truncate text-right text-white/55" title={c.note}>{c.note}</span>
+          </div>
+        ))}
+        <p className="text-[9px] text-white/30">Fit score {intel.score}/100 — worked out from what the source lists, not a guess.{typeof lead.leadScore === "number" ? ` AI analysis score: ${lead.leadScore}.` : ""}</p>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+        <PhoneActions lead={lead} compact />
+        {website && <a href={website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-200 hover:underline"><Globe className="h-3 w-3" />{websiteHost(lead.website!)}</a>}
+        {lead.instagram && <a href={lead.instagram.startsWith("http") ? lead.instagram : `https://instagram.com/${lead.instagram.replace(/^@/, "")}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-200 hover:underline"><Instagram className="h-3 w-3" />Instagram</a>}
+        {lead.mapsUrl && <a href={lead.mapsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-200 hover:underline"><ExternalLink className="h-3 w-3" />Maps</a>}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-white/10 pt-3">
+        <select value={normStage(lead.stage)} onChange={(e) => onUpdate(lead, { stage: e.target.value })}
+          className={cn("cursor-pointer rounded-full border px-2 py-1 text-[9px] font-semibold uppercase tracking-wider outline-none", statusTone(lead.stage))}>
+          {STATUS_OPTIONS.map((s) => <option key={s.id} value={s.id} className="bg-[#0b1020] text-white">{s.label}</option>)}
+        </select>
+        <label className="flex items-center gap-1 text-[10px] text-white/45">
+          Follow-up
+          <input type="date" value={date} onChange={(e) => { setDate(e.target.value); onUpdate(lead, { nextFollowUpAt: e.target.value || null }); }}
+            className="rounded-md border border-white/10 bg-transparent px-1.5 py-0.5 text-[10px] text-white outline-none [color-scheme:dark]" />
+        </label>
+        <button onClick={onCrm} className="ml-auto text-[10px] tracking-[0.15em] text-white/45 hover:text-white">NOTES · CRM →</button>
       </div>
     </div>
   );
-}
-
-/* ================= LIVE ACTIVITY STREAM ================= */
-function ActivityStream({ items, connected }: { items: Overview["recentActivity"]; connected: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const scroll = (dir: number) => ref.current?.scrollBy({ left: dir * 320, behavior: "smooth" });
-  return (
-    <div className="relative z-10 mx-auto mt-4 max-w-6xl">
-      <GlassPanel title="LIVE ACTIVITY STREAM">
-        {items.length === 0 ? (
-          <p className="py-2 text-center text-[11px] text-muted-foreground">{connected ? "Awaiting activity — run a discovery to see the live stream." : "Geoapify isn’t configured yet — DARWIN shows only real activity, never sample data."}</p>
-        ) : (
-          <div className="flex items-center gap-1">
-            <button onClick={() => scroll(-1)} className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-accent md:flex"><ChevronLeft className="h-4 w-4" /></button>
-            <div ref={ref} className="grid flex-1 auto-cols-[minmax(240px,1fr)] grid-flow-col gap-x-8 gap-y-1 overflow-x-auto pb-1 md:grid-flow-row md:grid-cols-3 md:overflow-visible" style={{ scrollbarWidth: "none" }}>
-              {items.slice(0, 9).map((a) => (
-                <div key={a.id} className="flex items-start gap-2 py-0.5">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: streamColor(a.type), boxShadow: `0 0 6px ${streamColor(a.type)}` }} />
-                  <div className="min-w-0">
-                    <div className="truncate text-[11px] text-foreground/85">{a.detail}</div>
-                    <div className="text-[8px] text-muted-foreground">{timeAgo(a.createdAt)}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button onClick={() => scroll(1)} className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-accent md:flex"><ChevronRight className="h-4 w-4" /></button>
-          </div>
-        )}
-      </GlassPanel>
-    </div>
-  );
-}
-function streamColor(type: string): string {
-  if (/sent|won|verified|discovered/.test(type)) return "hsl(var(--success))";
-  if (/failed|lost/.test(type)) return "hsl(var(--warning))";
-  return "hsl(var(--accent-bright))";
-}
-
-function Dust() {
-  // Seeded (not Math.random) so server and client render the same particles.
-  const dots = useMemo(() => {
-    let seed = 42;
-    const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
-    return Array.from({ length: 22 }, () => ({ x: +(rnd() * 100).toFixed(2), y: +(rnd() * 100).toFixed(2), d: +(6 + rnd() * 10).toFixed(2), delay: +(rnd() * 6).toFixed(2), s: +(1 + rnd() * 2).toFixed(2) }));
-  }, []);
-  return <div className="absolute inset-0">{dots.map((p, i) => <span key={i} className="absolute rounded-full bg-accent/40" style={{ left: `${p.x}%`, top: `${p.y}%`, width: p.s, height: p.s, animation: `drift ${p.d}s ease-in-out ${p.delay}s infinite` }} />)}</div>;
 }
