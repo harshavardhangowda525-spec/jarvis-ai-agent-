@@ -226,6 +226,32 @@ npm test             # vitest
 npm run build        # production build
 ```
 
+## Run everything on your PC (fastest with Ollama)
+
+`npm run local` runs the whole app — JARVIS, EV, DARWIN and ULTRON's dashboard —
+plus the Ollama brain gateway and the ULTRON runtime on your own computer, in one
+window. Ollama is reached directly on `127.0.0.1` (no Cloudflare tunnel, no round
+trip through Vercel), and it uses the **same database** as your Vercel app, so your
+account, memories, leads and chats are identical in both places.
+
+```bash
+# one time: copy your app settings from Vercel
+npx vercel login
+npx vercel link
+npx vercel env pull .env.local --environment=production
+
+npm run local        # builds when the code changed, starts everything, opens http://localhost:3000
+```
+
+- The PC brain answers first (cloud keys are the backup); EV follows `EV_PROVIDER`
+  (Groq only by default). The Ollama model comes from `edith/.env` (`OLLAMA_MODEL`).
+- EV's images keep your public Vercel address (`JARVIS_URL` in `edith/.env`, or
+  `APP_URL`) so Instagram can still fetch them.
+- Google sign-in locally needs `http://localhost:3000/api/integrations/google/callback`
+  added to your OAuth client's redirect URIs.
+- Values marked "Sensitive" on Vercel can't be pulled — copy those into `.env.local` by hand.
+- `npm run local -- --rebuild` forces a fresh build; `JARVIS_LOCAL_PORT` changes the port.
+
 ## Testing
 
 Automated (Vitest): safe math evaluator + calculator, tool registry &

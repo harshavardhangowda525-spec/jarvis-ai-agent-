@@ -35,6 +35,9 @@ const JARVIS = read("JARVIS_URL").replace(/\/+$/, "");
 const FIXED_URL = read("BRAIN_PUBLIC_URL").replace(/\/+$/, ""); // e.g. an ngrok static domain
 const KEY_FILE = path.resolve(__dirname, ".brain-key");
 const HEARTBEAT_MS = 120_000;
+// JARVIS itself running on this PC (npm run local): serve only 127.0.0.1 — no
+// tunnel, no registration with the cloud app.
+const LOCAL_ONLY = read("BRAIN_LOCAL_ONLY") === "1";
 // Speed settings (see src/ollama-native.mjs for why these matter).
 const NATIVE = read("BRAIN_NATIVE") !== "0"; // talk to Ollama's native API
 const NUM_CTX = Math.max(2048, Number(read("BRAIN_CTX")) || 8192);
@@ -369,6 +372,12 @@ setInterval(warmUp, 20 * 60_000).unref(); // keep it resident
 await new Promise((resolve, reject) => { server.once("error", reject); server.listen(PORT, "127.0.0.1", resolve); })
   .catch((e) => die(e.code === "EADDRINUSE" ? `Port ${PORT} is busy — is another "npm run brain" already running?` : e.message));
 
+if (LOCAL_ONLY) {
+  say(`\n  Local brain ready at http://127.0.0.1:${PORT} (no tunnel — JARVIS runs on this PC).`);
+  setInterval(lowerOllamaPriority, HEARTBEAT_MS).unref();
+  process.on("SIGINT", () => process.exit(0));
+  process.on("SIGTERM", () => process.exit(0));
+} else {
 let publicUrl = FIXED_URL;
 let tunnel = null;
 if (!publicUrl) {
@@ -415,3 +424,4 @@ async function shutdown() {
 }
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
+} // end of cloud (tunnel) mode

@@ -300,11 +300,14 @@ export function resolveAiConfigs(primaryOverride?: string, brain?: BrainEndpoint
   // — puts the PC brain in front again. Otherwise a per-user pick wins over the
   // env default, as long as it's configured.
   const picked = (primaryOverride ?? "").toLowerCase();
-  const brainFirst = !!brain && (picked === "ollama" || (!picked && env.brainPriority === "first"));
+  // A PC brain is available when the gateway registered live OR (running JARVIS
+  // on the PC itself) Ollama is configured at a fixed local URL.
+  const pcBrain = !!brain || env.ollamaBaseUrl.length > 0;
+  const brainFirst = pcBrain && (picked === "ollama" || (!picked && env.brainPriority === "first"));
   const override = brainFirst ? "ollama" : picked === "ollama" ? "" : picked;
   // An old AI_PROVIDER=ollama doesn't force a live PC brain first — speed wins
   // unless the PC was chosen explicitly (Settings or BRAIN_PRIORITY=first).
-  const envPrimary = brain && !brainFirst && env.aiProvider === "ollama" ? "" : env.aiProvider;
+  const envPrimary = !!brain && !brainFirst && env.aiProvider === "ollama" ? "" : env.aiProvider;
   const primary = override && buildAiConfig(override, brain) ? override : envPrimary;
   const order = [
     ...(primary && AI_FALLBACK_ORDER.includes(primary) ? [primary] : []),

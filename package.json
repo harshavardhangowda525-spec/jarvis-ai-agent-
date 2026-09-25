@@ -5,6 +5,7 @@
   "description": "JARVIS AI — a production-ready general-purpose voice AI agent",
   "scripts": {
     "dev": "next dev",
+    "local": "node scripts/local.mjs",
     "use:ollama": "node scripts/switch-provider.mjs ollama",
     "use:groq": "node scripts/switch-provider.mjs groq",
     "use:gemini": "node scripts/switch-provider.mjs gemini",

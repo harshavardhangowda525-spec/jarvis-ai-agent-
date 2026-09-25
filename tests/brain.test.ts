@@ -35,6 +35,13 @@ describe("Ollama brain in the provider chain", () => {
     expect(resolveAiConfigs(undefined, { baseUrl: "https://abc.trycloudflare.com" }).map((c) => c.provider)).toEqual(["groq", "ollama"]);
   });
 
+  it("running JARVIS on the PC: a local OLLAMA_BASE_URL + BRAIN_PRIORITY=first puts Ollama first", async () => {
+    const { resolveAiConfigs } = await loadEnv({ GROQ_API_KEY: "gsk_x", OLLAMA_API_KEY: "k", OLLAMA_BASE_URL: "http://127.0.0.1:11500", BRAIN_PRIORITY: "first", OLLAMA_MODEL: "qwen2.5:3b" });
+    const chain = resolveAiConfigs(undefined, null);
+    expect(chain.map((c) => c.provider)).toEqual(["ollama", "groq"]);
+    expect(chain[0]).toMatchObject({ baseUrl: "http://127.0.0.1:11500/v1", model: "qwen2.5:3b", apiKey: "k" });
+  });
+
   it("with the PC offline and a picked provider missing, the PC choice is ignored", async () => {
     const { resolveAiConfigs } = await loadEnv({ GROQ_API_KEY: "gsk_x", OLLAMA_API_KEY: "k" });
     expect(resolveAiConfigs("ollama", null).map((c) => c.provider)).toEqual(["groq"]);

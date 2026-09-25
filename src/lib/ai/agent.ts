@@ -232,7 +232,7 @@ export async function* runAgent(
 function evConfigs(brain: BrainEndpoint | null): AiConfig[] {
   const pick = env.evProvider;
   if (pick === "auto") return getAiConfigs(undefined, brain);
-  if (pick === "ollama") return getAiConfigs(brain ? "ollama" : undefined, brain);
+  if (pick === "ollama") return getAiConfigs("ollama", brain); // PC first when reachable, cloud as backup
   const all = getAiConfigs(pick, brain);
   const only = all.filter((c) => c.provider === pick);
   return only.length ? only : all;
