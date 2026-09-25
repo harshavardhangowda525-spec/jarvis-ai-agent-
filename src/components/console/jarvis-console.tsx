@@ -12,6 +12,7 @@ import { HudPanel } from "@/components/hud/panel";
 import { Waveform } from "@/components/hud/visuals";
 import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
 import { instantAnswer } from "@/lib/instant";
+import { inIndia, parseOpenSite } from "@/lib/open-site";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import type { AgentTiming } from "@/hooks/useAgent";
 import { useAgent } from "@/hooks/useAgent";
@@ -83,6 +84,24 @@ function timingDetail(t: AgentTiming): string {
   if (t.setupMs > 700) lines.push("Server prep is slow — put your Vercel functions in the same region as your database (Vercel → Settings → Functions → Region).");
   if (t.provider === "ollama" && (t.firstWordMs ?? 0) > 3000) lines.push("Your PC brain is the slow part — a smaller Ollama model (e.g. qwen2.5:1.5b) or a GPU answers faster.");
   return lines.filter(Boolean).join("\n");
+}
+
+/**
+ * Open a URL in a new tab and report whether the browser allowed it. (A plain
+ * window.open with "noopener" always returns null, so a blocked pop-up couldn't
+ * be told apart; opening a blank tab first, cutting its link back to JARVIS,
+ * then sending it to the site gives the same safety AND a reliable answer.)
+ */
+function openTab(url: string): boolean {
+  try {
+    const w = window.open("", "_blank");
+    if (!w) return false;
+    w.opener = null;
+    w.location.href = url;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -185,7 +204,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       // Otherwise open in a NEW tab, never hijack the current one. If the pop-up
       // blocker stops it, the "Open X" button in the reply is the fallback.
-      try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* blocked — use the link button */ }
+      openTab(url); // blocked → the "Open X" button in the reply is the fallback
     },
   });
 
@@ -332,6 +351,17 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // "DARWIN", "open DARWIN", "activate DARWIN" → open the lead-gen/CRM console.
       if (/^darwin[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+darwin\b|\bdarwin[,\s]+(online|wake up|come online)\b/.test(low)) {
         launchDarwin();
+        return;
+      }
+      // "Open Amazon", "go to youtube.com", "search Flipkart for shoes" → open the
+      // site right now, while the keypress/click still allows a new tab (an AI
+      // round trip first — especially on the PC brain — gets it pop-up-blocked).
+      const site = evActiveRef.current ? null : parseOpenSite(t, { india: inIndia() });
+      if (site) {
+        const opened = openTab(site.url);
+        const msg = `Opening ${site.label}.`;
+        agent.appendLocalExchange(t, opened ? msg : `Your browser blocked the new tab — click "Open ${site.label}" below, or allow pop-ups for this site (icon at the right of Chrome's address bar).`, [{ url: site.url, label: `Open ${site.label}` }]);
+        if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(msg); } catch { /* ignore */ } }
         return;
       }
       // "read my screen", "what's on my screen", "look at my screen"…

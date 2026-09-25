@@ -70,11 +70,11 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
   }, []);
 
   /** Add a local user/assistant pair (used by file analysis, which has its own endpoint). */
-  const appendLocalExchange = useCallback((userText: string, assistantText: string) => {
+  const appendLocalExchange = useCallback((userText: string, assistantText: string, links?: { url: string; label: string }[]) => {
     setMessages((m) => [
       ...m,
       { id: nextId(), role: "user", content: userText },
-      { id: nextId(), role: "assistant", content: assistantText },
+      { id: nextId(), role: "assistant", content: assistantText, ...(links?.length ? { links } : {}) },
     ]);
   }, []);
 
