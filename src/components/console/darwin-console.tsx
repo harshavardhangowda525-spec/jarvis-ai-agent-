@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mic, MicOff, Loader2, ChevronLeft, ChevronRight, LogOut } from "lucide-react";
+import { Mic, MicOff, Loader2, ChevronLeft, ChevronRight, LogOut, MapPin } from "lucide-react";
 import { useVoice, useResumeVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import { cn, timeAgo } from "@/lib/utils";
-import { GENERATE_LEADS_RE, parseLeadCommand } from "@/lib/darwin/command";
+import { GENERATE_LEADS_RE, MAP_REQUEST_RE, parseLeadCommand } from "@/lib/darwin/command";
 import type { FindLeadsResult, LeadDTO } from "@/lib/darwin/types";
 import { GlassPanel } from "./darwin/ui";
 import {
@@ -100,6 +100,9 @@ export function DarwinConsole() {
   const emails = useEmailPopups();
   const agent = useAgent({
     onEmail: emails.push,
+    // "Open these leads in Google Maps" → a new tab (never replaces DARWIN). If
+    // the pop-up blocker stops it, the Maps links under the reply still work.
+    onOpen: (url) => { try { window.open(url, "_blank", "noopener,noreferrer"); } catch { /* blocked — use the links */ } },
     onAssistantComplete: (text) => { speak(text); loadOverview(); },
     // The agent ran a discovery itself → refresh and show the full history.
     onTool: (t) => {
@@ -170,7 +173,8 @@ export function DarwinConsole() {
 
       // "find 20 gyms in Bangalore without a website" / "generate new leads"
       // → run the real discovery directly (deterministic, no agent round-trip).
-      if (GENERATE_LEADS_RE.test(s)) {
+      // "Show me the leads on Google Maps" goes to the agent (darwin_map) instead.
+      if (GENERATE_LEADS_RE.test(s) && !MAP_REQUEST_RE.test(s)) {
         const p = parseLeadCommand(s);
         const base = lastForm ?? form;
         const next: SearchForm = {
@@ -281,6 +285,17 @@ export function DarwinConsole() {
         <div className="relative z-10 mx-auto mt-3 max-w-3xl px-4 text-center text-xs text-foreground/80">
           {agent.streaming ? <span className="inline-flex items-center gap-2 text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {agent.activity[0]?.label ?? "working…"}</span>
             : lastAssistant?.content}
+          {!agent.streaming && !!lastAssistant?.links?.length && (
+            <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+              {lastAssistant.links.slice(0, 21).map((l, i) => (
+                <a key={`${l.url}-${i}`} href={l.url} target="_blank" rel="noopener noreferrer"
+                  className={cn("inline-flex max-w-[16rem] items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] backdrop-blur-md transition",
+                    i === 0 ? "border-accent/50 bg-accent/15 text-accent-bright hover:bg-accent/25" : "border-white/15 bg-white/5 text-foreground/80 hover:border-accent/40 hover:text-accent")}>
+                  <MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{l.label}</span>
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

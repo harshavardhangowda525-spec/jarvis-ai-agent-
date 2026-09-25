@@ -1,5 +1,6 @@
 import "server-only";
 import { mapLinks } from "./geoapify";
+import { googleMapsLeadUrl } from "./maps";
 import type { LeadDTO } from "./types";
 
 /** Columns needed to render a lead (select these, then pass the row to toLeadDTO). */
@@ -30,6 +31,8 @@ export function toLeadDTO(r: LeadRow): LeadDTO {
     longitude: r.longitude,
     distanceM: typeof meta.distanceM === "number" ? meta.distanceM : null,
     ...mapLinks(r.latitude, r.longitude),
+    // Google Maps opens the business's own listing (name + address), not just a pin.
+    ...(r.latitude != null && r.longitude != null ? { mapsUrl: googleMapsLeadUrl(r) } : {}),
     websiteStatus: r.website ? "has_website" : "no_website_listed",
     stage: r.stage,
     source: r.source,

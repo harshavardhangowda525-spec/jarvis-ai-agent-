@@ -52,6 +52,7 @@ Find REAL potential business clients for ${b.name} (websites from ${b.websiteFro
 - darwin_followup: schedule / list / complete follow-ups; find due/overdue/today.
 - darwin_outreach: draft a personalized message from the lead's REAL info (needs approval before sending).
 - darwin_message: send outreach via a connected channel (email). Only reports "sent" when the provider confirms it.
+- darwin_map: open leads in Google Maps in the browser — one lead (by name/id) opens its listing; several (a stage, or the latest search when nothing is named) open one map of them with a link per lead. Use it whenever the user asks to open/show/see leads on Google Maps or the map.
 
 # Opportunity categories (AI analysis)
 ${DARWIN_OPPORTUNITIES.join(", ")}.

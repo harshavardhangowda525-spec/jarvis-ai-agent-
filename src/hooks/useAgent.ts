@@ -212,6 +212,15 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
                   ),
                 );
                 break;
+              case "link":
+                setMessages((m) =>
+                  m.map((x) =>
+                    x.id === assistantId
+                      ? { ...x, links: [...(x.links ?? []), { url: ev.url, label: ev.label }] }
+                      : x,
+                  ),
+                );
+                break;
               case "error":
                 pushActivity({ label: ev.message, kind: "error" });
                 if (!finalText) {

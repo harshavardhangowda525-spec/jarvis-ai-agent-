@@ -26,6 +26,8 @@ export type AgentEvent =
   | { type: "tool"; name: string; status: "ok" | "error"; summary: string }
   | { type: "navigate"; path: string }
   | { type: "open"; url: string; label: string }
+  /** An extra clickable link for the reply (not opened automatically). */
+  | { type: "link"; url: string; label: string }
   | { type: "provider"; name: string }
   /**
    * An email being sent: "sending" (with the full email, shown typing out in the
@@ -346,6 +348,11 @@ async function* runOneTool(
     }
     if (data && typeof data.openUrl === "string") {
       yield { type: "open", url: data.openUrl, label: String(data.label ?? "link") };
+    }
+    if (data && Array.isArray(data.links)) {
+      for (const l of data.links as { url?: unknown; label?: unknown }[]) {
+        if (typeof l?.url === "string" && l.url.startsWith("https://")) yield { type: "link", url: l.url, label: String(l.label ?? "link") };
+      }
     }
     if (emailId) {
       // "Sent" only when the tool confirms the provider accepted it — never assumed.

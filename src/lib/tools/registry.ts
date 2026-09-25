@@ -36,6 +36,7 @@ import { darwinStageTool, darwinQualifyTool, darwinNoteTool } from "./darwin/crm
 import { darwinFollowUpTool } from "./darwin/followup";
 import { darwinOutreachTool } from "./darwin/outreach";
 import { darwinMessageTool } from "./darwin/message";
+import { darwinMapTool } from "./darwin/map";
 
 const ALL_TOOLS: ToolDefinition[] = [
   calculatorTool as ToolDefinition,
@@ -69,6 +70,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   darwinFollowUpTool as ToolDefinition,
   darwinOutreachTool as ToolDefinition,
   darwinMessageTool as ToolDefinition,
+  darwinMapTool as ToolDefinition,
 ];
 
 /**

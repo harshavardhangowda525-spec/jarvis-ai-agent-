@@ -12,6 +12,9 @@ export interface LeadCommand { category?: string; location?: string; limit?: num
 export const GENERATE_LEADS_RE =
   /\b(generate|find|get|discover|search|pull|fetch|give me|show me|need|scan for|look for)\b.*\b(leads?|business(es)?|gyms?|caf[eé]s?|salons?|shops?|stores?|restaurants?|clinics?|dentists?)\b|\b(find|get|discover|search|generate|pull|fetch|give me|show me|look for)\b.+\b(in|near|around)\s+\S|\bnew leads?\b|\bmore leads?\b|\blead gen(eration)?\b/i;
 
+/** "Open these leads in Google Maps" / "show them on the map" — a map request, not a new search. */
+export const MAP_REQUEST_RE = /\b(google\s*maps?|maps?|map view)\b/i;
+
 const FILTER_PATTERNS: [RegExp, LeadFilter][] = [
   [/\b(without|no|don'?t have|do not have|lacking|missing)\s+(a\s+|any\s+)?(website|site|web ?presence)\b/i, "no_website"],
   [/\b(without|no)\s+(a\s+)?phone( numbers?)?\b|\bphone unavailable\b/i, "no_phone"],
