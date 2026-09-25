@@ -112,8 +112,19 @@ if (!appEnv.DATABASE_URL || !appEnv.AUTH_SECRET) {
 say(`  Settings: ${path.basename(envFile)} (same database as your Vercel app)`);
 
 // ---- 2. dependencies ------------------------------------------------------------------
-if (!fs.existsSync(path.join(ROOT, "node_modules", "next"))) runStep("Installing JARVIS packages (first run only)", "npm install", ROOT);
-if (!fs.existsSync(path.join(EDITH, "node_modules"))) runStep("Installing ULTRON packages (first run only)", "npm install", EDITH);
+// Install when ANY listed package is missing — an older node_modules (from before
+// a package was added, e.g. sharp) must be topped up, not just a missing folder.
+function missingPackages(dir) {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"));
+    const names = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+    return names.filter((n) => !fs.existsSync(path.join(dir, "node_modules", n, "package.json")));
+  } catch { return ["?"]; }
+}
+for (const [dir, label] of [[ROOT, "JARVIS"], [EDITH, "ULTRON"]]) {
+  const missing = missingPackages(dir);
+  if (missing.length) runStep(`Installing ${label} packages (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""})`, "npm install", dir);
+}
 
 // ---- 3. build when the code changed -------------------------------------------------------
 const head = (() => { try { return spawnSync("git rev-parse HEAD", { cwd: ROOT, shell: true, encoding: "utf8" }).stdout.trim(); } catch { return ""; } })();
