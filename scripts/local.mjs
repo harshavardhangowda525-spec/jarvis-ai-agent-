@@ -191,7 +191,7 @@ if (await up(`${OLLAMA}/api/tags`)) {
 // ---- 5. ULTRON runtime ------------------------------------------------------------------------------
 // ULTRON runs on Groq only by default — lend it the app's key if edith/.env has none.
 const groqKey = [edithEnv.GROQ_API_KEY, appEnv.GROQ_API_KEY].find((v) => v && !isPlaceholder(v)) || "";
-if (await up("http://127.0.0.1:7420/health")) say("  ULTRON already running — using it.");
+if (await up("http://127.0.0.1:7420/health")) say("  ULTRON already running — using it. (If it asks for a Groq key, close that ULTRON window and run this again.)");
 else start("ultron", ["run.mjs"], { cwd: EDITH, env: { ...(groqKey ? { GROQ_API_KEY: groqKey } : {}), ULTRON_ALLOWED_ORIGINS: [edithEnv.ULTRON_ALLOWED_ORIGINS || edithEnv.EDITH_ALLOWED_ORIGINS, `http://localhost:${PORT}`].filter(Boolean).join(",") } });
 
 // ---- 6. the web app (every agent) ------------------------------------------------------------------

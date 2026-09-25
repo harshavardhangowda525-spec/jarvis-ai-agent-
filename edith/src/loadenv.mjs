@@ -5,7 +5,7 @@ import fs from "node:fs";
  * file. Handles quotes, Windows line endings and an inline "  # note" after an
  * unquoted value.
  */
-export function loadEnv(file) {
+export function loadEnv(file, { only } = {}) {
   if (!fs.existsSync(file)) { aliasLegacyNames(); return false; }
   // Strip a UTF-8 BOM (Notepad adds one) so the first key isn't misread.
   const text = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
@@ -17,7 +17,11 @@ export function loadEnv(file) {
     let v = s.slice(eq + 1).trim();
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
     else v = v.replace(/\s+#.*$/, "").trim(); // drop an inline "  # note" after an unquoted value
-    if (!(k in process.env)) process.env[k] = v;
+    if (only && !only.test(k)) continue;
+    // A blank (or Vercel "[SENSITIVE]") value means "not set" — so a key filled
+    // in another file (e.g. the app's .env.local) can still be picked up.
+    if (!v || /^\[sensitive\]$/i.test(v)) continue;
+    if (!process.env[k]) process.env[k] = v;
   }
   aliasLegacyNames();
   return true;
