@@ -17,6 +17,14 @@ export interface FileChange { id: string; kind: string; path: string; preview?: 
 export interface TerminalEntry { id: string; command: string; exitCode: number | null; stdout?: string; stderr?: string; durationMs?: number }
 export interface Capabilities { [k: string]: any }
 export interface ConfirmReq { title: string; detail?: string; level?: string }
+/** Raw runtime events, for visuals that react to each one (the motion core). */
+export type UltronEvent =
+  | { kind: "goal"; goal: string }
+  | { kind: "tool"; name: string; label: string; status: "running" | "ok" | "error" }
+  | { kind: "file"; change: string; path: string }
+  | { kind: "terminal"; command: string; exitCode: number | null }
+  | { kind: "result"; ok: boolean; message: string }
+  | { kind: "stopped" | "error" | "ask" | "confirm" | "preview"; message?: string };
 
 const LS_URL = "jarvis.ultron.url";
 const LS_TOKEN = "jarvis.ultron.token";
@@ -48,6 +56,13 @@ export function useUltron() {
   const mutedRef = useRef(false);
   const manualClose = useRef(false);
   const lastReportRef = useRef("");
+  const listenersRef = useRef(new Set<(ev: UltronEvent) => void>());
+  /** Subscribe to raw runtime events; returns an unsubscribe function. */
+  const onEvent = useCallback((fn: (ev: UltronEvent) => void) => {
+    listenersRef.current.add(fn);
+    return () => { listenersRef.current.delete(fn); };
+  }, []);
+  const fire = useCallback((ev: UltronEvent) => { for (const fn of listenersRef.current) { try { fn(ev); } catch { /* a visual never breaks the runtime */ } } }, []);
 
   useEffect(() => { mutedRef.current = muted; }, [muted]);
 
@@ -118,6 +133,15 @@ export function useUltron() {
     ws.onmessage = (ev) => {
       let m: any; try { m = JSON.parse(ev.data); } catch { return; }
       switch (m.kind) {
+        case "goal": fire({ kind: "goal", goal: String(m.goal ?? "") }); break;
+        case "tool": fire({ kind: "tool", name: String(m.name ?? ""), label: String(m.label ?? ""), status: m.status === "running" ? "running" : m.status === "ok" ? "ok" : "error" }); break;
+        case "file": case "created": case "modified": case "deleted": fire({ kind: "file", change: String(m.change ?? m.kind), path: String(m.path ?? "") }); break;
+        case "terminal": fire({ kind: "terminal", command: String(m.command ?? ""), exitCode: m.exitCode ?? null }); break;
+        case "result": fire({ kind: "result", ok: !!m.ok, message: String(m.message ?? "") }); break;
+        case "stopped": case "error": case "ask": case "confirm": case "preview": fire({ kind: m.kind, message: m.message }); break;
+        default: break;
+      }
+      switch (m.kind) {
         case "hello": setProvider(m.provider); setModeState(m.mode); setCaps(m.capabilities); setWorkspace(m.workspace); setConn("connected"); break;
         case "capabilities": setCaps(m.capabilities); break;
         case "mode": setModeState(m.mode); break;
@@ -162,7 +186,7 @@ export function useUltron() {
         default: break;
       }
     };
-  }, [push, speak]);
+  }, [push, speak, fire]);
 
   /**
    * Auto-pair: ask the local ULTRON for its token over the origin-locked HTTP
@@ -242,7 +266,7 @@ export function useUltron() {
 
   return {
     conn, provider, mode, caps, workspace, activity, tasks, terminal, files, project, confirm, working, preview,
-    savedUrl, savedToken, muted, setMuted, speak, setSpeaker, recentlySpoken,
+    savedUrl, savedToken, muted, setMuted, speak, setSpeaker, recentlySpoken, onEvent,
     connect, disconnect, autoPair, runGoal, setMode, stop, answerConfirm, refreshCaps, requestPreview, dismissPreview,
   };
 }

@@ -21,6 +21,11 @@ export function capabilityCheck(ws) {
     isRepo = execSync("git rev-parse --is-inside-work-tree", { cwd: ws.root, stdio: ["ignore", "pipe", "ignore"] })
       .toString().trim() === "true";
   } catch { /* not a repo */ }
+  let branch = null;
+  if (isRepo) {
+    try { branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd: ws.root, stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || null; }
+    catch { /* no commits yet */ }
+  }
   const deploy = deploymentAdapters(ws);
   return {
     aiProvider: { ok: hasProvider(), detail: providerName() },
@@ -28,7 +33,7 @@ export function capabilityCheck(ws) {
     terminal: { ok: true, detail: "ready" },
     node: { ok: !!node, detail: node || "not found" },
     npm: { ok: !!npm, detail: npm || "not found" },
-    git: { ok: !!git, detail: git || "not found", repo: isRepo },
+    git: { ok: !!git, detail: git || "not found", repo: isRepo, branch },
     python: { ok: !!python, detail: python || "not found" },
     docker: { ok: !!docker, detail: docker || "not installed" },
     deploy: Object.fromEntries(Object.entries(deploy).map(([k, v]) => [k, { ok: v.connected, requires: v.requires }])),

@@ -268,3 +268,42 @@ body {
 @keyframes wx-flash { 0%,92%,100% { opacity: 0; } 93% { opacity: 0.85; } 94% { opacity: 0.1; } 95% { opacity: 0.7; } 96% { opacity: 0; } }
 @keyframes wx-fog { from { transform: translateX(-30%); } to { transform: translateX(30%); } }
 @keyframes wx-temp-in { 0% { opacity: 0; transform: translateY(10px) scale(0.9); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+
+/* ---------- ULTRON motion dashboard ---------- */
+@property --ultron-ang { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes ultron-border-spin { to { --ultron-ang: 360deg; } }
+@keyframes ultron-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(120, 220, 255, 0.10), 0 14px 44px -22px rgba(60, 190, 255, 0.35); }
+  50% { box-shadow: 0 0 0 1px rgba(120, 220, 255, 0.20), 0 14px 54px -16px rgba(60, 190, 255, 0.55); }
+}
+@keyframes ultron-emerge { from { opacity: 0; transform: translateY(14px) scale(0.985); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes ultron-word { from { opacity: 0; filter: blur(6px); letter-spacing: 0.6em; } to { opacity: 1; filter: none; } }
+@keyframes ultron-banner {
+  0% { opacity: 0; letter-spacing: 0.9em; filter: blur(8px); }
+  20% { opacity: 1; letter-spacing: 0.45em; filter: none; }
+  80% { opacity: 1; letter-spacing: 0.45em; }
+  100% { opacity: 0; letter-spacing: 0.55em; filter: blur(4px); }
+}
+@keyframes ultron-drawer { from { opacity: 0; transform: translateX(24px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+.ultron-emerge { animation: ultron-emerge 0.9s cubic-bezier(0.2, 0.9, 0.25, 1) both; }
+.ultron-bar {
+  background:
+    radial-gradient(180px circle at var(--mx, 50%) var(--my, 50%), rgba(255, 255, 255, 0.10), transparent 70%),
+    linear-gradient(150deg, rgba(255, 255, 255, 0.075), rgba(18, 28, 48, 0.42));
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 0 0 1px rgba(160, 225, 255, 0.14), 0 18px 60px -24px rgba(50, 180, 255, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.ultron-breathe { animation: ultron-breathe 4.5s ease-in-out infinite; }
+.ultron-bar-border {
+  padding: 1px;
+  background: conic-gradient(from var(--ultron-ang), transparent 0deg, rgba(130, 235, 255, 0.95) 50deg, rgba(160, 130, 255, 0.6) 90deg, transparent 140deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: ultron-border-spin 2.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ultron-breathe, .ultron-bar-border { animation: none; }
+}
