@@ -22,7 +22,8 @@ export interface OAuthProvider {
 }
 
 function read(name: string): string {
-  return (process.env[name] ?? "").trim();
+  const v = (process.env[name] ?? "").trim();
+  return /^\[sensitive\]$/i.test(v) ? "" : v; // placeholder from `vercel env pull` = not set
 }
 
 export const OAUTH_PROVIDERS: Record<string, OAuthProvider> = {

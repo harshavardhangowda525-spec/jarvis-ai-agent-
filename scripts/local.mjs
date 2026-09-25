@@ -100,6 +100,18 @@ say("\nJARVIS — running everything on this PC\n");
 const envFile = [".env.local", ".env"].map((f) => path.join(ROOT, f)).find((f) => fs.existsSync(f));
 const appEnv = { ...readEnv(path.join(ROOT, ".env")), ...readEnv(path.join(ROOT, ".env.local")) };
 const edithEnv = readEnv(path.join(EDITH, ".env"));
+const isPlaceholder = (v) => !v || !v.trim() || /^\[sensitive\]$/i.test(v.trim());
+// AUTH_SECRET only signs logins made on THIS PC (separate from Vercel's), so if
+// Vercel withheld it, create a private one here and keep it in .env.local.
+if (appEnv.DATABASE_URL && isPlaceholder(appEnv.AUTH_SECRET)) {
+  const secret = crypto.randomBytes(48).toString("base64url");
+  const file = path.join(ROOT, ".env.local");
+  const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+  const next = /^AUTH_SECRET=.*$/m.test(text) ? text.replace(/^AUTH_SECRET=.*$/m, `AUTH_SECRET="${secret}"`) : `${text.replace(/\s*$/, "\n")}AUTH_SECRET="${secret}"\n`;
+  fs.writeFileSync(file, next);
+  appEnv.AUTH_SECRET = secret;
+  say("  Created a private sign-in secret for this PC (AUTH_SECRET in .env.local).");
+}
 if (!appEnv.DATABASE_URL || !appEnv.AUTH_SECRET) {
   die(
     "JARVIS needs your app settings (database, keys) in a .env.local file here.\n" +
@@ -129,7 +141,7 @@ if (!/^postgres(ql)?:\/\//i.test(dbUrl)) {
 say(`  Settings: ${path.basename(envFile)} (same database as your Vercel app)`);
 // Other keys that came through blank (Sensitive on Vercel) — worth copying by hand.
 const IMPORTANT = ["GROQ_API_KEY", "GEMINI_API_KEY", "ELEVENLABS_API_KEY", "GEOAPIFY_API_KEY", "GOOGLE_CLIENT_SECRET", "INSTAGRAM_ACCESS_TOKEN", "MAGIC_HOUR_API_KEY", "OLLAMA_API_KEY"];
-const blank = IMPORTANT.filter((k) => k in appEnv && (!appEnv[k].trim() || /^\[?(sensitive|encrypted|hidden)\]?$/i.test(appEnv[k].trim())));
+const blank = IMPORTANT.filter((k) => k in appEnv && isPlaceholder(appEnv[k]));
 if (blank.length) say(`  Note: these came through empty (marked Sensitive on Vercel): ${blank.join(", ")}.\n        Copy their values into .env.local if you want those features on this PC.`);
 
 // ---- 2. dependencies ------------------------------------------------------------------
@@ -194,6 +206,7 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
     // EV's images must stay publicly reachable for Instagram — keep the Vercel address.
     APP_URL: appEnv.APP_URL || edithEnv.JARVIS_URL || "",
     DATABASE_URL: dbUrl,
+    AUTH_SECRET: appEnv.AUTH_SECRET,
   },
 });
 const local = `http://localhost:${PORT}`;

@@ -10,7 +10,10 @@
 import "server-only";
 
 function read(name: string): string {
-  return (process.env[name] ?? "").trim();
+  const v = (process.env[name] ?? "").trim();
+  // `vercel env pull` writes the literal "[SENSITIVE]" for values it won't
+  // reveal — that's "not set", never a real key/model/URL.
+  return /^\[sensitive\]$/i.test(v) ? "" : v;
 }
 
 /**
