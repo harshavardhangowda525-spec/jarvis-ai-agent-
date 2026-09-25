@@ -6,6 +6,7 @@ import { getLiveBrain } from "./brain";
 import { trimHistoryForLocal } from "./history";
 import { explicitMemory, loadMemories, memoryPromptBlock, saveMemory, type MemoryRow } from "./user-memory";
 import type { AiConfig, BrainEndpoint } from "@/lib/env";
+import { allowNullOptionals, dropNullArgs, isToolCallRejection, VALIDATES_TOOL_ARGS } from "./tool-schema";
 import { env } from "@/lib/env";
 import { buildSystemPrompt } from "./prompt";
 import { availableTools, getTool } from "@/lib/tools/registry";
@@ -185,7 +186,7 @@ export async function* runAgent(
     const local = cfg.provider === "ollama";
     const total = input.historyTotal ?? input.history.length;
     const s: SharedCtx = {
-      system, tools, ctx, activityQueue, model: cfg.model,
+      system, tools, ctx, activityQueue, model: cfg.model, provider: cfg.provider,
       // Spoken answers are short; a CPU writes only a few tokens a second.
       maxTokens: local ? 512 : 2048,
       // Headers arrive at once from the gateway, so the limit JARVIS enforces is
@@ -302,6 +303,8 @@ interface SharedCtx {
   leanTools?: boolean;
   /** reasoning_effort for reasoning models (e.g. gpt-oss on Groq/Cerebras). */
   reasoningEffort?: string;
+  /** Which provider is answering (some validate tool arguments themselves). */
+  provider?: string;
 }
 
 /** First sentence of a tool description (the local model's prompt is read on a CPU). */
@@ -329,7 +332,7 @@ async function* runOneTool(
   const started = Date.now();
   let emailId = ""; // set when this call sends an email
   try {
-    const parsed = tool.schema.parse(rawInput);
+    const parsed = tool.schema.parse(dropNullArgs(rawInput));
     // Announce an outgoing email BEFORE sending, so the user watches it being
     // written while the real send runs (a failed preview never blocks the send).
     const preview = tool.emailPreview ? await Promise.resolve(tool.emailPreview(parsed, s.ctx)).catch(() => null) : null;
@@ -456,9 +459,12 @@ async function* openaiLoop(
     function: {
       name: t.name,
       description: s.leanTools ? firstSentence(t.description) : t.description,
-      parameters: t.inputSchema as Record<string, unknown>,
+      parameters: VALIDATES_TOOL_ARGS.has(s.provider ?? "")
+        ? allowNullOptionals(t.inputSchema as Record<string, unknown>)
+        : (t.inputSchema as Record<string, unknown>),
     },
   }));
+  let toolRetry = false; // one retry when the provider rejects a malformed tool call
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: s.system },
@@ -516,6 +522,15 @@ async function* openaiLoop(
       // runAgent falls back to the next provider.
       if (timedOut) throw new FirstTokenTimeout(s.firstTokenMs!);
     } catch (err) {
+      // The provider refused the model's tool call (e.g. a wrong argument type).
+      // Nothing was shown yet, so ask once more with a reminder instead of failing.
+      if (!timedOut && !toolRetry && !content && isToolCallRejection(err)) {
+        toolRetry = true;
+        console.warn(`[agent] ${s.provider} rejected a tool call — retrying once:`, (err as Error)?.message);
+        messages.push({ role: "system", content: "Your last tool call had invalid arguments. Call the tool again with only the parameters you need — leave unused optional parameters out entirely (never null)." });
+        step--;
+        continue;
+      }
       // Propagate to runAgent so it can fall back to the next provider.
       throw timedOut ? new FirstTokenTimeout(s.firstTokenMs!) : err;
     } finally {
