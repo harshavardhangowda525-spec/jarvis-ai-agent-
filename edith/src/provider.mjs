@@ -31,6 +31,19 @@ function resolveChain() {
     ["ollama", ollamaModel ? "ollama" : "", `${ollamaBase}/v1`, ollamaModel],
   ];
   const configured = order.filter((p) => p[1]).map(([provider, apiKey, baseUrl, model]) => ({ provider, apiKey, baseUrl, model }));
+  // Groq: every key found (environment, edith/.env, .env.local, .env) in order,
+  // so a stale key in one file falls through to a working one in another.
+  const groq = configured.find((p) => p.provider === "groq");
+  if (groq) {
+    const found = Array.isArray(globalThis.__ULTRON_GROQ_KEYS__) ? globalThis.__ULTRON_GROQ_KEYS__ : [];
+    const keys = [{ source: "GROQ_API_KEY", key: groq.apiKey }, ...found].filter((k, i, a) => a.findIndex((x) => x.key === k.key) === i);
+    // The key actually in effect keeps the name of the file it came from.
+    const own = found.find((k) => k.key === groq.apiKey);
+    if (own) keys[0].source = own.source;
+    groq.keys = keys; groq.keyIdx = 0; groq.badKeys = [];
+    groq.tpm = Math.max(2000, Number(read("GROQ_TPM")) || 8000); // free-plan tokens/minute for gpt-oss-120b
+    groq.slack = 0;
+  }
   // ULTRON runs on ONE provider — Groq by default (ULTRON_AI_PROVIDER picks
   // another, e.g. "ollama"). No silent switch to a different model.
   const only = onlyProvider();
@@ -87,6 +100,41 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // via ULTRON_MAX_TOKENS. gpt-oss / gemini support far more than this default.
 const MAX_TOKENS = Math.max(2048, Number(process.env.ULTRON_MAX_TOKENS || 8192));
 
+// Groq's free plan counts the prompt PLUS the requested reply (max_tokens)
+// against a per-minute token limit (8,000 for gpt-oss-120b) and refuses any
+// single request above it. So for Groq the reply budget is sized to fit.
+const estTokens = (s) => Math.ceil((s?.length ?? 0) / 3.2);
+function maxTokensFor(P, sys, user) {
+  if (P.provider !== "groq") return MAX_TOKENS;
+  const room = P.tpm - estTokens(sys) - estTokens(user) - 250 - (P.slack || 0);
+  return Math.max(600, Math.min(MAX_TOKENS, room));
+}
+
+/**
+ * How many characters the step message (goal + history) may use so the reply
+ * still has room — Infinity unless the first provider is budget-limited (Groq).
+ */
+export function promptBudgetChars(systemText) {
+  const P = chain()[0];
+  if (!P || P.provider !== "groq") return Infinity;
+  return Math.max(2500, Math.floor((P.tpm - 2600 - estTokens(systemText) - (P.slack || 0)) * 3.2));
+}
+/** Which file the Groq key in use came from (e.g. ".env.local"). */
+export function groqKeySource() {
+  const P = chain().find((p) => p.provider === "groq");
+  return P?.keys?.[P.keyIdx]?.source ?? null;
+}
+/** True when ULTRON's first provider is Groq (prompts are kept compact). */
+export function groqFirst() { return chain()[0]?.provider === "groq"; }
+
+/** Seconds Groq asks us to wait (retry-after header, or "try again in 7.5s" / "1m2s"). */
+function waitSeconds(res, text) {
+  const h = Number(res.headers?.get?.("retry-after"));
+  if (Number.isFinite(h) && h > 0) return Math.ceil(h);
+  const m = text.match(/try again in (?:(\d+)m)?([\d.]+)s/i);
+  return m ? Math.ceil(Number(m[1] || 0) * 60 + Number(m[2])) : 0;
+}
+
 // Providers that answered with a "this won't fix itself soon" error — no billing
 // (402), bad/unauthorised key (401/403) or unknown model (404). We skip them for
 // a while instead of wasting a request on every step; after the cool-down they
@@ -120,7 +168,16 @@ function explain(status, text, P) {
     if (info?.prefix && P.apiKey && !P.apiKey.startsWith(info.prefix)) {
       return `API key invalid — ${P.provider} keys start with "${info.prefix}" and yours doesn't; create one at ${info.where}`;
     }
+    if (P?.provider === "groq" && P.keys?.length) {
+      const bad = [...new Set([...(P.badKeys ?? []), P.keys[P.keyIdx]?.source].filter(Boolean))];
+      return `Groq rejected the key in ${bad.join(" and ")} (invalid or revoked) — create a new one at ${info.where} and put it in ${bad[0] === ".env.local" || bad[0] === ".env" ? bad[0] : "edith/.env (or delete that line there so the app's .env.local key is used)"}`;
+    }
     return info ? `API key invalid or revoked — create a new one at ${info.where}` : "API key invalid";
+  }
+  if (status === 413 || /request too large|tokens per minute|\bTPM\b/i.test(text)) {
+    return P?.provider === "groq"
+      ? "this step is larger than your Groq plan's tokens-per-minute limit"
+      : "request too large for this model";
   }
   if (status === 403) return "key not allowed (check account/region)";
   if (status === 404) return "model not found (check the *_MODEL setting)";
@@ -193,7 +250,7 @@ export async function warmOllama() {
  * with one short retry on the first provider. Throws only if ALL providers fail
  * — never fabricates a response.
  */
-export async function askJson(system, user) {
+export async function askJson(system, user, { onWait } = {}) {
   const providers = chain();
   if (!providers.length) {
     const only = onlyProvider();
@@ -215,6 +272,8 @@ export async function askJson(system, user) {
   const ROUNDS = Math.max(1, Number(process.env.ULTRON_RETRY_ROUNDS || 3));
   let lastErr = "";
   const errors = new Map(); // provider -> short reason (latest), for a useful final message
+  let waits = 0; // times we waited out Groq's per-minute limit for this step
+  let shrunk = false; // retried once with a smaller reply budget
 
   for (let round = 0; round < ROUNDS; round++) {
     let sawTransient = false;
@@ -236,7 +295,7 @@ export async function askJson(system, user) {
           const body = {
             model: P.model,
             temperature: 0.1,
-            max_tokens: MAX_TOKENS,
+            max_tokens: maxTokensFor(P, sys, user),
             messages: [{ role: "system", content: sys }, { role: "user", content: user }],
           };
           if (useJsonMode) body.response_format = { type: "json_object" };
@@ -263,10 +322,10 @@ export async function askJson(system, user) {
             return parseJson(out);
           }
 
-          const text = (await res.text().catch(() => "")).slice(0, 240);
+          const text = (await res.text().catch(() => "")).slice(0, 700);
           lastErr = `${P.provider} ${res.status}: ${text}`;
           errors.set(P.provider, explain(res.status, text, P));
-          log.warn(`Provider ${P.provider} (${P.model}) ${res.status}: ${text}`);
+          log.warn(`Provider ${P.provider} (${P.model}) ${res.status}: ${text.slice(0, 300)}`);
 
           // OpenRouter model retired → switch to a current free model and retry it.
           if (P.provider === "openrouter" && !P.swapped && (res.status === 404 || /not a valid model|model.*(not found|does not exist)/i.test(text)) && !/data policy|privacy/i.test(text)) {
@@ -275,6 +334,38 @@ export async function askJson(system, user) {
               log.info(`OpenRouter model ${P.model} is unavailable — switching to free model ${alt}.`);
               P.model = alt; P.swapped = true; errors.delete(P.provider);
               i -= 1; nextProvider = true; break; // re-run this provider with the new model
+            }
+          }
+          if (P.provider === "groq") {
+            // A rejected key → try the next Groq key found in another file.
+            if (res.status === 401 && P.keys && P.keyIdx < P.keys.length - 1) {
+              P.badKeys.push(P.keys[P.keyIdx].source);
+              P.keyIdx += 1; P.apiKey = P.keys[P.keyIdx].key; errors.delete(P.provider);
+              log.warn(`Groq rejected the key in ${P.badKeys.at(-1)} — trying the one in ${P.keys[P.keyIdx].source}.`);
+              i -= 1; nextProvider = true; break;
+            }
+            // One request bigger than the plan's per-minute limit → shrink the reply budget once.
+            const lim = text.match(/Limit (\d+), Requested (\d+)/i);
+            if (lim && (res.status === 413 || /request too large|reduce your message size/i.test(text))) {
+              const limit = Number(lim[1]), requested = Number(lim[2]);
+              P.tpm = Math.min(P.tpm, limit);
+              P.slack = (P.slack || 0) + Math.max(0, requested - limit) + 150;
+              if (!shrunk && maxTokensFor(P, sys, user) >= 600 && body.max_tokens > maxTokensFor(P, sys, user)) {
+                shrunk = true; errors.delete(P.provider);
+                log.info(`Groq plan limit ${limit} tokens/min — retrying with a smaller reply budget (${maxTokensFor(P, sys, user)}).`);
+                i -= 1; nextProvider = true; break;
+              }
+            }
+            // Per-minute tokens used up by earlier steps → wait as long as Groq asks (up to ~75s).
+            if (res.status === 429 && !/request too large/i.test(text)) {
+              const secs = waitSeconds(res, text) || 20;
+              if (secs <= 75 && waits < 3) {
+                waits += 1; errors.delete(P.provider);
+                log.info(`Groq per-minute limit reached — waiting ${secs}s.`);
+                try { onWait?.(secs); } catch { /* ignore */ }
+                await sleep(secs * 1000 + 250);
+                i -= 1; nextProvider = true; break;
+              }
             }
           }
           // Won't recover by retrying: park this provider for a while.

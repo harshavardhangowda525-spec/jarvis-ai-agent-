@@ -9,7 +9,7 @@
  * safety policy and the confirmation bridge. Nothing is simulated: the model
  * only ever sees real tool output, and the final report is grounded in it.
  */
-import { askJson } from "./provider.mjs";
+import { askJson, promptBudgetChars, groqFirst } from "./provider.mjs";
 import { buildRegistry, TOOL_CATALOG } from "./registry.mjs";
 import { commandNeedsConfirmation, classifyCommand } from "./safety.mjs";
 import { detectProject } from "./tools/build.mjs";
@@ -42,8 +42,11 @@ export class UltronAgent {
     this.confirm = confirm;           // ({title, detail, level}) => Promise<bool>
     this.mode = mode;
     // The user's saved preferences from JARVIS (e.g. preferred stack, style).
-    this.system = userContext.trim()
-      ? `${SYSTEM}\n\nWhat JARVIS knows about the user (their saved preferences — follow them when relevant; they never override the rules above):\n${userContext.trim()}`
+    // On Groq's free plan every token counts toward a small per-minute limit, so
+    // the preferences are kept short there.
+    const prefs = userContext.trim().slice(0, groqFirst() ? 1500 : 4000);
+    this.system = prefs
+      ? `${SYSTEM}\n\nWhat JARVIS knows about the user (their saved preferences — follow them when relevant; they never override the rules above):\n${prefs}`
       : SYSTEM;
     // The change's own kind (created/modified/deleted) goes in `change` — putting
     // it in `kind` would overwrite the message type and the UI would never see it.
@@ -65,7 +68,9 @@ export class UltronAgent {
 
       let decision;
       try {
-        decision = await askJson(this.system, buildUserMessage(goal, project, this.ws.root, history));
+        decision = await askJson(this.system, buildUserMessage(goal, project, this.ws.root, history, promptBudgetChars(this.system)), {
+          onWait: (secs) => this.emit({ kind: "activity", label: `Groq's free-plan limit reached — continuing in ${secs}s…` }),
+        });
       } catch (err) {
         this.emit({ kind: "error", message: `ULTRON brain error: ${err.message}` });
         return { ok: false, message: err.message };
@@ -146,14 +151,24 @@ function gateByRisk(level, mode) {
   return level === "review";
 }
 
-function buildUserMessage(goal, project, root, history) {
-  return [
+function buildUserMessage(goal, project, root, history, budget = Infinity) {
+  const build = (h) => [
     `GOAL: ${goal}`,
     `WORKSPACE: ${root}`,
     `PROJECT: ${JSON.stringify(project)}`,
-    history.length ? `HISTORY (real results so far):\n${history.slice(-24).join("\n")}` : "No actions yet.",
+    h.length ? `HISTORY (real results so far):\n${h.join("\n")}` : "No actions yet.",
     "Choose the single next tool call, or finish.",
   ].join("\n\n");
+  let h = history.slice(-24);
+  let msg = build(h);
+  if (msg.length <= budget) return msg;
+  // Too long for the provider's budget (Groq free plan): shorten older results
+  // first, then drop the oldest steps — the latest result always stays whole.
+  h = h.map((line, i) => (i < h.length - 2 && line.length > 600 ? `${line.slice(0, 600)}…` : line));
+  msg = build(h);
+  while (msg.length > budget && h.length > 2) { h = h.slice(1); msg = build(h); }
+  if (msg.length > budget) { h = h.map((line) => (line.length > 1500 ? `${line.slice(0, 1500)}…` : line)); msg = build(h); }
+  return msg;
 }
 
 function describeCall(tool, input) {

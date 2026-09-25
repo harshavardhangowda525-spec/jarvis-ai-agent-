@@ -5,6 +5,24 @@ import fs from "node:fs";
  * file. Handles quotes, Windows line endings and an inline "  # note" after an
  * unquoted value.
  */
+/** Read a .env file into an object without touching process.env ({} if missing). */
+export function readEnvFile(file) {
+  const out = {};
+  if (!fs.existsSync(file)) return out;
+  const text = fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "");
+  for (const line of text.split("\n")) {
+    const s = line.trim();
+    if (!s || s.startsWith("#")) continue;
+    const eq = s.indexOf("="); if (eq === -1) continue;
+    const k = s.slice(0, eq).trim();
+    let v = s.slice(eq + 1).trim();
+    if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+    else v = v.replace(/\s+#.*$/, "").trim();
+    if (v && !/^\[sensitive\]$/i.test(v)) out[k] = v;
+  }
+  return out;
+}
+
 export function loadEnv(file, { only } = {}) {
   if (!fs.existsSync(file)) { aliasLegacyNames(); return false; }
   // Strip a UTF-8 BOM (Notepad adds one) so the first key isn't misread.

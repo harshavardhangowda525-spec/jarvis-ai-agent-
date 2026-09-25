@@ -9,7 +9,7 @@
 import "./src/env-init.mjs"; // must stay first — loads edith/.env before other modules read it
 import { Workspace } from "./src/workspace.mjs";
 import { startServer } from "./src/server.mjs";
-import { hasProvider, onlyProvider, providerName, providerSummary, warmOllama } from "./src/provider.mjs";
+import { askJson, groqFirst, groqKeySource, hasProvider, onlyProvider, providerName, providerSummary, warmOllama } from "./src/provider.mjs";
 import { log } from "./src/log.mjs";
 import { lowerOllamaPriority } from "./src/os-priority.mjs";
 
@@ -25,6 +25,13 @@ if (!hasProvider()) {
   log.warn("ULTRON will pair and run REAL tools, but its reasoning/coding loop needs a provider.");
 } else {
   log.info(`Brain ready: ${providerName()}`);
+  // Check the Groq key once now (a tiny request), so a bad key shows up here —
+  // with the file it's in — instead of in the middle of your first task.
+  if (groqFirst() && !process.env.ULTRON_SKIP_KEY_CHECK) {
+    askJson("Reply with the JSON object {\"ok\": true}.", "ping")
+      .then(() => log.info(`Groq key works (from ${groqKeySource()}).`))
+      .catch((err) => log.warn(`Groq check failed: ${err.message.replace(/^All AI providers failed\. /, "")}`));
+  }
   // Pre-load the local model only when it answers FIRST — as the backup it'd
   // just hold several GB of memory (and slow the PC down) until it's needed.
   if (providerName().startsWith("ollama")) {
