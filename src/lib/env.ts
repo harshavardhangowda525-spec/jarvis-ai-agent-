@@ -170,6 +170,12 @@ export const env = {
   // NO credit card). OSM-backed business data (name, website, phone). Get a key
   // at https://myprojects.geoapify.com (sign up → create project → API key).
   geoapifyApiKey: read("GEOAPIFY_API_KEY"),
+  // NIOS watcher: extra regional centres ("bengaluru,delhi" → rc<name>.nios.ac.in),
+  // extra official NIOS pages to watch (comma-separated *.nios.ac.in URLs), and
+  // the secret Vercel Cron sends to /api/cron/nios.
+  niosRegionalCentres: read("NIOS_REGIONAL_CENTRES"),
+  niosExtraUrls: read("NIOS_EXTRA_URLS"),
+  cronSecret: read("CRON_SECRET"),
   // Hard guard: even if code were misconfigured, never fabricate leads.
   mockDataDisabled: (read("MOCK_DATA") || "false").toLowerCase() !== "true",
   appEnv: read("APP_ENV").toLowerCase() || "development",

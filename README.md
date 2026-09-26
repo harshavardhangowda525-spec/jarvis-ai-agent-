@@ -33,6 +33,7 @@ registering a **tool** — the agent loop never changes.
 - [Production deployment](#production-deployment)
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
+- [NIOS board notifications](#nios-board-notifications)
 
 ---
 
@@ -317,6 +318,35 @@ balancer / uptime monitor.
 
 Built as a real, deployable agent — not a mockup. Add a tool, and JARVIS can do
 something new.
+
+## NIOS board notifications
+
+JARVIS watches the official NIOS websites and tells you when a new notice
+appears — exams, date sheets, practicals, hall tickets, results, admissions,
+fees, anything published:
+
+| Page watched | URL |
+| --- | --- |
+| NIOS main site | https://www.nios.ac.in/ |
+| Secondary & Sr. Secondary | https://sdmis.nios.ac.in/registration/home-notifications |
+| Vocational | https://voc.nios.ac.in/registration/home-notifications |
+| Results | https://results.nios.ac.in/ |
+| Regional centres (optional) | `NIOS_REGIONAL_CENTRES="bengaluru,delhi"` or say "watch the Delhi regional centre" |
+
+- **First read = history.** What's already on the pages is stored (ask "latest NIOS
+  exam notices") but not announced; only notices that appear afterwards alert you.
+- **In JARVIS:** while the console is open it checks every 10 minutes — a new notice
+  pops up, JARVIS reads it out, and if the tab is in the background you get a
+  desktop notification (allow it once from the pop-up).
+- **By email:** with Gmail connected (Settings → Integrations), new notices are
+  emailed from your Gmail to yourself.
+- **When JARVIS is closed:** Vercel Cron calls `/api/cron/nios` daily at 08:00 IST
+  (set `CRON_SECRET` in Vercel; the Hobby plan allows one run a day — Pro can run it
+  more often by editing `vercel.json`). `npm run local` checks every 15 minutes
+  while your PC is on.
+- Ask JARVIS: "any new NIOS notifications?", "check NIOS now", "turn off NIOS email alerts".
+- Notices are shown exactly as NIOS published them (title, date, link) — always
+  confirm on nios.ac.in.
 
 ## Which brain each agent uses
 

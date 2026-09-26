@@ -20,6 +20,15 @@
     },
     "src/app/api/memories/learn/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/cron/nios/route.ts": {
+      "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/nios",
+      "schedule": "30 2 * * *"
+    }
+  ]
 }

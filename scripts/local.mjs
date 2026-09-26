@@ -195,6 +195,8 @@ if (await up("http://127.0.0.1:7420/health")) say("  ULTRON already running — 
 else start("ultron", ["run.mjs"], { cwd: EDITH, env: { ...(groqKey ? { GROQ_API_KEY: groqKey } : {}), ULTRON_ALLOWED_ORIGINS: [edithEnv.ULTRON_ALLOWED_ORIGINS || edithEnv.EDITH_ALLOWED_ORIGINS, `http://localhost:${PORT}`].filter(Boolean).join(",") } });
 
 // ---- 6. the web app (every agent) ------------------------------------------------------------------
+// The NIOS watcher's scheduled check needs a secret; use yours or a one-off one for this run.
+const cronSecret = appEnv.CRON_SECRET && !isPlaceholder(appEnv.CRON_SECRET) ? appEnv.CRON_SECRET : crypto.randomBytes(24).toString("hex");
 const nextBin = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
 start("jarvis", [nextBin, "start", "-p", String(PORT)], {
   cwd: ROOT,
@@ -209,6 +211,7 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
     APP_URL: appEnv.APP_URL || edithEnv.JARVIS_URL || "",
     DATABASE_URL: dbUrl,
     AUTH_SECRET: appEnv.AUTH_SECRET,
+    CRON_SECRET: cronSecret,
   },
 });
 const local = `http://localhost:${PORT}`;
@@ -220,7 +223,18 @@ if (await waitFor(`${local}/login`, 120)) {
   if (!groqKey && !geminiKey) say("    ! GROQ_API_KEY and GEMINI_API_KEY are both empty in .env.local — EV, DARWIN and ULTRON need at least one.");
   else if (!groqKey) say("    ! GROQ_API_KEY is empty — EV, DARWIN and ULTRON will use Gemini only.");
   else if (!geminiKey) say("    (No GEMINI_API_KEY — EV, DARWIN and ULTRON have no backup when Groq is busy. Free at aistudio.google.com/apikey.)");
+  say("    NIOS watch: checking the official NIOS pages every 15 minutes while this runs (new notices are emailed if Gmail is connected).");
   say("    Log in with your usual account. Keep this window open — Ctrl+C stops everything.\n");
+  // NIOS board watcher — scheduled check while the PC is on (the console also checks while it's open).
+  const niosCheck = async () => {
+    try {
+      const r = await fetch(`${local}/api/cron/nios`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(90_000) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j?.data?.newNotices) say(`  [nios] ${j.data.newNotices} new NIOS notice${j.data.newNotices === 1 ? "" : "s"}${j.data.emailed ? " — emailed to you" : ""}. Open JARVIS to see ${j.data.newNotices === 1 ? "it" : "them"}.`);
+    } catch { /* offline — next round */ }
+  };
+  setTimeout(niosCheck, 60_000);
+  setInterval(niosCheck, 15 * 60_000);
   if (!process.argv.includes("--no-open")) {
     if (win) spawn(`start "" "${local}"`, { shell: true, stdio: "ignore", detached: true });
     else if (process.platform === "darwin") spawn("open", [local], { stdio: "ignore", detached: true });

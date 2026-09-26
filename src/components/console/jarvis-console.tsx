@@ -15,6 +15,7 @@ import { useScreenVision } from "@/hooks/useScreenVision";
 import { HumanoidView } from "@/components/console/humanoid-view";
 import { EvView, type EvState } from "@/components/console/ev-view";
 import { WeatherPopup, type WeatherData } from "@/components/console/weather-popup";
+import { NiosAlerts, useNiosWatch } from "@/components/console/nios-alert";
 import { JarvisMotion, type JarvisMotionHandle, type JState, type AgentName, type Pt } from "./jarvis/jarvis-motion";
 import { KineticStage, KineticWord, type KineticStyle } from "./jarvis/kinetic";
 import { HoloPanel } from "./jarvis/holo-panel";
@@ -170,6 +171,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const speechRef = useRef<SpeechStream | null>(null);
   // Emails being sent open in the liquid-glass compose popup and type out live.
   const emails = useEmailPopups();
+  // NIOS board watcher: new official notices pop up here and are spoken.
+  const nios = useNiosWatch({ speak: (t) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } } });
   const agent = useAgent({
     onTextDelta: (delta) => {
       if (!(voiceStarted && !voice.muted && voice.enabled)) return;
@@ -630,6 +633,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         />
       )}
       {weather && <WeatherPopup data={weather} onClose={() => setWeather(null)} />}
+      <NiosAlerts watch={nios} />
       {emails.current && <EmailComposePopup key={emails.current.id} email={emails.current} waiting={emails.waiting} onClose={emails.close} />}
 
       {/* the living environment */}

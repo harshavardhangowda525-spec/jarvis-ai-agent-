@@ -35,6 +35,7 @@ model User {
   darwinFollowUps  DarwinFollowUp[]
   darwinMessages   DarwinMessage[]
   darwinSearchCursors DarwinSearchCursor[]
+  niosNotices      NiosNotice[]
 
   @@index([email])
 }
@@ -383,4 +384,28 @@ model Integration {
 
   @@unique([userId, provider])
   @@index([userId])
+}
+
+/// NIOS board notices JARVIS has seen on the official NIOS websites. `baseline`
+/// rows were already published when watching started (kept as history, never
+/// announced); the rest were new and are announced once (seenAt / emailedAt).
+model NiosNotice {
+  id          String    @id @default(cuid())
+  userId      String
+  source      String // main | sdmis | voc | results | rc-<centre> | extra
+  title       String    @db.Text
+  url         String    @db.Text
+  dateText    String?
+  publishedAt DateTime?
+  category    String    @default("general") // exam | result | admission | fee | general
+  fingerprint String
+  baseline    Boolean   @default(false)
+  firstSeenAt DateTime  @default(now())
+  seenAt      DateTime?
+  emailedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId, firstSeenAt])
 }
