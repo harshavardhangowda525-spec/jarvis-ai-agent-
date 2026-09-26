@@ -17,6 +17,7 @@ import { UltronAgent } from "./agent.mjs";
 import { Audit } from "./audit.mjs";
 import { killAll } from "./tools/terminal.mjs";
 import { capabilityCheck } from "./capabilities.mjs";
+import { doPower } from "./power.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN_FILE = path.resolve(__dirname, "../.edith-token");
@@ -138,7 +139,8 @@ export function startServer({ port, ws }) {
     // an HTTPS page (e.g. the Vercel app) may reach this localhost service.
     if (req.method === "OPTIONS") {
       if (allow) {
-        res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
         res.setHeader("Access-Control-Allow-Private-Network", "true");
         res.setHeader("Access-Control-Max-Age", "600");
       }
@@ -163,6 +165,23 @@ export function startServer({ port, ws }) {
       }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ token, url: `ws://127.0.0.1:${port}`, brain: providerName() }));
+      return;
+    }
+    // Laptop power ("JARVIS, shut down my laptop"): only from an allowed origin
+    // AND with the pairing token; only shutdown-after-delay or cancel.
+    if (req.method === "POST" && u.pathname === "/power") {
+      const send = (code, body) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
+      if (origin && !allow) return send(403, { ok: false, message: "This page isn't allowed to control this computer." });
+      if (req.headers.authorization !== `Bearer ${token}`) return send(401, { ok: false, message: "Not paired with ULTRON." });
+      let raw = "";
+      req.on("data", (c) => { raw += c; if (raw.length > 2000) req.destroy(); });
+      req.on("end", async () => {
+        let body = {};
+        try { body = JSON.parse(raw || "{}"); } catch { return send(400, { ok: false, message: "Bad request." }); }
+        const r = await doPower(body.action, body.delaySec);
+        emit({ kind: "activity", label: `Power: ${r.message}` });
+        send(r.ok ? 200 : 409, r);
+      });
       return;
     }
     // Live preview of the site ULTRON built — serves files from the workspace,

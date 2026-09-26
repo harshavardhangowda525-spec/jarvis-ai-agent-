@@ -33,6 +33,7 @@ registering a **tool** — the agent loop never changes.
 - [Production deployment](#production-deployment)
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
+- [Shut down your laptop by voice](#shut-down-your-laptop-by-voice)
 - [NIOS board notifications](#nios-board-notifications)
 
 ---
@@ -318,6 +319,22 @@ balancer / uptime monitor.
 
 Built as a real, deployable agent — not a mockup. Add a tool, and JARVIS can do
 something new.
+
+## Shut down your laptop by voice
+
+Say **"JARVIS, shut down my laptop"** (or "turn off my PC in 10 minutes").
+
+1. JARVIS asks you to confirm — nothing happens until you say **"yes"** (within 20 s).
+2. The laptop powers off after a countdown (30 s by default, or the time you said).
+3. Changed your mind? Say **"cancel shutdown"**. On Windows you can also run `shutdown /a`.
+
+A website can't switch a computer off, so this goes through ULTRON — JARVIS's
+runtime on your laptop, started by `npm run local` (or ULTRON on its own). It
+only accepts requests from your JARVIS app with its pairing token, and it can do
+exactly two things: shut down after a delay, or cancel. To disable it on a
+computer, set `ULTRON_POWER=off` in `edith/.env`. "Power down" / "go to sleep"
+still just put JARVIS to sleep — only "laptop / computer / PC" wording turns the
+machine off.
 
 ## NIOS board notifications
 

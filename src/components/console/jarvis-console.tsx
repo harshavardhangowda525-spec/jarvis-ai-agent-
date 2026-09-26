@@ -16,6 +16,8 @@ import { HumanoidView } from "@/components/console/humanoid-view";
 import { EvView, type EvState } from "@/components/console/ev-view";
 import { WeatherPopup, type WeatherData } from "@/components/console/weather-popup";
 import { NiosAlerts, useNiosWatch } from "@/components/console/nios-alert";
+import { parsePowerIntent, parseConfirmation, spokenDelay } from "@/lib/power-command";
+import { laptopPower } from "@/lib/local-power";
 import { JarvisMotion, type JarvisMotionHandle, type JState, type AgentName, type Pt } from "./jarvis/jarvis-motion";
 import { KineticStage, KineticWord, type KineticStyle } from "./jarvis/kinetic";
 import { HoloPanel } from "./jarvis/holo-panel";
@@ -307,9 +309,41 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     }
   }, [voice, voiceStarted]);
   useEffect(() => { fetchWeatherRef.current = fetchWeather; }, [fetchWeather]);
+  // "Shut down my laptop" waits for a spoken/typed yes (20 s) before anything happens.
+  const pendingShutdown = useRef<{ delaySec: number; until: number } | null>(null);
   useEffect(() => {
     sendRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
+      const reply = (answer: string) => {
+        agent.appendLocalExchange(t, answer);
+        if (voiceStarted && !voice.muted && voice.enabled) voice.speak(answer);
+      };
+
+      // ===== laptop power (confirm first; always cancellable) =====
+      const pend = pendingShutdown.current;
+      if (pend && Date.now() < pend.until) {
+        const yes = parseConfirmation(t);
+        if (yes !== null) {
+          pendingShutdown.current = null;
+          if (!yes) { reply("Okay — I won't shut the laptop down."); return; }
+          void laptopPower("shutdown", pend.delaySec).then((r) => reply(r.ok
+            ? `Shutting down your laptop in ${spokenDelay(pend.delaySec)}. Save your work — say "cancel shutdown" if you change your mind.`
+            : r.message));
+          return;
+        }
+      }
+      pendingShutdown.current = null;
+      const power = parsePowerIntent(t);
+      if (power?.kind === "cancel") {
+        void laptopPower("cancel").then((r) => reply(r.ok ? "Shutdown cancelled — your laptop stays on." : r.message));
+        return;
+      }
+      if (power?.kind === "shutdown") {
+        pendingShutdown.current = { delaySec: power.delaySec, until: Date.now() + 20_000 };
+        reply(`Shut down your laptop? Say "yes" to confirm — it will power off ${spokenDelay(power.delaySec)} later, and you can still say "cancel shutdown".`);
+        return;
+      }
+
       if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) { sleep(); return; }
 
       // ===== EV marketing agent =====
