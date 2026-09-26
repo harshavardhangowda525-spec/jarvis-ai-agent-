@@ -331,7 +331,8 @@ fees, anything published:
 | Secondary & Sr. Secondary | https://sdmis.nios.ac.in/registration/home-notifications |
 | Vocational | https://voc.nios.ac.in/registration/home-notifications |
 | Results | https://results.nios.ac.in/ |
-| Regional centres (optional) | `NIOS_REGIONAL_CENTRES="bengaluru,delhi"` or say "watch the Delhi regional centre" |
+| Regional Centre Bengaluru | https://rcbengaluru.nios.ac.in/notification.html |
+| Other regional centres (optional) | `NIOS_REGIONAL_CENTRES="delhi,chennai"` or say "watch the Delhi regional centre" |
 
 - **First read = history.** What's already on the pages is stored (ask "latest NIOS
   exam notices") but not announced; only notices that appear afterwards alert you.

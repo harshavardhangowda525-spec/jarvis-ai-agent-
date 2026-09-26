@@ -9,6 +9,7 @@ export const DEFAULT_SOURCES: NiosSource[] = [
   { key: "sdmis", label: "Secondary & Sr. Secondary", url: "https://sdmis.nios.ac.in/registration/home-notifications" },
   { key: "voc", label: "Vocational", url: "https://voc.nios.ac.in/registration/home-notifications" },
   { key: "results", label: "Results", url: "https://results.nios.ac.in/" },
+  { key: "rc-bengaluru", label: "Regional Centre Bengaluru", url: "https://rcbengaluru.nios.ac.in/notification.html" },
 ];
 
 /** "bengaluru" → the Bengaluru regional centre's notification page. */

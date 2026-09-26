@@ -25,7 +25,7 @@ export const niosTool: ToolDefinition<Input> = {
   name: "nios",
   description:
     "The NIOS (National Institute of Open Schooling) board watcher. JARVIS watches the official NIOS websites (main site, " +
-    "Secondary & Sr. Secondary, Vocational, Results, and chosen regional centres) and alerts the user to new notices — exams, date sheets, " +
+    "Secondary & Sr. Secondary, Vocational, Results, Regional Centre Bengaluru, and any other chosen regional centres) and alerts the user to new notices — exams, date sheets, " +
     "practicals, results, admissions, fees. Use it for any question about NIOS notifications/updates. Report titles, dates and links exactly " +
     "as returned; never invent a notice or a date.",
   schema,

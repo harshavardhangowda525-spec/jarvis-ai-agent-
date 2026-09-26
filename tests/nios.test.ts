@@ -86,7 +86,9 @@ describe("NIOS sources", () => {
     expect(isNiosUrl("https://nios.ac.in.evil.com/")).toBe(false);
     expect(isNiosUrl("http://www.nios.ac.in/")).toBe(false);
     const s = sourcesFor({ regions: ["delhi"], envRegions: "bengaluru, delhi", extraUrls: "https://dled.nios.ac.in/notices, https://example.com/x" });
-    expect(s.map((x) => x.key)).toEqual([...DEFAULT_SOURCES.map((x) => x.key), "rc-delhi", "rc-bengaluru", "x:https://dled.nios.ac.in/notices"]);
+    expect(DEFAULT_SOURCES.find((x) => x.key === "rc-bengaluru")?.url).toBe(regionalSource("bengaluru")!.url);
+    // Bengaluru is already a default — asking for it again doesn't add a duplicate
+    expect(s.map((x) => x.key)).toEqual([...DEFAULT_SOURCES.map((x) => x.key), "rc-delhi", "x:https://dled.nios.ac.in/notices"]);
   });
 });
 
