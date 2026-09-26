@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { findNewLeads } from "@/lib/darwin/discovery";
 import { GeoapifyError, geoapifyHttpStatus } from "@/lib/darwin/geoapify";
+import { LEAD_FILTER_IDS } from "@/lib/darwin/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,7 +14,7 @@ const schema = z.object({
   category: z.string().trim().min(2).max(80),
   location: z.string().trim().min(2).max(120),
   limit: z.number().int().min(1).max(50).default(20),
-  filter: z.enum(["all", "no_website", "has_website", "phone", "no_phone"]).default("all"),
+  filter: z.enum(LEAD_FILTER_IDS).default("all"),
   radiusKm: z.number().min(0.5).max(50).optional(),
 });
 

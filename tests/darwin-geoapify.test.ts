@@ -3,8 +3,8 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest
 // The key must exist before env.ts is read.
 vi.hoisted(() => { process.env.GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY || "test-geoapify-key"; });
 
-import { categoryPlan, mapFeature, matchesPlan, discoveryFingerprint, mapLinks, haversineM, GeoapifyError } from "@/lib/darwin/geoapify";
-import { findNewLeads, radiusSchedule, passesFilter, resultMessage, MAX_REQUESTS } from "@/lib/darwin/discovery";
+import { categoryPlan, mapFeature, matchesPlan, discoveryFingerprint, mapLinks, haversineM, GeoapifyError, listedPhones } from "@/lib/darwin/geoapify";
+import { findNewLeads, radiusSchedule, passesFilter, resultMessage, MAX_REQUESTS, MAX_REQUESTS_RARE } from "@/lib/darwin/discovery";
 import { getDb, isDbConfigured } from "@/lib/db";
 
 const CENTER = { lat: 12.9716, lon: 77.5946, label: "Bengaluru, Karnataka, India" };
@@ -66,6 +66,23 @@ describe("mapFeature", () => {
   });
 });
 
+describe("listed phone numbers", () => {
+  it("reads phone, mobile and WhatsApp tags and splits lists into separate real numbers", () => {
+    expect(listedPhones({ contact: { phone: "080 2345 6789; +91 98450 12345" } }, { "contact:whatsapp": "+91 98450 12345", mobile: "99000 11223" }))
+      .toEqual(["080 2345 6789", "+91 98450 12345", "99000 11223"]);
+  });
+  it("never keeps fragments or junk as a number", () => {
+    expect(listedPhones({}, { phone: "n/a" })).toEqual([]);
+    expect(listedPhones({}, { phone: "123456" })).toEqual([]);
+    expect(listedPhones({}, { phone: "080/2345678" })).toEqual(["080/2345678"]);
+  });
+  it("a WhatsApp-only listing still gives the lead a phone", () => {
+    const l = mapFeature({ properties: { name: "Chai Point", lat: 1, lon: 1, datasource: { raw: { "contact:whatsapp": "+91 90000 12345" } } } }, CENTER, categoryPlan("cafes"))!;
+    expect(l.phone).toBe("+91 90000 12345");
+    expect(l.otherPhones).toEqual([]);
+  });
+});
+
 describe("identity & links", () => {
   it("fingerprint ignores case/punctuation/phone formatting but separates branches", () => {
     const a = discoveryFingerprint({ name: "Gold's Gym", address: "MG Road, Bengaluru", phone: "+91 98450 12345", lat: 12.97161, lon: 77.59461 });
@@ -90,6 +107,9 @@ describe("identity & links", () => {
     expect(passesFilter({ phone: null, website: "x" }, "no_website")).toBe(false);
     expect(passesFilter({ phone: "1", website: null }, "phone")).toBe(true);
     expect(passesFilter({ phone: "1", website: null }, "no_phone")).toBe(false);
+    expect(passesFilter({ phone: "080 2345 6789", website: null }, "no_website_phone")).toBe(true);
+    expect(passesFilter({ phone: null, website: null }, "no_website_phone")).toBe(false);
+    expect(passesFilter({ phone: "080 2345 6789", website: "x" }, "no_website_phone")).toBe(false);
   });
 
   it("messages are honest", () => {
@@ -241,6 +261,31 @@ d("findNewLeads (integration)", () => {
     expect(r.message).toMatch(/paused after/);
   });
 
+  it("no_website_phone returns only businesses with no website listed AND a real phone", async () => {
+    await clean();
+    const places = world(400);
+    fakeGeoapify(places);
+    const r = await findNewLeads({ userId, category: "gyms", location: "Bangalore", limit: 25, filter: "no_website_phone" });
+    expect(r.newCount).toBe(25);
+    for (const l of r.leads) {
+      expect(l.website).toBeNull();
+      const p = places.find((x) => x.name === l.businessName)!;
+      expect(l.phone).toBe(p.phone); // exactly the listed number
+    }
+    expect(r.message).toMatch(/^Found 25 new leads without a website listed, each with a phone number/);
+  });
+
+  it("searches deeper for a rare filter, then stops at its own cap", async () => {
+    await clean();
+    const places = world(1500).map((p) => ({ ...p, phone: undefined })); // nobody lists a phone
+    const g = fakeGeoapify(places);
+    const r = await findNewLeads({ userId, category: "gyms", location: "Bangalore", limit: 20, filter: "no_website_phone" });
+    expect(r.newCount).toBe(0);
+    expect(g.placeCalls()).toBe(MAX_REQUESTS_RARE);
+    expect(r.stoppedReason).toBe("request_cap");
+    expect(r.message).toMatch(new RegExp(`paused after ${MAX_REQUESTS_RARE}`));
+  });
+
   it("stops on a rate limit and keeps what it found", async () => {
     await clean();
     fakeGeoapify(world(400), { rateLimitAfter: 1 });
@@ -279,6 +324,8 @@ describe("parseLeadCommand", () => {
   it.each([
     ["find 20 gyms in Bangalore without a website", { filter: "no_website", limit: 20, category: "gyms", location: "Bangalore" }],
     ["get me dentists near Koramangala with phone numbers", { filter: "phone", category: "dentists", location: "Koramangala" }],
+    ["find 20 gyms in Bangalore without a website with phone numbers", { filter: "no_website_phone", limit: 20, category: "gyms", location: "Bangalore" }],
+    ["find real numbers of cafes in Pune without a website", { filter: "no_website_phone", category: "cafes", location: "Pune" }],
     ["find 15 coaching centres in HSR Layout, Bangalore that don't have a website", { filter: "no_website", limit: 15, category: "coaching centres", location: "HSR Layout, Bangalore" }],
     ["find real estate agents in Pune with a website", { filter: "has_website", category: "real estate agents", location: "Pune" }],
     ["generate leads for gyms in Delhi", { category: "gyms", location: "Delhi" }],

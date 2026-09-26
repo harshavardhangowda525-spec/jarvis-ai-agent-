@@ -4,6 +4,7 @@ import type { ToolDefinition } from "../types";
 import { ToolError } from "../types";
 import { findNewLeads } from "@/lib/darwin/discovery";
 import { GeoapifyError } from "@/lib/darwin/geoapify";
+import { LEAD_FILTER_IDS } from "@/lib/darwin/types";
 
 /**
  * darwin_search — find NEW real local businesses via Geoapify Places. Leads the
@@ -15,8 +16,8 @@ const schema = z.object({
   category: z.string().min(2).max(80).describe("Business type, e.g. 'gyms', 'cafes', 'dentists', 'salons'."),
   location: z.string().min(2).max(120).describe("City, area, neighbourhood, postcode or 'lat,lon', e.g. 'Indiranagar, Bangalore'."),
   limit: z.number().int().min(1).max(50).optional().describe("How many NEW leads to find (default 20)."),
-  filter: z.enum(["all", "no_website", "has_website", "phone", "no_phone"]).optional()
-    .describe("Only businesses with no website listed / a website / a phone / no phone. Default all."),
+  filter: z.enum(LEAD_FILTER_IDS).optional()
+    .describe("no_website: no website listed. no_website_phone: no website listed AND a real phone number (use this when the user wants numbers / people to call). has_website / phone / no_phone. Default all."),
 });
 
 type Input = z.infer<typeof schema>;
@@ -56,7 +57,7 @@ export const darwinSearchTool: ToolDefinition<Input> = {
       category: { type: "string" },
       location: { type: "string" },
       limit: { type: "number" },
-      filter: { type: "string", enum: ["all", "no_website", "has_website", "phone", "no_phone"] },
+      filter: { type: "string", enum: [...LEAD_FILTER_IDS] },
     },
     required: ["category", "location"],
   },

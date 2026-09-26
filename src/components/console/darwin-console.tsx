@@ -7,7 +7,7 @@ import { useVoice, useResumeVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import { cn } from "@/lib/utils";
 import { GENERATE_LEADS_RE, MAP_REQUEST_RE, parseLeadCommand } from "@/lib/darwin/command";
-import type { FindLeadsResult, LeadDTO } from "@/lib/darwin/types";
+import { LEAD_FILTERS, type FindLeadsResult, type LeadDTO, type LeadFilter } from "@/lib/darwin/types";
 import {
   leadIntel, pipelineCounts, pipelineStageOf, matchesFilters, toLocalMeters,
   DEFAULT_FILTERS, KIND_LABEL, PIPELINE, type MapFilters, type PipelineStage,
@@ -357,6 +357,11 @@ export function DarwinConsole() {
                 <input type="number" min={1} max={50} value={form.limit} onChange={(e) => setForm({ ...form, limit: Math.min(Math.max(+e.target.value || 1, 1), 50) })}
                   className="dw-bare w-9 bg-transparent text-right text-[12px] text-white outline-none" /> leads
               </label>
+              <span className="hidden h-4 w-px bg-white/10 sm:block" />
+              <select value={form.filter} onChange={(e) => setForm({ ...form, filter: e.target.value as LeadFilter })} title="Which businesses to find" aria-label="Filter"
+                className="dw-bare max-w-[6.5rem] shrink-0 cursor-pointer bg-transparent px-1 text-[11px] text-white/70 outline-none sm:max-w-none">
+                {LEAD_FILTERS.map((f) => <option key={f.id} value={f.id} className="bg-[#07121c] text-white">{f.label}</option>)}
+              </select>
               <button type="button" onClick={() => (voiceStarted ? voice.toggleMute() : enableVoice())} title="Voice" aria-label="Voice"
                 className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition", voiceStarted && !voice.muted ? "text-cyan-200" : "text-white/40 hover:text-white/80")}>
                 {voiceStarted && voice.muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}

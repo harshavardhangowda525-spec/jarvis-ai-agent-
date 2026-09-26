@@ -4,11 +4,15 @@
  * is ever filled in with a guess.
  */
 
-export type LeadFilter = "all" | "no_website" | "has_website" | "phone" | "no_phone";
+export type LeadFilter = "all" | "no_website" | "no_website_phone" | "has_website" | "phone" | "no_phone";
+
+/** Every filter id (for request validation). */
+export const LEAD_FILTER_IDS = ["all", "no_website", "no_website_phone", "has_website", "phone", "no_phone"] as const satisfies readonly LeadFilter[];
 
 export const LEAD_FILTERS: { id: LeadFilter; label: string }[] = [
   { id: "all", label: "All businesses" },
   { id: "no_website", label: "No website" },
+  { id: "no_website_phone", label: "No website + phone" },
   { id: "has_website", label: "Has website" },
   { id: "phone", label: "Phone available" },
   { id: "no_phone", label: "Phone unavailable" },

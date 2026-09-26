@@ -178,6 +178,8 @@ export interface GeoLead {
   website: string | null;
   email: string | null;
   instagram: string | null;
+  /** Further numbers the listing carried (a place can list several). */
+  otherPhones: string[];
   lat: number;
   lon: number;
   distanceM: number | null;
@@ -221,9 +223,8 @@ export function mapFeature(f: any, center: GeoCenter, plan: CategoryPlan): GeoLe
   if (!name || typeof lat !== "number" || typeof lon !== "number") return null;
 
   const cats: string[] = Array.isArray(p.categories) ? p.categories : [];
-  // A phone only counts if it actually contains a phone-number's worth of digits.
-  const phoneRaw = first(p.contact?.phone, raw.phone, raw["contact:phone"], raw["contact:mobile"], raw.mobile);
-  const phone = phoneRaw && phoneRaw.replace(/\D/g, "").length >= 6 ? phoneRaw : null;
+  const phones = listedPhones(p, raw);
+  const phone = phones[0] ?? null;
   const website = first(p.website, p.contact?.website, raw.website, raw["contact:website"], raw.url);
   const ig = first(raw["contact:instagram"], raw.instagram);
 
@@ -236,11 +237,35 @@ export function mapFeature(f: any, center: GeoCenter, plan: CategoryPlan): GeoLe
     website,
     email: first(p.contact?.email, raw.email, raw["contact:email"]),
     instagram: ig ? (ig.startsWith("http") ? ig : `https://instagram.com/${ig.replace(/^@/, "")}`) : null,
+    otherPhones: phones.slice(1),
     lat,
     lon,
     distanceM: typeof p.distance === "number" ? Math.round(p.distance) : haversineM(center, { lat, lon }),
     geoCategories: cats,
   };
+}
+
+/**
+ * Every phone number the listing actually carries — phone, mobile and WhatsApp
+ * tags, with lists ("080 1234 5678; +91 98450 00000") split into separate
+ * numbers. A number only counts with at least 7 digits; duplicates are dropped.
+ * Nothing is formatted into existence: each value is exactly as listed.
+ */
+export function listedPhones(p: any, raw: any): string[] {
+  const vals = [p?.contact?.phone, raw?.phone, raw?.["contact:phone"], raw?.mobile, raw?.["contact:mobile"], raw?.["phone:mobile"], raw?.["contact:whatsapp"], raw?.whatsapp];
+  const out: string[] = [], seen = new Set<string>();
+  for (const v of vals) {
+    if (typeof v !== "string") continue;
+    for (const part of v.split(/[;,|]|\s{2,}/)) {
+      const num = part.trim();
+      const digits = num.replace(/\D/g, "");
+      if (digits.length < 7 || digits.length > 15) continue;
+      const key = digits.slice(-10);
+      if (seen.has(key)) continue;
+      seen.add(key); out.push(num);
+    }
+  }
+  return out;
 }
 
 /** For free-text categories: keep only places that actually match the term. */

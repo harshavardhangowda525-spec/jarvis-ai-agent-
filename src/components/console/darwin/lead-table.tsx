@@ -13,7 +13,7 @@ export type TableTab = "search" | "all";
 export interface TableRequest { tab?: TableTab; stage?: string; filter?: LeadFilter; q?: string; nonce: number }
 
 const matchesFilter = (l: LeadDTO, f: LeadFilter) =>
-  f === "no_website" ? !l.website : f === "has_website" ? !!l.website : f === "phone" ? !!l.phone : f === "no_phone" ? !l.phone : true;
+  f === "no_website" ? !l.website : f === "no_website_phone" ? !l.website && !!l.phone : f === "has_website" ? !!l.website : f === "phone" ? !!l.phone : f === "no_phone" ? !l.phone : true;
 
 export async function patchLead(id: string, body: Record<string, unknown>): Promise<LeadDTO> {
   const res = await fetch(`/api/darwin/leads/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

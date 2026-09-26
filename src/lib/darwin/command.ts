@@ -23,13 +23,15 @@ const FILTER_PATTERNS: [RegExp, LeadFilter][] = [
 ];
 
 const TAIL = /\s+(?:with|without|that|which|who|having|lacking|missing|and|no)\b.*$/i;
-const FILLER = /^(?:leads?\s+)?(?:for|of)\s+|\b(please|now|today|for me|new|more|fresh|some|leads?)\b/gi;
+const FILLER = /^(?:real\s+)?(?:phone\s+)?(?:numbers?|contacts?)\s+(?:of|for)\s+|^(?:leads?\s+)?(?:for|of)\s+|\b(please|now|today|for me|new|more|fresh|some|leads?)\b/gi;
 
 export function parseLeadCommand(text: string): LeadCommand {
   const s = text.trim().replace(/[.!?]+$/, "");
   const out: LeadCommand = {};
 
   for (const [re, f] of FILTER_PATTERNS) if (re.test(s)) { out.filter = f; break; }
+  // No website AND someone to call: "…without a website, with phone numbers", "numbers of businesses without a website".
+  if (out.filter === "no_website" && /\b(phones?|numbers?|contacts?|callable|call)\b/i.test(s.replace(/\b\d{1,3}\b/g, ""))) out.filter = "no_website_phone";
 
   const num = s.match(/\b(\d{1,3})\b/);
   if (num) out.limit = Math.min(Math.max(parseInt(num[1], 10), 1), 50);

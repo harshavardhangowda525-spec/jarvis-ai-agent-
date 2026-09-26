@@ -28,6 +28,8 @@ import type { FindLeadsResult, LeadFilter } from "./types";
 
 export const PAGE_SIZE = 50;
 export const MAX_REQUESTS = 8;
+/** Filters that most places don't match (a listed phone is rare) get a deeper search per click. */
+export const MAX_REQUESTS_RARE = 16;
 const MAX_RADIUS_M = 50_000;
 const BACKLOG_MAX = 200;
 const RADIUS_OVERLAP = 10;
@@ -41,10 +43,10 @@ export interface FindParams {
   radiusKm?: number;
 }
 
-/** Widening search circles: r, 2r, 4r, 8r (capped). */
-export function radiusSchedule(baseM: number): number[] {
+/** Widening search circles: r, 2r, 4r, 8r (capped) — one more step for rare filters. */
+export function radiusSchedule(baseM: number, steps = 4): number[] {
   const out: number[] = [];
-  for (let r = baseM; out.length < 4; r *= 2) {
+  for (let r = baseM; out.length < steps; r *= 2) {
     const v = Math.min(r, MAX_RADIUS_M);
     if (!out.includes(v)) out.push(v);
     if (v === MAX_RADIUS_M) break;
@@ -55,6 +57,7 @@ export function radiusSchedule(baseM: number): number[] {
 export function passesFilter(l: Pick<GeoLead, "phone" | "website">, filter: LeadFilter): boolean {
   switch (filter) {
     case "no_website": return !l.website;
+    case "no_website_phone": return !l.website && !!l.phone;
     case "has_website": return !!l.website;
     case "phone": return !!l.phone;
     case "no_phone": return !l.phone;
@@ -126,7 +129,9 @@ export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
   }
 
   // 2) page through Geoapify until we have enough NEW leads
-  const radii = radiusSchedule(cursor.baseRadiusM || baseRadiusM);
+  const rare = isRareFilter(p.filter);
+  const maxRequests = rare ? MAX_REQUESTS_RARE : MAX_REQUESTS;
+  const radii = radiusSchedule(cursor.baseRadiusM || baseRadiusM, rare ? 5 : 4);
   let radiusStep = Math.min(cursor.radiusStep, radii.length);
   let offset = cursor.offset;
   let exhausted = cursor.exhausted || radiusStep >= radii.length;
@@ -135,7 +140,7 @@ export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
   let rateLimitMessage = "";
 
   while (picked.length < limit && !exhausted) {
-    if (requests >= MAX_REQUESTS) { stoppedReason = "request_cap"; break; }
+    if (requests >= maxRequests) { stoppedReason = "request_cap"; break; }
     let features: any[];
     try {
       ({ features } = await searchPlaces({ center, radiusM: radii[radiusStep], plan, limit: PAGE_SIZE, offset, key }));
@@ -207,6 +212,7 @@ export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
           metadata: {
             distanceM: l.distanceM,
             geoapifyCategories: l.geoCategories,
+            ...(l.otherPhones.length ? { otherPhones: l.otherPhones } : {}),
             search: { category: p.category, location: p.location, filter: p.filter },
           },
         },
@@ -244,21 +250,26 @@ export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
     requests: requests + geocodeRequests,
     radiusKm,
     center,
-    message: resultMessage({ newCount: created.length, skippedDuplicates, stoppedReason, limit, rateLimitMessage }),
+    message: resultMessage({ newCount: created.length, skippedDuplicates, stoppedReason, limit, rateLimitMessage, maxRequests, filter: p.filter }),
   };
 }
 
+/** A filter most listed places don't satisfy — search deeper for it. */
+export function isRareFilter(f: LeadFilter) { return f === "phone" || f === "no_website_phone"; }
+
 /** Honest summary — never implies more leads exist than were found. */
-export function resultMessage(r: { newCount: number; skippedDuplicates: number; stoppedReason: FindLeadsResult["stoppedReason"]; limit: number; rateLimitMessage?: string }): string {
+export function resultMessage(r: { newCount: number; skippedDuplicates: number; stoppedReason: FindLeadsResult["stoppedReason"]; limit: number; rateLimitMessage?: string; maxRequests?: number; filter?: LeadFilter }): string {
+  const cap = r.maxRequests ?? MAX_REQUESTS;
   const skipped = r.skippedDuplicates ? ` · ${r.skippedDuplicates} previously discovered lead${r.skippedDuplicates === 1 ? "" : "s"} skipped` : "";
-  const found = `Found ${r.newCount} new lead${r.newCount === 1 ? "" : "s"}${skipped}.`;
+  const what = r.filter === "no_website_phone" ? ` without a website listed, each with a phone number` : "";
+  const found = `Found ${r.newCount} new lead${r.newCount === 1 ? "" : "s"}${what}${skipped}.`;
   switch (r.stoppedReason) {
     case "limit": return found;
     case "rate_limit": return `${r.newCount ? found + " " : ""}${r.rateLimitMessage}`;
     case "request_cap":
       return r.newCount
-        ? `${found} DARWIN paused after ${MAX_REQUESTS} Geoapify requests to respect API limits — click FIND NEW LEADS again to keep searching further out.`
-        : `No new qualifying leads in this batch${skipped}. DARWIN paused after ${MAX_REQUESTS} Geoapify requests — click FIND NEW LEADS again to search further out.`;
+        ? `${found} DARWIN paused after ${cap} Geoapify requests to respect API limits — click FIND NEW LEADS again to keep searching further out.`
+        : `No new qualifying leads in this batch${skipped}. DARWIN paused after ${cap} Geoapify requests — click FIND NEW LEADS again to search further out.`;
     default:
       return r.newCount
         ? `${found} No additional unseen qualifying businesses were returned.`

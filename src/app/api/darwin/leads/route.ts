@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * The user's full lead history (never deleted), newest first.
- * Query: filter=all|no_website|has_website|phone|no_phone, stage, q, ids (comma list),
+ * Query: filter=all|no_website|no_website_phone|has_website|phone|no_phone, stage, q, ids (comma list),
  *        followups=1 (only leads with a follow-up date, soonest first), limit, cursor.
  */
 export async function GET(req: NextRequest) {
@@ -25,7 +25,8 @@ export async function GET(req: NextRequest) {
     const cursor = sp.get("cursor") || undefined;
 
     const and: object[] = [{ userId: user.id }];
-    if (filter === "no_website") and.push({ OR: [{ website: null }, { website: "" }] });
+    if (filter === "no_website" || filter === "no_website_phone") and.push({ OR: [{ website: null }, { website: "" }] });
+    if (filter === "no_website_phone") and.push({ phone: { not: null } }, { NOT: { phone: "" } });
     if (filter === "has_website") and.push({ website: { not: null } }, { NOT: { website: "" } });
     if (filter === "phone") and.push({ phone: { not: null } }, { NOT: { phone: "" } });
     if (filter === "no_phone") and.push({ OR: [{ phone: null }, { phone: "" }] });

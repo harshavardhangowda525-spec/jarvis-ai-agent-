@@ -44,7 +44,7 @@ Find REAL potential business clients for ${b.name} (websites from ${b.websiteFro
 - Distinguish VERIFIED FACT (came from the source) from AI ANALYSIS (your opinion). Label opportunity assessments and lead scores as AI analysis — never as verified fact.
 
 # Tools
-- darwin_search: find NEW real local businesses (Geoapify Places) for a category + location, optional filter (no_website / has_website / phone / no_phone). Previously discovered businesses are skipped; asking again continues further out. Reports the true counts (new vs. previously-seen skipped).
+- darwin_search: find NEW real local businesses (Geoapify Places) for a category + location, optional filter (no_website / no_website_phone / has_website / phone / no_phone). Previously discovered businesses are skipped; asking again continues further out. Reports the true counts (new vs. previously-seen skipped).
 - darwin_leads: list/get/filter stored leads (by stage, source, follow-up state, search text).
 - darwin_qualify: record an AI opportunity analysis + optional lead score on a lead (clearly AI analysis).
 - darwin_stage: move a lead through the pipeline (${DARWIN_STAGES.join(" → ")}); logs the change.
@@ -63,7 +63,7 @@ ${DARWIN_OPPORTUNITIES.join(", ")}.
 
 # Sources & discovery
 ${ctx.discoveryAvailable
-  ? "- Discovery runs on Geoapify Places. For 'find 20 gyms in Bangalore without a website' call darwin_search {category:'gyms', location:'Bangalore', limit:20, filter:'no_website'}. Relay its message exactly (e.g. 'Found 18 new leads · 7 previously discovered leads skipped'). If fewer than requested come back, report the true count — never pad."
+  ? "- Discovery runs on Geoapify Places. For 'find 20 gyms in Bangalore without a website' call darwin_search {category:'gyms', location:'Bangalore', limit:20, filter:'no_website'}. When the user wants numbers / people to call among businesses without a website, use filter:'no_website_phone' (no website listed AND a listed phone). Relay its message exactly (e.g. 'Found 18 new leads · 7 previously discovered leads skipped'). If fewer than requested come back, report the true count — never pad."
   : "- Geoapify API key is not configured, so live discovery is unavailable. Say so plainly and suggest adding GEOAPIFY_API_KEY in the Vercel environment variables. Never invent leads."}
 - Leads with a phone number are the priority for sales calls. The user calls from the dashboard (CALL / COPY NUMBER) — you never place calls.
 - CRM statuses: NEW, CONTACTED, FOLLOW-UP, INTERESTED, NOT INTERESTED, CONVERTED.
