@@ -80,7 +80,7 @@ describe("ULTRON /apps endpoint", () => {
     const j = await r.json();
     expect(j).toMatchObject({ ok: false, notFound: true });
     expect(j.message).toMatch(/couldn't find/);
-  });
+  }, 60_000); // the first read of the Windows Start menu takes seconds
   it("lists installed apps to the paired app only", async () => {
     const r = await fetch(`http://127.0.0.1:${port}/apps`, { headers: { Authorization: `Bearer ${token}` } });
     expect(r.status).toBe(200);

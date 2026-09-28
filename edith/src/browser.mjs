@@ -126,13 +126,13 @@ export function launchCandidates({ platform = process.platform, env = process.en
 export function staleBrowserCommand(platform, dir) {
   if (platform === "win32") {
     // the folder goes in through an environment variable — no quoting games
-    const ps = "$d=$env:JARVIS_BROWSER_PROFILE; $n=0; Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' OR Name='msedge.exe' OR Name='chromium.exe' OR Name='headless_shell.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($d) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $n++ }; $n";
+    const ps = "$d=$env:JARVIS_BROWSER_PROFILE; $p=@(Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' OR Name='msedge.exe' OR Name='chromium.exe' OR Name='headless_shell.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($d) }); foreach ($x in $p) { Stop-Process -Id $x.ProcessId -Force -ErrorAction SilentlyContinue }; $p.Count";
     return { file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", ps], env: { JARVIS_BROWSER_PROFILE: dir } };
   }
   return { file: "ps", args: ["-eo", "pid=,args="], env: {} };
 }
 
-async function killStaleBrowsers(dir) {
+export async function killStaleBrowsers(dir) {
   const { execFile } = await import("node:child_process");
   const cmd = staleBrowserCommand(process.platform, dir);
   const out = await new Promise((resolve) => execFile(cmd.file, cmd.args, { env: { ...process.env, ...cmd.env }, timeout: 20_000, windowsHide: true, maxBuffer: 8 << 20 }, (err, stdout) => resolve(err ? "" : String(stdout))));
@@ -194,7 +194,9 @@ async function getContext(wantDpr) {
       catch (e) {
         // an old browser still holding this profile? stop it and try once more
         const msg = String(e.message);
-        if (!/executable doesn't exist|not found|is not installed|ENOENT|distribution .* is not found/i.test(msg) && await killStaleBrowsers(path.join(root, c.id)) > 0) {
+        const missing = /Executable doesn't exist|distribution '.*' is not found|ENOENT/i.test(msg);
+        if (!missing) log.warn(`Live browser: ${c.label} didn't start — ${msg.split("\n")[0].slice(0, 200)}`);
+        if (!missing && await killStaleBrowsers(path.join(root, c.id)) > 0) {
           log.warn("Live browser: stopped a leftover browser from an earlier run.");
           try { context = await tryLaunch(c); } catch (e2) { errors.push(`${c.label}: ${String(e2.message).split("\n")[0]}`); }
         } else errors.push(`${c.label}: ${msg.split("\n")[0]}`);

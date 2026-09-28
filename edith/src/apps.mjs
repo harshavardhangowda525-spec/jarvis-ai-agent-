@@ -158,7 +158,8 @@ export async function openApp(name) {
   if (!q) return { ok: false, message: "Which app should I open?" };
   let apps = await listApps();
   let hit = findApp(q, apps);
-  if (!hit.app) { apps = await listApps({ fresh: true }); hit = findApp(q, apps); } // just installed?
+  // just installed? re-read the list — but not on every miss (reading the Start menu takes seconds on Windows)
+  if (!hit.app && Date.now() - cache.at > 2 * 60_000) { apps = await listApps({ fresh: true }); hit = findApp(q, apps); }
   if (!hit.app) {
     return { ok: false, notFound: true, message: `I couldn't find "${q}" installed on this computer.`, suggestions: hit.suggestions };
   }

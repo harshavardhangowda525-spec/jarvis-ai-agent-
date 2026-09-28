@@ -4,7 +4,8 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { launchCandidates, staleBrowserCommand } from "../edith/src/browser.mjs";
+import { vi } from "vitest";
+import { killStaleBrowsers, launchCandidates, staleBrowserCommand } from "../edith/src/browser.mjs";
 
 /**
  * Windows specifics for ULTRON (the pure parts run everywhere; the real ones
@@ -64,17 +65,35 @@ describe.skipIf(!WIN || !HAVE_DEPS)("on a real Windows PC", () => {
     expect(await openUrl("file:///C:/Windows/win.ini")).toMatchObject({ ok: false });
   }, 30_000);
 
+  // a browser from an "earlier run" that was killed hard, still holding the profile
+  const strayBrowser = async (dir: string, exe: string) => {
+    fs.mkdirSync(dir, { recursive: true });
+    const stray = spawn(exe, ["--headless", `--user-data-dir=${dir}`, "--remote-debugging-port=0", "about:blank"], { detached: true, stdio: "ignore" });
+    stray.unref();
+    await new Promise((r) => setTimeout(r, 4000));
+    return stray.pid;
+  };
+
+  it("finds and stops a leftover browser that uses JARVIS's profile (and nothing else)", async () => {
+    const first = launchCandidates()[0];
+    const root = path.join(os.tmpdir(), `ultron-stale-${Date.now()}`);
+    const mine = path.join(root, first.id), other = path.join(root, "someone-else");
+    await strayBrowser(mine, first.opts.executablePath!);
+    await strayBrowser(other, first.opts.executablePath!);
+    expect(await killStaleBrowsers(mine)).toBeGreaterThan(0);
+    expect(await killStaleBrowsers(mine)).toBe(0); // all gone
+    expect(await killStaleBrowsers(other)).toBeGreaterThan(0); // the other one was left alone until now
+  }, 60_000);
+
   it("runs the live browser, and recovers when a leftover browser holds its profile", async () => {
     const root = path.join(os.tmpdir(), `ultron-win-${Date.now()}`);
     process.env.ULTRON_BROWSER_PROFILE = root;
-    const first = launchCandidates()[0] as any;
-    // a stray browser from an "earlier run" that was killed hard, holding the profile
-    const dir = path.join(root, first.id);
-    fs.mkdirSync(dir, { recursive: true });
-    const exe = first.opts.executablePath;
-    const stray = spawn(exe, ["--headless", `--user-data-dir=${dir}`, "--remote-debugging-port=9339", "about:blank"], { detached: true, stdio: "ignore" });
-    stray.unref();
-    await new Promise((r) => setTimeout(r, 4000));
+    const first = launchCandidates()[0];
+    await strayBrowser(path.join(root, first.id), first.opts.executablePath!);
+    const said: string[] = [];
+    const spyLog = vi.spyOn(console, "log").mockImplementation((...a) => { said.push(a.join(" ")); });
+    const spyWarn = vi.spyOn(console, "warn").mockImplementation((...a) => { said.push(a.join(" ")); });
+    cleanups.push(() => { spyLog.mockRestore(); spyWarn.mockRestore(); });
 
     const site = http.createServer((req, res) => {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "X-Frame-Options": "DENY" });
@@ -104,6 +123,8 @@ describe.skipIf(!WIN || !HAVE_DEPS)("on a real Windows PC", () => {
     send({ t: "key", type: "down", key: "Enter", code: "Enter", keyCode: 13 });
     expect(await until(() => states.some((s) => s.t === "state" && /\/next\?q=win$/.test(s.url) && !s.loading)), JSON.stringify(states.slice(-3))).toBe(true);
     ws.close();
+    // it recovered with the SAME browser, not by falling back to another one
+    expect(said.join("\n")).toContain(`Live browser ready (${first.label})`);
     delete process.env.ULTRON_BROWSER_PROFILE;
   }, 180_000);
 });
