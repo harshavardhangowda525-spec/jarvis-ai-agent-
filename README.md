@@ -396,6 +396,7 @@ maximize, "open in a new tab" and close.
 - **Real tab:** say "… in a new tab" ("open Gmail in a new tab"), or use the ↗ button in the window. If the browser blocks a tab JARVIS didn't open from a click, ULTRON opens it in your default browser instead.
 - **Closing:** the ✕ button, Esc, "close the browser" / "close it", or the gesture for back.
 - **Limits of the live view:** file uploads and downloads are off (use "open in a new tab" for those). Some sign-ins, such as Google's, may refuse a browser that's being remote-controlled. If that happens, sign in with "open in a new tab" or use the app. Needs Google Chrome or Microsoft Edge on the PC (or set `ULTRON_BROWSER_PATH`).
+- **Windows, macOS, Linux:** on Windows 10/11 it uses Google Chrome if installed, otherwise Microsoft Edge (always there). Chrome and Edge each keep their own profile folder. If a browser from an earlier run is still holding the profile (for example after closing the ULTRON window), ULTRON stops just that browser and carries on. The Windows side is checked on a real Windows machine by the `Windows (ULTRON)` GitHub Actions job.
 - **Safety:** only your paired JARVIS page (allowed origin + pairing token) can drive the live browser or open links through ULTRON. Only `http`/`https` addresses are opened, as a single argument with no shell. Camera, microphone and location requests from sites are denied. Turn the live browser off with `ULTRON_BROWSER=off` (and link/app opening with `ULTRON_APPS=off`) in `edith/.env`.
 
 ## Memory — "remember that…"
