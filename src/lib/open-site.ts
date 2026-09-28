@@ -69,7 +69,8 @@ const ALIASES: Record<string, string> = {
   "a new tab": "browser", edge: "browser", firefox: "browser", "web browser": "browser",
 };
 
-const DOMAIN = /^(?:https?:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})(\/\S*)?$/i;
+// scheme? host (a domain; localhost or an IP only with a scheme or port) :port? path/query?
+const DOMAIN = /^(https?:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,}|localhost|\d{1,3}(?:\.\d{1,3}){3})(:\d{1,5})?([/?#]\S*)?$/i;
 
 /**
  * A site name or address → its real URL (null if unknown). `india` picks the
@@ -88,17 +89,32 @@ export function resolveSite(name: string, query?: string | null, opts: { india?:
   // An address: keep the path's own letter case (only the host is case-free).
   const d = (/\s/.test(name.trim()) ? key.replace(/\s+/g, "") : name.trim()).match(DOMAIN);
   if (d) {
-    const host = d[1].toLowerCase();
-    return { url: `https://${host}${d[2] ?? "/"}`, label: host.replace(/^www\./, "") };
+    const host = d[2].toLowerCase();
+    const local = host === "localhost" || /^[\d.]+$/.test(host);
+    if (local && !d[1] && !d[3]) return null; // a bare "localhost" / "1.2.3.4" isn't a link
+    const scheme = d[1]?.toLowerCase() ?? (local ? "http://" : "https://");
+    let path = d[4] ?? "/";
+    if (!path.startsWith("/")) path = "/" + path;
+    return { url: `${scheme}${host}${d[3] ?? ""}${path}`, label: host.replace(/^www\./, "") };
   }
   return null;
 }
 
-const OPEN = "(?:please\\s+)?(?:can you\\s+|could you\\s+)?(?:open(?:\\s+up)?|launch|go to|goto|visit|take me to|bring up|pull up|load|navigate to)";
+const OPEN = "(?:please\\s+)?(?:(?:can|could|would|will) you\\s+)?(?:please\\s+)?(?:open(?:\\s+up)?|launch|go to|goto|visit|take me to|bring up|pull up|load|navigate to|browse to|show me)";
+
+/** "… in a new tab", "… in my browser", "… for me" — how, not what. */
+const HOW = /(?:\s*,?\s+(?:(?:in|on)\s+(?:a\s+)?(?:new|another|separate|different)\s+(?:browser\s+)?(?:tab|window)|in\s+(?:the|my)\s+browser|on\s+the\s+web|online|for\s+me|please|now|right now|quickly))+$/i;
+/** "this link", "the url", "this website:" before an address. */
+const LINK_WORDS = /^(?:(?:this|that|the|a|my)\s+)?(?:link|url|web\s*address|address|web\s*page|webpage|page|website|site)\s*(?::|-|to|at)?\s+(?=\S*[.:/])/i;
+/** A pasted web address on its own ("https://…", "www.…"). */
+const BARE_URL = /^(?:https?:\/\/\S+|www\.\S+\.\S+)$/i;
 
 /** Parse a spoken/typed "open <site>" command. Null → not a website command. */
 export function parseOpenSite(text: string, opts: { india?: boolean } = {}): SiteTarget | null {
-  const s = text.trim().replace(/^(hey |ok |okay )?jarvis[,!.\s]+/i, "").replace(/[.!?]+$/, "").trim();
+  const s = text.trim().replace(/^(hey |ok |okay )?jarvis[,!.\s]+/i, "").replace(/[.!?]+$/, "").trim().replace(HOW, "").trim();
+  if (!s) return null;
+  // a pasted link on its own → open it
+  if (BARE_URL.test(s)) return resolveSite(s, null, opts);
   // "search amazon for headphones" / "search for headphones on amazon"
   let m = s.match(/^(?:please\s+)?(?:search|look up|find)\s+(.+?)\s+for\s+(.+)$/i);
   if (m) { const t = resolveSite(m[1], m[2], opts); if (t && SITES[normalizeKey(m[1], opts)]?.search) return t; }
@@ -106,7 +122,36 @@ export function parseOpenSite(text: string, opts: { india?: boolean } = {}): Sit
   if (m) { const t = resolveSite(m[2], m[1], opts); if (t && SITES[normalizeKey(m[2], opts)]?.search) return t; }
   // "open amazon", "open flipkart and search for shoes", "go to youtube.com"
   m = s.match(new RegExp(`^${OPEN}\\s+(.+?)(?:\\s+(?:and|&)\\s+(?:search|look)\\s+(?:for\\s+)?(.+))?$`, "i"));
-  if (m) return resolveSite(m[1], m[2], opts);
+  if (m) return resolveSite(m[1].replace(HOW, "").replace(LINK_WORDS, "").trim(), m[2], opts);
+  return null;
+}
+
+export type LinkRef = { which: "latest" | "last" | number };
+
+/**
+ * "open that link", "open the link", "open the second link", "click the last
+ * link" → a link JARVIS already showed in the chat (the console picks it).
+ */
+export function parseOpenLinkRef(text: string): LinkRef | null {
+  const s = text.trim().replace(/^(hey |ok |okay )?jarvis[,!.\s]+/i, "").replace(/[.!?]+$/, "").trim().replace(HOW, "").trim();
+  const m = s.match(/^(?:please\s+)?(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(?:open(?:\s+up)?|click(?:\s+on)?|visit|go to|follow|load)\s+(?:(this|that|the|it|your)\s+)?(?:(first|1st|second|2nd|third|3rd|fourth|4th|fifth|5th|last|latest|top)\s+)?(?:link|url|website|site|page)$/i);
+  if (!m) return null;
+  const ord = m[2]?.toLowerCase();
+  if (!ord || ord === "latest") return { which: "latest" };
+  if (ord === "last") return { which: "last" };
+  const n = { first: 1, "1st": 1, top: 1, second: 2, "2nd": 2, third: 3, "3rd": 3, fourth: 4, "4th": 4, fifth: 5, "5th": 5 }[ord];
+  return n ? { which: n } : null;
+}
+
+/** The link a LinkRef points at, from the chat's messages (newest last). */
+export function pickLink<L extends { url: string }>(messages: { role: string; links?: L[] }[], ref: LinkRef): L | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const links = messages[i].role === "assistant" ? messages[i].links ?? [] : [];
+    if (!links.length) continue;
+    if (ref.which === "latest") return links[0];
+    if (ref.which === "last") return links[links.length - 1];
+    return links[ref.which - 1] ?? null;
+  }
   return null;
 }
 

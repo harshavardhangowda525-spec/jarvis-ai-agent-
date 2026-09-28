@@ -18,7 +18,7 @@ import { Audit } from "./audit.mjs";
 import { killAll } from "./tools/terminal.mjs";
 import { capabilityCheck } from "./capabilities.mjs";
 import { doPower } from "./power.mjs";
-import { openApp, listApps, appsEnabled } from "./apps.mjs";
+import { openApp, openUrl, listApps, appsEnabled } from "./apps.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN_FILE = path.resolve(__dirname, "../.edith-token");
@@ -185,9 +185,10 @@ export function startServer({ port, ws }) {
       });
       return;
     }
-    // Desktop apps ("JARVIS, open Spotify"): same guard as /power — an allowed
-    // origin AND the pairing token. Only apps this computer lists as installed.
-    if (u.pathname === "/apps" || u.pathname === "/apps/open") {
+    // Desktop apps ("JARVIS, open Spotify") and web links: same guard as /power —
+    // an allowed origin AND the pairing token. Only apps this computer lists as
+    // installed; only http(s) links.
+    if (u.pathname === "/apps" || u.pathname === "/apps/open" || u.pathname === "/open-url") {
       const send = (code, body) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
       if (origin && !allow) return send(403, { ok: false, message: "This page isn't allowed to control this computer." });
       if (req.headers.authorization !== `Bearer ${token}`) return send(401, { ok: false, message: "Not paired with ULTRON." });
@@ -206,6 +207,19 @@ export function startServer({ port, ws }) {
           const r = await openApp(body.name);
           emit({ kind: "activity", label: `Apps: ${r.message}` });
           send(r.ok ? 200 : r.notFound ? 404 : 409, r);
+        });
+        return;
+      }
+      // A web link in the default browser — when the page's own new tab was pop-up-blocked.
+      if (req.method === "POST" && u.pathname === "/open-url") {
+        let raw = "";
+        req.on("data", (c) => { raw += c; if (raw.length > 4000) req.destroy(); });
+        req.on("end", async () => {
+          let body = {};
+          try { body = JSON.parse(raw || "{}"); } catch { return send(400, { ok: false, message: "Bad request." }); }
+          const r = await openUrl(body.url);
+          emit({ kind: "activity", label: `Links: ${r.ok ? `opened ${new URL(r.url).host}` : r.message}` });
+          send(r.ok ? 200 : 409, r);
         });
         return;
       }

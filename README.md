@@ -36,6 +36,7 @@ registering a **tool** — the agent loop never changes.
 - [Previous-day briefing](#previous-day-briefing)
 - [Shut down your laptop by voice](#shut-down-your-laptop-by-voice)
 - [Open apps on your PC](#open-apps-on-your-pc)
+- [Open links and websites](#open-links-and-websites)
 - [Memory — "remember that…"](#memory--remember-that)
 - [NIOS board notifications](#nios-board-notifications)
 - [EV daily content](#ev-daily-content)
@@ -374,10 +375,21 @@ the same paired, origin-locked connection.
 
 - **Which apps:** anything in your Start menu, both desktop and Microsoft Store apps, read from Windows' own list (`Get-StartApps`). File Explorer, Settings, Task Manager and Control Panel are always available. On macOS it uses `/Applications`; on Linux, `.desktop` entries.
 - **Names can be loose:** "vs code", "calc", "ppt", "this pc", "windows settings" and small typos ("spotfy") all find the right app. Uninstallers and help links are never picked.
-- **Not installed:** if the app isn't on the PC but it's a well-known website (Gmail, Amazon, YouTube…), JARVIS says so and opens the website. Otherwise it tells you it couldn't find it, suggesting a close match if there is one.
+- **Not installed:** if the app isn't on the PC but it's a well-known website (Gmail, Amazon, YouTube…), JARVIS opens the website in a new tab straight away (see below). Otherwise it tells you it couldn't find it, suggesting a close match if there is one.
 - **ULTRON not running:** JARVIS tells you to start `npm run local`. Websites still open as before.
 - **"start …" / "run …"** only open an app when one by that name is installed, so "run the tests" still goes to JARVIS's brain. The brain can also open apps itself (the `open_app` tool) for requests like "I want to code — open VS Code and Spotify".
 - **Safety:** ULTRON only launches apps from the computer's own installed list, with a fixed command and no shell, no paths and no arguments. It accepts requests only from your JARVIS app with the pairing token. Turn it off with `ULTRON_APPS=off` in `edith/.env`.
+
+## Open links and websites
+
+JARVIS opens websites and links in a **new tab**, alongside launching apps:
+
+- **Sites by name:** "open YouTube", "open Gmail in a new tab", "open Amazon and search for USB cables", "search YouTube for lo-fi".
+- **Any address:** "open https://github.com/…", "go to example.com/docs", "open this link www.example.org", "open localhost:3000". Paste a link on its own (`https://…` or `www.…`) and it opens too.
+- **Links JARVIS showed you:** "open that link", "open the second link", "click the last link".
+- **App or website?** JARVIS keeps the list of apps installed on your PC (from ULTRON), so it decides instantly: "open Spotify" launches the Spotify app if it's installed, and "open YouTube" opens a tab. Without ULTRON running, every known site opens as a tab.
+- **Pop-up blocker:** a tab opened from a typed command or click always works. Voice commands and AI replies aren't clicks, so the browser may block the tab. Then ULTRON (when running) opens the link in your default browser, and otherwise the reply has an "Open …" button. Allowing pop-ups for your JARVIS site (icon at the right of Chrome's address bar) makes voice links open directly.
+- **Safety:** ULTRON only opens `http`/`https` addresses, as one argument to the system's own URL opener (no shell), and only for your paired JARVIS app. `ULTRON_APPS=off` turns this off too.
 
 ## Memory — "remember that…"
 

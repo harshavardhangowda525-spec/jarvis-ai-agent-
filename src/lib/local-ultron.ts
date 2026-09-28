@@ -12,6 +12,23 @@ function ultronHttp(): string {
   return ws.trim().replace(/^ws(s?):\/\//, "http$1://").replace(/\/+$/, "");
 }
 
+const SEEN_KEY = "jarvis.ultron.seen";
+function markUltronKnown() {
+  try { localStorage.setItem(SEEN_KEY, "1"); } catch { /* private mode */ }
+}
+/**
+ * Is ULTRON expected on this PC — JARVIS opened locally, or ULTRON has answered
+ * this browser before? Only then does JARVIS contact it unasked (e.g. to list
+ * your apps), so a page that has never used it doesn't poke at your network.
+ */
+export function ultronKnown(): boolean {
+  try {
+    // JARVIS itself running on this PC (npm run local) → ULTRON is right here too.
+    if (/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return true;
+    return localStorage.getItem(SEEN_KEY) === "1";
+  } catch { return false; }
+}
+
 const OFFLINE = "My local runtime isn't running on this computer — start it with npm run local (or ULTRON), then ask again.";
 
 export async function ultronCall<T extends Record<string, unknown>>(path: string, init: { method?: "GET" | "POST"; body?: unknown; timeoutMs?: number; offline?: string } = {}): Promise<UltronResult<T>> {
@@ -21,6 +38,7 @@ export async function ultronCall<T extends Record<string, unknown>>(path: string
     const r = await fetch(`${base}/pair`, { signal: AbortSignal.timeout(4000) });
     if (r.status === 403) return { ok: false, reason: "origin", message: "ULTRON on this computer doesn't trust this page yet — add this site to ULTRON_ALLOWED_ORIGINS in edith/.env and restart it." };
     token = (await r.json())?.token ?? "";
+    if (token) markUltronKnown();
   } catch {
     return { ok: false, reason: "offline", message: init.offline ?? OFFLINE };
   }

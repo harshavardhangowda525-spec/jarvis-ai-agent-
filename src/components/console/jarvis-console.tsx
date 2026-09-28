@@ -11,8 +11,8 @@ import { Mic, MicOff, Paperclip, Loader2, Power, X, LayoutGrid, Volume2 } from "
 import { type OrbState } from "@/components/orb";
 import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
 import { instantAnswer } from "@/lib/instant";
-import { inIndia, parseOpenSite, resolveSite } from "@/lib/open-site";
-import { openLocalApp, parseOpenApp } from "@/lib/local-apps";
+import { inIndia, parseOpenLinkRef, parseOpenSite, pickLink, type SiteTarget } from "@/lib/open-site";
+import { installedAppNames, openLocalApp, openUrlOnPc, parseOpenApp, planOpen, refreshInstalledApps, ultronKnown } from "@/lib/local-apps";
 import { parseMemoryCommand } from "@/lib/memory/intent";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import type { AgentTiming } from "@/hooks/useAgent";
@@ -105,6 +105,24 @@ function openTab(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+type OpenedHow = "tab" | "pc" | "blocked";
+/**
+ * Open a web link in a new tab. The tab opens synchronously (call this before
+ * any await, inside the click/keypress). If the browser blocks it — voice
+ * commands and AI replies aren't clicks — ULTRON opens it in your default
+ * browser instead, when it runs on this PC.
+ */
+function openSite(site: SiteTarget): Promise<OpenedHow> {
+  if (openTab(site.url)) return Promise.resolve("tab");
+  if (!ultronKnown()) return Promise.resolve("blocked");
+  return openUrlOnPc(site.url).then((ok) => (ok ? "pc" : "blocked"));
+}
+
+function blockedLine(labels: string[]): string {
+  const what = labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}` : labels[0];
+  return `Your browser blocked the new tab for ${what} — click the button below, or allow pop-ups for this site (icon at the right of Chrome's address bar).`;
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -259,49 +277,79 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         flashEv("success");
         return;
       }
-      // Otherwise open in a NEW tab, never hijack the current one. If the pop-up
-      // blocker stops it, the "Open X" button in the reply is the fallback.
-      openTab(url); // blocked → the "Open X" button in the reply is the fallback
+      // Otherwise open in a NEW tab, never hijack the current one. The AI's reply
+      // comes after the keypress, so the pop-up blocker may stop it: then ULTRON
+      // opens it in your browser, and the "Open X" button in the reply is the
+      // last resort.
+      void openSite({ url, label: url });
     },
   });
 
   const sleep = useCallback(() => { voice.stop(); setVoiceStarted(false); }, [voice]);
   sayRef.current = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
-  // "open Spotify" → the installed app on this PC (via ULTRON), not a web page.
+  // "open Spotify" → the installed app on this PC (via ULTRON); "open YouTube"
+  // → a new tab. Which one is decided instantly from the installed-app list, so
+  // a website's tab opens inside the keypress that allows it.
   const openAppsRef = useRef<(said: string, names: string[], o?: { strong?: boolean; fallback?: () => void }) => Promise<void>>(async () => {});
   openAppsRef.current = async (said, names, o = {}) => {
     const strong = o.strong ?? true;
-    const opened: string[] = [], missing: string[] = [], notes: string[] = [];
+    const plan = planOpen(names, { installed: installedAppNames(), ultronKnown: ultronKnown(), india: inIndia() });
+    // every website's tab starts NOW (before any await)
+    const tabs = plan.map((p) => (p.kind === "web" ? openSite(p.site) : null));
+    const opened: string[] = [], missing: string[] = [], notes: string[] = [], blocked: string[] = [];
     const links: { url: string; label: string }[] = [];
     let offline: string | null = null;
-    for (const name of names) {
-      const r = await openLocalApp(name);
+    const web = (site: SiteTarget, how: OpenedHow, note?: string) => {
+      links.push({ url: site.url, label: `Open ${site.label}` });
+      if (how === "blocked") blocked.push(site.label);
+      else if (note) notes.push(note);
+      else opened.push(how === "pc" ? `${site.label} in your browser` : site.label);
+    };
+    for (let i = 0; i < plan.length; i++) {
+      const p = plan[i];
+      if (p.kind === "web") { web(p.site, await tabs[i]!); continue; }
+      const r = await openLocalApp(p.name);
       if (r.ok) { opened.push(r.app); continue; }
-      if (r.reason === "not_found") {
-        const site = resolveSite(name, null, { india: inIndia() });
-        if (site) { links.push({ url: site.url, label: `Open ${site.label}` }); notes.push(`${site.label} isn't installed as an app on this PC, so I opened the website instead.`); openTab(site.url); }
-        else missing.push(r.suggestions.length ? `${name} (did you mean ${r.suggestions.join(" or ")}?)` : name);
+      if (p.site) {
+        web(p.site, await openSite(p.site), r.reason === "not_found" ? `${p.site.label} isn't installed as an app on this PC, so I opened the website instead.` : undefined);
         continue;
       }
-      // offline / not paired / outdated: websites still work the old way
-      const site = resolveSite(name, null, { india: inIndia() });
-      if (site) { links.push({ url: site.url, label: `Open ${site.label}` }); openTab(site.url); notes.push(`Opening the ${site.label} website — ${r.reason === "offline" ? "my local runtime isn't running, so I can't open the app itself" : r.message.replace(/\.$/, "")}.`); }
+      if (r.reason === "not_found") missing.push(r.suggestions.length ? `${p.name} (did you mean ${r.suggestions.join(" or ")}?)` : p.name);
       else offline = r.message;
     }
     if (!strong && !opened.length && !links.length) { o.fallback?.(); return; }
     const parts: string[] = [];
     if (opened.length) parts.push(`Opening ${opened.length > 1 ? `${opened.slice(0, -1).join(", ")} and ${opened[opened.length - 1]}` : opened[0]}.`);
     parts.push(...notes);
+    if (blocked.length) parts.push(blockedLine(blocked));
     if (missing.length) parts.push(`I couldn't find ${missing.join(", ")} installed on this computer.`);
     if (offline) parts.push(offline);
     const msg = parts.join(" ");
     agent.appendLocalExchange(said, msg, links.length ? links : undefined);
-    sayRef.current(msg.replace(/ \(did you mean[^)]*\)/g, ""));
+    sayRef.current(msg.replace(/ \(did you mean[^)]*\)/g, "").replace(/ — click .*$/, "."));
     if (opened.length) {
       motion.current?.taskComplete();
       logActivity({ category: "agent", agent: "JARVIS", action: `Opened ${opened.join(", ")} on the PC`, importance: 1 });
     }
   };
+  // "open https://…", "go to youtube.com", "search YouTube for lo-fi", "open that link"
+  const openWebRef = useRef<(said: string, site: SiteTarget) => void>(() => {});
+  openWebRef.current = (said, site) => {
+    const links = [{ url: site.url, label: `Open ${site.label}` }];
+    void openSite(site).then((how) => {
+      const msg = how === "blocked" ? blockedLine([site.label]) : how === "pc" ? `Opening ${site.label} in your browser.` : `Opening ${site.label}.`;
+      agent.appendLocalExchange(said, msg, links);
+      sayRef.current(msg.replace(/ — click .*$/, "."));
+    });
+  };
+  // Keep the installed-app list fresh (only once ULTRON has been used on this browser).
+  useEffect(() => {
+    const refresh = () => { if (ultronKnown()) void refreshInstalledApps(); };
+    refresh();
+    const iv = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(iv); window.removeEventListener("focus", refresh); };
+  }, []);
   const launchUltron = useCallback(() => {
     if (launchingUltron) return;
     setLaunchingUltron(true);
@@ -595,6 +643,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // "Open Spotify", "launch VS Code", "start WhatsApp and Spotify" → the real
       // app on this PC. "start/run …" only counts when such an app is installed;
       // otherwise it carries on to JARVIS's brain ("run the tests" isn't an app).
+      // "open that link", "open the second link" → a link already in the chat.
+      const ref = evActiveRef.current ? null : parseOpenLinkRef(t);
+      if (ref) {
+        const link = pickLink(agent.messages, ref);
+        if (link) openWebRef.current(t, { url: link.url, label: link.label.replace(/^Open\s+/i, "") });
+        else { const msg = "There's no link in our conversation yet — tell me the site or paste the address."; agent.appendLocalExchange(t, msg); sayRef.current(msg); }
+        return;
+      }
       const apps = evActiveRef.current ? null : parseOpenApp(t);
       if (apps) {
         const strong = !/^\s*(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:start|run)\b/i.test(t);
@@ -606,10 +662,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // round trip first — especially on the PC brain — gets it pop-up-blocked).
       const site = evActiveRef.current ? null : parseOpenSite(t, { india: inIndia() });
       if (site) {
-        const opened = openTab(site.url);
-        const msg = `Opening ${site.label}.`;
-        agent.appendLocalExchange(t, opened ? msg : `Your browser blocked the new tab — click "Open ${site.label}" below, or allow pop-ups for this site (icon at the right of Chrome's address bar).`, [{ url: site.url, label: `Open ${site.label}` }]);
-        if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(msg); } catch { /* ignore */ } }
+        openWebRef.current(t, site);
         return;
       }
       // "read my screen", "what's on my screen", "look at my screen"…
