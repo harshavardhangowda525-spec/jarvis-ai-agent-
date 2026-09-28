@@ -249,7 +249,7 @@ const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.
 
 /**
  * Which brain(s) each agent runs on (set per agent in env):
- *   JARVIS → JARVIS_PROVIDER, default "ollama"      = your PC brain ONLY
+ *   JARVIS → JARVIS_PROVIDER, default "groq,gemini" = Groq, Gemini as backup
  *   EV     → EV_PROVIDER,     default "groq,gemini" = Groq, Gemini as backup
  *   DARWIN → DARWIN_PROVIDER, default "groq,gemini" = Groq, Gemini as backup
  * A provider id (or a comma list) means those providers in that order and

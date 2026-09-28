@@ -239,10 +239,9 @@ npm run build        # production build
 ## Run everything on your PC (fastest with Ollama)
 
 `npm run local` runs the whole app — JARVIS, EV, DARWIN and ULTRON's dashboard —
-plus the Ollama brain gateway and the ULTRON runtime on your own computer, in one
-window. Ollama is reached directly on `127.0.0.1` (no Cloudflare tunnel, no round
-trip through Vercel), and it uses the **same database** as your Vercel app, so your
-account, memories, leads and chats are identical in both places.
+plus the ULTRON runtime on your own computer, in one window. ULTRON reaches
+Ollama directly on `127.0.0.1`, and the app uses the **same database** as your
+Vercel app, so your account, memories, leads and chats are identical in both places.
 
 ```bash
 # one time: copy your app settings from Vercel
@@ -253,8 +252,12 @@ npx vercel env pull .env.local --environment=production
 npm run local        # builds when the code changed, starts everything, opens http://localhost:3000
 ```
 
-- JARVIS runs only on the PC brain; EV, DARWIN and ULTRON run only on Groq (see
-  "Which brain each agent uses" below). The Ollama model comes from `edith/.env` (`OLLAMA_MODEL`).
+- JARVIS, EV and DARWIN answer with Groq, with Gemini as the backup; ULTRON runs on
+  this PC's Ollama (see "Which brain each agent uses" below). If Ollama is installed
+  but not running, `npm run local` starts it, and it tells you if ULTRON's model
+  still needs `ollama pull`. ULTRON's model is `ULTRON_OLLAMA_MODEL` (or `OLLAMA_MODEL`)
+  in `edith/.env`, `qwen2.5:3b` by default; a coder model such as
+  `qwen2.5-coder:7b` writes better code if your PC can run it.
 - EV's images keep your public Vercel address (`JARVIS_URL` in `edith/.env`, or
   `APP_URL`) so Instagram can still fetch them.
 - Google sign-in locally needs `http://localhost:3000/api/integrations/google/callback`
@@ -662,10 +665,14 @@ Without Google Places or web search, strict mode can't confirm the absence of a 
 
 | Agent  | Setting             | Default  | Meaning                                  |
 | ------ | ------------------- | -------- | ---------------------------------------- |
-| JARVIS | `JARVIS_PROVIDER`   | `ollama` | your PC brain (Ollama) only              |
+| JARVIS | `JARVIS_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
 | EV     | `EV_PROVIDER`       | `groq,gemini` | Groq, Gemini as backup              |
 | DARWIN | `DARWIN_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
-| ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `groq,gemini` | Groq, Gemini as backup |
+| ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `ollama` | this PC's Ollama only (model: `ULTRON_OLLAMA_MODEL`, else `OLLAMA_MODEL`, else `qwen2.5:3b`) |
+
+`JARVIS_PROVIDER=ollama` puts JARVIS back on your PC brain (then `npm run local`
+starts the brain gateway again), and `ULTRON_AI_PROVIDER=ollama,groq` gives ULTRON a
+cloud backup.
 
 A provider id (or comma list, tried in that order) means those providers and
 nothing else — if they're all offline or out of quota, the agent says so

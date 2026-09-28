@@ -6,7 +6,7 @@ vi.hoisted(() => {
   delete process.env.AI_PROVIDER;
   delete process.env.AI_MODEL;
   delete process.env.OLLAMA_BASE_URL;
-  process.env.JARVIS_PROVIDER = "auto"; // the chain tests; JARVIS's real default (Ollama only) is tested below
+  process.env.JARVIS_PROVIDER = "auto"; // the chain tests; the per-agent defaults are in brains.test.ts
 });
 
 // Fake cloud providers: record every request; Groq can be told to rate-limit.
@@ -99,7 +99,7 @@ d("agent speed behaviour", () => {
     expect((await ask()).urls.some((u) => !u.includes("groq"))).toBe(true);
   });
 
-  it("by default JARVIS runs only on the PC brain, and DARWIN only on Groq", async () => {
+  it("with JARVIS_PROVIDER=ollama JARVIS runs only on the PC brain, and DARWIN only on Groq", async () => {
     const pcBrain = { baseUrl: "https://my-pc.trycloudflare.com", model: "qwen2.5:3b" };
     const ask = async (agent: "darwin" | undefined, brain: typeof pcBrain | null) => {
       calls.length = 0;

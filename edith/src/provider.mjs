@@ -16,7 +16,9 @@ function resolveChain() {
   // Ollama runs on your own machine — free and unlimited. Enabled when you set
   // OLLAMA_MODEL (e.g. qwen2.5-coder:7b). It needs no real key; "ollama" is a
   // placeholder the OpenAI-compatible endpoint ignores.
-  const ollamaModel = read("OLLAMA_MODEL");
+  // ULTRON's own model wins (ULTRON_OLLAMA_MODEL), then the shared OLLAMA_MODEL;
+  // when ULTRON is set to run on Ollama (the default) a small model is assumed.
+  const ollamaModel = read("ULTRON_OLLAMA_MODEL") || read("OLLAMA_MODEL") || (providerList().includes("ollama") ? DEFAULT_OLLAMA_MODEL : "");
   const ollamaBase = (read("OLLAMA_BASE_URL") || "http://127.0.0.1:11434").replace(/\/$/, "");
   const order = [
     ["groq", read("GROQ_API_KEY"), "https://api.groq.com/openai/v1", read("GROQ_MODEL") || "openai/gpt-oss-120b"],
@@ -58,9 +60,12 @@ function resolveChain() {
   return configured;
 }
 
-/** "groq,gemini" (default), another provider id / comma list, or "auto" for the whole chain. */
+/** Used when ULTRON runs on Ollama and no model is named (the one `npm run local` pulls for the PC brain). */
+export const DEFAULT_OLLAMA_MODEL = "qwen2.5:3b";
+
+/** "ollama" (default — this PC's Ollama), another provider id / comma list, or "auto" for the whole chain. */
 export function onlyProvider() {
-  return read("ULTRON_AI_PROVIDER").toLowerCase() || "groq,gemini";
+  return read("ULTRON_AI_PROVIDER").toLowerCase() || "ollama";
 }
 export function providerList() {
   return onlyProvider().split(/[\s,>]+/).filter(Boolean);
@@ -73,6 +78,7 @@ export function missingProviderMessage() {
   if (list.every((p) => KEY_FOR[p])) {
     return `ULTRON runs on ${list.map((p) => p[0].toUpperCase() + p.slice(1)).join(", then ")}, and none of them is set up — add ${list.map((p) => KEY_FOR[p]).join(" or ")} to edith/.env or the app's .env.local.`;
   }
+  if (list.length === 1 && list[0] === "ollama") return "ULTRON runs on this PC's Ollama — install it from ollama.com, open the Ollama app and set OLLAMA_MODEL in edith/.env (e.g. qwen2.5:3b).";
   return `ULTRON_AI_PROVIDER=${onlyProvider()} — none of those providers is configured in edith/.env.`;
 }
 
@@ -174,6 +180,7 @@ const KEY_INFO = {
 };
 
 function explain(status, text, P) {
+  if (P?.provider === "ollama" && (status === 404 || /not found/i.test(text))) return `model ${P.model} isn't downloaded — run: ollama pull ${P.model}`;
   if (status === 402 || /payment|billing|credit|quota/i.test(text)) return "out of free quota / needs billing";
   if (/data policy|privacy/i.test(text)) return "blocked by your OpenRouter privacy settings (openrouter.ai/settings/privacy → allow free models)";
   if (status === 401 || (status === 400 && /api.?key|API_KEY_INVALID|unauthor/i.test(text))) {
@@ -384,7 +391,8 @@ export async function askJson(system, user, { onWait } = {}) {
             }
           }
           // Won't recover by retrying: park this provider for a while.
-          if ([401, 402, 403, 404].includes(res.status)) {
+          // (never your own Ollama — pulling the model fixes it at once)
+          if ([401, 402, 403, 404].includes(res.status) && P.provider !== "ollama") {
             dead.set(P.provider, { until: Date.now() + DEAD_MS, reason: explain(res.status, text, P) });
             log.warn(`Skipping ${P.provider} for ${DEAD_MS / 60000} min — ${explain(res.status, text, P)}.`);
           }
@@ -399,7 +407,9 @@ export async function askJson(system, user, { onWait } = {}) {
           nextProvider = true; break; // any other hard error → next provider
         } catch (err) {
           lastErr = `${P.provider}: ${err.message}`;
-          errors.set(P.provider, /timeout|aborted/i.test(err.message) ? "timed out" : `unreachable (${err.message})`);
+          errors.set(P.provider, P.provider === "ollama"
+            ? (/timeout|aborted/i.test(err.message) ? `no answer from ${P.model} in ${Math.round(OLLAMA_TIMEOUT_MS / 1000)}s — this PC may be too slow for it; try a smaller model` : "Ollama isn't running on this PC — open the Ollama app (or run: ollama serve)")
+            : /timeout|aborted/i.test(err.message) ? "timed out" : `unreachable (${err.message})`);
           log.warn(`Provider ${P.provider} error: ${err.message}`);
           // Network/timeout errors are transient and worth a later retry.
           if (/timeout|network|fetch failed|ECONN|socket|aborted/i.test(err.message)) sawTransient = true;

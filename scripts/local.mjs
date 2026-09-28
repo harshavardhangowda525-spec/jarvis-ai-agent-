@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
  * `npm run local` — run ALL of JARVIS on this PC: the web app with every agent
- * (JARVIS, EV, DARWIN, ULTRON's dashboard), the Ollama brain gateway and the
- * ULTRON runtime. Ollama is reached directly on 127.0.0.1 — no Cloudflare
- * tunnel, no round trip through Vercel — so the PC brain answers with no
- * network overhead.
+ * (JARVIS, EV, DARWIN, ULTRON's dashboard) and the ULTRON runtime.
+ *
+ * Brains: JARVIS, EV and DARWIN answer with Groq (Gemini as the backup);
+ * ULTRON runs on this PC's Ollama, reached directly on 127.0.0.1. (Set
+ * JARVIS_PROVIDER=ollama to put JARVIS back on the PC brain — then the brain
+ * gateway starts too.)
  *
  * Uses the SAME database as your Vercel deployment (DATABASE_URL), so your
  * account, memories, leads and chats are identical in both places.
@@ -169,30 +171,65 @@ if (!built || (head && stamp !== head) || process.argv.includes("--rebuild")) {
   if (head) fs.writeFileSync(stampFile, head);
 }
 
-// ---- 4. Ollama brain (local only — no tunnel) -------------------------------------------------
+// ---- 4. Ollama: ULTRON's brain (and JARVIS's only when JARVIS_PROVIDER says so) ---------------
+const pickOf = (v, d) => (v || d).toLowerCase().split(/[\s,>]+/).filter(Boolean);
+const jarvisPick = pickOf(appEnv.JARVIS_PROVIDER, "groq,gemini");
+const ultronPick = pickOf(edithEnv.ULTRON_AI_PROVIDER || appEnv.ULTRON_AI_PROVIDER, "ollama");
+const usesOllama = (pick) => pick.includes("ollama") || pick.includes("auto");
 const keyFile = path.join(EDITH, ".brain-key");
 const brainKey = appEnv.OLLAMA_API_KEY || edithEnv.OLLAMA_API_KEY ||
   (fs.existsSync(keyFile) ? fs.readFileSync(keyFile, "utf8").trim() : "") ||
   `brain_${crypto.randomBytes(24).toString("base64url")}`;
 const model = process.env.OLLAMA_MODEL || edithEnv.OLLAMA_MODEL || appEnv.OLLAMA_MODEL || "qwen2.5:3b";
-let brainUrl = "";
-if (await up(`${OLLAMA}/api/tags`)) {
-  if (await up(`http://127.0.0.1:${BRAIN_PORT}/health`)) {
-    say("  Ollama gateway already running on this PC — using it.");
-  } else {
-    start("brain", ["brain.mjs"], { cwd: EDITH, env: { BRAIN_LOCAL_ONLY: "1", OLLAMA_API_KEY: brainKey, OLLAMA_MODEL: model, BRAIN_PORT: String(BRAIN_PORT) } });
-    if (!(await waitFor(`http://127.0.0.1:${BRAIN_PORT}/health`, 180))) say("  (the brain is still loading the model — JARVIS answers once it's ready)");
+const ultronModel = process.env.ULTRON_OLLAMA_MODEL || edithEnv.ULTRON_OLLAMA_MODEL || appEnv.ULTRON_OLLAMA_MODEL || model;
+let ollamaUp = await up(`${OLLAMA}/api/tags`);
+if (!ollamaUp && (usesOllama(ultronPick) || usesOllama(jarvisPick))) {
+  // The Ollama app normally runs in the background; if it's installed but not running, start it.
+  const found = spawnSync(win ? "where ollama" : "command -v ollama", { shell: true, encoding: "utf8" }).status === 0;
+  if (found) {
+    say("  Starting Ollama…");
+    try {
+      const o = spawn("ollama", ["serve"], { detached: true, stdio: "ignore", windowsHide: true });
+      o.on("error", () => {});
+      o.unref();
+    } catch { /* not startable */ }
+    ollamaUp = await waitFor(`${OLLAMA}/api/tags`, 20);
   }
-  brainUrl = `http://127.0.0.1:${BRAIN_PORT}`;
-} else {
-  say("  Ollama isn't running — JARVIS runs only on your PC brain, so open the Ollama app and restart this.");
+}
+if (usesOllama(ultronPick)) {
+  if (!ollamaUp) {
+    say("  ! Ollama isn't running — ULTRON runs on it. Install it from ollama.com (or open the Ollama app), then restart this.");
+  } else {
+    const tags = await fetch(`${OLLAMA}/api/tags`).then((r) => r.json()).catch(() => null);
+    const have = (tags?.models ?? []).map((m) => String(m.name));
+    const has = (m) => have.some((n) => n === m || n === `${m}:latest`);
+    if (!has(ultronModel)) {
+      say(`  ! ULTRON's model ${ultronModel} isn't downloaded yet — run:  ollama pull ${ultronModel}`);
+      if (have.length) say(`    (or set ULTRON_OLLAMA_MODEL in edith/.env to one you have: ${have.slice(0, 5).join(", ")})`);
+    }
+  }
+}
+let brainUrl = "";
+if (usesOllama(jarvisPick)) {
+  if (ollamaUp) {
+    if (await up(`http://127.0.0.1:${BRAIN_PORT}/health`)) {
+      say("  Ollama gateway already running on this PC — using it.");
+    } else {
+      start("brain", ["brain.mjs"], { cwd: EDITH, env: { BRAIN_LOCAL_ONLY: "1", OLLAMA_API_KEY: brainKey, OLLAMA_MODEL: model, BRAIN_PORT: String(BRAIN_PORT) } });
+      if (!(await waitFor(`http://127.0.0.1:${BRAIN_PORT}/health`, 180))) say("  (the brain is still loading the model — JARVIS answers once it's ready)");
+    }
+    brainUrl = `http://127.0.0.1:${BRAIN_PORT}`;
+  } else {
+    say("  Ollama isn't running — JARVIS_PROVIDER puts JARVIS on your PC brain, so open the Ollama app and restart this.");
+  }
 }
 
 // ---- 5. ULTRON runtime ------------------------------------------------------------------------------
-// ULTRON runs on Groq only by default — lend it the app's key if edith/.env has none.
+// ULTRON runs on this PC's Ollama. Cloud keys are lent too, for anyone who adds
+// a backup with ULTRON_AI_PROVIDER (e.g. "ollama,groq").
 const groqKey = [edithEnv.GROQ_API_KEY, appEnv.GROQ_API_KEY].find((v) => v && !isPlaceholder(v)) || "";
-if (await up("http://127.0.0.1:7420/health")) say("  ULTRON already running — using it. (If it asks for a Groq key, close that ULTRON window and run this again.)");
-else start("ultron", ["run.mjs"], { cwd: EDITH, env: { ...(groqKey ? { GROQ_API_KEY: groqKey } : {}), ULTRON_ALLOWED_ORIGINS: [edithEnv.ULTRON_ALLOWED_ORIGINS || edithEnv.EDITH_ALLOWED_ORIGINS, `http://localhost:${PORT}`].filter(Boolean).join(",") } });
+if (await up("http://127.0.0.1:7420/health")) say("  ULTRON already running — using it. (If it's on an old brain, close that ULTRON window and run this again.)");
+else start("ultron", ["run.mjs"], { cwd: EDITH, env: { ...(groqKey ? { GROQ_API_KEY: groqKey } : {}), ULTRON_OLLAMA_MODEL: ultronModel, OLLAMA_BASE_URL: OLLAMA, ULTRON_ALLOWED_ORIGINS: [edithEnv.ULTRON_ALLOWED_ORIGINS || edithEnv.EDITH_ALLOWED_ORIGINS, `http://localhost:${PORT}`].filter(Boolean).join(",") } });
 
 // ---- 6. the web app (every agent) ------------------------------------------------------------------
 // The NIOS watcher's scheduled check needs a secret; use yours or a one-off one for this run.
@@ -217,12 +254,15 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
 const local = `http://localhost:${PORT}`;
 if (await waitFor(`${local}/login`, 120)) {
   say(`\n  ✓ JARVIS is running on this PC: ${local}`);
-  const only = (v, d) => (v || d).toLowerCase() === "auto" ? "all providers" : (v || d).split(/[\s,>]+/).filter(Boolean).join(" → ");
-  say(`    Brains: JARVIS ${only(appEnv.JARVIS_PROVIDER, brainUrl ? `ollama (${model})` : "ollama")} · EV ${only(appEnv.EV_PROVIDER, "groq,gemini")} · DARWIN ${only(appEnv.DARWIN_PROVIDER, "groq,gemini")} · ULTRON ${only(edithEnv.ULTRON_AI_PROVIDER, "groq,gemini")}`);
+  const only = (pick) => (pick.includes("auto") ? "all providers" : pick.map((p) => (p === "ollama" ? "Ollama" : p[0].toUpperCase() + p.slice(1))).join(" → "));
+  const withModel = (pick, m) => only(pick).replace(/^Ollama\b/, `Ollama (${m})`);
+  say(`    Brains: JARVIS ${withModel(jarvisPick, model)} · EV ${only(pickOf(appEnv.EV_PROVIDER, "groq,gemini"))} · DARWIN ${only(pickOf(appEnv.DARWIN_PROVIDER, "groq,gemini"))} · ULTRON ${withModel(ultronPick, ultronModel)}`);
   const geminiKey = [edithEnv.GEMINI_API_KEY, appEnv.GEMINI_API_KEY].find((v) => v && !isPlaceholder(v));
-  if (!groqKey && !geminiKey) say("    ! GROQ_API_KEY and GEMINI_API_KEY are both empty in .env.local — EV, DARWIN and ULTRON need at least one.");
-  else if (!groqKey) say("    ! GROQ_API_KEY is empty — EV, DARWIN and ULTRON will use Gemini only.");
-  else if (!geminiKey) say("    (No GEMINI_API_KEY — EV, DARWIN and ULTRON have no backup when Groq is busy. Free at aistudio.google.com/apikey.)");
+  if (!groqKey && !geminiKey) say("    ! GROQ_API_KEY and GEMINI_API_KEY are both empty in .env.local — JARVIS, EV and DARWIN need at least one.");
+  else if (!groqKey) say("    ! GROQ_API_KEY is empty — JARVIS, EV and DARWIN will use Gemini only.");
+  else if (!geminiKey) say("    (No GEMINI_API_KEY — JARVIS, EV and DARWIN have no backup when Groq is busy. Free at aistudio.google.com/apikey.)");
+  if (appEnv.JARVIS_PROVIDER && usesOllama(jarvisPick)) say(`    Note: .env.local sets JARVIS_PROVIDER=${appEnv.JARVIS_PROVIDER}, so JARVIS stays on your PC brain — delete that line to use Groq/Gemini.`);
+  if ((edithEnv.ULTRON_AI_PROVIDER || appEnv.ULTRON_AI_PROVIDER) && !usesOllama(ultronPick)) say(`    Note: ULTRON_AI_PROVIDER=${edithEnv.ULTRON_AI_PROVIDER || appEnv.ULTRON_AI_PROVIDER} keeps ULTRON off Ollama — delete that line in edith/.env to use Ollama.`);
   say("    NIOS watch: checking the official NIOS pages every 15 minutes while this runs (new notices are emailed if Gmail is connected).");
   say("    EV daily content: from 4:00 AM EV prepares today's post + Reel for your approval (it never publishes without you).");
   say("    Log in with your usual account. Keep this window open — Ctrl+C stops everything.\n");

@@ -41,7 +41,8 @@ async function loadProvider(keys: { source: string; key: string }[], gemini = fa
   vi.resetModules();
   process.env.GROQ_API_KEY = keys[0]?.key ?? "";
   if (gemini) process.env.GEMINI_API_KEY = "AIza_test"; else delete process.env.GEMINI_API_KEY;
-  delete process.env.ULTRON_AI_PROVIDER;
+  // ULTRON's default is this PC's Ollama; these tests cover the Groq (+ Gemini) setup
+  process.env.ULTRON_AI_PROVIDER = "groq,gemini";
   delete process.env.ULTRON_MAX_TOKENS;
   (globalThis as any).__ULTRON_GROQ_KEYS__ = keys;
   return import("../edith/src/provider.mjs");
@@ -111,7 +112,7 @@ describe("ULTRON on Groq", () => {
     expect(await p.askJson(SYSTEM, STEP)).toEqual({ done: true, report: "from gemini" });
   });
 
-  it("the default chain is Groq then Gemini", async () => {
+  it("ULTRON_AI_PROVIDER=groq,gemini runs Groq, then Gemini", async () => {
     const p = await loadProvider([{ source: ".env.local", key: "gsk_good" }], true);
     expect(p.providerSummary()).toMatch(/^groq\(.+\) → gemini\(/);
   });

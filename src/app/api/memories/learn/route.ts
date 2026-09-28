@@ -13,7 +13,7 @@ export const maxDuration = 300;
 /**
  * Learn lasting facts & preferences from the user's past chats and save them as
  * memories (shared by every agent and every brain). Runs on JARVIS's own brain
- * (JARVIS_PROVIDER — your PC's Ollama by default).
+ * (JARVIS_PROVIDER — Groq, then Gemini, by default).
  */
 export async function POST() {
   try {
