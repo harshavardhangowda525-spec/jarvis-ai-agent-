@@ -3,7 +3,6 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types";
 import { ToolError } from "../types";
 import { getDb } from "@/lib/db";
-import { env } from "@/lib/env";
 import { isConfigured as magicHourReady, createVideo, waitProject, MagicHourError } from "@/lib/ev/magichour";
 import { storeRemoteMedia } from "@/lib/ev/media";
 
@@ -19,7 +18,7 @@ const schema = z.object({
   prompt: z.string().max(2000).optional().describe("What the video should show / its motion and vibe."),
   imageUrl: z.string().url().optional().describe("Optional starting image URL → image-to-video (else text-to-video)."),
   contentImageId: z.string().optional().describe("EvMedia id of an EV-generated image to animate (used to build the image URL)."),
-  seconds: z.number().int().min(3).max(20).optional().describe("Video length in seconds (default 5)."),
+  seconds: z.number().int().min(3).max(20).optional().describe("Video length in seconds (default 5; Magic Hour's default model allows up to 15)."),
   aspect: z.enum(["square", "portrait", "landscape"]).optional(),
   contentId: z.string().optional().describe("EvContent id to attach the finished video URL to."),
   projectId: z.string().optional().describe("Magic Hour project id (for action 'check')."),
@@ -57,7 +56,7 @@ export const evVideoTool: ToolDefinition<Input> = {
       try {
         const r = await waitProject("video", input.projectId, 40_000);
         if (!r.done) return { data: { status: r.status, projectId: r.projectId, ready: false }, summary: `Still rendering (${r.status}). Ask me to check again in a bit.` };
-        if (!r.ok || !r.url) throw new ToolError(`Magic Hour video ${r.status}.`);
+        if (!r.ok || !r.url) throw new ToolError(`Magic Hour couldn't make the video (${r.error ?? r.status}).`);
         const stored = await storeRemoteMedia(ctx.userId, r.url, "video", input.prompt ?? "EV video");
         await attach(ctx.userId, input.contentId, stored.url, stored.id);
         return { data: { url: stored.url, mediaId: stored.id, openUrl: stored.url, label: "View video" }, summary: "Video ready." };
@@ -69,24 +68,26 @@ export const evVideoTool: ToolDefinition<Input> = {
 
     if (!input.prompt || input.prompt.trim().length < 3) throw new ToolError("Provide a 'prompt' describing the video.");
 
-    // Resolve a starting image URL if an EvMedia id was given.
+    // The start frame: an EV image (its bytes are uploaded straight to Magic
+    // Hour — no public URL needed, so it works on your PC too), or a URL.
     let imageUrl = input.imageUrl;
-    if (!imageUrl && input.contentImageId) {
-      const m = await getDb().evMedia.findFirst({ where: { id: input.contentImageId, userId: ctx.userId }, select: { id: true } });
-      // Our media route is public, so Magic Hour can fetch it as the start frame.
-      if (m) imageUrl = `${env.appUrl.replace(/\/$/, "")}/api/ev/media/${m.id}`;
+    let image: { bytes: Buffer; mimeType: string } | undefined;
+    const ownId = input.contentImageId ?? imageUrl?.match(/\/api\/ev\/media\/([\w-]+)/)?.[1];
+    if (ownId) {
+      const m = await getDb().evMedia.findFirst({ where: { id: ownId, userId: ctx.userId }, select: { data: true, mimeType: true } });
+      if (m && m.mimeType.startsWith("image/")) {
+        image = { bytes: Buffer.isBuffer(m.data) ? m.data : Buffer.from(m.data as Uint8Array), mimeType: m.mimeType };
+        imageUrl = undefined;
+      }
     }
-    // Magic Hour fetches the start image server-side — if our URL isn't public
-    // (APP_URL not set to a public https URL), drop it and do text-to-video so
-    // the video still generates instead of failing on an unreachable image.
+    // Magic Hour fetches a URL start image itself — a private one can't work.
     if (imageUrl && (!/^https:\/\//i.test(imageUrl) || /localhost|127\.0\.0\.1/i.test(imageUrl))) {
-      ctx.activity("Start image URL isn't public — rendering text-to-video instead.");
-      imageUrl = undefined;
+      throw new ToolError("That start image isn't on a public address, so Magic Hour can't fetch it. Use an EV image (contentImageId) instead.");
     }
 
     try {
       ctx.activity("Starting video render on Magic Hour…");
-      const projectId = await createVideo({ prompt: input.prompt, imageUrl, seconds: input.seconds, aspect: input.aspect });
+      const projectId = await createVideo({ prompt: input.prompt, imageUrl, image, seconds: input.seconds, aspect: input.aspect });
       // Give it a short window; videos usually need longer → return projectId to check.
       const r = await waitProject("video", projectId, 40_000);
       if (!r.done) {
@@ -95,7 +96,7 @@ export const evVideoTool: ToolDefinition<Input> = {
           summary: `Video is rendering on Magic Hour (project ${projectId}). This takes a few minutes — ask me to check it shortly.`,
         };
       }
-      if (!r.ok || !r.url) throw new ToolError(`Magic Hour video ${r.status}.`);
+      if (!r.ok || !r.url) throw new ToolError(`Magic Hour couldn't make the video (${r.error ?? r.status}).`);
       const stored = await storeRemoteMedia(ctx.userId, r.url, "video", input.prompt);
       await attach(ctx.userId, input.contentId, stored.url, stored.id);
       return { data: { url: stored.url, mediaId: stored.id, openUrl: stored.url, label: "View video" }, summary: "Video ready to review." };

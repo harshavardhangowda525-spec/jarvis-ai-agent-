@@ -43,9 +43,15 @@ export interface DailyDeps {
   reel: typeof renderReel;
   magicHour: null | {
     createImage: (prompt: string) => Promise<string>;
-    createVideo: (o: { prompt: string; imageUrl: string }) => Promise<string>;
-    wait: (kind: "image" | "video", id: string, budgetMs: number) => Promise<{ done: boolean; ok: boolean; url: string | null; status: string }>;
+    createVideo: (o: { prompt: string; image: { bytes: Buffer; mimeType: string } }) => Promise<string>;
+    wait: (kind: "image" | "video", id: string, budgetMs: number) => Promise<{ done: boolean; ok: boolean; url: string | null; status: string; error?: string }>;
   };
+  /**
+   * Who makes the images and video: "magichour" = Magic Hour only (EV says so
+   * when it isn't connected); "auto" (the default when omitted) = Magic Hour
+   * first, the Gemini/OpenAI image model as the backup.
+   */
+  mediaMode?: "magichour" | "auto";
   /** Whether Instagram can fetch our media (public https APP_URL). */
   publicUrl: boolean;
 }
@@ -66,19 +72,22 @@ export function defaultDeps(): DailyDeps {
       return completeWithFallback(configs, system, user, { maxTokens: 2200, timeoutMs: 60_000 });
     },
     image: async (prompt) => {
-      if (!resolveImageProvider()) throw new DailyError("Image generation isn't configured. Set GEMINI_API_KEY (free) or OPENAI_API_KEY, or connect Magic Hour (MAGICHOUR_API_KEY).", true);
+      if (!resolveImageProvider()) throw new DailyError("Image generation isn't configured. Connect Magic Hour (MAGICHOUR_API_KEY), or set GEMINI_API_KEY / OPENAI_API_KEY with EV_MEDIA_PROVIDER=auto.", true);
       const r = await generateImage(prompt, "portrait");
       return { bytes: r.bytes, mimeType: r.mimeType, provider: `${r.provider} · ${r.model}` };
     },
     reel: renderReel,
     magicHour: magicHour.isConfigured() ? {
       createImage: (prompt) => magicHour.createImage(prompt, "portrait"),
-      createVideo: (o) => magicHour.createVideo({ prompt: o.prompt, imageUrl: o.imageUrl, seconds: 8, aspect: "portrait" }),
+      createVideo: (o) => magicHour.createVideo({ prompt: o.prompt, image: o.image, seconds: 8, aspect: "portrait" }),
       wait: (kind, id, budgetMs) => magicHour.waitProject(kind, id, budgetMs),
     } : null,
     publicUrl: isPublicUrl(env.appUrl),
+    mediaMode: env.evMediaProvider,
   };
 }
+
+const NO_MAGIC_HOUR = "EV makes the daily image and Reel with Magic Hour, and it isn't connected yet. Add MAGICHOUR_API_KEY (magichour.ai → Developer → API key) to your environment, restart / redeploy, then say retry.";
 
 export function dailyConfig() {
   return {
@@ -244,24 +253,35 @@ async function stepRewrite(p: EvDaily, kind: RevisionKind, deps: DailyDeps, log:
 async function stepImage(p: EvDaily, deps: DailyDeps, log: DailyLogEntry[]): Promise<StepResult> {
   const prompt = p.imagePrompt ?? "";
   if (!prompt) throw new DailyError("There's no image brief to render.", true);
-  const direct = !!resolveImageProvider() || !deps.magicHour;
+  const onlyMagicHour = deps.mediaMode === "magichour";
+  if (onlyMagicHour && !deps.magicHour) throw new DailyError(NO_MAGIC_HOUR, true);
+  // Magic Hour whenever it's connected; the direct image model only as the "auto" backup
+  let direct = !deps.magicHour;
+  if (deps.magicHour) {
+    try {
+      const id = await deps.magicHour.createImage(prompt);
+      log.push(entry(deps.now(), "creative", "Magic Hour is rendering the post image."));
+      await save(p.id, { jobId: id, stage: "image_wait", imageProvider: "magichour" }, log);
+      return "advanced";
+    } catch (e) {
+      if (onlyMagicHour || !resolveImageProvider()) throw new DailyError(`Magic Hour couldn't start the image — ${(e as Error).message}`);
+      log.push(entry(deps.now(), "creative", `Magic Hour couldn't start (${(e as Error).message}) — using the backup image model.`, false));
+      direct = true;
+    }
+  }
   if (direct) {
     const img = await deps.image(prompt);
     const media = await getDb().evMedia.create({ data: { userId: p.userId, mimeType: img.mimeType, data: img.bytes, prompt: prompt.slice(0, 4000) }, select: { id: true } });
     log.push(entry(deps.now(), "creative", `Generated the post image (${img.provider}).`));
     await save(p.id, { imageMediaId: media.id, imageUrl: mediaUrl(media.id), imageProvider: img.provider, stage: "video", error: null }, log);
-    return "advanced";
   }
-  const id = await deps.magicHour!.createImage(prompt);
-  log.push(entry(deps.now(), "creative", "Magic Hour is rendering the post image."));
-  await save(p.id, { jobId: id, stage: "image_wait", imageProvider: "magichour" }, log);
   return "advanced";
 }
 
 async function stepImageWait(p: EvDaily, deps: DailyDeps, log: DailyLogEntry[], budgetMs: number): Promise<StepResult> {
   const r = await deps.magicHour!.wait("image", p.jobId!, Math.min(budgetMs, 60_000));
   if (!r.done) return "waiting";
-  if (!r.ok || !r.url) throw new DailyError(`Magic Hour couldn't render the image (${r.status}).`);
+  if (!r.ok || !r.url) throw new DailyError(`Magic Hour couldn't render the image (${r.error ?? r.status}).`);
   const stored = await storeRemoteMedia(p.userId, r.url, "image", p.imagePrompt ?? "EV daily image");
   if (!stored.stored) throw new DailyError("The Magic Hour image couldn't be downloaded and stored.");
   log.push(entry(deps.now(), "creative", "Magic Hour finished the post image."));
@@ -278,7 +298,8 @@ async function mediaBytes(id: string | null): Promise<{ bytes: Buffer; mimeType:
 
 function wantsMagicHour(p: EvDaily, deps: DailyDeps): boolean {
   const mode = dailyConfig().video;
-  if (!deps.magicHour || !deps.publicUrl || !p.imageUrl) return false;
+  // the image's bytes are uploaded to Magic Hour, so no public URL is needed
+  if (!deps.magicHour || !p.imageMediaId) return false;
   return mode === "magichour" || mode === "auto";
 }
 
@@ -302,7 +323,9 @@ async function stepVideo(p: EvDaily, deps: DailyDeps, log: DailyLogEntry[]): Pro
   }
   if (wantsMagicHour(p, deps)) {
     try {
-      const id = await deps.magicHour!.createVideo({ prompt: `${p.videoConcept ?? p.topic}. Smooth cinematic camera motion, premium commercial look, vertical 9:16. No text on screen.`, imageUrl: p.imageUrl! });
+      const start = await mediaBytes(p.imageMediaId);
+      if (!start) throw new Error("the post image file couldn't be loaded");
+      const id = await deps.magicHour!.createVideo({ prompt: `${p.videoConcept ?? p.topic}. Smooth cinematic camera motion, premium commercial look, vertical 9:16. No text on screen.`, image: start });
       log.push(entry(deps.now(), "video", "Magic Hour is animating the creative into a 9:16 clip."));
       await save(p.id, { jobId: id, stage: "video_wait", videoProvider: "magichour + EV Reel" }, log);
       return "advanced";
@@ -338,7 +361,7 @@ async function stepVideoWait(p: EvDaily, deps: DailyDeps, log: DailyLogEntry[], 
     log.push(entry(deps.now(), "video", `Magic Hour clip ready — cut it into a ${out.seconds}s branded Reel with the hook and CTA.`));
     await save(p.id, { videoMediaId: out.id, videoUrl: out.url, videoSeconds: out.seconds, jobId: null, stage: "qc", error: null }, log);
   } else {
-    const why = !r.done ? `still not finished after ${Math.round(waited / 60_000)} minutes` : r.ok ? "the clip couldn't be downloaded" : `render ${r.status}`;
+    const why = !r.done ? `still not finished after ${Math.round(waited / 60_000)} minutes` : r.ok ? "the clip couldn't be downloaded" : `render ${("error" in r && r.error) || r.status}`;
     const img = await mediaBytes(fresh.imageMediaId);
     if (!img) throw new DailyError("The post image file couldn't be loaded.", true);
     const out = await renderAndStore(fresh, deps, { kind: "image", bytes: img.bytes });
@@ -650,7 +673,7 @@ export async function dailyView(userId: string, deps: Pick<DailyDeps, "now" | "p
     resolveIgCreds(userId).catch(() => null),
   ]);
   const writer = evWriters().configs[0]?.provider ?? null;
-  const image = resolveImageProvider()?.provider ?? (magicHour.isConfigured() ? "magichour" : null);
+  const image = magicHour.isConfigured() ? "magichour" : env.evMediaProvider === "auto" ? resolveImageProvider()?.provider ?? null : null;
   return {
     enabled: cfg.enabled, timezone: cfg.tz, today, start: cfg.start, readyBy: cfg.readyBy,
     startLabel: clockLabel(cfg.start), readyByLabel: clockLabel(cfg.readyBy), autoPublish: cfg.autoPublish,
@@ -659,7 +682,7 @@ export async function dailyView(userId: string, deps: Pick<DailyDeps, "now" | "p
     history: hist.map((h) => ({ ...h, createdAt: h.createdAt.toISOString() })),
     capabilities: {
       writer, image,
-      video: magicHour.isConfigured() && deps.publicUrl && cfg.video !== "motion" ? "Magic Hour + EV Reel" : "EV Reel (motion render)",
+      video: magicHour.isConfigured() && cfg.video !== "motion" ? "Magic Hour + EV Reel" : "EV Reel (motion render)",
       instagram: !!ig, publicUrl: deps.publicUrl,
     },
   };

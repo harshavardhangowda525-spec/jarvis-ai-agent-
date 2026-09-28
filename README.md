@@ -494,12 +494,21 @@ Every morning EV prepares **today's Instagram package** for Infinity Web & Apps
 (a feed post image and a 9:16 Reel) and has it waiting for your approval by
 **5:30 AM** (Asia/Kolkata). You don't have to start it.
 
+**Images and videos come from [Magic Hour](https://magichour.ai)** — the daily post
+image, the Reel's animated clip, and anything you ask EV for in chat ("make an
+image for…", "turn it into a reel"). Set `MAGICHOUR_API_KEY` (magichour.ai →
+Developer → API key) in `.env.local` and on Vercel. Without it EV tells you it
+needs connecting rather than using another generator; `EV_MEDIA_PROVIDER=auto`
+brings back Gemini/OpenAI as a backup. Optional: `MAGICHOUR_IMAGE_MODEL`,
+`MAGICHOUR_VIDEO_MODEL` and their `_RESOLUTION` settings (blank = Magic Hour's
+recommended model). Each render uses Magic Hour credits.
+
 | Time | Step |
 | --- | --- |
 | 04:00 | **Research.** Reads every past package and EV's content memory, then picks a niche, a service (websites, apps, automation, AI, online ordering/booking, software, redesigns, AI marketing) and a format that haven't been used recently. |
 | 04:15 | **Content.** EV's writing brain (`EV_PROVIDER`) writes the topic, hook, caption, CTA, 10–15 hashtags, the creative concept and the Reel story. A draft too close to anything recent is rewritten. |
-| 04:45 | **Creative.** A real image from Gemini/OpenAI (or Magic Hour), with no text baked in. |
-| 05:00 | **Video.** A real MP4 Reel (1080×1920, about 12 s). The hook lands in the first second, two on-screen beats follow, and a brand end card shows the CTA, 8317480583 and @infinitywebapps. If Magic Hour is connected and `APP_URL` is public, the creative is animated there first and then cut into the Reel. Otherwise EV renders the Reel itself from the image (ffmpeg with Inter, bundled). |
+| 04:45 | **Creative.** A real image from Magic Hour, with no text baked in. |
+| 05:00 | **Video.** A real MP4 Reel (1080×1920, about 12 s). The hook lands in the first second, two on-screen beats follow, and a brand end card shows the CTA, 8317480583 and @infinitywebapps. The creative is uploaded to Magic Hour and animated there (image-to-video), then cut into the Reel — this works on Vercel and with `npm run local`. If the Magic Hour clip fails, EV renders the Reel itself from the image (ffmpeg with Inter, bundled) and notes why in the log. |
 | 05:20 | **Quality check.** Media exists; the caption exists and matches the creative; the video is a playable 9:16 MP4 of 3–90 s; it doesn't repeat recent topics, hooks or captions; the brand, handle and phone are exact; the positioning is right; there's no placeholder text; there are no unbacked claims (no stats, guarantees, rankings, or prices other than ₹4,999 / ₹55,000); the format is Instagram-friendly; and every publishing detail is present. Text problems are fixed automatically, up to twice. |
 | 05:30 | **Ready for approval.** |
 

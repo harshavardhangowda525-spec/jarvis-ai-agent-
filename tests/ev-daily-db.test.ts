@@ -195,6 +195,52 @@ d("EV daily content pipeline (integration)", () => {
     expect(done.status).toBe("ready");
   }, 60_000);
 
+  it("with Magic Hour (the default for EV) the image and the Reel's clip come from Magic Hour — from EV's own image bytes", async () => {
+    if (!reelBytes) return;
+    const http = await import("node:http");
+    const server = http.createServer((req, res) => {
+      if (req.url === "/img.png") { res.writeHead(200, { "Content-Type": "image/png" }); res.end(imageBytes); return; }
+      if (req.url === "/clip.mp4") { res.writeHead(200, { "Content-Type": "video/mp4" }); res.end(reelBytes); return; }
+      res.writeHead(404); res.end();
+    }).listen(0);
+    const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+    const mh = { images: [] as string[], videos: [] as { prompt: string; bytes: number }[] };
+    const mhDeps = (): DailyDeps => ({
+      ...deps(),
+      mediaMode: "magichour",
+      image: async () => { throw new Error("the backup image model must not be used"); },
+      magicHour: {
+        createImage: async (prompt) => { mh.images.push(prompt); return "mh_img"; },
+        createVideo: async (o) => { mh.videos.push({ prompt: o.prompt, bytes: o.image.bytes.length }); return "mh_vid"; },
+        wait: async (kind) => ({ done: true, ok: true, status: "complete", url: `${base}/${kind === "image" ? "img.png" : "clip.mp4"}` }),
+      },
+    });
+    try {
+      clock = new Date(`2030-06-10T04:05:00+05:30`);
+      await P.runSchedule({ userIds: [userId], deps: mhDeps(), budgetMs: 60_000 });
+      let p = (await P.currentPackage(userId, "2030-06-10"))!;
+      for (let i = 0; i < 6 && p.status !== "ready" && p.status !== "failed"; i++) p = await P.advance(p.id, { deps: mhDeps(), budgetMs: 60_000 });
+      expect(p.status).toBe("ready");
+      expect(p.imageProvider).toBe("magichour");
+      expect(mh.images).toHaveLength(1);
+      expect(mh.videos).toEqual([{ prompt: expect.stringContaining("9:16"), bytes: imageBytes.length }]); // the stored image, uploaded
+      expect(p.videoProvider).toMatch(/magichour/i);
+      expect((p.log as { text: string }[]).some((e) => /Magic Hour clip ready/.test(e.text))).toBe(true);
+    } finally { server.close(); }
+  }, 60_000);
+
+  it("with Magic Hour not connected, EV says so instead of using another image model", async () => {
+    let backupUsed = false;
+    const off = (): DailyDeps => ({ ...deps(), mediaMode: "magichour", magicHour: null, image: async () => { backupUsed = true; return { bytes: imageBytes, mimeType: "image/png", provider: "x" }; } });
+    clock = new Date(`2030-06-11T04:05:00+05:30`);
+    await P.runSchedule({ userIds: [userId], deps: off(), budgetMs: 30_000 });
+    const p = (await P.currentPackage(userId, "2030-06-11"))!;
+    expect(p.status).toBe("failed");
+    expect(p.stage).toBe("image");
+    expect(p.error).toMatch(/Magic Hour.*MAGICHOUR_API_KEY/);
+    expect(backupUsed).toBe(false);
+  }, 60_000);
+
   it("before the start time nothing is created", async () => {
     const early = new Date(`2030-05-05T03:10:00+05:30`);
     clock = early;

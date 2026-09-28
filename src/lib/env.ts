@@ -152,10 +152,19 @@ export const env = {
 
   // Magic Hour AI — dedicated image + VIDEO generation for EV. Bearer API key.
   // Server-side only. Async jobs: create → poll project → download URL.
-  magicHourApiKey: read("MAGICHOUR_API_KEY"),
+  magicHourApiKey: read("MAGICHOUR_API_KEY") || read("MAGIC_HOUR_API_KEY"),
   magicHourBaseUrl: read("MAGICHOUR_BASE_URL") || "https://api.magichour.ai",
-  // Optional model overrides (Magic Hour defaults are used when blank).
+  // Optional overrides (Magic Hour picks its recommended model when blank):
+  // image model e.g. "flux-schnell" / "nano-banana"; resolution "640px"|"1k"|"2k"|"4k";
+  // video model e.g. "kling-3.0" / "ltx-2.5"; video resolution "480p"|"720p"|"1080p".
+  magicHourImageModel: read("MAGICHOUR_IMAGE_MODEL"),
+  magicHourImageResolution: read("MAGICHOUR_IMAGE_RESOLUTION"),
   magicHourVideoModel: read("MAGICHOUR_VIDEO_MODEL"),
+  magicHourVideoResolution: read("MAGICHOUR_VIDEO_RESOLUTION"),
+  // Who makes EV's images and videos. "magichour" (default) = Magic Hour only —
+  // if it isn't connected EV says so instead of using another generator.
+  // "auto" = Magic Hour first, Gemini / OpenAI images as the backup.
+  evMediaProvider: (read("EV_MEDIA_PROVIDER").toLowerCase() === "auto" ? "auto" : "magichour") as "magichour" | "auto",
 
   // EV daily content: every morning EV prepares a post + Reel for your approval.
   // Times are local to EV_DAILY_TZ. Auto-publish stays OFF unless you set it.
@@ -165,8 +174,8 @@ export const env = {
   evDailyReadyBy: read("EV_DAILY_READY_BY") || "05:30",
   evDailyPostTime: read("EV_DAILY_POST_TIME") || "19:00",
   evDailyAutoPublish: /^(1|on|true|yes)$/i.test(read("EV_DAILY_AUTOPUBLISH")),
-  // auto = Magic Hour clip (when connected + public APP_URL) cut into a branded
-  // Reel, else EV's own motion render of the day's image. "motion" / "magichour" force one.
+  // auto = Magic Hour clip (when connected) cut into a branded Reel, else EV's
+  // own motion render of the day's image. "motion" / "magichour" force one.
   evDailyVideo: (read("EV_DAILY_VIDEO").toLowerCase() || "auto") as "auto" | "motion" | "magichour",
 
   // DARWIN lead generation. Google Places (real, authorized) is the primary lead
@@ -458,6 +467,7 @@ export const capabilities = {
   },
   /** EV can generate images (Magic Hour, or a Gemini/OpenAI key is present). */
   get evImage() {
+    if (env.evMediaProvider === "magichour") return env.magicHourApiKey.length > 0;
     return env.magicHourApiKey.length > 0 || env.geminiApiKey.length > 0 || env.openaiApiKey.length > 0;
   },
   /** Magic Hour is configured — enables high-quality image + video generation. */

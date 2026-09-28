@@ -10,8 +10,9 @@ import { storeRemoteMedia } from "@/lib/ev/media";
 
 /**
  * EV's image generator. Produces a REAL image and returns a public URL usable
- * for Instagram publishing. Prefers Magic Hour when configured (higher quality),
- * otherwise uses the Gemini/OpenAI image model. Never fabricates an image.
+ * for Instagram publishing. EV makes images with Magic Hour (EV_MEDIA_PROVIDER,
+ * default "magichour"); with "auto", Gemini/OpenAI are the backup when Magic
+ * Hour isn't connected. Never fabricates an image.
  *
  * Magic Hour is async, so this waits briefly and, if it isn't done in time,
  * returns a projectId — call again with action "check" to fetch the result.
@@ -21,7 +22,7 @@ const schema = z.object({
   action: z.enum(["generate", "check"]).optional().describe("generate (default) or check a pending Magic Hour job."),
   prompt: z.string().max(2000).optional().describe("Detailed visual description (subject, style, mood, colors, text overlay)."),
   aspect: z.enum(["square", "portrait", "landscape"]).optional().describe("Composition. square (default) and portrait suit Instagram feed."),
-  provider: z.enum(["auto", "magichour", "gemini", "openai"]).optional().describe("Image engine. auto prefers Magic Hour when connected."),
+  provider: z.enum(["auto", "magichour", "gemini", "openai"]).optional().describe("Image engine. EV uses Magic Hour; only change this if the user asks for another engine."),
   niche: z.string().max(60).optional(),
   contentId: z.string().optional().describe("EvContent id to attach this image URL to."),
   projectId: z.string().optional().describe("Magic Hour project id (for action 'check')."),
@@ -41,16 +42,21 @@ async function attach(userId: string, contentId: string | undefined, url: string
 export const evImageTool: ToolDefinition<Input> = {
   name: "ev_image",
   description:
-    "Generate a REAL marketing image for Infinity Web & Apps and return a public URL for review/publishing. Prefers Magic Hour " +
-    "when connected, else Gemini/OpenAI. Magic Hour is async: if it isn't ready quickly you get a projectId — call again with " +
+    "Generate a REAL marketing image for Infinity Web & Apps with Magic Hour and return a public URL for review/publishing. " +
+    "Magic Hour is async: if it isn't ready quickly you get a projectId — call again with " +
     "action 'check' and that projectId to fetch it. Never fabricates an image.",
   schema,
   agentScope: "ev",
   activityLabel: "Generating marketing image",
   async execute(input, ctx) {
     const aspect = (input.aspect ?? "square") as Aspect;
-    const useMagicHour =
-      input.provider === "magichour" || (input.provider !== "gemini" && input.provider !== "openai" && magicHourReady());
+    // EV makes images with Magic Hour. Only in "auto" mode may another engine stand in.
+    const onlyMagicHour = env.evMediaProvider === "magichour";
+    const useMagicHour = onlyMagicHour || input.provider === "magichour" ||
+      (input.provider !== "gemini" && input.provider !== "openai" && magicHourReady());
+    if (useMagicHour && !magicHourReady()) {
+      throw new ToolError("EV makes images with Magic Hour, and it isn't connected yet. Add MAGICHOUR_API_KEY (magichour.ai → Developer → API key) to your environment and redeploy / restart — then ask again.");
+    }
 
     // ---- Magic Hour: check a pending job ----
     if (input.action === "check") {
@@ -59,7 +65,7 @@ export const evImageTool: ToolDefinition<Input> = {
       try {
         const r = await waitProject("image", input.projectId, 30_000);
         if (!r.done) return { data: { status: r.status, projectId: r.projectId, ready: false }, summary: `Still rendering (${r.status}). Ask me to check again shortly.` };
-        if (!r.ok || !r.url) throw new ToolError(`Magic Hour image ${r.status}.`);
+        if (!r.ok || !r.url) throw new ToolError(`Magic Hour couldn't make the image (${r.error ?? r.status}).`);
         const stored = await storeRemoteMedia(ctx.userId, r.url, "image", input.prompt ?? "EV image");
         await attach(ctx.userId, input.contentId, stored.url, stored.id);
         return { data: { url: stored.url, mediaId: stored.id, provider: "magichour", openUrl: stored.url, label: "View image" }, summary: "Image ready." };
@@ -83,7 +89,7 @@ export const evImageTool: ToolDefinition<Input> = {
             summary: `Image is rendering on Magic Hour (project ${projectId}). Ask me to check it in a moment.`,
           };
         }
-        if (!r.ok || !r.url) throw new ToolError(`Magic Hour image ${r.status}.`);
+        if (!r.ok || !r.url) throw new ToolError(`Magic Hour couldn't make the image (${r.error ?? r.status}).`);
         const stored = await storeRemoteMedia(ctx.userId, r.url, "image", input.prompt);
         await attach(ctx.userId, input.contentId, stored.url, stored.id);
         return {
