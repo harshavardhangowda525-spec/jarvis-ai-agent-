@@ -5,6 +5,7 @@ import { ToolError } from "../types";
 import { getDb } from "@/lib/db";
 import { isConfigured as magicHourReady, createVideo, waitProject, MagicHourError } from "@/lib/ev/magichour";
 import { storeRemoteMedia } from "@/lib/ev/media";
+import { resolveStartImage } from "@/lib/ev/start-image";
 
 /**
  * EV's video generator (Magic Hour). Creates a REAL marketing video — text-to-
@@ -16,8 +17,8 @@ import { storeRemoteMedia } from "@/lib/ev/media";
 const schema = z.object({
   action: z.enum(["generate", "check"]).optional().describe("generate (default) starts a video; check fetches a pending one."),
   prompt: z.string().max(2000).optional().describe("What the video should show / its motion and vibe."),
-  imageUrl: z.string().url().optional().describe("Optional starting image URL → image-to-video (else text-to-video)."),
-  contentImageId: z.string().optional().describe("EvMedia id of an EV-generated image to animate (used to build the image URL)."),
+  imageUrl: z.string().max(2000).optional().describe("Optional starting image (an EV image link or a public image URL) → image-to-video."),
+  contentImageId: z.string().max(80).optional().describe("mediaId of an EV-generated image to animate (preferred — ev_image returns it)."),
   seconds: z.number().int().min(3).max(20).optional().describe("Video length in seconds (default 5; Magic Hour's default model allows up to 15)."),
   aspect: z.enum(["square", "portrait", "landscape"]).optional(),
   contentId: z.string().optional().describe("EvContent id to attach the finished video URL to."),
@@ -68,26 +69,19 @@ export const evVideoTool: ToolDefinition<Input> = {
 
     if (!input.prompt || input.prompt.trim().length < 3) throw new ToolError("Provide a 'prompt' describing the video.");
 
-    // The start frame: an EV image (its bytes are uploaded straight to Magic
-    // Hour — no public URL needed, so it works on your PC too), or a URL.
-    let imageUrl = input.imageUrl;
+    // The start frame, however it was referred to — its bytes are uploaded to
+    // Magic Hour (never a link Magic Hour might not be able to read).
     let image: { bytes: Buffer; mimeType: string } | undefined;
-    const ownId = input.contentImageId ?? imageUrl?.match(/\/api\/ev\/media\/([\w-]+)/)?.[1];
-    if (ownId) {
-      const m = await getDb().evMedia.findFirst({ where: { id: ownId, userId: ctx.userId }, select: { data: true, mimeType: true } });
-      if (m && m.mimeType.startsWith("image/")) {
-        image = { bytes: Buffer.isBuffer(m.data) ? m.data : Buffer.from(m.data as Uint8Array), mimeType: m.mimeType };
-        imageUrl = undefined;
-      }
-    }
-    // Magic Hour fetches a URL start image itself — a private one can't work.
-    if (imageUrl && (!/^https:\/\//i.test(imageUrl) || /localhost|127\.0\.0\.1/i.test(imageUrl))) {
-      throw new ToolError("That start image isn't on a public address, so Magic Hour can't fetch it. Use an EV image (contentImageId) instead.");
+    if (input.contentImageId || input.imageUrl) {
+      const start = await resolveStartImage(ctx.userId, { contentImageId: input.contentImageId, imageUrl: input.imageUrl });
+      if (!start) throw new ToolError("I couldn't find that image to animate. Generate one with ev_image first (then pass its mediaId as contentImageId), or ask for a text-to-video instead.");
+      if (start.source === "latest") ctx.activity("Using the image EV just made as the first frame…");
+      image = { bytes: start.bytes, mimeType: start.mimeType };
     }
 
     try {
       ctx.activity("Starting video render on Magic Hour…");
-      const projectId = await createVideo({ prompt: input.prompt, imageUrl, image, seconds: input.seconds, aspect: input.aspect });
+      const projectId = await createVideo({ prompt: input.prompt, image, seconds: input.seconds, aspect: input.aspect });
       // Give it a short window; videos usually need longer → return projectId to check.
       const r = await waitProject("video", projectId, 40_000);
       if (!r.done) {

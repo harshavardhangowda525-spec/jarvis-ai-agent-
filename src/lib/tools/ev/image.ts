@@ -68,7 +68,7 @@ export const evImageTool: ToolDefinition<Input> = {
         if (!r.ok || !r.url) throw new ToolError(`Magic Hour couldn't make the image (${r.error ?? r.status}).`);
         const stored = await storeRemoteMedia(ctx.userId, r.url, "image", input.prompt ?? "EV image");
         await attach(ctx.userId, input.contentId, stored.url, stored.id);
-        return { data: { url: stored.url, mediaId: stored.id, provider: "magichour", openUrl: stored.url, label: "View image" }, summary: "Image ready." };
+        return { data: { url: stored.url, mediaId: stored.id, provider: "magichour", openUrl: stored.url, label: "View image", toAnimate: { tool: "ev_video", contentImageId: stored.id } }, summary: "Image ready." };
       } catch (err) {
         if (err instanceof MagicHourError) throw new ToolError(err.message);
         throw err;
@@ -93,7 +93,7 @@ export const evImageTool: ToolDefinition<Input> = {
         const stored = await storeRemoteMedia(ctx.userId, r.url, "image", input.prompt);
         await attach(ctx.userId, input.contentId, stored.url, stored.id);
         return {
-          data: { url: stored.url, mediaId: stored.id, provider: "magichour", openUrl: stored.url, label: "View image" },
+          data: { url: stored.url, mediaId: stored.id, provider: "magichour", openUrl: stored.url, label: "View image", toAnimate: { tool: "ev_video", contentImageId: stored.id } },
           summary: `Generated a ${aspect} image (Magic Hour). Ready to review${input.contentId ? " and attached to the post" : ""}.`,
         };
       } catch (err) {

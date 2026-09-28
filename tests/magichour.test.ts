@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.hoisted(() => { process.env.MAGICHOUR_API_KEY = "mhk_test"; delete process.env.MAGICHOUR_VIDEO_MODEL; delete process.env.MAGICHOUR_IMAGE_MODEL; });
+import sharp from "sharp";
 import { createImage, createVideo, waitProject, videoSeconds, aspectRatio, MagicHourError } from "@/lib/ev/magichour";
 
 type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
@@ -38,17 +39,34 @@ describe("Magic Hour client (current API shapes)", () => {
     respond = (c) => c.url.endsWith("/v1/files/upload-urls")
       ? { json: { items: [{ upload_url: "https://upload.magichour.test/put/abc", file_path: "api-assets/u1/abc.png", expires_at: "2026-10-01T00:00:00Z" }] } }
       : c.url.endsWith("/v1/image-to-video") ? { json: { id: "vid_1" } } : { json: {} };
-    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    // a WebP labelled as PNG — what a generator sometimes hands back
+    const bytes = await sharp({ create: { width: 900, height: 1600, channels: 3, background: "#2244aa" } }).webp().toBuffer();
     expect(await createVideo({ prompt: "slow push-in", image: { bytes, mimeType: "image/png" }, seconds: 8, aspect: "portrait" })).toBe("vid_1");
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
       "POST https://api.magichour.ai/v1/files/upload-urls",
       "PUT https://upload.magichour.test/put/abc",
       "POST https://api.magichour.ai/v1/image-to-video",
     ]);
-    expect(calls[0].body).toEqual({ items: [{ type: "image", extension: "png" }] });
-    expect(Buffer.from(calls[1].body as Uint8Array)).toEqual(bytes);
+    // always a real JPEG, declared as one — the type Magic Hour is told matches the bytes
+    expect(calls[0].body).toEqual({ items: [{ type: "image", extension: "jpg" }] });
+    const put = Buffer.from(calls[1].body as Uint8Array);
+    expect(put.subarray(0, 2).toString("hex")).toBe("ffd8");
+    expect((await sharp(put).metadata())).toMatchObject({ format: "jpeg", width: 900, height: 1600 });
     expect(calls[1].headers.Authorization).toBeUndefined(); // the signed upload URL needs no API key
     expect(calls[2].body).toEqual({ name: "EV video", end_seconds: 8, assets: { image_file_path: "api-assets/u1/abc.png" }, style: { prompt: "slow push-in" } });
+  });
+
+  it("an unreadable start image is reported as that, before anything is sent", async () => {
+    await expect(createVideo({ prompt: "x", image: { bytes: Buffer.from("not an image"), mimeType: "image/png" } })).rejects.toThrow(/isn't a readable picture/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("if Magic Hour still rejects the start image, the message says which step", async () => {
+    respond = (c) => c.url.endsWith("/v1/files/upload-urls")
+      ? { json: { items: [{ upload_url: "https://upload.magichour.test/put/z", file_path: "api-assets/u1/z.jpg" }] } }
+      : c.url.endsWith("/v1/image-to-video") ? { status: 422, json: { message: "Invalid URL" } } : { json: {} };
+    const bytes = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#fff" } }).png().toBuffer();
+    await expect(createVideo({ prompt: "x", image: { bytes } })).rejects.toThrow("Magic Hour: Invalid URL (image-to-video, uploaded start image api-assets/u1/z.jpg)");
   });
 
   it("text-to-video uses aspect_ratio and a length the default model accepts", async () => {

@@ -1,4 +1,5 @@
 import "server-only";
+import sharp from "sharp";
 import { env } from "@/lib/env";
 
 /**
@@ -10,9 +11,10 @@ import { env } from "@/lib/env";
  *
  * Request shapes follow Magic Hour's current API (the official SDK's types):
  * `aspect_ratio` ("1:1" | "9:16" | "16:9"), `end_seconds`, `style.prompt`, and
- * for image-to-video `assets.image_file_path` — either a public URL or a file
- * EV uploads first through /v1/files/upload-urls (so it also works when the app
- * runs on your own PC with no public address).
+ * for image-to-video `assets.image_file_path`. EV never hands Magic Hour a link
+ * for that (it rejects addresses it can't read as an image file — "invalid
+ * url"): the start image is normalised to a JPEG and uploaded through
+ * /v1/files/upload-urls, so it also works with no public address at all.
  */
 
 export class MagicHourError extends Error {
@@ -133,18 +135,29 @@ export async function createImage(prompt: string, aspect: Aspect = "square"): Pr
   return String(id);
 }
 
-const EXT: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg", "image/webp": "webp", "image/heic": "heic" };
+/**
+ * Any image EV has (PNG/WebP/AVIF/JPEG… whatever the generator returned, even
+ * mislabelled) → a plain upright JPEG no bigger than 2048 px, so the type we
+ * declare to Magic Hour always matches the bytes.
+ */
+export async function asJpeg(bytes: Buffer): Promise<Buffer> {
+  try {
+    return await sharp(bytes).rotate().resize(2048, 2048, { fit: "inside", withoutEnlargement: true }).flatten({ background: "#ffffff" }).jpeg({ quality: 90 }).toBuffer();
+  } catch {
+    throw new MagicHourError("The start image isn't a readable picture, so it can't be animated.");
+  }
+}
 
 /**
- * Upload an image's bytes to Magic Hour's storage and return its file path —
- * usable as `image_file_path` without any public URL on our side.
+ * Upload an image to Magic Hour's storage and return its file path — usable as
+ * `image_file_path` without any public URL on our side.
  */
-export async function uploadImage(bytes: Buffer, mimeType: string): Promise<string> {
-  const extension = EXT[mimeType.toLowerCase()] ?? "png";
-  const json = await post("/v1/files/upload-urls", { items: [{ type: "image", extension }] });
+export async function uploadImage(bytes: Buffer): Promise<string> {
+  const jpeg = await asJpeg(bytes);
+  const json = await post("/v1/files/upload-urls", { items: [{ type: "image", extension: "jpg" }] });
   const item = Array.isArray(json?.items) ? json.items[0] : null;
   if (!item?.upload_url || !item?.file_path) throw new MagicHourError("Magic Hour didn't return an upload address for the image.");
-  const res = await fetch(item.upload_url, { method: "PUT", body: new Uint8Array(bytes), signal: AbortSignal.timeout(60_000) });
+  const res = await fetch(item.upload_url, { method: "PUT", body: new Uint8Array(jpeg), signal: AbortSignal.timeout(60_000) });
   if (!res.ok) throw new MagicHourError(`Uploading the image to Magic Hour failed (HTTP ${res.status}).`, res.status);
   return String(item.file_path);
 }
@@ -156,13 +169,12 @@ export function videoSeconds(seconds: number | undefined): number {
 }
 
 /**
- * Start a video generation. With a start image (a public URL, or bytes that are
- * uploaded first) → image-to-video; otherwise text-to-video. Returns the project id.
+ * Start a video generation. With a start image (its bytes — uploaded first) →
+ * image-to-video; otherwise text-to-video. Returns the project id.
  */
 export async function createVideo(opts: {
   prompt: string;
-  imageUrl?: string;
-  image?: { bytes: Buffer; mimeType: string };
+  image?: { bytes: Buffer; mimeType?: string };
   seconds?: number;
   aspect?: Aspect;
 }): Promise<string> {
@@ -174,13 +186,20 @@ export async function createVideo(opts: {
     ...(env.magicHourVideoResolution ? { resolution: env.magicHourVideoResolution } : {}),
   };
   let json: any;
-  const start = opts.image ? await uploadImage(opts.image.bytes, opts.image.mimeType) : opts.imageUrl;
-  if (start) {
-    json = await post("/v1/image-to-video", {
-      ...common,
-      assets: { image_file_path: start },
-      style: { prompt: opts.prompt.slice(0, 4000) },
-    });
+  if (opts.image) {
+    const start = await uploadImage(opts.image.bytes);
+    try {
+      json = await post("/v1/image-to-video", {
+        ...common,
+        assets: { image_file_path: start },
+        style: { prompt: opts.prompt.slice(0, 4000) },
+      });
+    } catch (e) {
+      if (e instanceof MagicHourError && e.status && e.status >= 400 && e.status < 500 && e.status !== 402 && e.status !== 401 && e.status !== 403) {
+        throw new MagicHourError(`${e.message} (image-to-video, uploaded start image ${start})`, e.status);
+      }
+      throw e;
+    }
   } else {
     json = await post("/v1/text-to-video", {
       ...common,
