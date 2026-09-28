@@ -6,6 +6,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadEnv, readEnvFile } from "./loadenv.mjs";
+import { retireOldUltronProvider } from "./stale-provider.mjs";
 
 const EDITH_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const ENV_FILE = path.join(EDITH_DIR, ".env");
@@ -28,6 +29,11 @@ export const ENV_FILE = path.join(EDITH_DIR, ".env");
     seen.add(k); keys.push({ source, key: k });
   }
   globalThis.__ULTRON_GROQ_KEYS__ = keys;
+}
+
+// ULTRON runs on this PC's Ollama — turn off a leftover old-default provider line first.
+for (const line of retireOldUltronProvider(ENV_FILE)) {
+  console.log(`[ULTRON] edith/.env had ${line} (the old default) — turned that line off; ULTRON runs on this PC's Ollama.`);
 }
 
 export const envLoaded = loadEnv(ENV_FILE);

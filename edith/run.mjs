@@ -9,7 +9,9 @@
 import "./src/env-init.mjs"; // must stay first — loads edith/.env before other modules read it
 import { Workspace } from "./src/workspace.mjs";
 import { startServer } from "./src/server.mjs";
-import { askJson, groqFirst, groqKeySource, hasProvider, missingProviderMessage, providerName, providerSummary, warmOllama } from "./src/provider.mjs";
+import { askJson, groqFirst, groqKeySource, hasProvider, missingProviderMessage, onlyProvider, providerList, providerName, providerSummary, warmOllama } from "./src/provider.mjs";
+import { ENV_FILE } from "./src/env-init.mjs";
+import { readEnvFile } from "./src/loadenv.mjs";
 import { log } from "./src/log.mjs";
 import { lowerOllamaPriority } from "./src/os-priority.mjs";
 import { closeBrowser } from "./src/browser.mjs";
@@ -22,6 +24,12 @@ if (!hasProvider()) {
   log.warn("ULTRON will pair and run REAL tools, but its reasoning/coding loop needs a provider.");
 } else {
   log.info(`Brain ready: ${providerName()}`);
+  // ULTRON's default is this PC's Ollama — say where a different choice comes from
+  if (!providerList().includes("ollama") && !providerList().includes("auto")) {
+    const file = readEnvFile(ENV_FILE);
+    const where = file.ULTRON_AI_PROVIDER ? "ULTRON_AI_PROVIDER in edith/.env" : file.EDITH_AI_PROVIDER ? "EDITH_AI_PROVIDER in edith/.env" : "ULTRON_AI_PROVIDER in your environment";
+    log.warn(`Not using Ollama because ${where} says "${onlyProvider()}". Delete that setting to run ULTRON on this PC's Ollama.`);
+  }
   // Check the Groq key once now (a tiny request), so a bad key shows up here —
   // with the file it's in — instead of in the middle of your first task.
   if (groqFirst() && !process.env.ULTRON_SKIP_KEY_CHECK) {
