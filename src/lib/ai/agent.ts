@@ -89,7 +89,7 @@ export async function* runAgent(
   const fact = explicitMemory(input.message);
   let savedNow = false;
   if (fact) {
-    const res = await saveMemory(input.userId, fact, { source: "user" }).catch(() => null);
+    const res = await saveMemory(input.userId, fact, { source: "user", replace: true }).catch(() => null);
     savedNow = !!res?.saved;
     if (res?.saved) yield { type: "tool", name: "memory", status: "ok", summary: `Saved to memory: ${fact}` };
     memoryNote = res?.saved || (res && res.reason === "duplicate")

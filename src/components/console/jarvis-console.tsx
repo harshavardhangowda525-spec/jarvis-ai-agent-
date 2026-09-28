@@ -13,6 +13,7 @@ import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
 import { instantAnswer } from "@/lib/instant";
 import { inIndia, parseOpenSite, resolveSite } from "@/lib/open-site";
 import { openLocalApp, parseOpenApp } from "@/lib/local-apps";
+import { parseMemoryCommand } from "@/lib/memory/intent";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import type { AgentTiming } from "@/hooks/useAgent";
 import { useAgent } from "@/hooks/useAgent";
@@ -405,6 +406,28 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         agent.appendLocalExchange(t, answer);
         if (voiceStarted && !voice.muted && voice.enabled) voice.speak(answer);
       };
+
+      // ===== memory: "remember that …", "forget …", "what do you remember?" =====
+      // Saved straight to the database (shared by every agent and brain) — no AI
+      // needed, so it's kept even when the PC brain is off.
+      if (parseMemoryCommand(t)) {
+        fetch("/api/memories/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: t }) })
+          .then(async (r) => {
+            const j = await r.json().catch(() => ({}));
+            const d = j?.data;
+            if (!r.ok || !d) { reply(j?.error || "I couldn't reach my memory just now — say it again in a moment."); return; }
+            if (!d.handled) { agent.send(t, evActiveRef.current ? { agent: "ev" } : undefined); return; }
+            if (d.kind === "list" && d.memories?.length) {
+              agent.appendLocalExchange(t, `${d.message}\n\n${(d.memories as string[]).map((m) => `• ${m}`).join("\n")}`);
+              if (voiceStarted && !voice.muted && voice.enabled) voice.speak(d.message);
+              return;
+            }
+            reply(d.message);
+            if (d.kind === "remember" && d.saved) motion.current?.taskComplete();
+          })
+          .catch(() => reply("I couldn't reach my memory just now — say it again in a moment."));
+        return;
+      }
 
       // ===== gesture mode (camera opens only while it's on) =====
       const gm = gestureModeCommand(t);

@@ -20,6 +20,7 @@ import { DarwinMap, type DarwinMapHandle, type MapNodeInput } from "./darwin/dar
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import { DailyTarget, useDarwinDaily } from "./darwin/daily-target";
 import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";
+import { parseMemoryCommand } from "@/lib/memory/intent";
 
 /**
  * DARWIN — a living geographic intelligence map. Every node is a REAL business
@@ -265,6 +266,18 @@ export function DarwinConsole() {
       const s = t.trim();
       if (!s) return;
       if (DEACTIVATE_RE.test(s)) { deactivateRef.current(); return; }
+      // shared memory with JARVIS — saved directly, no AI needed
+      if (parseMemoryCommand(s)) {
+        fetch("/api/memories/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: s }) })
+          .then((r) => r.json()).then((j) => {
+            const d = j?.data;
+            if (!d?.handled) { agent.send(s, { agent: "darwin" }); return; }
+            const line = d.kind === "list" && d.memories?.length ? `${d.message}\n\n${(d.memories as string[]).map((m) => `• ${m}`).join("\n")}` : d.message;
+            agent.appendLocalExchange(s, line); speak(d.message);
+          })
+          .catch(() => { const m = "I couldn't reach my memory just now — say it again in a moment."; agent.appendLocalExchange(s, m); speak(m); });
+        return;
+      }
       if (darwinDailyRequest(s) && dailyRef.current.view) {
         const v = dailyRef.current.view;
         const line = darwinProgressLine({ run: v.run, startLabel: v.startLabel, due: v.due }, v.spoken);

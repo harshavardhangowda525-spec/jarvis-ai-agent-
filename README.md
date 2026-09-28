@@ -36,6 +36,7 @@ registering a **tool** — the agent loop never changes.
 - [Previous-day briefing](#previous-day-briefing)
 - [Shut down your laptop by voice](#shut-down-your-laptop-by-voice)
 - [Open apps on your PC](#open-apps-on-your-pc)
+- [Memory — "remember that…"](#memory--remember-that)
 - [NIOS board notifications](#nios-board-notifications)
 - [EV daily content](#ev-daily-content)
 - [Gesture control](#gesture-control)
@@ -377,6 +378,18 @@ the same paired, origin-locked connection.
 - **ULTRON not running:** JARVIS tells you to start `npm run local`. Websites still open as before.
 - **"start …" / "run …"** only open an app when one by that name is installed, so "run the tests" still goes to JARVIS's brain. The brain can also open apps itself (the `open_app` tool) for requests like "I want to code — open VS Code and Spotify".
 - **Safety:** ULTRON only launches apps from the computer's own installed list, with a fixed command and no shell, no paths and no arguments. It accepts requests only from your JARVIS app with the pairing token. Turn it off with `ULTRON_APPS=off` in `edith/.env`.
+
+## Memory — "remember that…"
+
+Tell JARVIS to remember something and it's kept for good, in your database. It
+survives refreshes, restarts and redeploys, and it's shared by JARVIS, EV and
+DARWIN on every brain (cloud or your Ollama PC).
+
+- **Saving:** "Remember that my favourite colour is blue", "can you remember I'm allergic to peanuts?", "don't forget I have exams in October", "keep in mind…", "note that…", "for future reference…", "from now on, keep answers short". These are saved directly, without waiting for the AI, so they work even when the PC brain is off. JARVIS confirms: *"Got it. I'll remember that your favourite colour is blue."*
+- **Corrections replace:** "remember my favourite colour is green" updates the old fact instead of keeping both.
+- **Asking:** "What do you remember about me?" lists everything, with what you asked it to keep first. Questions like "what's my favourite colour?" are answered from memory. What you asked JARVIS to remember always goes into every prompt, even alongside hundreds of facts learned from chats.
+- **Forgetting:** "Forget my favourite colour" or "forget what I told you about the gym" removes exactly that. If it's ambiguous, JARVIS asks which one rather than guessing. You can also edit everything on the Memory page.
+- **Secrets are never stored:** passwords, PINs, keys, tokens and card numbers. "Remember to call mom at 5" is a reminder, not a memory, so it goes to JARVIS as a task.
 
 ## Shut down your laptop by voice
 

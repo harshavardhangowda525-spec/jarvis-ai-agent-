@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { ToolDefinition } from "./types";
 import { ToolError } from "./types";
 import { getDb } from "@/lib/db";
-import { saveMemory } from "@/lib/ai/user-memory";
+import { forgetMemories, saveMemory } from "@/lib/ai/user-memory";
 
 const schema = z.object({
   action: z
@@ -14,7 +14,7 @@ const schema = z.object({
     .optional()
     .describe("For 'remember': the fact to store. For 'search': the query."),
   key: z.string().max(80).optional().describe("Optional short label, e.g. 'company'."),
-  id: z.string().optional().describe("Memory id to delete (for 'forget')."),
+  id: z.string().optional().describe("Memory id to delete (for 'forget'); or give 'content' describing it."),
 });
 
 export const memoryTool: ToolDefinition<z.infer<typeof schema>> = {
@@ -41,11 +41,12 @@ export const memoryTool: ToolDefinition<z.infer<typeof schema>> = {
     switch (input.action) {
       case "remember": {
         if (!input.content) throw new ToolError("Nothing to remember was provided.");
-        const res = await saveMemory(ctx.userId, input.content, { key: input.key, source: "user" });
+        const res = await saveMemory(ctx.userId, input.content, { key: input.key, source: "user", replace: true });
         if (!res.saved && res.reason === "secret") {
           throw new ToolError("I won't store passwords, keys, or other secrets in memory.");
         }
         if (!res.saved) return { data: { stored: false, alreadyKnown: true }, summary: "Already in memory." };
+        if (res.updated) return { data: { id: res.id, stored: true, replaced: res.previous }, summary: `Updated memory (replaced: "${res.previous}").` };
         return { data: { id: res.id, stored: true }, summary: "Saved to memory." };
       }
       case "recall": {
@@ -79,7 +80,15 @@ export const memoryTool: ToolDefinition<z.infer<typeof schema>> = {
         };
       }
       case "forget": {
-        if (!input.id) throw new ToolError("No memory id provided to forget.");
+        if (!input.id) {
+          // forget by description ("my favourite colour")
+          const q = (input.content || input.key || "").trim();
+          if (!q) throw new ToolError("Say which memory to forget.");
+          const r = await forgetMemories(ctx.userId, q);
+          if (r.ambiguous.length) return { data: { deleted: false, candidates: r.ambiguous }, summary: `That matches several memories — ask which one: ${r.ambiguous.slice(0, 4).join(" | ")}` };
+          if (!r.removed.length) throw new ToolError("No matching memory found.");
+          return { data: { deleted: true, removed: r.removed }, summary: `Removed from memory: ${r.removed.join(" | ")}` };
+        }
         const res = await db.memory.deleteMany({
           where: { id: input.id, userId: ctx.userId },
         });
