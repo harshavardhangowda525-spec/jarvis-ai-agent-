@@ -97,13 +97,14 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll } from "vitest";
-const CHROME = process.env.ULTRON_BROWSER_PATH || (fs.existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : "");
+// Linux here: the sandbox's Chromium. Windows: whatever ULTRON finds (Chrome, else Edge).
+const CHROME = process.env.ULTRON_BROWSER_PATH || (fs.existsSync("/opt/pw-browsers/chromium") ? "/opt/pw-browsers/chromium" : process.platform === "win32" ? "auto" : "");
 const HAVE_DEPS = fs.existsSync("edith/node_modules/ws") && fs.existsSync("edith/node_modules/playwright-core");
 describe.skipIf(!CHROME || !HAVE_DEPS)("ULTRON live browser socket (real Chromium)", () => {
   let server: any; let site: http.Server; const port = 7460 + Math.floor(Math.random() * 20);
   beforeAll(async () => {
     process.env.ULTRON_TOKEN = "browser-test-token";
-    process.env.ULTRON_BROWSER_PATH = CHROME;
+    if (CHROME !== "auto") process.env.ULTRON_BROWSER_PATH = CHROME;
     process.env.ULTRON_BROWSER_PROFILE = path.join(os.tmpdir(), `ultron-browser-${Date.now()}`);
     site = http.createServer((req, res) => {
       res.writeHead(200, { "Content-Type": "text/html", "X-Frame-Options": "DENY" });

@@ -76,18 +76,74 @@ export function viewSize(w, h) {
 
 /* ---------------- the browser ---------------- */
 
-function launchCandidates() {
+/** Where Chrome / Edge live on Windows (per-user and machine-wide installs). */
+function windowsBrowserPaths(env) {
+  const roots = [env.LOCALAPPDATA, env.PROGRAMFILES, env["PROGRAMFILES(X86)"], env.ProgramW6432].filter(Boolean);
   const out = [];
-  const exe = (process.env.ULTRON_BROWSER_PATH || "").trim();
-  if (exe) out.push({ label: exe, opts: { executablePath: exe } });
-  out.push({ label: "Google Chrome", opts: { channel: "chrome" } }, { label: "Microsoft Edge", opts: { channel: "msedge" } });
-  if (process.platform === "linux") {
+  for (const r of roots) out.push({ label: "Google Chrome", id: "chrome", file: path.win32.join(r, "Google", "Chrome", "Application", "chrome.exe") });
+  for (const r of roots) out.push({ label: "Microsoft Edge", id: "msedge", file: path.win32.join(r, "Microsoft", "Edge", "Application", "msedge.exe") });
+  return out;
+}
+
+/**
+ * Browsers to try, best first: ULTRON_BROWSER_PATH, then Chrome, then Edge
+ * (always present on Windows 10/11), then a Linux Chromium, then Playwright's
+ * own. Each gets its own profile folder (`id`) — Chrome and Edge must never
+ * share one.
+ */
+export function launchCandidates({ platform = process.platform, env = process.env, exists = fs.existsSync } = {}) {
+  const out = [];
+  const exe = String(env.ULTRON_BROWSER_PATH || "").trim().replace(/^["']|["']$/g, "");
+  if (exe) out.push({ label: exe, id: "custom", opts: { executablePath: exe } });
+  if (platform === "win32") {
+    // look for the real .exe first (Playwright's channel lookup misses some installs)
+    const seen = new Set();
+    for (const b of windowsBrowserPaths(env)) {
+      if (seen.has(b.id) || !exists(b.file)) continue;
+      seen.add(b.id);
+      out.push({ label: b.label, id: b.id, opts: { executablePath: b.file } });
+    }
+    if (!seen.has("chrome")) out.push({ label: "Google Chrome", id: "chrome", opts: { channel: "chrome" } });
+    if (!seen.has("msedge")) out.push({ label: "Microsoft Edge", id: "msedge", opts: { channel: "msedge" } });
+  } else {
+    out.push({ label: "Google Chrome", id: "chrome", opts: { channel: "chrome" } }, { label: "Microsoft Edge", id: "msedge", opts: { channel: "msedge" } });
+  }
+  if (platform === "linux") {
     for (const p of ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome", "/snap/bin/chromium"]) {
-      if (fs.existsSync(p)) out.push({ label: p, opts: { executablePath: p } });
+      if (exists(p)) out.push({ label: p, id: "chromium", opts: { executablePath: p } });
     }
   }
-  out.push({ label: "Playwright Chromium", opts: {} });
+  out.push({ label: "Playwright Chromium", id: "chromium", opts: {} });
   return out;
+}
+
+/**
+ * A browser left running from an earlier ULTRON that was killed hard (closing
+ * the window on Windows, a crash) still holds our profile, and a new one can't
+ * start with it. Stop only browsers started with OUR profile folder.
+ * Resolves the number stopped.
+ */
+export function staleBrowserCommand(platform, dir) {
+  if (platform === "win32") {
+    // the folder goes in through an environment variable — no quoting games
+    const ps = "$d=$env:JARVIS_BROWSER_PROFILE; $n=0; Get-CimInstance Win32_Process -Filter \"Name='chrome.exe' OR Name='msedge.exe' OR Name='chromium.exe' OR Name='headless_shell.exe'\" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($d) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue; $n++ }; $n";
+    return { file: "powershell.exe", args: ["-NoProfile", "-NonInteractive", "-Command", ps], env: { JARVIS_BROWSER_PROFILE: dir } };
+  }
+  return { file: "ps", args: ["-eo", "pid=,args="], env: {} };
+}
+
+async function killStaleBrowsers(dir) {
+  const { execFile } = await import("node:child_process");
+  const cmd = staleBrowserCommand(process.platform, dir);
+  const out = await new Promise((resolve) => execFile(cmd.file, cmd.args, { env: { ...process.env, ...cmd.env }, timeout: 20_000, windowsHide: true, maxBuffer: 8 << 20 }, (err, stdout) => resolve(err ? "" : String(stdout))));
+  if (process.platform === "win32") return Number(out.trim().split(/\s+/).pop()) || 0;
+  let n = 0;
+  for (const line of out.split("\n")) {
+    const m = line.trim().match(/^(\d+)\s+(.*)$/);
+    if (!m || !m[2].includes(`--user-data-dir=${dir}`) || Number(m[1]) === process.pid) continue;
+    try { process.kill(Number(m[1]), "SIGKILL"); n++; } catch { /* gone */ }
+  }
+  return n;
 }
 
 // Sites in the live view never get your camera, mic, location, notifications…
@@ -115,30 +171,40 @@ async function getContext(wantDpr) {
     let chromium;
     try { ({ chromium } = await import("playwright-core")); }
     catch { throw new Error("The live browser needs one more package — restart with npm run local (it installs it), or run npm install in the edith folder."); }
-    const dir = process.env.ULTRON_BROWSER_PROFILE || path.join(__dirname, "..", ".browser-profile");
-    fs.mkdirSync(dir, { recursive: true });
+    const root = path.resolve(process.env.ULTRON_BROWSER_PROFILE || path.join(__dirname, "..", ".browser-profile"));
     dpr = Math.max(1, Math.min(2, Number(wantDpr) || 1));
     const headed = /^(1|true|yes|on)$/i.test(String(process.env.ULTRON_BROWSER_HEADED || ""));
     const errors = [];
+    const tryLaunch = async (c) => {
+      const dir = path.join(root, c.id);
+      fs.mkdirSync(dir, { recursive: true });
+      return chromium.launchPersistentContext(dir, {
+        ...c.opts,
+        headless: !headed,
+        viewport: { width: 1100, height: 700 },
+        deviceScaleFactor: dpr,
+        acceptDownloads: false,
+        ignoreDefaultArgs: ["--enable-automation", "--mute-audio"],
+        args: ["--disable-blink-features=AutomationControlled", "--autoplay-policy=no-user-gesture-required", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows"],
+      });
+    };
     for (const c of launchCandidates()) {
-      try {
-        const context = await chromium.launchPersistentContext(dir, {
-          ...c.opts,
-          headless: !headed,
-          viewport: { width: 1100, height: 700 },
-          deviceScaleFactor: dpr,
-          acceptDownloads: false,
-          ignoreDefaultArgs: ["--enable-automation", "--mute-audio"],
-          args: ["--disable-blink-features=AutomationControlled", "--autoplay-policy=no-user-gesture-required", "--disable-renderer-backgrounding", "--disable-background-timer-throttling", "--disable-backgrounding-occluded-windows"],
-        });
-        context.on("close", () => { if (ctx === context) ctx = null; });
-        await denyPermissions(context);
-        log.info(`Live browser ready (${c.label}).`);
-        ctx = context;
-        return context;
-      } catch (e) {
-        errors.push(`${c.label}: ${String(e.message).split("\n")[0]}`);
+      let context = null;
+      try { context = await tryLaunch(c); }
+      catch (e) {
+        // an old browser still holding this profile? stop it and try once more
+        const msg = String(e.message);
+        if (!/executable doesn't exist|not found|is not installed|ENOENT|distribution .* is not found/i.test(msg) && await killStaleBrowsers(path.join(root, c.id)) > 0) {
+          log.warn("Live browser: stopped a leftover browser from an earlier run.");
+          try { context = await tryLaunch(c); } catch (e2) { errors.push(`${c.label}: ${String(e2.message).split("\n")[0]}`); }
+        } else errors.push(`${c.label}: ${msg.split("\n")[0]}`);
       }
+      if (!context) continue;
+      context.on("close", () => { if (ctx === context) ctx = null; });
+      await denyPermissions(context);
+      log.info(`Live browser ready (${c.label}).`);
+      ctx = context;
+      return context;
     }
     throw new Error(`I couldn't start a browser on this computer — install Google Chrome or Microsoft Edge (or set ULTRON_BROWSER_PATH). ${errors.slice(0, 2).join(" | ")}`);
   })();

@@ -1,0 +1,36 @@
+# Checks ULTRON's PC features on a real Windows machine: finding Chrome/Edge,
+# the live browser pop-up (real frames, clicks, typing), recovering from a
+# leftover browser, the Start-menu app list and opening links.
+name: Windows (ULTRON)
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "edith/**"
+      - "tests/windows.test.ts"
+      - "tests/jarvis-browser.test.ts"
+      - "tests/desktop-apps.test.ts"
+      - ".github/workflows/windows.yml"
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install JARVIS packages
+        run: npm ci
+      - name: Install ULTRON packages
+        working-directory: edith
+        run: npm install --no-audit --no-fund
+      - name: Browsers on this machine
+        shell: pwsh
+        run: |
+          Get-ChildItem "$env:ProgramFiles\Google\Chrome\Application\chrome.exe","${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe" -ErrorAction SilentlyContinue | Select-Object FullName
+      - name: ULTRON on Windows
+        run: npx vitest run tests/windows.test.ts tests/jarvis-browser.test.ts tests/desktop-apps.test.ts
