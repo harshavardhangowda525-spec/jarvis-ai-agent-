@@ -37,6 +37,7 @@ model User {
   darwinSearchCursors DarwinSearchCursor[]
   niosNotices      NiosNotice[]
   activityEvents   ActivityEvent[]
+  evDaily          EvDaily[]
   dailySummaries   DailySummary[]
 
   @@index([email])
@@ -453,4 +454,69 @@ model DailySummary {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
+}
+
+/// EV's daily content package — the Instagram post + Reel EV prepares every
+/// morning (by 5:30 AM) for your approval. One row per version: rejecting or
+/// revising creates the next version and keeps the old one as history. Assets
+/// are real EvMedia rows; `log` holds the true timeline of every step.
+model EvDaily {
+  id              String    @id @default(cuid())
+  userId          String
+  date            String // YYYY-MM-DD the content is for (EV_DAILY_TZ)
+  version         Int       @default(1)
+  current         Boolean   @default(true)
+  // draft | generating | ready | approved | published | rejected | failed
+  status          String    @default("draft")
+  // plan | rewrite_caption | rewrite_tone | rewrite_video | image | image_wait | video | video_wait | qc | ready | publishing | done
+  stage           String    @default("plan")
+  trigger         String    @default("schedule") // schedule | manual | reject | regenerate | another | caption | tone | video | retry
+  instruction     String?   @db.Text
+  contentType     String    @default("Reel + post")
+  niche           String?
+  service         String?
+  format          String?
+  topic           String    @default("")
+  angle           String?   @db.Text
+  hook            String?   @db.Text
+  caption         String?   @db.Text
+  cta             String?
+  hashtags        String[]
+  beats           String[]
+  creativeConcept String?   @db.Text
+  videoConcept    String?   @db.Text
+  imagePrompt     String?   @db.Text
+  imageMediaId    String?
+  imageUrl        String?
+  imageProvider   String?
+  videoMediaId    String?
+  videoUrl        String?
+  videoSeconds    Float?
+  videoProvider   String?
+  videoBaseId     String? // Magic Hour clip (EvMedia) the Reel was cut from
+  jobId           String? // Magic Hour project id while an image / clip renders
+  variant         Int       @default(0) // Reel motion style
+  postingTime     String? // HH:MM planned, local
+  qc              Json?
+  error           String?   @db.Text
+  attempts        Int       @default(0)
+  log             Json?
+  contentId       String? // mirror in EvContent (EV memory)
+  postMediaId     String?
+  reelContainerId String?
+  reelMediaId     String?
+  publishError    String?   @db.Text
+  lockedUntil     DateTime?
+  readyAt         DateTime?
+  approvedAt      DateTime?
+  publishedAt     DateTime?
+  rejectedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date, version])
+  @@index([userId, date, current])
+  @@index([userId, createdAt])
 }

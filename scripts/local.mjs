@@ -224,6 +224,7 @@ if (await waitFor(`${local}/login`, 120)) {
   else if (!groqKey) say("    ! GROQ_API_KEY is empty — EV, DARWIN and ULTRON will use Gemini only.");
   else if (!geminiKey) say("    (No GEMINI_API_KEY — EV, DARWIN and ULTRON have no backup when Groq is busy. Free at aistudio.google.com/apikey.)");
   say("    NIOS watch: checking the official NIOS pages every 15 minutes while this runs (new notices are emailed if Gmail is connected).");
+  say("    EV daily content: from 4:00 AM EV prepares today's post + Reel for your approval (it never publishes without you).");
   say("    Log in with your usual account. Keep this window open — Ctrl+C stops everything.\n");
   // NIOS board watcher — scheduled check while the PC is on (the console also checks while it's open).
   const niosCheck = async () => {
@@ -239,6 +240,21 @@ if (await waitFor(`${local}/login`, 120)) {
   const dailySummary = () => fetch(`${local}/api/cron/daily-summary`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(90_000) }).catch(() => {});
   setTimeout(dailySummary, 90_000);
   setInterval(dailySummary, 60 * 60_000);
+  // EV daily content: from 4:00 AM (EV_DAILY_TZ) EV prepares today's post + Reel; this tick
+  // starts it and keeps it moving (slow renders, Instagram processing) while the PC is on.
+  let evTicking = false;
+  const evDaily = async () => {
+    if (evTicking) return;
+    evTicking = true;
+    try {
+      const r = await fetch(`${local}/api/cron/ev-daily`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(320_000) });
+      const j = await r.json().catch(() => ({}));
+      for (const x of j?.data?.results ?? []) if (x.status === "ready" && !evAnnounced.has(j.data.today)) { evAnnounced.add(j.data.today); say("  [ev] Today's Instagram content is ready for your approval — open EV in JARVIS."); }
+    } catch { /* offline — next round */ } finally { evTicking = false; }
+  };
+  const evAnnounced = new Set();
+  setTimeout(evDaily, 120_000);
+  setInterval(evDaily, 5 * 60_000);
   if (!process.argv.includes("--no-open")) {
     if (win) spawn(`start "" "${local}"`, { shell: true, stdio: "ignore", detached: true });
     else if (process.platform === "darwin") spawn("open", [local], { stdio: "ignore", detached: true });

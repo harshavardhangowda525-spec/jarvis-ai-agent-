@@ -220,8 +220,24 @@ body {
 .ev-approval { animation: ev-rise .7s cubic-bezier(.2,.9,.25,1) both; }
 .ev-approve::after { content: ""; position: absolute; inset: -20% auto -20% 0; width: 35%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.65), transparent); animation: ev-sweep 2.8s ease-in-out infinite; pointer-events: none; }
 .ev-approve:disabled::after { display: none; }
+/* EV daily content: holographic core + data streams */
+@keyframes ev-spin { to { transform: rotate(360deg); } }
+@keyframes ev-spin-rev { to { transform: rotate(-360deg); } }
+@keyframes ev-orb { 0%,100% { box-shadow: 0 0 30px 4px rgba(96,228,255,.35), 0 0 70px 12px rgba(167,139,250,.25), inset 0 0 22px rgba(255,255,255,.25); } 50% { box-shadow: 0 0 44px 8px rgba(255,92,214,.35), 0 0 90px 18px rgba(96,228,255,.22), inset 0 0 28px rgba(255,255,255,.35); } }
+@keyframes ev-stream { 0% { left: 0; opacity: 0; } 20% { opacity: 1; } 80% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
+@keyframes ev-scan { 0% { background-position: 0 -100%; } 100% { background-position: 0 200%; } }
+.ev-core-ring { border: 1px solid rgba(255,255,255,.14); background: conic-gradient(from 0deg, transparent 0 62%, rgba(96,228,255,.55) 70%, rgba(167,139,250,.6) 80%, rgba(255,92,214,.55) 88%, transparent 96%); -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); animation: ev-spin 9s linear infinite; }
+.ev-core-ring-2 { animation: ev-spin-rev 6.5s linear infinite; opacity: .8; }
+.ev-core-ring-3 { animation: ev-spin 4.5s linear infinite; opacity: .6; }
+.ev-core-working .ev-core-ring { animation-duration: 3.2s; }
+.ev-core-working .ev-core-ring-2 { animation-duration: 2.4s; }
+.ev-core-working .ev-core-ring-3 { animation-duration: 1.8s; }
+.ev-core-orb { background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.55), rgba(96,228,255,.35) 30%, rgba(120,80,255,.45) 62%, rgba(255,92,214,.35)); animation: ev-orb 3.6s ease-in-out infinite; }
+.ev-core-failed .ev-core-orb { background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.45), rgba(255,88,120,.45) 40%, rgba(90,20,50,.6)); }
+.ev-stream-dot { width: 6px; height: 6px; margin-left: -3px; border-radius: 9999px; background: #fff; box-shadow: 0 0 8px #60e4ff, 0 0 16px #ff5cd6; animation: ev-stream 1.8s ease-in-out infinite; }
+.ev-scan { background-image: linear-gradient(180deg, transparent, rgba(96,228,255,.08) 45%, rgba(255,92,214,.08) 55%, transparent); background-size: 100% 50%; background-repeat: no-repeat; animation: ev-scan 2.6s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .ev-float, .ev-kenburns, .ev-pipe-dot, .ev-approve::after, .ev-live-node { animation: none; }
+  .ev-float, .ev-kenburns, .ev-pipe-dot, .ev-approve::after, .ev-live-node, .ev-core-ring, .ev-core-orb, .ev-stream-dot, .ev-scan { animation: none; }
   .ev-word, .ev-media-in { animation-duration: .01s; }
 }
 @keyframes ev-sheen { 0% { transform: translateX(-120%) skewX(-18deg); } 100% { transform: translateX(220%) skewX(-18deg); } }

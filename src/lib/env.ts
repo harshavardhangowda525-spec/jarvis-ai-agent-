@@ -157,6 +157,18 @@ export const env = {
   // Optional model overrides (Magic Hour defaults are used when blank).
   magicHourVideoModel: read("MAGICHOUR_VIDEO_MODEL"),
 
+  // EV daily content: every morning EV prepares a post + Reel for your approval.
+  // Times are local to EV_DAILY_TZ. Auto-publish stays OFF unless you set it.
+  evDaily: !/^(0|off|false|no)$/i.test(read("EV_DAILY")),
+  evDailyTz: read("EV_DAILY_TZ") || "Asia/Kolkata",
+  evDailyStart: read("EV_DAILY_START") || "04:00",
+  evDailyReadyBy: read("EV_DAILY_READY_BY") || "05:30",
+  evDailyPostTime: read("EV_DAILY_POST_TIME") || "19:00",
+  evDailyAutoPublish: /^(1|on|true|yes)$/i.test(read("EV_DAILY_AUTOPUBLISH")),
+  // auto = Magic Hour clip (when connected + public APP_URL) cut into a branded
+  // Reel, else EV's own motion render of the day's image. "motion" / "magichour" force one.
+  evDailyVideo: (read("EV_DAILY_VIDEO").toLowerCase() || "auto") as "auto" | "motion" | "magichour",
+
   // DARWIN lead generation. Google Places (real, authorized) is the primary lead
   // source. Without it (and with no CSV/manual leads) DARWIN shows
   // "NO REAL DATA AVAILABLE — CONNECT A DATA SOURCE" rather than any mock data.

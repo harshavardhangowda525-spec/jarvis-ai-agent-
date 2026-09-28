@@ -28,8 +28,32 @@ export interface BriefingInput {
   tasks: { completed: TaskLite[]; remaining: TaskLite[]; used: boolean };
   followUpsSoon?: { business: string; dueAt: string | Date }[];
   evAwaitingApproval?: number;
+  /** Today's EV daily content package (only for the default "yesterday" briefing). */
+  evToday?: EvTodayInput | null;
   recordedSince?: string | null;
   userName?: string | null;
+}
+
+export interface EvTodayInput { status: string; topic: string; hasVideo: boolean; error: string | null; publishError: string | null }
+
+/** One true sentence about today's EV package (never claims more than the row says). */
+export function evTodaySentence(e: EvTodayInput | null | undefined): string | null {
+  if (!e) return null;
+  const topic = e.topic ? ` — "${quote(e.topic, 70)}"` : "";
+  switch (e.status) {
+    case "ready":
+      return `This morning EV generated today's Instagram content${topic}, ${e.hasVideo ? "created the promotional video, " : ""}and prepared the publishing package. The content is ready for your approval.`;
+    case "approved":
+      return e.publishError ? `You approved today's EV content, but it isn't published yet: ${quote(e.publishError, 110)}` : "You approved today's EV content and it's being published to Instagram.";
+    case "published":
+      return `Today's EV content${topic} is already published on Instagram.`;
+    case "failed":
+      return `EV couldn't finish today's content: ${quote(e.error ?? "an unknown error", 110)}. Open EV and say "retry".`;
+    case "generating": case "draft":
+      return "EV is still preparing today's Instagram content — it isn't ready yet.";
+    default:
+      return null;
+  }
 }
 
 export interface Metric { key: string; label: string; value: number }
@@ -62,6 +86,8 @@ export interface Briefing {
   insights: string[];
   paragraphs: string[];
   spoken: string;
+  /** Today's EV content status line (null when there's no package). */
+  evToday: string | null;
   unfinished: string[];
   events: BriefingEvent[];
   daily: DailyData;
@@ -260,6 +286,8 @@ export function buildBriefing(input: BriefingInput): Briefing {
     }
     paragraphs.push(`That's everything important ${isYesterday ? "from yesterday" : isToday ? "so far today" : when}.`);
   }
+  const evToday = evTodaySentence(input.evToday);
+  if (evToday) paragraphs.push(evToday);
 
   // ---------------------------------------------------------------- structured day
   const acts = (xs: Ev[], n = 10) => [...new Set(xs.map((e) => quote(e.action, 140)))].slice(0, n);
@@ -270,6 +298,7 @@ export function buildBriefing(input: BriefingInput): Briefing {
   const nextActions = [
     ...input.tasks.remaining.filter((t) => t.priority === "high").map((t) => `Finish: ${t.title}`),
     ...(input.followUpsSoon ?? []).map((f) => `Follow up with ${f.business}`),
+    ...(input.evToday?.status === "ready" ? ["Approve today's EV content"] : []),
     ...(input.evAwaitingApproval ? [`Review ${plural(input.evAwaitingApproval, "EV piece")} awaiting approval`] : []),
     ...unresolved.slice(0, 2).map((e) => `Look into: ${quote(e.action, 90)}`),
   ].slice(0, 8);
@@ -296,6 +325,6 @@ export function buildBriefing(input: BriefingInput): Briefing {
     title: isYesterday ? "Yesterday's Intelligence Briefing" : input.kind === "day" ? "Intelligence Briefing" : `${input.label} — Intelligence Briefing`,
     dateLabel: input.kind === "day" ? dayLabel(input.from, { weekday: true }) : `${dayLabel(input.from)} – ${dayLabel(input.to)}`,
     greeting, hasData, eventCount: ev.length, metrics, completion, timeline, points, agents, projects, insights,
-    paragraphs, spoken: paragraphs.join(" "), unfinished, events, daily, missing,
+    paragraphs, spoken: paragraphs.join(" "), evToday, unfinished, events, daily, missing,
   };
 }

@@ -1,0 +1,61 @@
+-- EV daily content packages (post + Reel prepared every morning for approval)
+CREATE TABLE "EvDaily" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "date" TEXT NOT NULL,
+    "version" INTEGER NOT NULL DEFAULT 1,
+    "current" BOOLEAN NOT NULL DEFAULT true,
+    "status" TEXT NOT NULL DEFAULT 'draft',
+    "stage" TEXT NOT NULL DEFAULT 'plan',
+    "trigger" TEXT NOT NULL DEFAULT 'schedule',
+    "instruction" TEXT,
+    "contentType" TEXT NOT NULL DEFAULT 'Reel + post',
+    "niche" TEXT,
+    "service" TEXT,
+    "format" TEXT,
+    "topic" TEXT NOT NULL DEFAULT '',
+    "angle" TEXT,
+    "hook" TEXT,
+    "caption" TEXT,
+    "cta" TEXT,
+    "hashtags" TEXT[],
+    "beats" TEXT[],
+    "creativeConcept" TEXT,
+    "videoConcept" TEXT,
+    "imagePrompt" TEXT,
+    "imageMediaId" TEXT,
+    "imageUrl" TEXT,
+    "imageProvider" TEXT,
+    "videoMediaId" TEXT,
+    "videoUrl" TEXT,
+    "videoSeconds" DOUBLE PRECISION,
+    "videoProvider" TEXT,
+    "videoBaseId" TEXT,
+    "jobId" TEXT,
+    "variant" INTEGER NOT NULL DEFAULT 0,
+    "postingTime" TEXT,
+    "qc" JSONB,
+    "error" TEXT,
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "log" JSONB,
+    "contentId" TEXT,
+    "postMediaId" TEXT,
+    "reelContainerId" TEXT,
+    "reelMediaId" TEXT,
+    "publishError" TEXT,
+    "lockedUntil" TIMESTAMP(3),
+    "readyAt" TIMESTAMP(3),
+    "approvedAt" TIMESTAMP(3),
+    "publishedAt" TIMESTAMP(3),
+    "rejectedAt" TIMESTAMP(3),
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "EvDaily_pkey" PRIMARY KEY ("id")
+);
+
+CREATE UNIQUE INDEX "EvDaily_userId_date_version_key" ON "EvDaily"("userId", "date", "version");
+CREATE INDEX "EvDaily_userId_date_current_idx" ON "EvDaily"("userId", "date", "current");
+CREATE INDEX "EvDaily_userId_createdAt_idx" ON "EvDaily"("userId", "createdAt");
+
+ALTER TABLE "EvDaily" ADD CONSTRAINT "EvDaily_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

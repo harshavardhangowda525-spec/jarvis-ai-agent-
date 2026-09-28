@@ -8,6 +8,12 @@ const nextConfig = {
   },
   experimental: {
     serverComponentsExternalPackages: ["@prisma/client", "bcryptjs"],
+    // EV renders its daily Reel with ffmpeg + the bundled Inter font — ship both
+    // with the functions that render.
+    outputFileTracingIncludes: {
+      "/api/ev/daily": ["./node_modules/ffmpeg-static/ffmpeg", "./assets/fonts/**"],
+      "/api/cron/ev-daily": ["./node_modules/ffmpeg-static/ffmpeg", "./assets/fonts/**"],
+    },
   },
   async headers() {
     return [

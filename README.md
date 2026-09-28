@@ -36,6 +36,7 @@ registering a **tool** — the agent loop never changes.
 - [Previous-day briefing](#previous-day-briefing)
 - [Shut down your laptop by voice](#shut-down-your-laptop-by-voice)
 - [NIOS board notifications](#nios-board-notifications)
+- [EV daily content](#ev-daily-content)
 
 ---
 
@@ -404,6 +405,66 @@ fees, anything published:
 - Ask JARVIS: "any new NIOS notifications?", "check NIOS now", "turn off NIOS email alerts".
 - Notices are shown exactly as NIOS published them (title, date, link) — always
   confirm on nios.ac.in.
+
+## EV daily content
+
+Every morning EV prepares **today's Instagram package** for Infinity Web & Apps
+(a feed post image and a 9:16 Reel) and has it waiting for your approval by
+**5:30 AM** (Asia/Kolkata). You don't have to start it.
+
+| Time | Step |
+| --- | --- |
+| 04:00 | **Research.** Reads every past package and EV's content memory, then picks a niche, a service (websites, apps, automation, AI, online ordering/booking, software, redesigns, AI marketing) and a format that haven't been used recently. |
+| 04:15 | **Content.** EV's writing brain (`EV_PROVIDER`) writes the topic, hook, caption, CTA, 10–15 hashtags, the creative concept and the Reel story. A draft too close to anything recent is rewritten. |
+| 04:45 | **Creative.** A real image from Gemini/OpenAI (or Magic Hour), with no text baked in. |
+| 05:00 | **Video.** A real MP4 Reel (1080×1920, about 12 s). The hook lands in the first second, two on-screen beats follow, and a brand end card shows the CTA, 8317480583 and @infinitywebapps. If Magic Hour is connected and `APP_URL` is public, the creative is animated there first and then cut into the Reel. Otherwise EV renders the Reel itself from the image (ffmpeg with Inter, bundled). |
+| 05:20 | **Quality check.** Media exists; the caption exists and matches the creative; the video is a playable 9:16 MP4 of 3–90 s; it doesn't repeat recent topics, hooks or captions; the brand, handle and phone are exact; the positioning is right; there's no placeholder text; there are no unbacked claims (no stats, guarantees, rankings, or prices other than ₹4,999 / ₹55,000); the format is Instagram-friendly; and every publishing detail is present. Text problems are fixed automatically, up to twice. |
+| 05:30 | **Ready for approval.** |
+
+If a step runs late, the screen says so and keeps going. It never shows a step as
+done before it is. If something fails (a missing key, a provider error), you see
+the actual error and a **Retry** button.
+
+**Open EV** and it opens on **TODAY'S CONTENT**. EV's core sits in the middle,
+with the IDEA → CREATION → VIDEO → READY → APPROVAL streams around it. You also
+see:
+- the real post (image, full caption, hashtags, content type, planned posting time);
+- the real Reel with play/pause and its actual duration;
+- the morning schedule with planned and actual times;
+- the log of what EV really did.
+
+EV asks: *"Today's content is ready. Would you like me to publish it?"*
+
+- **Publish:** "Approved", "Publish it", "Go ahead", "Looks good" (or "yes" right after EV asks). This posts the image and the Reel through the Instagram Graph API. It only says published once Instagram returns media ids. If Instagram isn't connected, or `APP_URL` isn't public https, it tells you exactly that.
+- **Change it:** "Reject it" or "Regenerate it" (new version, new angle); "Show me another idea"; "Change the caption" (EV rewrites it); "Change the caption to: …" (your words, checked but never rewritten); "Change the video" (new Reel story and style); "Make it more professional" / "Make it more engaging". Every change is a new version, and the old one stays in the history.
+- From JARVIS: "Show me today's content" or "Is today's content ready?".
+
+**Nothing publishes without your approval.** The one exception is auto-publish,
+which you turn on yourself with `EV_DAILY_AUTOPUBLISH=on`. Then it posts at the
+planned time.
+
+**Persistence.** Everything lives in the `EvDaily` table: one row per version,
+holding date, topic, hook, caption, hashtags, image and video assets, the QC
+report, the log, and status (`draft | generating | ready | approved | published | rejected | failed`)
+with `created/ready/approved/published` times. The media are stored in `EvMedia`
+and served at your app URL. The package is also mirrored into EV's content memory
+and recorded in your activity history. The morning briefing then says, for
+example: *"This morning EV generated today's Instagram content, created the
+promotional video, and prepared the publishing package. The content is ready for
+your approval."*
+
+**What drives it:**
+- Vercel Cron `/api/cron/ev-daily` at 04:00, 04:45 and 05:45 IST (needs `CRON_SECRET`).
+- `npm run local`, every 5 minutes.
+- JARVIS itself, whenever it's open after 04:00.
+
+Each run moves the package forward from where it stopped. Slow Magic Hour renders
+and Instagram processing are picked up on the next run.
+
+Settings (all optional): `EV_DAILY=off`, `EV_DAILY_TZ` (default `Asia/Kolkata`),
+`EV_DAILY_START` (`04:00`), `EV_DAILY_READY_BY` (`05:30`), `EV_DAILY_POST_TIME`
+(`19:00`), `EV_DAILY_AUTOPUBLISH` (`off`), `EV_DAILY_VIDEO` (`auto` | `motion` |
+`magichour`), `FFMPEG_PATH` (default: the bundled `ffmpeg-static`).
 
 ## Which brain each agent uses
 

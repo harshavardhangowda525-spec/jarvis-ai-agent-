@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, MicOff, Send, Power, X, ExternalLink, Loader2, Check, PenLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { StudioCanvas, type StudioCanvasHandle } from "@/components/console/ev/studio-canvas";
+import { TodayContent, type DailyUiAction, type useDailyContent } from "@/components/console/ev/today-content";
 import type { PublishPhase, StudioMode } from "@/components/console/ev/studio-engine";
 import {
   EV_PIPELINE, STARTER_FORMATS, compact, formatFromText, formatOfKind, kindLabel, liveStage,
@@ -53,6 +54,11 @@ export interface EvViewProps {
   muted: boolean;
   onMic: () => void;
   onSleep: () => void;
+  /** EV's daily content package (TODAY'S CONTENT). */
+  daily?: ReturnType<typeof useDailyContent>;
+  todayOpen?: boolean;
+  onToggleToday?: (open: boolean) => void;
+  onDailyAction?: (a: DailyUiAction) => void;
 }
 
 const STATE_WORD: Record<EvState, string> = {
@@ -124,6 +130,7 @@ export function EvView(props: EvViewProps) {
   }, [props]);
 
   const stage = liveStage(state, { hasMedia: !!image, publish });
+  const today = !!props.todayOpen && !!props.daily && !image;
   const hideSides = approval;
 
   return (
@@ -226,16 +233,30 @@ export function EvView(props: EvViewProps) {
         </div>
       )}
 
+      {/* TODAY'S CONTENT — the day's post + Reel around EV's core */}
+      {today && props.daily && (
+        <TodayContent daily={props.daily} onAction={(a) => props.onDailyAction?.(a)} onClose={() => props.onToggleToday?.(false)} />
+      )}
+      {!today && props.daily?.view && !image && (
+        <button onClick={() => props.onToggleToday?.(true)} data-ev-today-chip
+          className="ev-glass absolute left-1/2 top-4 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full px-3.5 py-1.5 text-[10px] tracking-[0.26em] text-white/80 transition hover:text-white md:top-6"
+          style={{ animation: "ev-rise .8s ease 1.2s both" }}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", dailyDot(props.daily.view.pkg?.status))} />
+          TODAY&apos;S CONTENT
+          <span className="hidden text-white/45 sm:inline">· {dailyWord(props.daily.view.pkg?.status)}</span>
+        </button>
+      )}
+
       {/* pipeline + command (bottom) */}
-      <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col items-center gap-3 px-4 pb-4 md:pb-6">
-        {!approval && (
+      <div className={cn("absolute inset-x-0 bottom-0 flex flex-col items-center gap-3 px-4 pb-4 md:pb-6", today ? "z-40" : "z-30")}>
+        {!approval && !today && (
           <div className="w-full md:hidden" style={{ animation: "ev-rise .8s ease 2.4s both" }}>
             {reply
               ? <div className="mb-1 max-h-[22vh] overflow-hidden"><TextSurface text={reply} /></div>
               : <IdeaChips items={data?.recent ?? null} onUse={(text) => focusInput(text)} onPreview={(f) => setSelectedFormat(f)} />}
           </div>
         )}
-        <div className={cn("w-full max-w-[620px]", approval && "hidden sm:block")} style={{ animation: "ev-rise .8s ease 2.6s both" }}>
+        <div className={cn("w-full max-w-[620px]", approval && "hidden sm:block", today && "hidden")} style={{ animation: "ev-rise .8s ease 2.6s both" }}>
           <div className={cn("transition duration-500", approval && publish === "idle" && "opacity-60")}>
             <Pipeline counts={data?.pipeline ?? null} live={stage} published={publish === "done"} />
           </div>
@@ -280,6 +301,13 @@ export function EvView(props: EvViewProps) {
 }
 
 /* ---------------- real data ---------------- */
+
+function dailyDot(status?: string) {
+  return status === "ready" ? "bg-[#60e4ff] ev-pulse-dot" : status === "failed" ? "bg-[#ff5878]" : status === "published" ? "bg-emerald-300" : status === "generating" || status === "approved" ? "bg-[#a78bfa] ev-pulse-dot" : "bg-white/40";
+}
+function dailyWord(status?: string) {
+  return ({ ready: "READY", failed: "NEEDS ATTENTION", published: "PUBLISHED", generating: "CREATING", approved: "PUBLISHING", rejected: "REPLACED" } as Record<string, string>)[status ?? ""] ?? "SCHEDULED";
+}
 
 function useStudioData() {
   const [data, setData] = useState<StudioData | null>(null);

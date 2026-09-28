@@ -29,6 +29,8 @@ export interface BriefingPopupProps {
   onSkip: () => void;
   onAsk: () => void;
   onForget: (id: string) => void;
+  /** Open EV (shown on the "today's content" line). */
+  onOpenEv?: () => void;
   closing: boolean;
 }
 
@@ -116,7 +118,15 @@ export function BriefingPopup(p: BriefingPopupProps) {
               {/* ===== the briefing (primary) ===== */}
               <div className="min-w-0">
                 <div className={cn("space-y-3 text-[14.5px] font-light leading-relaxed text-white/90 sm:text-[15px]", p.speaking && "jv-brief-speaking")}>
-                  {b.paragraphs.map((t, i) => (
+                  {b.paragraphs.map((t, i) => t === b.evToday ? (
+                    <div key={i} className="jv-brief-rise rounded-2xl border border-fuchsia-200/20 bg-gradient-to-r from-cyan-300/[0.06] via-violet-300/[0.07] to-fuchsia-300/[0.07] px-4 py-3" style={delay(2 + i)} data-brief-ev>
+                      <div className="flex items-center gap-2 text-[9px] tracking-[0.36em] text-fuchsia-100/75">EV · TODAY&apos;S CONTENT</div>
+                      <p className="mt-1">{t}</p>
+                      {p.onOpenEv && (
+                        <button onClick={p.onOpenEv} className="mt-2 rounded-full border border-white/20 px-3 py-1 text-[11px] tracking-[0.14em] text-white/85 transition hover:bg-white/10">OPEN EV</button>
+                      )}
+                    </div>
+                  ) : (
                     <p key={i} className="jv-brief-rise" style={delay(2 + i)}>{t}</p>
                   ))}
                 </div>

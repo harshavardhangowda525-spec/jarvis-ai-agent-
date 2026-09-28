@@ -19,6 +19,8 @@ import { useWakeWord } from "@/hooks/useWakeWord";
 import { useScreenVision } from "@/hooks/useScreenVision";
 import { HumanoidView } from "@/components/console/humanoid-view";
 import { EvView, type EvState } from "@/components/console/ev-view";
+import { useDailyContent, type DailyUiAction } from "@/components/console/ev/today-content";
+import { parseDailyCommand } from "@/lib/ev/daily/intent";
 import { WeatherPopup, type WeatherData } from "@/components/console/weather-popup";
 import { NiosAlerts, useNiosWatch } from "@/components/console/nios-alert";
 import { parsePowerIntent, parseConfirmation, spokenDelay } from "@/lib/power-command";
@@ -184,6 +186,23 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const emails = useEmailPopups();
   // NIOS board watcher: new official notices pop up here and are spoken.
   const nios = useNiosWatch({ speak: (t) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } } });
+  // EV daily content: today's post + Reel. The hook keeps the pipeline moving
+  // while JARVIS is open and tells us when something real changes.
+  const [evToday, setEvToday] = useState(false);
+  const dailyAskedAt = useRef(0);
+  const sayRef = useRef<(t: string) => void>(() => {});
+  const daily = useDailyContent({
+    onChange: (kind, v) => {
+      const p = v.pkg;
+      if (kind === "ready") {
+        dailyAskedAt.current = Date.now();
+        sayRef.current(evActiveRef.current ? "Today's content is ready. Would you like me to publish it?" : "EV has today's Instagram content ready for your approval.");
+      } else if (kind === "published") { flashEv("success"); sayRef.current("Today's content is published on Instagram."); }
+      else if (kind === "publish_error" && p?.publishError) { flashEv("error"); sayRef.current(`It's approved, but it isn't published yet. ${p.publishError}`); }
+      else if (kind === "failed" && evActiveRef.current) sayRef.current(v.spoken);
+    },
+  });
+  const dailyRef = useRef(daily); dailyRef.current = daily;
   const agent = useAgent({
     onTextDelta: (delta) => {
       if (!(voiceStarted && !voice.muted && voice.enabled)) return;
@@ -234,6 +253,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   });
 
   const sleep = useCallback(() => { voice.stop(); setVoiceStarted(false); }, [voice]);
+  sayRef.current = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
   const launchUltron = useCallback(() => {
     if (launchingUltron) return;
     setLaunchingUltron(true);
@@ -266,12 +286,21 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     setEvAwaitingApproval(false);
     setEvCommand("");
     setEvPhase("in");
-    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("EV online. Marketing systems ready.");
+    // Opening EV shows TODAY'S CONTENT first, and EV says where it really stands.
+    const v = dailyRef.current.view;
+    if (v?.pkg) setEvToday(true);
+    const st = v?.pkg?.status;
+    if (st === "ready") dailyAskedAt.current = Date.now();
+    const line = st === "ready" ? "EV online. Today's content is ready. Would you like me to publish it?"
+      : v?.pkg && st !== "published" ? `EV online. ${v.spoken}`
+      : "EV online. Marketing systems ready.";
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak(line);
     setTimeout(() => setEvPhase("active"), 1400);
   }, [voice, voiceStarted]);
   const closeEv = useCallback(() => {
     evActiveRef.current = false;
     setEvImage(null);
+    setEvToday(false);
     setEvPhase("out");
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("EV standing down. Back to JARVIS.");
     setTimeout(() => setEvPhase("off"), 900);
@@ -374,6 +403,56 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         openEv();
         return;
       }
+      // ===== EV daily content (TODAY'S CONTENT) =====
+      const dc = parseDailyCommand(t);
+      const dv = dailyRef.current.view;
+      const dp = dv?.pkg ?? null;
+      const mentionsToday = /\btoday'?s?\b|\bdaily\b/.test(low);
+      if (dc && !evImageRef.current && (evActiveRef.current || mentionsToday)) {
+        const recentlyAsked = Date.now() - dailyAskedAt.current < 3 * 60_000;
+        const panel = evActiveRef.current && evToday;
+        const run = (a: DailyUiAction) => {
+          if (!evActiveRef.current) openEv();
+          setEvToday(true);
+          void dailyRef.current.act(a).then((r) => {
+            if (!r.ok) flashEv("error");
+            agent.appendLocalExchange(t, r.message);
+            sayRef.current(r.message);
+          });
+        };
+        if (dc.action === "show" || dc.action === "status") {
+          if (!evActiveRef.current) openEv();
+          setEvToday(true);
+          if (dc.action === "status" || evActiveRef.current) { const line = dv?.spoken ?? "Loading today's content."; agent.appendLocalExchange(t, line); sayRef.current(line); }
+          if (dp?.status === "ready") dailyAskedAt.current = Date.now();
+          return;
+        }
+        if (dc.action === "decline" && recentlyAsked && dp?.status === "ready") {
+          dailyAskedAt.current = 0;
+          reply("Okay — I'll keep it ready. Say \"publish it\" whenever you want.");
+          return;
+        }
+        if (dc.action === "approve" && dp && (!dc.weak || recentlyAsked)) {
+          if (dp.status === "ready" || (dp.status === "approved" && dp.publishError)) { dailyAskedAt.current = 0; run({ action: "approve" }); return; }
+          if (panel || mentionsToday) { reply(dv!.spoken); return; }
+        }
+        if (dp && (panel || mentionsToday || recentlyAsked)) {
+          switch (dc.action) {
+            case "reject": case "regenerate": case "another": case "video": case "retry":
+              run({ action: dc.action }); return;
+            case "caption":
+              run(dc.caption ? { action: "caption", caption: dc.caption, instruction: dc.instruction } : { action: "caption", instruction: dc.instruction }); return;
+            case "tone":
+              run({ action: "tone", tone: dc.tone, instruction: dc.instruction }); return;
+          }
+        }
+        if (!dp && dv && (dc.action === "approve" || mentionsToday) && !("weak" in dc && dc.weak)) {
+          if (!evActiveRef.current) openEv();
+          setEvToday(true);
+          reply(dv.spoken);
+          return;
+        }
+      }
       // "publish" with an EV image on screen → post THAT image + caption to
       // Instagram directly (your words are the approval), no model round-trip.
       if (evActiveRef.current && evImageRef.current && EV_PUBLISH_RE.test(low) && !EV_NEW_CONTENT_RE.test(low.replace(/caption.*$/, ""))) {
@@ -454,7 +533,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchUltron, launchDarwin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase, voice, voiceStarted]);
+  }, [agent, sleep, launchUltron, launchDarwin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase, evToday, flashEv, voice, voiceStarted]);
 
   // Voice was on in the agent you just left → switch it back on here.
   const resumingVoice = useResumeVoice(enableVoice);
@@ -716,6 +795,15 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           muted={voice.muted}
           onMic={() => (voiceStarted ? voice.toggleMute() : enableVoice())}
           onSleep={sleep}
+          daily={daily}
+          todayOpen={evToday}
+          onToggleToday={setEvToday}
+          onDailyAction={(a) => {
+            void daily.act(a).then((r) => {
+              if (!r.ok) flashEv("error");
+              if (voiceStarted && !voice.muted && voice.enabled) voice.speak(r.message);
+            });
+          }}
         />
       )}
       {humanoidPhase !== "off" && (
@@ -748,6 +836,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           onReplay={() => { void speakBriefing(true); }}
           onSkip={closeBriefing}
           onAsk={() => { closeBriefing(); focusCommand(""); }}
+          onOpenEv={() => { closeBriefing(); openEv(); setEvToday(true); }}
           onForget={(id) => { void forgetEvent(id); }}
         />
       )}

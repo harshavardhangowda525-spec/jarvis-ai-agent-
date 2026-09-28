@@ -1,4 +1,5 @@
 import "server-only";
+import { env } from "@/lib/env";
 import { getDb } from "@/lib/db";
 import { addDays, dayLabel, isDate, localDate, rangeBounds, todayIn, validTz, yesterdayIn, type DayRange } from "@/lib/activity/dates";
 import { buildBriefing, type Briefing } from "./build";
@@ -35,12 +36,21 @@ export async function loadBriefing(userId: string, range: DayRange, tzIn: string
     db.activityEvent.findFirst({ where: { userId }, orderBy: { timestamp: "asc" }, select: { timestamp: true } }),
     db.profile.findUnique({ where: { userId }, select: { displayName: true } }),
   ]);
+  // Today's EV package, for the morning briefing about yesterday.
+  const evDay = range.kind === "day" && range.from === yesterdayIn(tz, now)
+    ? await db.evDaily.findFirst({
+      where: { userId, date: todayIn(env.evDailyTz, now), current: true }, orderBy: { version: "desc" },
+      select: { status: true, topic: true, videoUrl: true, error: true, publishError: true },
+    }).catch(() => null)
+    : null;
 
   const briefing = buildBriefing({
     ...range, tz, now, events,
     tasks: { completed, remaining, used: anyTask > 0 },
     followUpsSoon: followUps.map((f) => ({ business: f.lead?.businessName ?? "a lead", dueAt: f.dueAt })),
-    evAwaitingApproval: evReady,
+    // the daily package is also mirrored into EvContent — don't count it twice
+    evAwaitingApproval: Math.max(0, evReady - (evDay?.status === "ready" ? 1 : 0)),
+    evToday: evDay ? { status: evDay.status, topic: evDay.topic, hasVideo: !!evDay.videoUrl, error: evDay.error, publishError: evDay.publishError } : null,
     recordedSince: first ? localDate(first.timestamp, tz) : null,
     userName: profile?.displayName ?? null,
   });
@@ -56,10 +66,12 @@ async function storeDaily(userId: string, date: string, tz: string, b: Briefing,
     if (cur && cur.eventCount === b.eventCount && +(cur.lastEventAt ?? 0) === +(lastEventAt ?? 0)) return;
     const data = { ...b.daily, metrics: b.metrics, agents: b.agents.filter((a) => a.status !== "inactive"), insights: b.insights };
     const stats = { metrics: b.metrics, completion: b.completion, timeline: b.timeline };
+    // today's EV status line belongs to today, not to the stored summary of this day
+    const narrative = b.evToday ? b.paragraphs.filter((p) => p !== b.evToday).join(" ") : b.spoken;
     await db.dailySummary.upsert({
       where: { userId_date: { userId, date } },
-      create: { userId, date, timezone: tz, data: data as object, narrative: b.spoken, stats: stats as object, eventCount: b.eventCount, lastEventAt },
-      update: { timezone: tz, data: data as object, narrative: b.spoken, stats: stats as object, eventCount: b.eventCount, lastEventAt, generatedAt: new Date() },
+      create: { userId, date, timezone: tz, data: data as object, narrative, stats: stats as object, eventCount: b.eventCount, lastEventAt },
+      update: { timezone: tz, data: data as object, narrative, stats: stats as object, eventCount: b.eventCount, lastEventAt, generatedAt: new Date() },
     });
   } catch (e) {
     console.error("[briefing] store daily summary failed:", e instanceof Error ? e.message : e);
