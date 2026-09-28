@@ -11,6 +11,7 @@ on:
       - "tests/windows.test.ts"
       - "tests/jarvis-browser.test.ts"
       - "tests/desktop-apps.test.ts"
+      - "tests/grab-throw.test.ts"
       - ".github/workflows/windows.yml"
 
 jobs:
@@ -33,4 +34,5 @@ jobs:
         run: |
           Get-ChildItem "$env:ProgramFiles\Google\Chrome\Application\chrome.exe","${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe" -ErrorAction SilentlyContinue | Select-Object FullName
       - name: ULTRON on Windows
-        run: npx vitest run tests/windows.test.ts tests/jarvis-browser.test.ts tests/desktop-apps.test.ts
+        # one file at a time: each starts real browsers, and a busy runner is slow enough already
+        run: npx vitest run --no-file-parallelism tests/windows.test.ts tests/jarvis-browser.test.ts tests/desktop-apps.test.ts tests/grab-throw.test.ts

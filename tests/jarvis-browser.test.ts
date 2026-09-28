@@ -141,7 +141,7 @@ describe.skipIf(!CHROME || !HAVE_DEPS)("ULTRON live browser socket (real Chromiu
     ws.on("message", (d: Buffer, bin: boolean) => { if (bin) { frames++; frame = d; } else states.push(JSON.parse(d.toString())); });
     await new Promise((r) => ws.on("open", r));
     const send = (m: unknown) => ws.send(JSON.stringify(m));
-    const until = async (f: () => boolean, ms = 15000) => { const t = Date.now(); while (!f() && Date.now() - t < ms) await new Promise((r) => setTimeout(r, 100)); return f(); };
+    const until = async (f: () => boolean, ms = 40_000) => { const t = Date.now(); while (!f() && Date.now() - t < ms) await new Promise((r) => setTimeout(r, 100)); return f(); };
     const sitePort = (site.address() as any).port;
     send({ t: "open", url: `http://127.0.0.1:${sitePort}/`, width: 640, height: 400, dpr: 1 });
     expect(await until(() => states.some((s) => s.t === "state" && s.title === "Form") && frames > 0)).toBe(true);
@@ -175,5 +175,5 @@ describe.skipIf(!CHROME || !HAVE_DEPS)("ULTRON live browser socket (real Chromiu
     send({ t: "nav", url: "file:///etc/passwd" });
     expect(await until(() => states.some((s) => s.t === "error" && /isn't a web address/.test(s.message)))).toBe(true);
     ws.close();
-  }, 60_000);
+  }, 120_000);
 });
