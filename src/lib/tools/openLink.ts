@@ -12,14 +12,14 @@ const schema = z.object({
 });
 
 /**
- * Opens a website in the user's browser (new tab). The agent surfaces this as
- * an `open` action; the client opens it and always shows a clickable link
- * (browsers block pop-ups that aren't started by a click).
+ * Opens a website for the user. The agent surfaces this as an `open` action;
+ * the JARVIS console shows it in its glass browser pop-up (and the reply keeps
+ * a clickable link).
  */
 export const openLinkTool: ToolDefinition<z.infer<typeof schema>> = {
   name: "open_link",
   description:
-    "Open a website in the user's browser — any site: Amazon, Flipkart, YouTube, Gmail, Maps, Netflix, Instagram, " +
+    "Open a website for the user (it opens inside JARVIS's browser window) — any site: Amazon, Flipkart, YouTube, Gmail, Maps, Netflix, Instagram, " +
     "GitHub, or any address like example.com. Give the site name (and optionally what to search for on it). " +
     "Use whenever the user says 'open …', 'go to …' or 'search <site> for …'. For reading/sending email or " +
     "managing calendar events use the gmail / google_calendar tools — this only opens the page. For apps installed on the " +

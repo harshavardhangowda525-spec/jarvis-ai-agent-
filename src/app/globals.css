@@ -489,3 +489,20 @@ body {
 .dw-daily-scan { transform-origin: 42px 42px; animation: dw-daily-scan 6s linear infinite; }
 .dw-daily-complete { animation: dw-daily-done 3.2s ease-in-out infinite; border-color: rgba(110,231,183,.35) !important; }
 @media (prefers-reduced-motion: reduce) { .dw-daily-scan, .dw-daily-complete { animation: none; } }
+
+/* JARVIS glass browser pop-up: loading sweep */
+@keyframes jv-browser-load { 0% { left: -35%; } 100% { left: 100%; } }
+/* liquid rim: a slowly drifting iridescent edge + specular highlight */
+.jv-browser::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1.2px; pointer-events: none; z-index: 20;
+  background: conic-gradient(from var(--jv-rim, 0deg), rgba(255,255,255,0.55), rgba(125,211,252,0.35), rgba(216,180,254,0.3), rgba(255,255,255,0.08), rgba(110,231,183,0.3), rgba(255,255,255,0.55));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: jv-rim 14s linear infinite;
+}
+.jv-browser::after {
+  content: ""; position: absolute; left: 6%; top: -40%; width: 45%; height: 80%; pointer-events: none; z-index: 0;
+  background: radial-gradient(closest-side, rgba(255,255,255,0.14), transparent); filter: blur(10px); transform: rotate(-12deg);
+}
+@property --jv-rim { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes jv-rim { to { --jv-rim: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .jv-browser::before { animation: none; } }

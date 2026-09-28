@@ -12,6 +12,7 @@ import { startServer } from "./src/server.mjs";
 import { askJson, groqFirst, groqKeySource, hasProvider, missingProviderMessage, providerName, providerSummary, warmOllama } from "./src/provider.mjs";
 import { log } from "./src/log.mjs";
 import { lowerOllamaPriority } from "./src/os-priority.mjs";
+import { closeBrowser } from "./src/browser.mjs";
 
 const port = Number(process.env.ULTRON_PORT || 7420);
 const ws = new Workspace(process.argv[2] || process.env.ULTRON_WORKSPACE);
@@ -47,4 +48,9 @@ if (providerSummary().includes("ollama(")) {
 
 startServer({ port, ws });
 
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { log.info("Shutting down…"); process.exit(0); });
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => {
+  log.info("Shutting down…");
+  const bye = () => process.exit(0);
+  closeBrowser().then(bye, bye);
+  setTimeout(bye, 3000).unref();
+});

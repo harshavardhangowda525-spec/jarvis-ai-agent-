@@ -19,6 +19,7 @@ import { killAll } from "./tools/terminal.mjs";
 import { capabilityCheck } from "./capabilities.mjs";
 import { doPower } from "./power.mjs";
 import { openApp, openUrl, listApps, appsEnabled } from "./apps.mjs";
+import { browserEnabled, handleBrowserSocket } from "./browser.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN_FILE = path.resolve(__dirname, "../.edith-token");
@@ -165,7 +166,7 @@ export function startServer({ port, ws }) {
         return;
       }
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ token, url: `ws://127.0.0.1:${port}`, brain: providerName() }));
+      res.end(JSON.stringify({ token, url: `ws://127.0.0.1:${port}`, brain: providerName(), features: [appsEnabled() && "apps", browserEnabled() && "browser"].filter(Boolean) }));
       return;
     }
     // Laptop power ("JARVIS, shut down my laptop"): only from an allowed origin
@@ -252,6 +253,15 @@ export function startServer({ port, ws }) {
   wss.on("connection", (socket, req) => {
     const url = new URL(req.url, "http://127.0.0.1");
     if (url.searchParams.get("token") !== token) { socket.close(4001, "unauthorized"); return; }
+    // The live browser pop-up ("JARVIS, open YouTube"): its own socket, only for
+    // your JARVIS page (allowed origin + token).
+    if (url.pathname === "/browser") {
+      const origin = req.headers.origin || "";
+      if (origin && !origins.has(origin)) { socket.close(4003, "origin not allowed"); return; }
+      if (!browserEnabled()) { socket.send(JSON.stringify({ t: "error", message: "The live browser is turned off on this computer (ULTRON_BROWSER=off)." })); socket.close(); return; }
+      handleBrowserSocket(socket);
+      return;
+    }
     clients.add(socket);
     log.info(`JARVIS UI paired (${clients.size})`);
     socket.send(JSON.stringify({ kind: "hello", provider: providerName(), mode, capabilities: capabilityCheck(ws), workspace: ws.root }));

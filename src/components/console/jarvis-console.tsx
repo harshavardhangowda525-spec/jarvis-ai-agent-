@@ -28,6 +28,7 @@ import { gestureModeCommand } from "@/lib/gesture/intent";
 import { DarwinReportCard, useDarwinReport } from "@/components/console/darwin-report";
 import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";
 import { WeatherPopup, type WeatherData } from "@/components/console/weather-popup";
+import { BrowserPopup, type BrowserTarget } from "@/components/console/browser-popup";
 import { NiosAlerts, useNiosWatch } from "@/components/console/nios-alert";
 import { parsePowerIntent, parseConfirmation, spokenDelay } from "@/lib/power-command";
 import { laptopPower } from "@/lib/local-power";
@@ -107,7 +108,9 @@ function openTab(url: string): boolean {
   }
 }
 
-type OpenedHow = "tab" | "pc" | "blocked";
+type OpenedHow = "tab" | "pc" | "blocked" | "jarvis";
+/** "… in a new tab", "… in my browser" → a real browser tab, not JARVIS's pop-up. */
+const NEW_TAB = /\b(?:in|on)\s+(?:a\s+)?(?:new|another|separate|different)\s+(?:browser\s+)?(?:tab|window)\b|\bin\s+(?:the|my)\s+(?:real\s+)?browser\b/i;
 /**
  * Open a web link in a new tab. The tab opens synchronously (call this before
  * any await, inside the click/keypress). If the browser blocks it — voice
@@ -148,6 +151,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [evPublishSignal, setEvPublishSignal] = useState(0);
   const [evCaptionOverride, setEvCaptionOverride] = useState<string | undefined>();
   const [weather, setWeather] = useState<WeatherData | null>(null);
+  // JARVIS's glass browser pop-up — links open here instead of a new tab
+  const [browser, setBrowser] = useState<BrowserTarget | null>(null);
+  const browserRef = useRef<BrowserTarget | null>(null);
+  browserRef.current = browser;
+  const showInJarvis = useCallback((site: SiteTarget) => { setBrowser({ url: site.url, label: site.label, key: Date.now() }); }, []);
   const fetchWeatherRef = useRef<(place?: string) => void>(() => {});
   const evActiveRef = useRef(false);
   const evPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -277,11 +285,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         flashEv("success");
         return;
       }
-      // Otherwise open in a NEW tab, never hijack the current one. The AI's reply
-      // comes after the keypress, so the pop-up blocker may stop it: then ULTRON
-      // opens it in your browser, and the "Open X" button in the reply is the
-      // last resort.
-      void openSite({ url, label: url });
+      // Otherwise open it right here, in JARVIS's glass browser (never hijack
+      // this tab, and no pop-up blocker in the way).
+      let label = url;
+      try { label = new URL(url).hostname.replace(/^www\./, ""); } catch { /* keep */ }
+      showInJarvis({ url, label });
     },
   });
 
@@ -294,8 +302,15 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   openAppsRef.current = async (said, names, o = {}) => {
     const strong = o.strong ?? true;
     const plan = planOpen(names, { installed: installedAppNames(), ultronKnown: ultronKnown(), india: inIndia() });
-    // every website's tab starts NOW (before any await)
-    const tabs = plan.map((p) => (p.kind === "web" ? openSite(p.site) : null));
+    // The first website opens in JARVIS's glass browser; more (or "in a new
+    // tab") open as tabs, which start NOW (before any await).
+    const wantTab = NEW_TAB.test(said);
+    let popupUsed = false;
+    const openWeb = (site: SiteTarget): Promise<OpenedHow> => {
+      if (!wantTab && !popupUsed) { popupUsed = true; showInJarvis(site); return Promise.resolve("jarvis"); }
+      return openSite(site);
+    };
+    const tabs = plan.map((p) => (p.kind === "web" ? openWeb(p.site) : null));
     const opened: string[] = [], missing: string[] = [], notes: string[] = [], blocked: string[] = [];
     const links: { url: string; label: string }[] = [];
     let offline: string | null = null;
@@ -311,7 +326,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       const r = await openLocalApp(p.name);
       if (r.ok) { opened.push(r.app); continue; }
       if (p.site) {
-        web(p.site, await openSite(p.site), r.reason === "not_found" ? `${p.site.label} isn't installed as an app on this PC, so I opened the website instead.` : undefined);
+        web(p.site, await openWeb(p.site), r.reason === "not_found" ? `${p.site.label} isn't installed as an app on this PC, so I opened the website instead.` : undefined);
         continue;
       }
       if (r.reason === "not_found") missing.push(r.suggestions.length ? `${p.name} (did you mean ${r.suggestions.join(" or ")}?)` : p.name);
@@ -336,6 +351,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const openWebRef = useRef<(said: string, site: SiteTarget) => void>(() => {});
   openWebRef.current = (said, site) => {
     const links = [{ url: site.url, label: `Open ${site.label}` }];
+    if (!NEW_TAB.test(said)) {
+      showInJarvis(site);
+      const msg = `Opening ${site.label}.`;
+      agent.appendLocalExchange(said, msg, links);
+      sayRef.current(msg);
+      return;
+    }
     void openSite(site).then((how) => {
       const msg = how === "blocked" ? blockedLine([site.label]) : how === "pc" ? `Opening ${site.label} in your browser.` : `Opening ${site.label}.`;
       agent.appendLocalExchange(said, msg, links);
@@ -643,6 +665,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // "Open Spotify", "launch VS Code", "start WhatsApp and Spotify" → the real
       // app on this PC. "start/run …" only counts when such an app is installed;
       // otherwise it carries on to JARVIS's brain ("run the tests" isn't an app).
+      // "close the browser", "close it" while the glass browser is open
+      if (browserRef.current && /^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?(?:close|exit|hide|dismiss|shut)\s+(?:the\s+|this\s+|that\s+)?(?:browser|web ?page|website|site|page|tab|pop-?up|window|video|it)(?:\s+please)?[.!\s]*$/i.test(t)) {
+        setBrowser(null);
+        agent.appendLocalExchange(t, "Closed.");
+        sayRef.current("Closed.");
+        return;
+      }
       // "open that link", "open the second link" → a link already in the chat.
       const ref = evActiveRef.current ? null : parseOpenLinkRef(t);
       if (ref) {
@@ -973,6 +1002,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       case "back": {
         if (brief) { closeBriefing(); return "BRIEFING CLOSED"; }
+        if (browserRef.current) { setBrowser(null); return "BROWSER CLOSED"; }
         if (weather) { setWeather(null); return "CLOSED"; }
         if (evActiveRef.current && evImageRef.current) { setEvImage(null); return "BACK TO THE STUDIO"; }
         if (evActiveRef.current && evToday) { setEvToday(false); return "EV STUDIO"; }
@@ -1051,6 +1081,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         />
       )}
       {weather && <WeatherPopup data={weather} onClose={() => setWeather(null)} />}
+      {browser && <BrowserPopup target={browser} onClose={() => setBrowser(null)} onOpenTab={(u) => { openTab(u); }} />}
       <NiosAlerts watch={nios} />
       <DarwinReportCard w={darwinReport} onOpenDarwin={launchDarwin} />
       {brief?.phase === "open" && (
@@ -1169,7 +1200,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
             {subtitleLinks.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {subtitleLinks.map((l, i) => (
-                  <a key={i} href={l.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+                  <a key={i} href={l.url} target="_blank" rel="noopener noreferrer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // a plain click opens it in JARVIS's browser; ctrl/⌘/middle-click → a real tab
+                      if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0 || /\/api\/ev\/media\//.test(l.url)) return;
+                      e.preventDefault();
+                      showInJarvis({ url: l.url, label: l.label.replace(/^Open\s+/i, "") });
+                    }}
                     className="rounded-full border border-cyan-100/20 bg-cyan-100/[0.06] px-3 py-1 text-[11px] text-cyan-50 transition hover:bg-cyan-100/[0.12]">
                     {/^open /i.test(l.label) ? l.label : `Open ${l.label}`} ↗
                   </a>

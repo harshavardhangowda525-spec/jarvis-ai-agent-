@@ -382,14 +382,21 @@ the same paired, origin-locked connection.
 
 ## Open links and websites
 
-JARVIS opens websites and links in a **new tab**, alongside launching apps:
+Links open **inside JARVIS**, in a liquid-glass browser window with back,
+forward, reload, an address bar (type an address, a site name or a search),
+maximize, "open in a new tab" and close.
 
-- **Sites by name:** "open YouTube", "open Gmail in a new tab", "open Amazon and search for USB cables", "search YouTube for lo-fi".
-- **Any address:** "open https://github.com/…", "go to example.com/docs", "open this link www.example.org", "open localhost:3000". Paste a link on its own (`https://…` or `www.…`) and it opens too.
-- **Links JARVIS showed you:** "open that link", "open the second link", "click the last link".
-- **App or website?** JARVIS keeps the list of apps installed on your PC (from ULTRON), so it decides instantly: "open Spotify" launches the Spotify app if it's installed, and "open YouTube" opens a tab. Without ULTRON running, every known site opens as a tab.
-- **Pop-up blocker:** a tab opened from a typed command or click always works. Voice commands and AI replies aren't clicks, so the browser may block the tab. Then ULTRON (when running) opens the link in your default browser, and otherwise the reply has an "Open …" button. Allowing pop-ups for your JARVIS site (icon at the right of Chrome's address bar) makes voice links open directly.
-- **Safety:** ULTRON only opens `http`/`https` addresses, as one argument to the system's own URL opener (no shell), and only for your paired JARVIS app. `ULTRON_APPS=off` turns this off too.
+- **What you can say:** "open YouTube", "open Gmail", "open Amazon and search for USB cables", "search YouTube for lo-fi", "open https://github.com/…", "go to example.com/docs", "open this link www.example.org", "open localhost:3000". A link pasted on its own opens too. "Open that link" / "open the second link" open links JARVIS already showed you, and clicking a link button in a reply opens it here (Ctrl/⌘-click for a real tab).
+- **How the site runs in the window:**
+  - Video/music/map links use the site's official player: YouTube videos, shorts and playlists, Google Maps, Spotify, Vimeo. These work everywhere, including on Vercel.
+  - Sites that allow being shown inside other apps load directly.
+  - Most big sites (YouTube's home page, Gmail, Amazon, GitHub, Google search…) refuse that. For those, **ULTRON runs the site in a real Chrome/Edge on your PC and streams it into the window**. Your clicks, scrolling, typing and paste go straight to it, so it works like a normal tab. That browser has its own profile (`edith/.browser-profile`), so sign in once and you stay signed in. Sound plays from your PC.
+  - Without ULTRON running, those sites show a preview card with an "Open in a new tab" button.
+- **App or website?** JARVIS keeps the list of apps installed on your PC (from ULTRON): "open Spotify" launches the Spotify app if it's installed, "open YouTube" opens the website.
+- **Real tab:** say "… in a new tab" ("open Gmail in a new tab"), or use the ↗ button in the window. If the browser blocks a tab JARVIS didn't open from a click, ULTRON opens it in your default browser instead.
+- **Closing:** the ✕ button, Esc, "close the browser" / "close it", or the gesture for back.
+- **Limits of the live view:** file uploads and downloads are off (use "open in a new tab" for those). Some sign-ins, such as Google's, may refuse a browser that's being remote-controlled. If that happens, sign in with "open in a new tab" or use the app. Needs Google Chrome or Microsoft Edge on the PC (or set `ULTRON_BROWSER_PATH`).
+- **Safety:** only your paired JARVIS page (allowed origin + pairing token) can drive the live browser or open links through ULTRON. Only `http`/`https` addresses are opened, as a single argument with no shell. Camera, microphone and location requests from sites are denied. Turn the live browser off with `ULTRON_BROWSER=off` (and link/app opening with `ULTRON_APPS=off`) in `edith/.env`.
 
 ## Memory — "remember that…"
 

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "ULTRON \u2014 JARVIS's local software-development subagent runtime. Real filesystem, terminal, git, build and test tools on the user's machine.",
+  "description": "ULTRON — JARVIS's local software-development subagent runtime. Real filesystem, terminal, git, build and test tools on the user's machine.",
   "bin": {
     "jarvis-ultron": "run.mjs"
   },
@@ -16,6 +16,7 @@
     "brain": "node brain.mjs"
   },
   "dependencies": {
+    "playwright-core": "^1.63.0",
     "ws": "^8.18.0"
   }
 }

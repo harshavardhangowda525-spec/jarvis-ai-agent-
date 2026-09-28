@@ -4,3 +4,4 @@ workspaces/
 .edith/
 *.log
 .brain-key
+.browser-profile/

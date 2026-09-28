@@ -57,3 +57,18 @@ export async function ultronCall<T extends Record<string, unknown>>(path: string
     return { ok: false, reason: "offline", message: "Lost contact with my local runtime." };
   }
 }
+
+/** ULTRON's address + pairing token (+ what it can do), for a direct socket like the live browser. */
+export async function ultronPair(): Promise<{ ok: true; base: string; token: string; features: string[] } | UltronFailure> {
+  const base = ultronHttp();
+  try {
+    const r = await fetch(`${base}/pair`, { signal: AbortSignal.timeout(4000) });
+    if (r.status === 403) return { ok: false, reason: "origin", message: "ULTRON on this computer doesn't trust this page yet — add this site to ULTRON_ALLOWED_ORIGINS in edith/.env and restart it." };
+    const j = await r.json();
+    if (!j?.token) return { ok: false, reason: "offline", message: OFFLINE };
+    markUltronKnown();
+    return { ok: true, base, token: String(j.token), features: Array.isArray(j.features) ? j.features.map(String) : [] };
+  } catch {
+    return { ok: false, reason: "offline", message: OFFLINE };
+  }
+}
