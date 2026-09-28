@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BriefingPopup } from "@/components/console/briefing-popup";
+import type { Briefing } from "@/lib/briefing/build";
+import { briefingRequest } from "@/lib/briefing/intent";
+import { yesterdayIn } from "@/lib/activity/dates";
+import { logActivity } from "@/lib/activity/client";
 import { useRouter } from "next/navigation";
 import { Mic, MicOff, Paperclip, Loader2, Power, X, LayoutGrid, Volume2 } from "lucide-react";
 import { type OrbState } from "@/components/orb";
@@ -132,6 +137,10 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const stageRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const [intro, setIntro] = useState<{ logo: boolean; online: boolean; done: boolean }>({ logo: false, online: false, done: false });
+  // ===== previous-day intelligence briefing =====
+  const [brief, setBrief] = useState<{ phase: "analyzing" | "open"; data: Briefing | null; error: string | null; closing: boolean } | null>(null);
+  const [briefSpeaking, setBriefSpeaking] = useState(false);
+  const openBriefingRef = useRef<(range?: { from: string; to: string; label: string }) => Promise<void>>(async () => {});
   const [layout, setLayout] = useState<{ hub: Pt; agents: Record<AgentName, Pt>; ribbonY: number } | null>(null);
   const [processing, setProcessing] = useState(false);
   const [anomalyAt, setAnomalyAt] = useState<Pt | null>(null);
@@ -240,6 +249,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     setTimeout(() => router.push("/dashboard/darwin"), 1000);
   }, [router, voice, voiceStarted]);
   const openHumanoid = useCallback(() => {
+    logActivity({ category: "agent", agent: "HUMANOID", action: "Opened Humanoid View", importance: 1 });
     setHumanoidPhase("in");
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Humanoid view activated.");
     setTimeout(() => setHumanoidPhase("active"), 1400);
@@ -250,6 +260,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     setTimeout(() => setHumanoidPhase("off"), 900);
   }, [voice, voiceStarted]);
   const openEv = useCallback(() => {
+    logActivity({ category: "agent", agent: "EV", action: "Opened EV", importance: 1 });
     motion.current?.activateAgent("EV");
     evActiveRef.current = true;
     setEvAwaitingApproval(false);
@@ -343,6 +354,10 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         reply(`Shut down your laptop? Say "yes" to confirm — it will power off ${spokenDelay(power.delaySec)} later, and you can still say "cancel shutdown".`);
         return;
       }
+
+      // ===== "What did I do yesterday?" / "last week" / "on September 25" → the briefing =====
+      const hist = briefingRequest(t, browserTz());
+      if (hist) { void openBriefingRef.current(hist.label === "Yesterday" ? undefined : hist); return; }
 
       if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) { sleep(); return; }
 
@@ -510,6 +525,60 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     requestAnimationFrame(() => { inputRef.current?.focus(); inputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); });
   }, []);
 
+  // ---- previous-day briefing: core scans → glass popup → voice → back to normal ----
+  const browserTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch { return "UTC"; } };
+  const briefReqRef = useRef(0);
+  const openBriefing = useCallback(async (range?: { from: string; to: string; label: string }) => {
+    const req = ++briefReqRef.current;
+    voice.stopSpeaking();
+    setBriefSpeaking(false);
+    setBrief({ phase: "analyzing", data: null, error: null, closing: false });
+    const started = Date.now();
+    const qs = new URLSearchParams({ tz: browserTz(), ...(range ? { from: range.from, to: range.to, label: range.label } : {}) });
+    let data: Briefing | null = null, error: string | null = null;
+    try {
+      const res = await fetch(`/api/briefing?${qs}`);
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) data = j.data as Briefing; else error = j.error || "I couldn't load the briefing.";
+    } catch { error = "I couldn't reach the server for the briefing."; }
+    // Let the core's scan play for a beat before the glass materialises.
+    const wait = Math.max(0, 1100 - (Date.now() - started));
+    setTimeout(() => { if (req === briefReqRef.current) setBrief({ phase: "open", data, error, closing: false }); }, wait);
+  }, [voice]);
+  useEffect(() => { openBriefingRef.current = openBriefing; }, [openBriefing]);
+  const speakBriefing = useCallback(async (force = false) => {
+    const text = brief?.data?.spoken;
+    if (!text) return;
+    let ready = voiceStarted && !voice.muted && voice.enabled;
+    if (!ready && force) ready = await enableVoice();
+    if (!ready) return;
+    voice.stopSpeaking();
+    setBriefSpeaking(true);
+    try { await voice.speak(text); } finally { setBriefSpeaking(false); }
+  }, [brief?.data?.spoken, voice, voiceStarted]); // eslint-disable-line react-hooks/exhaustive-deps
+  const closeBriefing = useCallback(() => {
+    voice.stopSpeaking(); setBriefSpeaking(false);
+    setBrief((b) => (b ? { ...b, closing: true } : b));
+    setTimeout(() => setBrief(null), 450);
+  }, [voice]);
+  const forgetEvent = useCallback(async (id: string) => {
+    const res = await fetch(`/api/activity/${id}`, { method: "DELETE" }).catch(() => null);
+    if (!res?.ok || !brief?.data) return;
+    const { from, to, label } = brief.data;
+    // Recompute from the history so every number reflects the removal.
+    const qs = new URLSearchParams({ tz: browserTz(), from, to, label });
+    const j = await fetch(`/api/briefing?${qs}`).then((r) => r.json()).catch(() => null);
+    if (j?.data) setBrief((b) => (b ? { ...b, data: j.data } : b));
+  }, [brief?.data]);
+  // Opening JARVIS: brief on yesterday once per session (a refresh doesn't repeat it).
+  useEffect(() => {
+    if (!intro.done) return;
+    const key = `jarvis.briefing.${yesterdayIn(browserTz())}`;
+    try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch { /* private mode: still brief */ }
+    const t = setTimeout(() => { if (evPhase === "off" && humanoidPhase === "off") void openBriefing(); }, 700);
+    return () => clearTimeout(t);
+  }, [intro.done]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleSend(e?: React.FormEvent) {
     e?.preventDefault();
     const t = input.trim(); if (!t) return;
@@ -563,6 +632,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const latest = agent.activity[0];
   useEffect(() => () => clearTimeout(execTimer.current), []);
   const jState: JState = (() => {
+    if (brief?.phase === "analyzing") return "research"; // the core wakes and scans while yesterday is analysed
     if (voice.status === "speaking") return "speaking";
     if (voice.status === "recording") return "listening";
     if (agent.streaming) {
@@ -668,6 +738,19 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       )}
       {weather && <WeatherPopup data={weather} onClose={() => setWeather(null)} />}
       <NiosAlerts watch={nios} />
+      {brief?.phase === "open" && (
+        <BriefingPopup
+          briefing={brief.data}
+          error={brief.error}
+          closing={brief.closing}
+          speaking={briefSpeaking}
+          onReady={() => { void speakBriefing(); }}
+          onReplay={() => { void speakBriefing(true); }}
+          onSkip={closeBriefing}
+          onAsk={() => { closeBriefing(); focusCommand(""); }}
+          onForget={(id) => { void forgetEvent(id); }}
+        />
+      )}
       {emails.current && <EmailComposePopup key={emails.current.id} email={emails.current} waiting={emails.waiting} onClose={emails.close} />}
 
       {/* the living environment */}

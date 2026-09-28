@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { recordActivity } from "@/lib/activity/record";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
@@ -31,6 +32,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       },
     });
     if (res.count === 0) return fail("Task not found.", 404);
+    if (body.status) {
+      const t = await getDb().task.findFirst({ where: { id: params.id, userId: user.id }, select: { title: true, priority: true } });
+      if (t) await recordActivity(user.id, {
+        category: "task", agent: "JARVIS", source: "task", status: body.status === "done" ? "success" : "info",
+        action: body.status === "done" ? `Task completed: ${t.title}` : `Task reopened: ${t.title}`,
+        importance: body.status === "done" ? 3 : 2, metadata: { taskId: params.id },
+      });
+    }
     return ok({ updated: true });
   } catch (err) {
     return handleError(err);

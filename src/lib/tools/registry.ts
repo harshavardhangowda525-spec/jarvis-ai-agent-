@@ -38,6 +38,7 @@ import { darwinOutreachTool } from "./darwin/outreach";
 import { darwinMessageTool } from "./darwin/message";
 import { darwinMapTool } from "./darwin/map";
 import { niosTool } from "./nios";
+import { activityTool } from "./activity";
 
 const ALL_TOOLS: ToolDefinition[] = [
   calculatorTool as ToolDefinition,
@@ -73,6 +74,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   darwinMessageTool as ToolDefinition,
   darwinMapTool as ToolDefinition,
   niosTool as ToolDefinition,
+  activityTool as ToolDefinition,
 ];
 
 /**

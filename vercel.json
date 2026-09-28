@@ -23,12 +23,19 @@
     },
     "src/app/api/cron/nios/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/cron/daily-summary/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
     {
       "path": "/api/cron/nios",
       "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/cron/daily-summary",
+      "schedule": "45 18 * * *"
     }
   ]
 }

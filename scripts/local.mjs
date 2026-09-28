@@ -235,6 +235,10 @@ if (await waitFor(`${local}/login`, 120)) {
   };
   setTimeout(niosCheck, 60_000);
   setInterval(niosCheck, 15 * 60_000);
+  // Daily summaries: store yesterday's structured summary (idempotent — safe to repeat).
+  const dailySummary = () => fetch(`${local}/api/cron/daily-summary`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(90_000) }).catch(() => {});
+  setTimeout(dailySummary, 90_000);
+  setInterval(dailySummary, 60 * 60_000);
   if (!process.argv.includes("--no-open")) {
     if (win) spawn(`start "" "${local}"`, { shell: true, stdio: "ignore", detached: true });
     else if (process.platform === "darwin") spawn("open", [local], { stdio: "ignore", detached: true });

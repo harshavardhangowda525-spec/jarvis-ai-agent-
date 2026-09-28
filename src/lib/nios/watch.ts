@@ -1,4 +1,5 @@
 import "server-only";
+import { recordActivity } from "@/lib/activity/record";
 import { createHash } from "node:crypto";
 import { getDb } from "@/lib/db";
 import { env } from "@/lib/env";
@@ -166,6 +167,13 @@ export async function checkForUser(userId: string, opts: { force?: boolean } = {
     : [];
   const labels = new Map(sources.map((s) => [s.key, s.label]));
   const newNotices = rows.map((r) => toDTO(r, labels));
+  for (const n of newNotices) {
+    await recordActivity(userId, {
+      category: "notice", agent: "JARVIS", source: "nios", project: "NIOS", status: "info",
+      action: `New NIOS notice: ${n.title}`, result: [n.sourceLabel, n.dateText].filter(Boolean).join(" · ") || null,
+      importance: n.category === "exam" || n.category === "result" ? 4 : 3, metadata: { url: n.url, category: n.category },
+    });
+  }
 
   // email digest (from the user's own Gmail, to themselves)
   let emailed = 0, emailNote: string | null = null;

@@ -36,6 +36,8 @@ model User {
   darwinMessages   DarwinMessage[]
   darwinSearchCursors DarwinSearchCursor[]
   niosNotices      NiosNotice[]
+  activityEvents   ActivityEvent[]
+  dailySummaries   DailySummary[]
 
   @@index([email])
 }
@@ -408,4 +410,47 @@ model NiosNotice {
 
   @@unique([userId, fingerprint])
   @@index([userId, firstSeenAt])
+}
+
+/// JARVIS's persistent activity history — what happened across every agent,
+/// recorded as it happens (never demo data). Feeds the daily briefing.
+model ActivityEvent {
+  id          String   @id @default(cuid())
+  userId      String
+  timestamp   DateTime @default(now())
+  date        String // YYYY-MM-DD in the user's timezone at the time
+  category    String // command | task | development | business | marketing | communication | agent | file | error | solution | decision | notice | conversation
+  agent       String // JARVIS | DARWIN | EV | ULTRON | HUMANOID | …
+  action      String   @db.Text
+  result      String?  @db.Text
+  status      String   @default("info") // success | failed | info
+  importance  Int      @default(2) // 1 minor … 5 critical
+  project     String?
+  source      String // chat | tool | darwin | task | ultron | client | nios | ev | user
+  metadata    Json?
+  fingerprint String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp])
+  @@index([userId, date])
+}
+
+/// The structured summary of one day (built at the end of the day and
+/// refreshed if more activity for that day is recorded later).
+model DailySummary {
+  id          String    @id @default(cuid())
+  userId      String
+  date        String // YYYY-MM-DD
+  timezone    String
+  data        Json
+  narrative   String    @db.Text
+  stats       Json
+  eventCount  Int
+  lastEventAt DateTime?
+  generatedAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
 }

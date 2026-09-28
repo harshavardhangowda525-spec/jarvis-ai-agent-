@@ -8,6 +8,8 @@ import { loadMemories } from "@/lib/ai/user-memory";
 import { agentRequestSchema } from "@/lib/validation";
 import { fail, handleError, rateLimit } from "@/lib/api";
 import { truncate } from "@/lib/utils";
+import { recordActivity } from "@/lib/activity/record";
+import { isTrivialCommand } from "@/lib/activity/tool-events";
 
 export const runtime = "nodejs";
 // A local Ollama brain on a CPU is slower than cloud APIs — allow up to 5 min
@@ -82,6 +84,7 @@ export async function POST(req: NextRequest) {
         send({ type: "meta", conversationId: convoId });
 
         let finalText = "";
+        let turnError: string | null = null;
         const toolSummaries: { name: string; status: string; summary: string }[] = [];
 
         try {
@@ -99,6 +102,7 @@ export async function POST(req: NextRequest) {
             agent: agent === "ev" ? "ev" : agent === "darwin" ? "darwin" : undefined,
           })) {
             if (event.type === "done") finalText = event.text;
+            if (event.type === "error") turnError = event.message;
             if (event.type === "tool") {
               toolSummaries.push({
                 name: event.name,
@@ -110,7 +114,28 @@ export async function POST(req: NextRequest) {
           }
         } catch (err) {
           console.error("[agent route] stream error:", err);
-          send({ type: "error", message: "The assistant encountered an error." });
+          turnError = "The assistant encountered an error.";
+          send({ type: "error", message: turnError });
+        }
+
+        // Activity history: the command and how it went (routine chit-chat skipped).
+        const who = agent === "ev" ? "EV" : agent === "darwin" ? "DARWIN" : "JARVIS";
+        // "Forget …" commands aren't themselves remembered.
+        if (!isTrivialCommand(message) && !/^\s*(please\s+)?(jarvis[,\s]+)?forget\b/i.test(message)) {
+          const okTools = toolSummaries.filter((t) => t.status === "ok");
+          const firstSentence = (finalText.match(/^[\s\S]{1,220}?[.!?](\s|$)/)?.[0] ?? finalText.slice(0, 220)).trim();
+          await recordActivity(user.id, {
+            category: "command", agent: who, source: "chat",
+            action: message,
+            result: turnError ? `Failed: ${turnError}` : firstSentence || okTools.map((t) => t.summary).join(" · ") || null,
+            status: turnError ? "failed" : okTools.length ? "success" : "info",
+            importance: turnError ? 3 : okTools.length ? 3 : 2,
+            project: who === "JARVIS" ? null : who,
+            metadata: { conversationId: convoId, tools: toolSummaries.map((t) => t.name) },
+          });
+        }
+        if (turnError) {
+          await recordActivity(user.id, { category: "error", agent: who, source: "chat", action: "JARVIS couldn't complete a request", result: turnError, status: "failed", importance: 3 });
         }
 
         // Persist the assistant reply + conversation bookkeeping.

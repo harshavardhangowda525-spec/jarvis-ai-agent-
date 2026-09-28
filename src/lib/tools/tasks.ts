@@ -86,7 +86,8 @@ export const tasksTool: ToolDefinition<z.infer<typeof schema>> = {
           data: { status: "done", completedAt: new Date() },
         });
         if (res.count === 0) throw new ToolError("No matching task found.");
-        return { data: { completed: true }, summary: "Task completed." };
+        const done = await db.task.findFirst({ where: { id: input.id, userId: ctx.userId }, select: { title: true } });
+        return { data: { completed: true, title: done?.title ?? null }, summary: done?.title ? `Task completed: ${done.title}` : "Task completed." };
       }
       case "update": {
         if (!input.id) throw new ToolError("No task id provided.");

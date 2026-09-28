@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { ok, handleError } from "@/lib/api";
+import { forgetTz } from "@/lib/activity/record";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ export async function PATCH(req: NextRequest) {
       where: { userId: user.id },
       data: body,
     });
+    forgetTz(user.id);
     return ok({ profile });
   } catch (err) {
     return handleError(err);

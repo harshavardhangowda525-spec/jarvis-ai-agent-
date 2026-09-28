@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logActivity } from "@/lib/activity/client";
 import { useRouter } from "next/navigation";
 import { Mic, MicOff, Loader2, LogOut, MapPin, X, Radar, Instagram, Globe, ExternalLink, Database, RotateCw } from "lucide-react";
 import { useVoice, useResumeVoice } from "@/hooks/useVoice";
@@ -117,6 +118,7 @@ export function DarwinConsole() {
     fetch("/api/darwin/leads?followups=1&limit=6").then((r) => (r.ok ? r.json() : null)).then((j) => j?.data && setFollowUps(j.data.leads)).catch(() => {});
   }, []);
   useEffect(() => { loadOverview(); loadLeads(); const t = setInterval(loadOverview, 30000); return () => clearInterval(t); }, [loadOverview, loadLeads]);
+  useEffect(() => { logActivity({ category: "agent", agent: "DARWIN", action: "Opened DARWIN", importance: 1 }); }, []);
   // Seed the live feed with DARWIN's real recent activity.
   const seeded = useRef(false);
   useEffect(() => {

@@ -33,6 +33,7 @@ registering a **tool** — the agent loop never changes.
 - [Production deployment](#production-deployment)
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
+- [Previous-day briefing](#previous-day-briefing)
 - [Shut down your laptop by voice](#shut-down-your-laptop-by-voice)
 - [NIOS board notifications](#nios-board-notifications)
 
@@ -319,6 +320,44 @@ balancer / uptime monitor.
 
 Built as a real, deployable agent — not a mockup. Add a tool, and JARVIS can do
 something new.
+
+## Previous-day briefing
+
+Open JARVIS and it briefs you on **yesterday** (your own timezone): the core
+wakes and scans, a liquid-glass briefing materialises, and — with voice on —
+JARVIS reads it out. It stays until you press **Skip**, close it, press Esc or
+choose **Ask JARVIS**. It opens once per browser session (a refresh doesn't
+repeat it). **Replay** re-reads it; **Expand** shows the full day — accomplishments,
+problems and fixes, decisions, next actions and every recorded event (each with a
+"forget" button).
+
+Ask any time: "What did I do yesterday?", "Yesterday's briefing", "What did I do
+on September 25?", "What did I work on last week?", "Show me my activity from the
+last 7 days". Specific questions ("What problems did I encounter?", "What did
+DARWIN do yesterday?", "What did I leave unfinished?") are answered by JARVIS
+from the same history. Tell JARVIS about work done elsewhere — "I called Iron
+Temple Gym, they want a quote", "we decided to price websites at ₹4,999" — and
+it's logged. "Forget this event" removes the latest event (or name it).
+
+**What's recorded** (table `ActivityEvent`, in your database — survives restarts,
+refreshes and redeploys): your commands and how they went; tasks created and
+completed; DARWIN discoveries, pipeline moves, follow-ups and outreach; EV
+content, visuals and Instagram publishing; ULTRON goals, completions, fixes and
+deployments; emails and calendar events JARVIS created; new NIOS notices; agent
+views you opened; every failure. Routine lookups (time, weather, listing) and
+repeats are skipped. Passwords, API keys, tokens, private keys, connection
+strings and card numbers are redacted before anything is stored.
+
+**Every number is real.** Metrics, the completion ring, the timeline, agent
+status, insights and "Continue today" are computed from recorded activity and
+your tasks. Anything without enough data says so instead of showing a value.
+
+**Daily summaries** (table `DailySummary`): each finished day is stored as
+`{ date, accomplishments, projects, business_progress, development_progress,
+problems, solutions, unfinished_tasks, important_decisions, next_actions }` —
+built at the end of the day by Vercel Cron (`/api/cron/daily-summary`, 00:15 IST,
+needs `CRON_SECRET`), hourly by `npm run local`, and whenever a briefing is opened
+(refreshed if more activity for that day turns up).
 
 ## Shut down your laptop by voice
 

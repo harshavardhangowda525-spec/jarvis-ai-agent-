@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import os from "node:os";
 import path from "node:path";
 import { parsePowerIntent, parseConfirmation, spokenDelay } from "@/lib/power-command";
-// @ts-expect-error — plain ESM from the local runtime
 import { powerPlan, clampDelay, powerEnabled, doPower } from "../edith/src/power.mjs";
 
 describe("laptop power commands", () => {
@@ -55,8 +54,8 @@ describe("ULTRON power module", () => {
     expect(clampDelay("x")).toBe(30);
   });
   it("can be switched off on the computer", async () => {
-    expect(powerEnabled({ ULTRON_POWER: "off" })).toBe(false);
-    expect(powerEnabled({})).toBe(true);
+    expect(powerEnabled({ ULTRON_POWER: "off" } as unknown as NodeJS.ProcessEnv)).toBe(false);
+    expect(powerEnabled({} as NodeJS.ProcessEnv)).toBe(true);
   });
   it("schedules and cancels without running anything (non-Windows timer)", async () => {
     if (process.platform === "win32") return;
@@ -74,9 +73,7 @@ describe("ULTRON /power endpoint", () => {
   beforeAll(async () => {
     process.env.ULTRON_TOKEN = "power-test-token";
     process.env.ULTRON_POWER = "off"; // the endpoint must never power off the test machine
-    // @ts-expect-error — plain ESM
     const { startServer } = await import("../edith/src/server.mjs");
-    // @ts-expect-error — plain ESM
     const { Workspace } = await import("../edith/src/workspace.mjs");
     const ws = new Workspace(path.join(os.tmpdir(), `ultron-power-${Date.now()}`));
     server = startServer({ port, ws });

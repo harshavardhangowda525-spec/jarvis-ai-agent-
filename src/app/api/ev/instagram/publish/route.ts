@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { recordActivity } from "@/lib/activity/record";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest) {
         }
         const mediaId = await igPublishContainer(creds, containerId);
         await markPublished(mediaId);
+        await recordActivity(user.id, { category: "marketing", agent: "EV", source: "ev", project: "EV", action: "Published a reel to Instagram", result: String(body.caption ?? "").slice(0, 160) || null, status: "success", importance: 4, metadata: { mediaId } });
         return ok({ published: true, mediaId, type: "reel" });
       }
 
@@ -83,9 +85,13 @@ export async function POST(req: NextRequest) {
       catch (e) { if (e instanceof IgImageError) return fail(e.message, 422); throw e; }
       const mediaId = await igPublishImage(creds, ready.url, body.caption);
       await markPublished(mediaId);
+      await recordActivity(user.id, { category: "marketing", agent: "EV", source: "ev", project: "EV", action: "Published a post to Instagram", result: String(body.caption ?? "").slice(0, 160) || null, status: "success", importance: 4, metadata: { mediaId } });
       return ok({ published: true, mediaId, type: "image", adjusted: ready.note ?? null });
     } catch (err) {
-      if (err instanceof IgError) return fail(`Instagram: ${err.message}`, err.status && err.status >= 400 && err.status < 500 ? err.status : 502);
+      if (err instanceof IgError) {
+        await recordActivity(user.id, { category: "error", agent: "EV", source: "ev", project: "EV", action: "Instagram publish failed", result: err.message, status: "failed", importance: 4 });
+        return fail(`Instagram: ${err.message}`, err.status && err.status >= 400 && err.status < 500 ? err.status : 502);
+      }
       throw err;
     }
   } catch (err) {

@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { recordActivity } from "@/lib/activity/record";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { taskInputSchema } from "@/lib/validation";
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
       },
       select: { id: true, title: true, status: true, priority: true, dueAt: true },
     });
+    await recordActivity(user.id, { category: "task", agent: "JARVIS", source: "task", action: `Task created: ${task.title}`, status: "success", importance: task.priority === "high" ? 3 : 2, metadata: { taskId: task.id, priority: task.priority } });
     return ok({ task }, { status: 201 });
   } catch (err) {
     return handleError(err);

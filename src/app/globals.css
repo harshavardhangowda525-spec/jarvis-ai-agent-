@@ -424,3 +424,20 @@ body {
 .dw-flow-dot { left: var(--from); animation: dw-flow-dot 1.5s cubic-bezier(.4,0,.2,1) forwards; }
 @keyframes dw-flow-dot { 0% { left: var(--from); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: var(--to); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .dw-flow-line, .dw-flow-dot { animation: none; } }
+
+/* --- Previous-day intelligence briefing --- */
+@keyframes jv-brief-in { 0% { opacity: 0; transform: scale(.86); filter: blur(18px) brightness(1.6); } 55% { opacity: 1; filter: blur(2px) brightness(1.15); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes jv-brief-rise { 0% { opacity: 0; transform: translateY(8px); filter: blur(5px); } 100% { opacity: 1; transform: none; filter: none; } }
+.jv-brief-rise { animation: jv-brief-rise .7s cubic-bezier(.2,.9,.25,1) both; }
+@keyframes jv-brief-scan { 0% { transform: translateY(0); opacity: 0; } 10% { opacity: 1; } 100% { transform: translateY(90vh); opacity: 0; } }
+.jv-brief-scan { animation: jv-brief-scan 1.6s cubic-bezier(.4,0,.2,1) .15s both; }
+@keyframes jv-brief-stream { 0% { transform: translateY(-40vh); } 100% { transform: translateY(120vh); } }
+.jv-brief-stream { animation-name: jv-brief-stream; animation-timing-function: linear; animation-iteration-count: infinite; }
+@keyframes jv-brief-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(165,230,255,.55); } 50% { box-shadow: 0 0 0 4px rgba(165,230,255,0); } }
+.jv-brief-pulse { animation: jv-brief-pulse 2.2s ease-out infinite; }
+@keyframes jv-ring { from { stroke-dashoffset: var(--c); } }
+@keyframes jv-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.jv-brief-speaking p { transition: color .4s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .jv-brief, .jv-brief-rise, .jv-brief-scan, .jv-brief-stream, .jv-brief-pulse { animation: none !important; }
+}

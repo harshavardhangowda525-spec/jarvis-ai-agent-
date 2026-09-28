@@ -1,4 +1,6 @@
 import "server-only";
+import { recordActivity } from "@/lib/activity/record";
+import { describeToolEvent } from "@/lib/activity/tool-events";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
 import { getAiConfigs, getAnthropicClient, getOpenAiClient } from "./client";
@@ -381,6 +383,7 @@ async function* runOneTool(
       summary: result.summary ?? `${tool.name} completed.`,
     };
     await logTool(userId, tool.name, rawInput, result.data, "ok", null, Date.now() - started);
+    await recordToolActivity(userId, tool, rawInput, true, result.summary ?? null, null);
     return { content: JSON.stringify(result.data).slice(0, 12000), isError: false };
   } catch (err) {
     const message =
@@ -388,6 +391,7 @@ async function* runOneTool(
     if (emailId) yield { type: "email", id: emailId, phase: "failed", error: message };
     yield { type: "tool", name: tool.name, status: "error", summary: message };
     await logTool(userId, tool.name, rawInput, null, "error", message, Date.now() - started);
+    await recordToolActivity(userId, tool, rawInput, false, null, message);
     return { content: message, isError: true };
   }
 }
@@ -620,6 +624,13 @@ function aiErrorMessage(err: unknown): string {
   }
   if (detail) return `AI error${status ? ` (HTTP ${status})` : ""}: ${detail}`;
   return "The AI service failed to respond. Please try again.";
+}
+
+/** Remember meaningful tool actions (and every failure) in the activity history. */
+async function recordToolActivity(userId: string, tool: { name: string; agentScope?: string }, input: unknown, ok: boolean, summary: string | null, error: string | null) {
+  const agent = tool.agentScope === "ev" ? "EV" : tool.agentScope === "darwin" ? "DARWIN" : "JARVIS";
+  const ev = describeToolEvent(tool.name, (input ?? {}) as Record<string, unknown>, agent, ok, summary, error);
+  if (ev) await recordActivity(userId, { ...ev, agent, source: "tool", metadata: { tool: tool.name } });
 }
 
 async function logTool(

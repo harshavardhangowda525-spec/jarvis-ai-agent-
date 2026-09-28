@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { logActivity } from "@/lib/activity/client";
 import {
   Square, PlugZap, Plug, Volume2, VolumeX, ShieldCheck, AlertTriangle, Check, Loader2, Mic, MicOff,
   Eye, X, ExternalLink, RefreshCw, Code2, FileCode, ScrollText, SlidersHorizontal, LogOut, CornerDownLeft,
@@ -119,6 +120,41 @@ export function UltronPanel() {
       default: break;
     }
   }), [e.onEvent, flash, showActivity]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- activity history: what ULTRON built, fixed and deployed -------------------
+  const run = useRef({ goal: "", files: new Set<string>(), errors: 0, deployed: false });
+  useEffect(() => { logActivity({ category: "agent", agent: "ULTRON", action: "Opened ULTRON", importance: 1 }); }, []);
+  useEffect(() => e.onEvent((ev: UltronEvent) => {
+    const r = run.current;
+    switch (ev.kind) {
+      case "goal":
+        run.current = { goal: ev.goal, files: new Set(), errors: 0, deployed: false };
+        logActivity({ category: "development", agent: "ULTRON", action: `ULTRON started: ${ev.goal}`, status: "info", importance: 2, project: "ULTRON" });
+        break;
+      case "file": if (ev.path) r.files.add(ev.path); break;
+      case "tool":
+        if (ev.status === "error") r.errors++;
+        if (ev.status === "ok" && classifyTool(ev.name, ev.label) === "deploying" && !r.deployed) {
+          r.deployed = true;
+          logActivity({ category: "development", agent: "ULTRON", action: `Deployed: ${r.goal || ev.label}`, status: "success", importance: 3, project: "ULTRON" });
+        }
+        break;
+      case "result":
+        if (!r.goal) break;
+        logActivity(ev.ok
+          ? { category: "development", agent: "ULTRON", action: `ULTRON completed: ${r.goal}`, result: ev.message, status: "success", importance: 3, project: "ULTRON", metadata: { filesChanged: r.files.size, deployed: r.deployed } }
+          : { category: "error", agent: "ULTRON", action: `ULTRON couldn't complete: ${r.goal}`, result: ev.message, status: "failed", importance: 3, project: "ULTRON" });
+        if (ev.ok && r.errors > 0) {
+          logActivity({ category: "solution", agent: "ULTRON", action: `Fixed ${r.errors} error${r.errors === 1 ? "" : "s"} while working on: ${r.goal}`, status: "success", importance: 3, project: "ULTRON" });
+        }
+        r.goal = "";
+        break;
+      case "error":
+        logActivity({ category: "error", agent: "ULTRON", action: "ULTRON runtime error", result: ev.message ?? null, status: "failed", importance: 3, project: "ULTRON" });
+        break;
+      default: break;
+    }
+  }), [e.onEvent]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- sending a command: it travels from the bar into the core first ----------
   const dispatch = useCallback((text: string) => {
