@@ -38,6 +38,7 @@ registering a **tool** — the agent loop never changes.
 - [NIOS board notifications](#nios-board-notifications)
 - [EV daily content](#ev-daily-content)
 - [Gesture control](#gesture-control)
+- [DARWIN daily lead search](#darwin-daily-lead-search)
 
 ---
 
@@ -525,6 +526,60 @@ are served by this app. Camera frames are never uploaded or recorded.
 If the camera can't be used (permission blocked, no camera, in use elsewhere,
 unplugged), the tracker says why and offers **Try again**. Everything else keeps
 working.
+
+## DARWIN daily lead search
+
+Every day, DARWIN searches on its own for **50 new, real businesses with no
+website** (the target is configurable) in your target locations. It verifies
+each one, saves them to the CRM and reports to you through JARVIS. You don't
+need to start it.
+
+**How a day runs** (from 06:00 in `DARWIN_DAILY_TZ`, default Asia/Kolkata):
+1. For every location × category you configured, DARWIN reads real businesses from Geoapify (OpenStreetMap). It keeps its position, so a restart continues where it stopped.
+2. It removes duplicates. A business is skipped if it's already in DARWIN: same place id, same name/address/coordinates fingerprint, same phone, or the same name within 150 m. It also skips businesses already checked on an earlier day that had a website. Unclear ones are re-checked after 3 weeks.
+3. It verifies the website with every available signal:
+   - the listing's own website field;
+   - the Google business profile (`GOOGLE_PLACES_API_KEY`);
+   - a web search (`SEARCH_API_KEY`, Tavily), where directories such as Justdial and social pages don't count as websites;
+   - a live accessibility check of any site found;
+   - domains built from the business name, which only count if the page shows the full name plus the locality or phone.
+4. Each business gets one status: **No website**, **Website exists**, **Website unclear**, **Website temporarily unavailable** (or permanently closed). Only **No website** counts toward the target. In strict mode (the default), that also needs an independent confirmation from Google or web search.
+5. It checks the phone number (listing, or the Google profile). It then scores the lead from real signals only: no website, phone and mobile, category fit, distance, social presence, and Google reviews and rating. Nothing is invented to raise a score.
+6. It saves each lead with its category, phone, address, map links, website status, the verification reasons, the score and needs, the source, the discovery date, and contact and follow-up status.
+7. It stops at the target, or when the search area is exhausted, or when the day's API budget is used. It never pads the count.
+
+**Report:** when the search finishes, JARVIS says for example:
+*"DARWIN has finished today's lead search. I found 50 new businesses without verified websites. 46 have publicly available phone numbers, and 21 were marked as high-potential leads. I've saved them to your CRM."*
+If it found fewer, JARVIS says so and gives the reasons: insufficient businesses, duplicates, unclear website status, missing phone, verification failures, or API limits. A card shows the numbers, and **DAILY REPORT** opens the breakdown (by category, contactable, high-potential, top leads). Ask any time: "DARWIN report", "How many leads did DARWIN find today?"
+
+**In DARWIN:** the **DAILY TARGET** ring (e.g. 37 / 50) shows:
+- verified leads and remaining;
+- duplicates removed and websites rejected;
+- contactable and high-potential leads.
+
+At the target it shows **DAILY TARGET COMPLETE**, with **VIEW LEADS**, **OPEN CRM** and **DAILY REPORT**. The ⚙ opens the daily-search settings:
+- target locations and categories;
+- the daily target and search radius;
+- "only count businesses with a phone";
+- strict verification;
+- which verification sources are on.
+
+**What drives it:**
+- Vercel Cron `/api/cron/darwin-daily` at 06:00 and 09:00 IST (needs `CRON_SECRET`).
+- `npm run local`, every 5 minutes.
+- JARVIS or DARWIN whenever they're open.
+
+It survives restarts and refreshes: progress lives in `DarwinDailyRun`, checked businesses in `DarwinCandidate`, and leads in `DarwinLead`. Each new day starts a new run; earlier leads and reports are kept.
+
+Settings (optional):
+- `DARWIN_DAILY=off`
+- `DARWIN_DAILY_TZ`
+- `DARWIN_DAILY_START` (`06:00`)
+- `DARWIN_DAILY_TARGET` (`50`)
+- `DARWIN_DAILY_LOCATIONS` and `DARWIN_DAILY_CATEGORIES` (comma- or line-separated; also editable in DARWIN)
+- `DARWIN_DAILY_STRICT` (`on`)
+
+Without Google Places or web search, strict mode can't confirm the absence of a website. Those businesses are reported as "unclear" rather than counted.
 
 ## Which brain each agent uses
 

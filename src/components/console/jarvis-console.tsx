@@ -23,6 +23,8 @@ import { useDailyContent, type DailyUiAction } from "@/components/console/ev/tod
 import { parseDailyCommand } from "@/lib/ev/daily/intent";
 import { useGesture, useGestureHandler } from "@/components/gesture/gesture-provider";
 import { gestureModeCommand } from "@/lib/gesture/intent";
+import { DarwinReportCard, useDarwinReport } from "@/components/console/darwin-report";
+import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";
 import { WeatherPopup, type WeatherData } from "@/components/console/weather-popup";
 import { NiosAlerts, useNiosWatch } from "@/components/console/nios-alert";
 import { parsePowerIntent, parseConfirmation, spokenDelay } from "@/lib/power-command";
@@ -205,6 +207,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     },
   });
   const dailyRef = useRef(daily); dailyRef.current = daily;
+  // DARWIN's daily lead search reports here when it's done.
+  const darwinReport = useDarwinReport({ speak: (t) => sayRef.current(t) });
+  const darwinReportRef = useRef(darwinReport); darwinReportRef.current = darwinReport;
   // Gesture control shares this console's command router with your voice.
   const gesture = useGesture();
   const gestureRef = useRef(gesture); gestureRef.current = gesture;
@@ -371,6 +376,17 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         if (gm === "off") { g.disable(); reply("Gesture mode off. I've released the camera."); return; }
         reply("Gesture mode on. Raise your hand when you're ready.");
         void g.enable().then((ok) => { if (!ok) setTimeout(() => { const e = gestureRef.current?.error; if (e) reply(e); }, 50); });
+        return;
+      }
+
+      // ===== DARWIN's daily lead search: "DARWIN report", "how many leads did DARWIN find today" =====
+      if (darwinDailyRequest(t)) {
+        const w = darwinReportRef.current;
+        void w.reload().then((v) => {
+          if (!v) { reply("I couldn't reach DARWIN right now."); return; }
+          reply(darwinProgressLine({ run: v.run, startLabel: v.startLabel, due: v.due }, v.spoken));
+          if (v.report) w.openReport();
+        });
         return;
       }
 
@@ -914,6 +930,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       )}
       {weather && <WeatherPopup data={weather} onClose={() => setWeather(null)} />}
       <NiosAlerts watch={nios} />
+      <DarwinReportCard w={darwinReport} onOpenDarwin={launchDarwin} />
       {brief?.phase === "open" && (
         <BriefingPopup
           briefing={brief.data}

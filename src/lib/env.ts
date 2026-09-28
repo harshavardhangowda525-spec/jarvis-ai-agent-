@@ -182,6 +182,16 @@ export const env = {
   // NO credit card). OSM-backed business data (name, website, phone). Get a key
   // at https://myprojects.geoapify.com (sign up → create project → API key).
   geoapifyApiKey: read("GEOAPIFY_API_KEY"),
+  // DARWIN's autonomous daily search: finds N new, verified no-website leads a
+  // day in your target locations. Locations/categories are also editable in DARWIN.
+  darwinDaily: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY")),
+  darwinDailyTz: read("DARWIN_DAILY_TZ") || read("EV_DAILY_TZ") || "Asia/Kolkata",
+  darwinDailyStart: read("DARWIN_DAILY_START") || "06:00",
+  darwinDailyTarget: Math.min(Math.max(Number(read("DARWIN_DAILY_TARGET")) || 50, 1), 200),
+  darwinDailyLocations: read("DARWIN_DAILY_LOCATIONS"),
+  darwinDailyCategories: read("DARWIN_DAILY_CATEGORIES"),
+  // strict (default): "no website" needs an independent confirmation (Google profile or web search).
+  darwinDailyStrict: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY_STRICT")),
   // NIOS watcher: extra regional centres ("bengaluru,delhi" → rc<name>.nios.ac.in),
   // extra official NIOS pages to watch (comma-separated *.nios.ac.in URLs), and
   // the secret Vercel Cron sends to /api/cron/nios.

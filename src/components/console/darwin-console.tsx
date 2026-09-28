@@ -18,6 +18,8 @@ import { LeadTable, patchLead, type TableRequest } from "./darwin/lead-table";
 import { PhoneActions, STATUS_OPTIONS, normStage, statusTone, websiteHost, fmtDistance } from "./darwin/ui";
 import { DarwinMap, type DarwinMapHandle, type MapNodeInput } from "./darwin/darwin-map";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
+import { DailyTarget, useDarwinDaily } from "./darwin/daily-target";
+import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";
 
 /**
  * DARWIN — a living geographic intelligence map. Every node is a REAL business
@@ -89,6 +91,10 @@ export function DarwinConsole() {
   const prevStages = useRef(new Map<string, PipelineStage>());
 
   const sendRef = useRef<(t: string) => void>(() => {});
+  // autonomous daily lead search (target ring, report)
+  const daily = useDarwinDaily();
+  const dailyRef = useRef(daily); dailyRef.current = daily;
+  const [dailyMobile, setDailyMobile] = useState(false);
   const deactivateRef = useRef<() => void>(() => {});
   const runSearchRef = useRef<(f: SearchForm) => void>(() => {});
 
@@ -259,6 +265,12 @@ export function DarwinConsole() {
       const s = t.trim();
       if (!s) return;
       if (DEACTIVATE_RE.test(s)) { deactivateRef.current(); return; }
+      if (darwinDailyRequest(s) && dailyRef.current.view) {
+        const v = dailyRef.current.view;
+        const line = darwinProgressLine({ run: v.run, startLabel: v.startLabel, due: v.due }, v.spoken);
+        agent.appendLocalExchange(s, line); speak(line);
+        return;
+      }
       // "find 20 gyms in Bangalore without a website" → run the real discovery directly.
       // "Show me the leads on Google Maps" goes to the agent (darwin_map) instead.
       if (GENERATE_LEADS_RE.test(s) && !MAP_REQUEST_RE.test(s)) {
@@ -412,6 +424,13 @@ export function DarwinConsole() {
           </button>
           <button onClick={deactivate} aria-label="Deactivate DARWIN" className="absolute right-3 top-3 z-30 flex h-8 w-8 items-center justify-center rounded-full text-white/40 sm:hidden"><LogOut className="h-4 w-4" /></button>
 
+          {/* ===== daily target (autonomous search) ===== */}
+          <div className="absolute right-4 top-[4.25rem] z-30 hidden md:block">
+            <DailyTarget daily={daily}
+              onViewLeads={async (ids) => { await loadLeads(); setFresh(new Set(ids)); setTableRequest({ tab: "search", nonce: Date.now() }); setCrmOpen(true); }}
+              onOpenCrm={() => { setTableRequest({ tab: "all", nonce: Date.now() }); setCrmOpen(true); }} />
+          </div>
+
           {/* CRM icon on the map → the full CRM */}
           <button onClick={() => setCrmOpen(true)} title="Open the CRM" aria-label="Open the CRM"
             className="absolute right-[1.2rem] z-30 h-10 w-14 rounded-md" style={{ top: "calc(66% - 20px)" }} />
@@ -457,6 +476,22 @@ export function DarwinConsole() {
 
           {/* ===== bottom: filters + lead flow ===== */}
           <div className="absolute inset-x-0 bottom-3 z-20 flex flex-col items-center gap-3 px-2 sm:bottom-4" style={{ animation: "ultron-emerge .9s ease .2s both" }}>
+            {daily.view && (
+              <div className="md:hidden">
+                {dailyMobile ? (
+                  <div className="relative">
+                    <button onClick={() => setDailyMobile(false)} aria-label="Hide daily target" className="absolute -right-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white/70"><X className="h-3 w-3" /></button>
+                    <DailyTarget daily={daily}
+                      onViewLeads={async (ids) => { await loadLeads(); setFresh(new Set(ids)); setTableRequest({ tab: "search", nonce: Date.now() }); setCrmOpen(true); }}
+                      onOpenCrm={() => { setTableRequest({ tab: "all", nonce: Date.now() }); setCrmOpen(true); }} />
+                  </div>
+                ) : (
+                  <button onClick={() => setDailyMobile(true)} className="dw-glass flex items-center gap-2 rounded-full px-3 py-1 text-[10px] tracking-[0.2em] text-white/75" data-darwin-daily-pill>
+                    DAILY TARGET <span className="tabular-nums text-cyan-100">{daily.view.run?.verified ?? 0} / {daily.view.run?.target ?? daily.view.config.target}</span>
+                  </button>
+                )}
+              </div>
+            )}
             <div className="dw-glass flex max-w-full gap-1 overflow-x-auto rounded-full p-1 text-[10px] tracking-[0.12em]" style={{ scrollbarWidth: "none" }}>
               <Chip label="CATEGORY" value={form.category || "—"} onClick={() => categoryRef.current?.focus()} />
               <Chip label="LOCATION" value={form.location || "—"} onClick={() => locationRef.current?.focus()} />

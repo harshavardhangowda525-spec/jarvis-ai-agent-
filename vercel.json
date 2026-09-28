@@ -32,6 +32,12 @@
     },
     "src/app/api/ev/daily/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/cron/darwin-daily/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/darwin/daily/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -54,6 +60,14 @@
     {
       "path": "/api/cron/ev-daily",
       "schedule": "15 0 * * *"
+    },
+    {
+      "path": "/api/cron/darwin-daily",
+      "schedule": "30 0 * * *"
+    },
+    {
+      "path": "/api/cron/darwin-daily",
+      "schedule": "30 3 * * *"
     }
   ]
 }

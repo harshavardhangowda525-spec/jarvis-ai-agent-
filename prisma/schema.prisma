@@ -38,6 +38,8 @@ model User {
   niosNotices      NiosNotice[]
   activityEvents   ActivityEvent[]
   evDaily          EvDaily[]
+  darwinDailyRuns  DarwinDailyRun[]
+  darwinCandidates DarwinCandidate[]
   dailySummaries   DailySummary[]
 
   @@index([email])
@@ -519,4 +521,68 @@ model EvDaily {
   @@unique([userId, date, version])
   @@index([userId, date, current])
   @@index([userId, createdAt])
+}
+
+/// DARWIN's autonomous daily search: one row per user per local day. Holds the
+/// resumable position (which location × category, via DarwinSearchCursor), the
+/// true counters, the log and the final report. Survives restarts.
+model DarwinDailyRun {
+  id             String    @id @default(cuid())
+  userId         String
+  date           String // YYYY-MM-DD in DARWIN_DAILY_TZ
+  target         Int       @default(50)
+  // running | completed | partial | paused | needs_setup | failed
+  status         String    @default("running")
+  config         Json // locations, categories, radius, verification settings used
+  comboIndex     Int       @default(0)
+  exhaustedCombos String[] @default([])
+  verified       Int       @default(0)
+  candidates     Int       @default(0)
+  duplicates     Int       @default(0)
+  alreadyChecked Int       @default(0)
+  websiteRejected Int      @default(0)
+  unclear        Int       @default(0)
+  tempUnavailable Int      @default(0)
+  closed         Int       @default(0)
+  missingPhone   Int       @default(0)
+  outOfArea      Int       @default(0)
+  errors         Int       @default(0)
+  apiRequests    Json? // { geoapify, google, search }
+  reasons        String[]  @default([])
+  log            Json?
+  report         Json?
+  lastError      String?   @db.Text
+  lockedUntil    DateTime?
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  reportedAt     DateTime?
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([userId, startedAt])
+}
+
+/// Every business DARWIN has checked but not saved (it had a website, was
+/// unclear, closed…), so the same place isn't re-verified every day. Unclear /
+/// temporarily-unavailable results are re-checked after a cool-off.
+model DarwinCandidate {
+  id          String   @id @default(cuid())
+  userId      String
+  fingerprint String
+  placeId     String?
+  name        String
+  category    String?
+  address     String?
+  status      String // website_exists | unclear | temporarily_unavailable | closed | no_phone | out_of_area
+  website     String?
+  reasons     String[] @default([])
+  runDate     String
+  checkedAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId, placeId])
 }

@@ -253,6 +253,20 @@ if (await waitFor(`${local}/login`, 120)) {
     } catch { /* offline — next round */ } finally { evTicking = false; }
   };
   const evAnnounced = new Set();
+  // DARWIN's daily search: starts at 6:00 AM (DARWIN_DAILY_TZ) and continues every few minutes until done.
+  let dwTicking = false;
+  const dwAnnounced = new Set();
+  const darwinDaily = async () => {
+    if (dwTicking) return;
+    dwTicking = true;
+    try {
+      const r = await fetch(`${local}/api/cron/darwin-daily`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(320_000) });
+      const j = await r.json().catch(() => ({}));
+      for (const x of j?.data?.results ?? []) if ((x.status === "completed" || x.status === "partial") && !dwAnnounced.has(j.data.date)) { dwAnnounced.add(j.data.date); say(`  [darwin] Daily lead search finished — ${x.verified} verified no-website leads saved. Open JARVIS for the report.`); }
+    } catch { /* offline — next round */ } finally { dwTicking = false; }
+  };
+  setTimeout(darwinDaily, 150_000);
+  setInterval(darwinDaily, 5 * 60_000);
   setTimeout(evDaily, 120_000);
   setInterval(evDaily, 5 * 60_000);
   if (!process.argv.includes("--no-open")) {

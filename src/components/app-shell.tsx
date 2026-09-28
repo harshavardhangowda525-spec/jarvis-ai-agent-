@@ -68,6 +68,9 @@ export function AppShell({
   const [online, setOnline] = useState<number | null>(null);
   const [build, setBuild] = useState<{ shortSha: string; env: string } | null>(null);
   const now = useClock();
+  // The clock is client-only: the server's time (and timezone) never matches the browser's.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // JARVIS, DARWIN and ULTRON are full-immersion screens — the nav rails fold
   // away so the cinematic interface owns the whole viewport (JARVIS has its own
@@ -107,11 +110,11 @@ export function AppShell({
     href === "/dashboard" ? pathname === href : pathname.startsWith(href);
   const isActive = (href: string) => href === "/dashboard" ? pathname === href : pathname.startsWith(href);
 
-  const weekday = now.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase();
-  const date = now
+  const weekday = mounted ? now.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase() : "";
+  const date = mounted ? now
     .toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    .toUpperCase();
-  const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+    .toUpperCase() : "";
+  const time = mounted ? now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }) : "";
 
   return (
     <GestureProvider>
