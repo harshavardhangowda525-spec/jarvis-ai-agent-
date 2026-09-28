@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "prisma generate && node scripts/migrate-deploy.mjs && next build",
+  "buildCommand": "prisma generate && node scripts/copy-vision-assets.mjs && node scripts/migrate-deploy.mjs && next build",
   "framework": "nextjs",
   "functions": {
     "src/app/api/agent/route.ts": {

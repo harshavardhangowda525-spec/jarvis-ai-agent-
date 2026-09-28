@@ -78,6 +78,9 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
     ]);
   }, []);
 
+  /** Stop the reply in progress (keeps the conversation). */
+  const stop = useCallback(() => { abortRef.current?.abort(); }, []);
+
   const reset = useCallback(() => {
     abortRef.current?.abort();
     conversationIdRef.current = null;
@@ -266,6 +269,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
     lastTiming,
     conversationId,
     send,
+    stop,
     reset,
     loadConversation,
     setConversation,

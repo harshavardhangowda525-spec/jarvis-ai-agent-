@@ -9,7 +9,7 @@
     "use:ollama": "node scripts/switch-provider.mjs ollama",
     "use:groq": "node scripts/switch-provider.mjs groq",
     "use:gemini": "node scripts/switch-provider.mjs gemini",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && node scripts/copy-vision-assets.mjs && next build",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
@@ -20,10 +20,11 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate && node scripts/copy-vision-assets.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
+    "@mediapipe/tasks-vision": "^1.0.1",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.1",

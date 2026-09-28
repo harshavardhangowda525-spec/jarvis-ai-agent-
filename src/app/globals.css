@@ -457,3 +457,29 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .jv-brief, .jv-brief-rise, .jv-brief-scan, .jv-brief-stream, .jv-brief-pulse { animation: none !important; }
 }
+
+/* --- Gesture control (liquid-glass HUD, holographic pointer + feedback) --- */
+@keyframes jv-gesture-in { 0% { opacity: 0; transform: translateY(8px) scale(.97); filter: blur(6px); } 100% { opacity: 1; transform: none; filter: blur(0); } }
+@keyframes jv-gesture-toast { 0% { opacity: 0; transform: translate(-50%, -8px) scale(.96); filter: blur(6px); } 12% { opacity: 1; transform: translate(-50%, 0) scale(1); filter: blur(0); } 78% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -6px) scale(.98); filter: blur(4px); } }
+@keyframes jv-gesture-pulse { 0% { transform: translate(-50%, -50%) scale(.2); opacity: .9; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 0; } }
+@keyframes jv-gesture-spark { 0% { transform: rotate(var(--a)) translateX(10px) scale(1); opacity: 1; } 100% { transform: rotate(var(--a)) translateX(120px) scale(.2); opacity: 0; } }
+@keyframes jv-gesture-cursor { 0%,100% { box-shadow: 0 0 0 1px rgba(255,255,255,.55), 0 0 18px 2px rgba(103,232,249,.55), inset 0 0 10px rgba(103,232,249,.35); } 50% { box-shadow: 0 0 0 1px rgba(255,255,255,.75), 0 0 26px 4px rgba(240,171,252,.45), inset 0 0 12px rgba(240,171,252,.35); } }
+.jv-gesture-glass {
+  background: linear-gradient(150deg, rgba(255,255,255,0.10), rgba(90,150,255,0.05) 55%, rgba(6,10,24,0.55));
+  border: 1px solid rgba(255,255,255,0.14);
+  backdrop-filter: blur(22px) saturate(1.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.35);
+  box-shadow: 0 18px 60px -26px rgba(80,180,255,0.55), inset 0 1px 0 rgba(255,255,255,0.16);
+}
+.jv-gesture-cursor { width: 34px; height: 34px; border-radius: 9999px; background: radial-gradient(circle, rgba(255,255,255,.9) 0 2px, rgba(103,232,249,.12) 3px 60%, transparent 62%); animation: jv-gesture-cursor 1.8s ease-in-out infinite; transition: transform 60ms linear, opacity .2s ease, background .15s ease; will-change: transform; }
+.jv-gesture-cursor[data-pinch="1"] { background: radial-gradient(circle, #fff 0 5px, rgba(240,171,252,.5) 6px 60%, transparent 62%); }
+.jv-gesture-target { border: 1px solid rgba(103,232,249,.7); box-shadow: 0 0 22px -4px rgba(103,232,249,.7), inset 0 0 18px -8px rgba(103,232,249,.6); background: rgba(103,232,249,.05); }
+.jv-gesture-pulse { position: absolute; left: 0; top: 0; width: 220px; height: 220px; border-radius: 9999px; border: 1.5px solid var(--jvg-c, #67e8f9); box-shadow: 0 0 40px var(--jvg-c, #67e8f9), inset 0 0 30px var(--jvg-c, #67e8f9); animation: jv-gesture-pulse .9s cubic-bezier(.2,.8,.2,1) both; }
+.jv-gesture-pulse-2 { width: 140px; height: 140px; animation-delay: .12s; opacity: 0; }
+.jv-gesture-spark { position: absolute; left: 0; top: 0; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 9999px; background: #fff; box-shadow: 0 0 10px var(--jvg-c, #67e8f9); animation: jv-gesture-spark .8s ease-out both; }
+@media (prefers-reduced-motion: reduce) {
+  .jv-gesture-cursor, .jv-gesture-pulse, .jv-gesture-spark { animation: none; }
+  .jv-gesture-pulse, .jv-gesture-spark { display: none; }
+}
+@keyframes hv-beam-flow { to { stroke-dashoffset: -16; } }
+@keyframes hv-gesture-flash { 0% { opacity: 0; transform: translate(-50%, -50%) scale(.4); } 25% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1.25); } }

@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useGesture } from "@/components/gesture/gesture-provider";
 import { Mic, MicOff, Send, Power, Loader2 } from "lucide-react";
 import type { OrbState } from "@/components/orb";
 import { cn } from "@/lib/utils";
@@ -42,6 +43,7 @@ export function HumanoidView(props: HumanoidViewProps) {
   const speaking = state === "speaking";
   const eyeColor = state === "error" ? "248,113,113" : state === "executing" ? "251,191,36" : "150,225,255";
 
+  const figRef = useRef<HTMLDivElement>(null);
   const wrapAnim = props.phase === "in" ? "materialize 1.4s ease-out both"
     : props.phase === "out" ? "dematerialize 0.9s ease-in both" : undefined;
 
@@ -83,10 +85,13 @@ export function HumanoidView(props: HumanoidViewProps) {
 
       {/* ===== the humanoid ===== */}
       <div className="absolute inset-0 z-0 flex items-end justify-center" style={{ animation: wrapAnim }}>
-        <div className="relative flex h-[92%] items-end" style={{ animation: "breathe 6s ease-in-out infinite" }}>
-          <HumanoidFigure eyeColor={eyeColor} listening={listening} thinking={thinking} speaking={speaking} level={level} />
+        <div ref={figRef} className="relative flex h-[92%] items-end will-change-transform" data-humanoid-figure>
+          <div className="relative flex h-full items-end" style={{ animation: "breathe 6s ease-in-out infinite" }}>
+            <HumanoidFigure eyeColor={eyeColor} listening={listening} thinking={thinking} speaking={speaking} level={level} />
+          </div>
         </div>
       </div>
+      <HumanoidGestures figRef={figRef} />
 
       {/* ===== bottom voice bar (liquid glass) ===== */}
       <div className="absolute inset-x-0 bottom-6 z-20 flex justify-center px-4">
@@ -127,7 +132,89 @@ export function HumanoidView(props: HumanoidViewProps) {
   );
 }
 
-/* ---------------- the humanoid figure ---------------- */
+/* ---------------- gestures ---------------- */
+
+const FLASH: Record<string, string> = { approve: "94,234,212", reject: "251,113,133", click: "240,171,252", wake: "103,232,249", pause: "251,191,36", prev: "165,180,252", next: "165,180,252", back: "165,180,252", forward: "165,180,252" };
+
+/**
+ * Gesture mode inside Humanoid View: the figure turns toward your hand, a
+ * holographic beam runs from its core to where you point (thicker while you
+ * pinch), and its core answers every recognised gesture. Driven straight from
+ * the live tracking frame in rAF — no React re-render per frame.
+ */
+function HumanoidGestures({ figRef }: { figRef: React.RefObject<HTMLDivElement> }) {
+  const g = useGesture();
+  const beam = useRef<SVGLineElement>(null);
+  const dot = useRef<SVGCircleElement>(null);
+  const chip = useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = useState<{ key: number; rgb: string } | null>(null);
+  const active = !!g?.active;
+
+  useEffect(() => {
+    if (!active || !g) return;
+    let raf = 0;
+    const fig = figRef.current;
+    const cur = { rx: 0, ry: 0, tx: 0, hand: 0 };
+    const loop = () => {
+      raf = requestAnimationFrame(loop);
+      const out = g.live.current?.out;
+      const r = out?.reading;
+      const tgt = r ? { ry: ((1 - r.center.x) * 2 - 1) * 10, rx: -(r.center.y * 2 - 1) * 5, tx: ((1 - r.center.x) * 2 - 1) * 14, hand: 1 } : { ry: 0, rx: 0, tx: 0, hand: 0 };
+      for (const k of ["rx", "ry", "tx", "hand"] as const) cur[k] += (tgt[k] - cur[k]) * 0.08;
+      const f = fig;
+      if (f) {
+        f.style.transform = `perspective(1400px) translateX(${cur.tx.toFixed(2)}px) rotateY(${cur.ry.toFixed(2)}deg) rotateX(${cur.rx.toFixed(2)}deg)`;
+        f.style.filter = `drop-shadow(0 0 ${(18 + cur.hand * 26).toFixed(1)}px hsl(var(--accent) / ${(0.15 + cur.hand * 0.35).toFixed(2)}))`;
+      }
+      if (chip.current) chip.current.style.opacity = String(Math.min(1, cur.hand * 1.2));
+      const p = out?.pointer;
+      if (beam.current && dot.current) {
+        if (p) {
+          const x = p.x * innerWidth, y = p.y * innerHeight;
+          beam.current.setAttribute("x2", String(x)); beam.current.setAttribute("y2", String(y));
+          beam.current.setAttribute("x1", String(innerWidth / 2)); beam.current.setAttribute("y1", String(innerHeight * 0.64));
+          beam.current.style.opacity = "1";
+          beam.current.style.strokeWidth = out?.pinching ? "2.6" : "1.2";
+          dot.current.setAttribute("cx", String(x)); dot.current.setAttribute("cy", String(y));
+          dot.current.setAttribute("r", out?.pinching ? "9" : "5");
+          dot.current.style.opacity = "1";
+        } else { beam.current.style.opacity = "0"; dot.current.style.opacity = "0"; }
+      }
+    };
+    loop();
+    const onGesture = (e: Event) => {
+      const a = (e as CustomEvent<{ action: string }>).detail?.action;
+      if (a) setFlash({ key: Date.now(), rgb: FLASH[a] ?? FLASH.wake });
+    };
+    window.addEventListener("jarvis-gesture", onGesture);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("jarvis-gesture", onGesture);
+      if (fig) { fig.style.transform = ""; fig.style.filter = ""; }
+    };
+  }, [active, g, figRef]);
+
+  if (!active) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[5]" aria-hidden data-humanoid-gestures>
+      <svg className="absolute inset-0 h-full w-full">
+        <defs>
+          <linearGradient id="hv-beam" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stopColor="hsl(var(--accent-bright))" stopOpacity="0.9" /><stop offset="1" stopColor="#f0abfc" stopOpacity="0.8" /></linearGradient>
+        </defs>
+        <line ref={beam} stroke="url(#hv-beam)" strokeLinecap="round" strokeDasharray="2 6" style={{ opacity: 0, transition: "opacity .25s, stroke-width .12s", filter: "drop-shadow(0 0 6px hsl(var(--accent)))", animation: "hv-beam-flow 0.9s linear infinite" }} />
+        <circle ref={dot} fill="none" stroke="#f0abfc" strokeWidth="1.5" style={{ opacity: 0, transition: "r .12s", filter: "drop-shadow(0 0 8px #f0abfc)" }} />
+      </svg>
+      <div ref={chip} className="absolute left-1/2 top-16 -translate-x-1/2 text-[10px] tracking-[0.36em] text-accent-bright" style={{ opacity: 0, textShadow: "0 0 12px hsl(var(--accent))" }}>
+        HAND DETECTED
+      </div>
+      {flash && (
+        <div key={flash.key} className="absolute left-1/2 top-[64%] h-[46vmin] w-[46vmin] -translate-x-1/2 -translate-y-1/2 rounded-full"
+          style={{ background: `radial-gradient(circle, rgba(${flash.rgb},0.55), rgba(${flash.rgb},0.12) 45%, transparent 70%)`, animation: "hv-gesture-flash 1.1s ease-out both" }}
+          onAnimationEnd={() => setFlash(null)} />
+      )}
+    </div>
+  );
+}
 
 /* ---------------- the humanoid figure ---------------- */
 

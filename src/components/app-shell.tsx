@@ -25,6 +25,8 @@ import {
 import { cn } from "@/lib/utils";
 import { ReactorLogo, RobotFace, Chevrons, Waveform } from "@/components/hud/visuals";
 import { useClock } from "@/hooks/useDeviceMetrics";
+import { GestureProvider, useGesture } from "@/components/gesture/gesture-provider";
+import { Hand } from "lucide-react";
 
 // Full mission-control nav. Every item routes to a real page (several are
 // conceptual aliases of the same working page — e.g. Command Center is the
@@ -112,6 +114,7 @@ export function AppShell({
   const time = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
 
   return (
+    <GestureProvider>
     <div className="flex min-h-screen flex-col">
       {/* Top bar */}
       <header className="relative flex h-16 shrink-0 items-center gap-4 border-b border-accent/15 px-4">
@@ -141,6 +144,7 @@ export function AppShell({
             </div>
           </div>
           <ReactorLogo size={44} className="hidden sm:block" />
+          <GestureToggle />
           <button
             onClick={() => document.documentElement.requestFullscreen?.().catch(() => {})}
             className="hidden h-9 w-9 items-center justify-center rounded text-muted-foreground transition hover:bg-accent/10 hover:text-accent lg:flex"
@@ -238,5 +242,28 @@ export function AppShell({
         ))}
       </nav>
     </div>
+    </GestureProvider>
+  );
+}
+
+/** Header switch for gesture mode (the camera only opens while it's on). */
+function GestureToggle() {
+  const g = useGesture();
+  if (!g) return null;
+  const on = g.status !== "off";
+  return (
+    <button
+      onClick={() => (on ? g.disable() : void g.enable())}
+      data-gesture-toggle
+      aria-pressed={on}
+      className={cn(
+        "flex h-9 w-9 items-center justify-center rounded transition",
+        on ? "bg-accent/15 text-accent-bright box-glow-soft" : "text-muted-foreground hover:bg-accent/10 hover:text-accent",
+      )}
+      aria-label={on ? "Turn gesture mode off" : "Turn gesture mode on"}
+      title={on ? "Gesture mode is on — click to turn it off and release the camera" : "Gesture mode — control JARVIS with your hand (camera opens only while it's on)"}
+    >
+      <Hand className="h-4 w-4" />
+    </button>
   );
 }

@@ -21,6 +21,8 @@ import { HumanoidView } from "@/components/console/humanoid-view";
 import { EvView, type EvState } from "@/components/console/ev-view";
 import { useDailyContent, type DailyUiAction } from "@/components/console/ev/today-content";
 import { parseDailyCommand } from "@/lib/ev/daily/intent";
+import { useGesture, useGestureHandler } from "@/components/gesture/gesture-provider";
+import { gestureModeCommand } from "@/lib/gesture/intent";
 import { WeatherPopup, type WeatherData } from "@/components/console/weather-popup";
 import { NiosAlerts, useNiosWatch } from "@/components/console/nios-alert";
 import { parsePowerIntent, parseConfirmation, spokenDelay } from "@/lib/power-command";
@@ -203,6 +205,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     },
   });
   const dailyRef = useRef(daily); dailyRef.current = daily;
+  // Gesture control shares this console's command router with your voice.
+  const gesture = useGesture();
+  const gestureRef = useRef(gesture); gestureRef.current = gesture;
   const agent = useAgent({
     onTextDelta: (delta) => {
       if (!(voiceStarted && !voice.muted && voice.enabled)) return;
@@ -358,6 +363,16 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         agent.appendLocalExchange(t, answer);
         if (voiceStarted && !voice.muted && voice.enabled) voice.speak(answer);
       };
+
+      // ===== gesture mode (camera opens only while it's on) =====
+      const gm = gestureModeCommand(t);
+      if (gm && gestureRef.current) {
+        const g = gestureRef.current;
+        if (gm === "off") { g.disable(); reply("Gesture mode off. I've released the camera."); return; }
+        reply("Gesture mode on. Raise your hand when you're ready.");
+        void g.enable().then((ok) => { if (!ok) setTimeout(() => { const e = gestureRef.current?.error; if (e) reply(e); }, 50); });
+        return;
+      }
 
       // ===== laptop power (confirm first; always cancellable) =====
       const pend = pendingShutdown.current;
@@ -766,6 +781,79 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     DARWIN: { role: "Lead Intelligence", run: launchDarwin },
     EV: { role: "Marketing", run: openEv },
   };
+
+  // The JARVIS core reacts to every recognised gesture.
+  useEffect(() => {
+    const on = (e: Event) => {
+      const ev = (e as CustomEvent<{ action: string; pointer?: { x: number; y: number } }>).detail;
+      if (!ev) return;
+      if (ev.pointer) motion.current?.keystroke(ev.pointer.x * innerWidth, ev.pointer.y * innerHeight);
+      if (ev.action === "approve" || ev.action === "wake" || ev.action === "forward") motion.current?.taskComplete();
+    };
+    window.addEventListener("jarvis-gesture", on);
+    return () => window.removeEventListener("jarvis-gesture", on);
+  }, []);
+
+  // ===== gestures → the same command router / actions as voice =====
+  useGestureHandler((ev) => {
+    const say = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
+    const dp = dailyRef.current.view?.pkg ?? null;
+    const dailyWaiting = !!dp && (dp.status === "ready" || (dp.status === "approved" && !!dp.publishError));
+    switch (ev.action) {
+      case "wake": {
+        if (!intro.done) motion.current?.skipIntro();
+        motion.current?.taskComplete();
+        if (!voiceStarted) { void enableVoice(); return "JARVIS ACTIVE"; }
+        if (voice.muted) voice.toggleMute();
+        say("I'm listening.");
+        return "JARVIS ACTIVE";
+      }
+      case "pause": {
+        // stop talking and stop the reply in progress — background jobs keep running
+        voice.stopSpeaking();
+        speechRef.current?.end(); speechRef.current = null;
+        if (agent.streaming) agent.stop();
+        if (brief) setBriefSpeaking(false);
+        return undefined; // also pause any playing media (default)
+      }
+      case "approve": {
+        if (pendingShutdown.current) return "SAY “YES” TO CONFIRM SHUTDOWN";
+        if (evActiveRef.current && evImageRef.current) { sendRef.current("publish it"); return "APPROVED · PUBLISHING"; }
+        if (dailyWaiting) { sendRef.current(evActiveRef.current ? "Approved" : "Approve today's content"); return "APPROVED"; }
+        if (evActiveRef.current && evAwaitingApproval) { sendRef.current("Approve it"); return "APPROVED"; }
+        return undefined;
+      }
+      case "reject": {
+        if (pendingShutdown.current) { sendRef.current("no"); return "SHUTDOWN CANCELLED"; }
+        if (evActiveRef.current && evImageRef.current) { setEvImage(null); return "DISMISSED"; }
+        if (dp && (dp.status === "ready" || dp.status === "approved") && (evActiveRef.current || dailyWaiting)) {
+          sendRef.current(evActiveRef.current ? "Reject it" : "Reject today's content");
+          return "REJECTED · NEW VERSION";
+        }
+        if (evActiveRef.current && evAwaitingApproval) { sendRef.current("Reject it"); return "REJECTED"; }
+        return undefined;
+      }
+      case "back": {
+        if (brief) { closeBriefing(); return "BRIEFING CLOSED"; }
+        if (weather) { setWeather(null); return "CLOSED"; }
+        if (evActiveRef.current && evImageRef.current) { setEvImage(null); return "BACK TO THE STUDIO"; }
+        if (evActiveRef.current && evToday) { setEvToday(false); return "EV STUDIO"; }
+        if (evActiveRef.current) { closeEv(); return "JARVIS"; }
+        if (humanoidPhase !== "off") { closeHumanoid(); return "JARVIS"; }
+        return "ALREADY AT JARVIS";
+      }
+      case "forward": {
+        // JARVIS → EV → Humanoid View → DARWIN
+        if (brief) closeBriefing();
+        if (evActiveRef.current) { closeEv(); setTimeout(openHumanoid, 950); return "HUMANOID VIEW"; }
+        if (humanoidPhase !== "off") { closeHumanoid(); setTimeout(launchDarwin, 950); return "DARWIN"; }
+        openEv();
+        return "EV";
+      }
+      default:
+        return undefined; // click / prev / next: the gesture layer's defaults (click what you point at, move between items)
+    }
+  });
 
   return (
     <div ref={stageRef} onPointerMove={onStageMove} onClick={() => { if (!intro.done) motion.current?.skipIntro(); }}

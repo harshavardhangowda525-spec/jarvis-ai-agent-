@@ -48,3 +48,6 @@ yarn-error.log*
 # Python
 __pycache__/
 *.pyc
+
+# MediaPipe runtime (copied from node_modules on install)
+/public/vision/

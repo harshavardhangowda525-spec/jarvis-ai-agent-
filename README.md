@@ -37,6 +37,7 @@ registering a **tool** — the agent loop never changes.
 - [Shut down your laptop by voice](#shut-down-your-laptop-by-voice)
 - [NIOS board notifications](#nios-board-notifications)
 - [EV daily content](#ev-daily-content)
+- [Gesture control](#gesture-control)
 
 ---
 
@@ -465,6 +466,65 @@ Settings (all optional): `EV_DAILY=off`, `EV_DAILY_TZ` (default `Asia/Kolkata`),
 `EV_DAILY_START` (`04:00`), `EV_DAILY_READY_BY` (`05:30`), `EV_DAILY_POST_TIME`
 (`19:00`), `EV_DAILY_AUTOPUBLISH` (`off`), `EV_DAILY_VIDEO` (`auto` | `motion` |
 `magichour`), `FFMPEG_PATH` (default: the bundled `ffmpeg-static`).
+
+## Gesture control
+
+Control JARVIS with your hand in front of the camera. It's an extra layer on top
+of voice, which keeps working exactly as before.
+
+**Turn it on:** say "Enable gesture mode" (or "Gesture mode"), or click the ✋
+in the top bar. The camera opens only then. "Disable gesture mode", the ✋, or
+the ⏻ in the tracker turns it off and releases the camera. If the tab stays in
+the background for 2 minutes, the camera is also released; it resumes when you
+come back.
+
+| Gesture | Action |
+| --- | --- |
+| Open palm (hold still) | Wake JARVIS: turns voice on, or unmutes it |
+| Closed fist (hold) | Pause: stops JARVIS speaking, the reply in progress and playing media. Background jobs keep running |
+| Thumbs up (hold) | Approve: EV's daily content, the creative on screen, or text EV is holding |
+| Thumbs down (hold) | Reject: EV's content (makes a new version), dismiss a creative, or cancel a pending shutdown |
+| Point | Aim: a holographic pointer follows your index finger and highlights what it's on |
+| Pinch (thumb + index) | Click whatever you're pointing at, such as an agent node, a button, or EV's Approve |
+| Two-finger swipe ← / → | Previous / next item |
+| Open palm sweep ← | Go back: closes the popup, EV, Humanoid View… |
+| Open palm sweep → | Next interface: JARVIS → EV → Humanoid View → DARWIN → ULTRON |
+
+Gestures go through the **same command router as voice**. A thumbs up is the
+same as saying "Approved". Thumbs up never confirms a laptop shutdown; that
+still needs a spoken "yes".
+
+**One command per gesture:**
+- A pose must be clear (confidence threshold), stable for a few frames, and held still for the hold time.
+- It then fires once, so holding a thumbs up for 5 seconds is one approval. It re-arms only after your hand shows something else for a moment or leaves the view.
+- Each action has a cooldown, and there's a short global one after any command.
+- Swipes need a fast, mostly horizontal sweep of a consistent pose.
+- A pinch clicks on press, and needs a release before the next click.
+- The pointer is smoothed with a one-euro filter.
+
+**What you see:**
+- A small liquid-glass tracker in the bottom-right, showing hand landmarks, the recognised pose, confidence and hold progress.
+- The pointer and its target highlight.
+- On each command: "GESTURE DETECTED · THUMBS UP · APPROVED" with a holographic pulse, a JARVIS core reaction, and the action itself.
+
+**Humanoid View** reacts too: the figure turns toward your hand, a beam links its
+core to where you point, and its core flashes with each gesture.
+
+**Settings** (⚙ in the tracker):
+- Turn gesture mode on or off.
+- Set sensitivity: deliberate ↔ responsive; it changes the hold time and confidence needed.
+- Show or hide the camera preview behind the landmarks.
+- Turn each gesture on or off.
+- **Recalibrate**, which learns your pinch distance.
+
+**Privacy.** Hand tracking uses MediaPipe Hand Landmarker (WebAssembly/WebGL)
+and runs entirely in your browser. The runtime (`public/vision`, copied from
+`node_modules` on install) and the model (`public/models/hand_landmarker.task`)
+are served by this app. Camera frames are never uploaded or recorded.
+
+If the camera can't be used (permission blocked, no camera, in use elsewhere,
+unplugged), the tracker says why and offers **Try again**. Everything else keeps
+working.
 
 ## Which brain each agent uses
 
