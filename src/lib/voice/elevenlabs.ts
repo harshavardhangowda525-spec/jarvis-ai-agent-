@@ -66,10 +66,11 @@ export class ElevenLabsVoiceProvider implements VoiceProvider {
           text,
           model_id: env.elevenLabsModelId,
           voice_settings: {
-            stability: 0.4,
-            similarity_boost: 0.75,
-            style: 0.0,
+            stability: clamp01(opts.delivery?.stability ?? 0.4),
+            similarity_boost: clamp01(opts.delivery?.similarity ?? 0.75),
+            style: clamp01(opts.delivery?.style ?? 0.0),
             use_speaker_boost: true,
+            ...(opts.delivery?.speed != null ? { speed: Math.min(1.2, Math.max(0.7, opts.delivery.speed)) } : {}),
           },
         }),
         signal: AbortSignal.timeout(30_000),
@@ -150,3 +151,5 @@ export function getVoiceProvider(): VoiceProvider {
   if (!singleton) singleton = new ElevenLabsVoiceProvider();
   return singleton;
 }
+
+const clamp01 = (v: number) => Math.min(1, Math.max(0, v));

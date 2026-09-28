@@ -14,6 +14,11 @@ export interface TtsOptions {
   voiceId?: string;
   /** 0.25–4.0 nominal; providers clamp to their own range. */
   speakingRate?: number;
+  /**
+   * Delivery (ElevenLabs voice settings): lower stability = more expressive,
+   * higher style = more dramatic, speed 0.7–1.2. Unset = the provider default.
+   */
+  delivery?: { stability?: number; similarity?: number; style?: number; speed?: number };
 }
 
 export interface SttResult {

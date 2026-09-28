@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { takeSentences } from "@/lib/voice/sentences";
+import { ULTRON_FX, buildUltronFx, type UltronFxChain } from "@/lib/voice/ultron-fx";
+
+/** ULTRON's voice effect is on unless turned off in this browser (localStorage "jarvis.ultron.voicefx" = "off"). */
+function ultronFxOn(): boolean {
+  try { return localStorage.getItem("jarvis.ultron.voicefx") !== "off"; } catch { return true; }
+}
 
 /**
  * useVoice — the JARVIS realtime voice engine (client side).
@@ -90,8 +96,8 @@ const BROWSER_VOICE: Record<VoiceProfile, { rate: number; pitch: number; match: 
   // Warm, friendly male — like a sharp buddy. Natural pace, a touch lower than
   // JARVIS so the two are still easy to tell apart.
   darwin: { rate: 1.0, pitch: 0.82, match: /guy|david|alex|aaron|google uk english male|rishi/i, female: false },
-  // Deep, cold and deliberate for ULTRON — the lowest of the male voices.
-  ultron: { rate: 0.94, pitch: 0.62, match: /george|thomas|fred|google uk english male|rishi/i, female: false },
+  // Deep, cold and deliberate for ULTRON — slow and as low as the browser voice goes.
+  ultron: { rate: 0.86, pitch: 0.4, match: /george|thomas|fred|google uk english male|rishi|daniel/i, female: false },
 };
 
 // VAD tuning (normalized RMS 0..1)
@@ -128,6 +134,9 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   // Loudness envelope of each spoken clip (decoded separately — playback itself is
   // untouched), so visuals can follow the rhythm of JARVIS's own voice.
   const envelopesRef = useRef(new Map<string, Float32Array>());
+  // ULTRON's voice effect: the audio element is routed through Web Audio once
+  // ULTRON first speaks (other agents on this element then pass straight through).
+  const fxRef = useRef<{ ctx: AudioContext; source: MediaElementAudioSourceNode; chain: UltronFxChain | null; wired: "fx" | "dry" | null } | null>(null);
 
   // Free browser speech-to-text (Web Speech API) — used when ElevenLabs STT
   // isn't configured, so voice input works with no key and no cost.
@@ -590,6 +599,38 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     return Math.max(0, 0.35 + 0.3 * Math.sin(t * 9.3) * Math.sin(t * 2.1) + 0.15 * Math.sin(t * 23));
   }, []);
 
+  /** Route the next clip: ULTRON through its effect (deeper, darker), everyone else untouched. */
+  const prepareOutput = useCallback(async () => {
+    const el = audioElRef.current;
+    if (!el) return;
+    const wantFx = profileRef.current === "ultron" && ultronFxOn();
+    const rate = wantFx ? ULTRON_FX.playbackRate : 1;
+    el.defaultPlaybackRate = rate; el.playbackRate = rate;
+    // let the pitch fall with the speed (deeper voice) only for ULTRON
+    const m = el as HTMLAudioElement & { preservesPitch?: boolean; webkitPreservesPitch?: boolean; mozPreservesPitch?: boolean };
+    m.preservesPitch = !wantFx; m.webkitPreservesPitch = !wantFx; m.mozPreservesPitch = !wantFx;
+    if (!wantFx && !fxRef.current) return; // plain element output, no Web Audio at all
+    try {
+      if (!fxRef.current) {
+        const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AC) return;
+        const ctx = new AC();
+        fxRef.current = { ctx, source: ctx.createMediaElementSource(el), chain: null, wired: null };
+      }
+      const f = fxRef.current;
+      if (f.ctx.state === "suspended") await f.ctx.resume().catch(() => {});
+      const want = wantFx ? "fx" : "dry";
+      if (f.wired === want) return;
+      f.source.disconnect();
+      if (wantFx) {
+        if (!f.chain) { f.chain = buildUltronFx(f.ctx); f.chain.output.connect(f.ctx.destination); }
+        f.source.connect(f.chain.input);
+      } else f.source.connect(f.ctx.destination);
+      f.wired = want;
+    } catch { /* no Web Audio: the voice still plays, just without the effect */ }
+  }, []);
+  useEffect(() => () => { const f = fxRef.current; fxRef.current = null; f?.chain?.stop(); void f?.ctx.close().catch(() => {}); }, []);
+
   const speak = useCallback(
     async (text: string): Promise<void> => {
       if (!enabledRef.current || mutedRef.current) return;
@@ -622,6 +663,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         const url = URL.createObjectURL(blob);
         trackEnvelope(blob, url);
         el.src = url;
+        await prepareOutput();
         await new Promise<void>((resolve) => {
           const done = () => {
             el.removeEventListener("ended", done);
@@ -644,7 +686,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         }
       }
     },
-    [fail, setStatusBoth, stopSpeaking, speakBrowser, stopRecognition, startRecognition, trackEnvelope],
+    [fail, setStatusBoth, stopSpeaking, speakBrowser, stopRecognition, startRecognition, trackEnvelope, prepareOutput],
   );
 
   /**
@@ -682,7 +724,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       cancelPlaybackRef.current = done; // stopSpeaking (barge-in) ends it
       el.addEventListener("ended", done);
       el.addEventListener("error", done);
-      el.play().catch(() => done());
+      void prepareOutput().then(() => el.play()).catch(() => done());
     });
 
     const enqueue = (text: string) => {
@@ -730,7 +772,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         });
       },
     };
-  }, [setStatusBoth, speakBrowser, startRecognition, stopRecognition, stopSpeaking, trackEnvelope]);
+  }, [setStatusBoth, speakBrowser, startRecognition, stopRecognition, stopSpeaking, trackEnvelope, prepareOutput]);
 
   const toggleMute = useCallback(() => {
     setMuted((m) => {

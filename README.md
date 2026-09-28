@@ -194,6 +194,23 @@ provider.
 Voice selection is configurable per user (Settings → Voice) and via
 `ELEVENLABS_VOICE_ID`. It is never hard-coded.
 
+
+### ULTRON's voice
+
+ULTRON sounds dangerous: a deep, husky voice (`ULTRON_VOICE_ID`) delivered cold
+and dramatic, then darkened in your browser. The effect pitches it down, adds a
+heavy low end, a gritty edge, a faint metallic ring and a dark cavernous
+reverb. It applies to ULTRON only; JARVIS, EV and DARWIN are unchanged.
+
+- Tune the delivery with `ULTRON_VOICE_STYLE` (0–1, default 0.65, more = more dramatic),
+  `ULTRON_VOICE_STABILITY` (0–1, default 0.28, less = more restless) and
+  `ULTRON_VOICE_SPEED` (0.7–1.2, default 0.92).
+- The effect's settings are in `src/lib/voice/ultron-fx.ts`.
+- To turn the effect off in one browser, run
+  `localStorage.setItem("jarvis.ultron.voicefx", "off")` in its console.
+- Without an ElevenLabs key, ULTRON's free browser voice is set as slow and low
+  as the browser allows. The effect needs the ElevenLabs voice.
+
 ## Microphone permissions
 
 Browsers require a user gesture and explicit permission before capturing audio

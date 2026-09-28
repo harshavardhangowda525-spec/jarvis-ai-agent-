@@ -55,7 +55,15 @@ export async function POST(req: NextRequest) {
       ? agentRate[agent]
       : (pref?.speakingRate ?? undefined);
 
-    const audioStream = await provider.streamTts(text, { voiceId, speakingRate });
+    // ULTRON's delivery: menacing — less steady, more dramatic, slower. (The
+    // browser then deepens and darkens it further; see src/lib/voice/ultron-fx.ts.)
+    const agentDelivery: Record<string, { stability: number; similarity: number; style: number; speed: number } | undefined> = {
+      ultron: env.ultronVoiceDelivery,
+      edith: env.ultronVoiceDelivery,
+    };
+    const delivery = agent ? agentDelivery[agent] : undefined;
+
+    const audioStream = await provider.streamTts(text, { voiceId, speakingRate, delivery });
 
     return new Response(audioStream, {
       headers: {

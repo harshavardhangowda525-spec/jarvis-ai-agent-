@@ -22,6 +22,12 @@ function read(name: string): string {
  * publicly reachable https URL — not localhost. We honor APP_URL first, then
  * auto-detect Vercel's URLs so publishing "just works" on Vercel with no config.
  */
+/** A number from env, or the default when unset/invalid. */
+function numOr(v: string, d: number): number {
+  const n = Number(v);
+  return v !== "" && Number.isFinite(n) ? n : d;
+}
+
 function resolveAppUrl(): string {
   const explicit = read("APP_URL");
   if (explicit) return explicit.replace(/\/$/, "");
@@ -93,6 +99,15 @@ export const env = {
   // ULTRON voice — deep and intense ("Callum") so ULTRON and JARVIS are easy to
   // tell apart. Override with ULTRON_VOICE_ID (EDITH_VOICE_ID still works).
   ultronVoiceId: read("ULTRON_VOICE_ID") || read("EDITH_VOICE_ID") || "N2lVS1w4EtoT3dr4eOWO",
+  // …delivered cold and dangerous: low stability (restless, expressive), high
+  // style (dramatic), a slower pace. Tune with ULTRON_VOICE_STYLE (0–1),
+  // ULTRON_VOICE_STABILITY (0–1) and ULTRON_VOICE_SPEED (0.7–1.2).
+  ultronVoiceDelivery: {
+    stability: numOr(read("ULTRON_VOICE_STABILITY"), 0.28),
+    similarity: 0.85,
+    style: numOr(read("ULTRON_VOICE_STYLE"), 0.65),
+    speed: numOr(read("ULTRON_VOICE_SPEED"), 0.92),
+  },
   // EV voice — bright, energetic (marketing/growth agent). Defaults to "Aria".
   // Override with EV_VOICE_ID.
   evVoiceId: read("EV_VOICE_ID") || "9BWtsMINqrJLrRacOk9x",
