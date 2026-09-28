@@ -35,6 +35,7 @@ registering a **tool** — the agent loop never changes.
 - [Troubleshooting](#troubleshooting)
 - [Previous-day briefing](#previous-day-briefing)
 - [Shut down your laptop by voice](#shut-down-your-laptop-by-voice)
+- [Open apps on your PC](#open-apps-on-your-pc)
 - [NIOS board notifications](#nios-board-notifications)
 - [EV daily content](#ev-daily-content)
 - [Gesture control](#gesture-control)
@@ -361,6 +362,21 @@ problems, solutions, unfinished_tasks, important_decisions, next_actions }` —
 built at the end of the day by Vercel Cron (`/api/cron/daily-summary`, 00:15 IST,
 needs `CRON_SECRET`), hourly by `npm run local`, and whenever a briefing is opened
 (refreshed if more activity for that day turns up).
+
+## Open apps on your PC
+
+"JARVIS, open Spotify", "launch VS Code", "open Word, Excel and PowerPoint",
+"start WhatsApp": JARVIS opens the **real installed app** on your computer, not
+a web page. It works like the shutdown command: ULTRON, the local runtime
+started by `npm run local`, launches the app. JARVIS on Vercel asks it through
+the same paired, origin-locked connection.
+
+- **Which apps:** anything in your Start menu, both desktop and Microsoft Store apps, read from Windows' own list (`Get-StartApps`). File Explorer, Settings, Task Manager and Control Panel are always available. On macOS it uses `/Applications`; on Linux, `.desktop` entries.
+- **Names can be loose:** "vs code", "calc", "ppt", "this pc", "windows settings" and small typos ("spotfy") all find the right app. Uninstallers and help links are never picked.
+- **Not installed:** if the app isn't on the PC but it's a well-known website (Gmail, Amazon, YouTube…), JARVIS says so and opens the website. Otherwise it tells you it couldn't find it, suggesting a close match if there is one.
+- **ULTRON not running:** JARVIS tells you to start `npm run local`. Websites still open as before.
+- **"start …" / "run …"** only open an app when one by that name is installed, so "run the tests" still goes to JARVIS's brain. The brain can also open apps itself (the `open_app` tool) for requests like "I want to code — open VS Code and Spotify".
+- **Safety:** ULTRON only launches apps from the computer's own installed list, with a fixed command and no shell, no paths and no arguments. It accepts requests only from your JARVIS app with the pairing token. Turn it off with `ULTRON_APPS=off` in `edith/.env`.
 
 ## Shut down your laptop by voice
 

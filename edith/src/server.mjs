@@ -18,6 +18,7 @@ import { Audit } from "./audit.mjs";
 import { killAll } from "./tools/terminal.mjs";
 import { capabilityCheck } from "./capabilities.mjs";
 import { doPower } from "./power.mjs";
+import { openApp, listApps, appsEnabled } from "./apps.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TOKEN_FILE = path.resolve(__dirname, "../.edith-token");
@@ -184,6 +185,32 @@ export function startServer({ port, ws }) {
       });
       return;
     }
+    // Desktop apps ("JARVIS, open Spotify"): same guard as /power — an allowed
+    // origin AND the pairing token. Only apps this computer lists as installed.
+    if (u.pathname === "/apps" || u.pathname === "/apps/open") {
+      const send = (code, body) => { res.writeHead(code, { "Content-Type": "application/json" }); res.end(JSON.stringify(body)); };
+      if (origin && !allow) return send(403, { ok: false, message: "This page isn't allowed to control this computer." });
+      if (req.headers.authorization !== `Bearer ${token}`) return send(401, { ok: false, message: "Not paired with ULTRON." });
+      if (!appsEnabled()) return send(409, { ok: false, message: "Opening apps is turned off on this computer (ULTRON_APPS=off)." });
+      if (req.method === "GET" && u.pathname === "/apps") {
+        listApps().then((apps) => send(200, { ok: true, apps: apps.map((a) => a.name).sort((a, b) => a.localeCompare(b)) }))
+          .catch((e) => send(500, { ok: false, message: e.message }));
+        return;
+      }
+      if (req.method === "POST" && u.pathname === "/apps/open") {
+        let raw = "";
+        req.on("data", (c) => { raw += c; if (raw.length > 2000) req.destroy(); });
+        req.on("end", async () => {
+          let body = {};
+          try { body = JSON.parse(raw || "{}"); } catch { return send(400, { ok: false, message: "Bad request." }); }
+          const r = await openApp(body.name);
+          emit({ kind: "activity", label: `Apps: ${r.message}` });
+          send(r.ok ? 200 : r.notFound ? 404 : 409, r);
+        });
+        return;
+      }
+      return send(405, { ok: false, message: "Method not allowed." });
+    }
     // Live preview of the site ULTRON built — serves files from the workspace,
     // read-only and path-escape-safe, so the dashboard can iframe it.
     if (req.method === "GET" && (u.pathname === "/preview" || u.pathname.startsWith("/preview/"))) {
@@ -260,5 +287,7 @@ export function startServer({ port, ws }) {
     log.error(`Server error: ${err.message}`);
   });
 
+  // read the installed-app list in the background so the first "open …" is instant
+  if (appsEnabled()) listApps().then((a) => log.info(`     • Apps: ${a.length} installed apps available to "JARVIS, open …"`)).catch(() => {});
   return { wss, httpServer, token };
 }

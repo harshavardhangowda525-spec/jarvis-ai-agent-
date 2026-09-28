@@ -11,7 +11,8 @@ import { Mic, MicOff, Paperclip, Loader2, Power, X, LayoutGrid, Volume2 } from "
 import { type OrbState } from "@/components/orb";
 import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
 import { instantAnswer } from "@/lib/instant";
-import { inIndia, parseOpenSite } from "@/lib/open-site";
+import { inIndia, parseOpenSite, resolveSite } from "@/lib/open-site";
+import { openLocalApp, parseOpenApp } from "@/lib/local-apps";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import type { AgentTiming } from "@/hooks/useAgent";
 import { useAgent } from "@/hooks/useAgent";
@@ -248,6 +249,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
     },
     onNavigate,
+    onOpenApp: (names) => { void openAppsRef.current("", names); },
     onOpen: (url) => {
       // An EV-generated image reveals as a liquid-glass message inside the EV
       // dashboard rather than hijacking a tab.
@@ -264,6 +266,41 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
   const sleep = useCallback(() => { voice.stop(); setVoiceStarted(false); }, [voice]);
   sayRef.current = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
+  // "open Spotify" → the installed app on this PC (via ULTRON), not a web page.
+  const openAppsRef = useRef<(said: string, names: string[], o?: { strong?: boolean; fallback?: () => void }) => Promise<void>>(async () => {});
+  openAppsRef.current = async (said, names, o = {}) => {
+    const strong = o.strong ?? true;
+    const opened: string[] = [], missing: string[] = [], notes: string[] = [];
+    const links: { url: string; label: string }[] = [];
+    let offline: string | null = null;
+    for (const name of names) {
+      const r = await openLocalApp(name);
+      if (r.ok) { opened.push(r.app); continue; }
+      if (r.reason === "not_found") {
+        const site = resolveSite(name, null, { india: inIndia() });
+        if (site) { links.push({ url: site.url, label: `Open ${site.label}` }); notes.push(`${site.label} isn't installed as an app on this PC, so I opened the website instead.`); openTab(site.url); }
+        else missing.push(r.suggestions.length ? `${name} (did you mean ${r.suggestions.join(" or ")}?)` : name);
+        continue;
+      }
+      // offline / not paired / outdated: websites still work the old way
+      const site = resolveSite(name, null, { india: inIndia() });
+      if (site) { links.push({ url: site.url, label: `Open ${site.label}` }); openTab(site.url); notes.push(`Opening the ${site.label} website — ${r.reason === "offline" ? "my local runtime isn't running, so I can't open the app itself" : r.message.replace(/\.$/, "")}.`); }
+      else offline = r.message;
+    }
+    if (!strong && !opened.length && !links.length) { o.fallback?.(); return; }
+    const parts: string[] = [];
+    if (opened.length) parts.push(`Opening ${opened.length > 1 ? `${opened.slice(0, -1).join(", ")} and ${opened[opened.length - 1]}` : opened[0]}.`);
+    parts.push(...notes);
+    if (missing.length) parts.push(`I couldn't find ${missing.join(", ")} installed on this computer.`);
+    if (offline) parts.push(offline);
+    const msg = parts.join(" ");
+    agent.appendLocalExchange(said, msg, links.length ? links : undefined);
+    sayRef.current(msg.replace(/ \(did you mean[^)]*\)/g, ""));
+    if (opened.length) {
+      motion.current?.taskComplete();
+      logActivity({ category: "agent", agent: "JARVIS", action: `Opened ${opened.join(", ")} on the PC`, importance: 1 });
+    }
+  };
   const launchUltron = useCallback(() => {
     if (launchingUltron) return;
     setLaunchingUltron(true);
@@ -530,6 +567,15 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // "DARWIN", "open DARWIN", "activate DARWIN" → open the lead-gen/CRM console.
       if (/^darwin[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+darwin\b|\bdarwin[,\s]+(online|wake up|come online)\b/.test(low)) {
         launchDarwin();
+        return;
+      }
+      // "Open Spotify", "launch VS Code", "start WhatsApp and Spotify" → the real
+      // app on this PC. "start/run …" only counts when such an app is installed;
+      // otherwise it carries on to JARVIS's brain ("run the tests" isn't an app).
+      const apps = evActiveRef.current ? null : parseOpenApp(t);
+      if (apps) {
+        const strong = !/^\s*(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:start|run)\b/i.test(t);
+        void openAppsRef.current(t, apps, { strong, fallback: () => agent.send(t) });
         return;
       }
       // "Open Amazon", "go to youtube.com", "search Flipkart for shoes" → open the

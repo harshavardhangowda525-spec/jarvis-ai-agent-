@@ -30,6 +30,8 @@ interface UseAgentOptions {
   onEmail?: (e: { id: string; phase: "sending" | "sent" | "failed"; to?: string; subject?: string; body?: string; label?: string; gmailId?: string | null; error?: string }) => void;
   onNavigate?: (path: string) => void;
   onOpen?: (url: string) => void;
+  /** Open installed desktop apps on this computer (via ULTRON). */
+  onOpenApp?: (names: string[]) => void;
   /** Fired for every tool result (used e.g. to drive EV's operating state). */
   onTool?: (t: { name: string; status: "ok" | "error"; summary: string }) => void;
 }
@@ -47,7 +49,7 @@ const nextId = () => `m${Date.now()}_${idc++}`;
  * and exposes messages, the live-activity feed, and the currently streaming
  * assistant text. Voice and text share this same flow.
  */
-export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onTool }: UseAgentOptions = {}) {
+export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onOpenApp, onTool }: UseAgentOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -73,7 +75,8 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
   const appendLocalExchange = useCallback((userText: string, assistantText: string, links?: { url: string; label: string }[]) => {
     setMessages((m) => [
       ...m,
-      { id: nextId(), role: "user", content: userText },
+      // an empty userText = a follow-up note from JARVIS itself (e.g. an app it just opened)
+      ...(userText ? [{ id: nextId(), role: "user" as const, content: userText }] : []),
       { id: nextId(), role: "assistant", content: assistantText, ...(links?.length ? { links } : {}) },
     ]);
   }, []);
@@ -205,6 +208,9 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
               case "navigate":
                 onNavigate?.(ev.path);
                 break;
+              case "open_app":
+                onOpenApp?.(ev.names);
+                break;
               case "open":
                 onOpen?.(ev.url);
                 setMessages((m) =>
@@ -258,7 +264,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
         onTurnEnd?.();
       }
     },
-    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onTool, pushActivity, setConversation, streaming],
+    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onOpenApp, onTool, pushActivity, setConversation, streaming],
   );
 
   return {

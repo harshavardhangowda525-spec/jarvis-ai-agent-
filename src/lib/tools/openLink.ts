@@ -22,7 +22,8 @@ export const openLinkTool: ToolDefinition<z.infer<typeof schema>> = {
     "Open a website in the user's browser — any site: Amazon, Flipkart, YouTube, Gmail, Maps, Netflix, Instagram, " +
     "GitHub, or any address like example.com. Give the site name (and optionally what to search for on it). " +
     "Use whenever the user says 'open …', 'go to …' or 'search <site> for …'. For reading/sending email or " +
-    "managing calendar events use the gmail / google_calendar tools — this only opens the page.",
+    "managing calendar events use the gmail / google_calendar tools — this only opens the page. For apps installed on the " +
+    "user's computer (Spotify, WhatsApp, VS Code…) use open_app instead.",
   schema,
   inputSchema: {
     type: "object",

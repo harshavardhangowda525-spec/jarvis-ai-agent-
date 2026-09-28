@@ -29,6 +29,8 @@ export type AgentEvent =
   | { type: "tool"; name: string; status: "ok" | "error"; summary: string }
   | { type: "navigate"; path: string }
   | { type: "open"; url: string; label: string }
+  /** Open installed desktop apps on the user's computer (done by the browser via ULTRON). */
+  | { type: "open_app"; names: string[] }
   /** An extra clickable link for the reply (not opened automatically). */
   | { type: "link"; url: string; label: string }
   | { type: "provider"; name: string }
@@ -214,7 +216,7 @@ export async function* runAgent(
         : openaiLoop(getOpenAiClient(cfg), turnInput, s);
     try {
       for await (const ev of gen) {
-        if (ev.type === "text" || ev.type === "tool" || ev.type === "navigate" || ev.type === "open") {
+        if (ev.type === "text" || ev.type === "tool" || ev.type === "navigate" || ev.type === "open" || ev.type === "open_app") {
           committed = true;
           firstWordAt ??= Date.now();
         }
@@ -359,6 +361,9 @@ async function* runOneTool(
     const data = result.data as Record<string, unknown> | undefined;
     if (data && typeof data.navigate === "string") {
       yield { type: "navigate", path: data.navigate };
+    }
+    if (data && Array.isArray(data.openApp)) {
+      yield { type: "open_app", names: (data.openApp as unknown[]).map(String).slice(0, 4) };
     }
     if (data && typeof data.openUrl === "string") {
       yield { type: "open", url: data.openUrl, label: String(data.label ?? "link") };
