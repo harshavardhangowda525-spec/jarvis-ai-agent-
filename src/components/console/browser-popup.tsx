@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ExternalLink, Globe, Lock, Maximize2, Minimize2, RotateCw, X } from "lucide-react";
 import { chooseMode, officialEmbed } from "@/lib/web-embed";
 import { resolveSite } from "@/lib/open-site";
 import { ultronKnown, ultronPair } from "@/lib/local-ultron";
+import { GrabThrowLayer, type GrabSurface } from "@/components/gesture/grab-throw-layer";
+import type { Rect } from "@/lib/gesture/grab-throw";
 
 /**
  * JARVIS's glass browser: a link opens right here instead of a new tab.
@@ -72,6 +74,10 @@ export function BrowserPopup({ target, onClose, onOpenTab }: { target: BrowserTa
   const addrFocused = useRef(false);
   const history = useRef<string[]>([]); // for iframe pages (their own history is cross-origin)
   const frameSeq = useRef({ got: 0, drawn: 0 });
+  // "throw to trash": request/response with ULTRON's live page
+  const grabRpc = useRef({ rid: 0, pending: new Map<number, (r: unknown) => void>() });
+  // a touch on the live page waits a moment before it's sent (a long-press may become a grab)
+  const pendingTouch = useRef<{ x: number; y: number; buttons: number; clicks: number; m: ReturnType<typeof mods> } | null>(null);
 
   const close = useCallback(() => { setClosing(true); setTimeout(onClose, 300); }, [onClose]);
 
@@ -126,6 +132,12 @@ export function BrowserPopup({ target, onClose, onOpenTab }: { target: BrowserTa
         case "notice": setNotice(String(m.message)); break;
         case "error": setLiveError(String(m.message)); setLoading(false); break;
         case "closed": setLiveError("The page closed itself."); break;
+        case "grab": {
+          const rid = Number(m.rid);
+          grabRpc.current.pending.get(rid)?.(m.result ?? null);
+          grabRpc.current.pending.delete(rid);
+          break;
+        }
       }
     };
     ws.onclose = () => { if (wsRef.current === ws) { setLive("lost"); setLoading(false); } };
@@ -248,6 +260,87 @@ export function BrowserPopup({ target, onClose, onOpenTab }: { target: BrowserTa
   const moveRaf = useRef<number | null>(null);
   const lastMove = useRef<{ x: number; y: number; buttons: number; m: ReturnType<typeof mods> } | null>(null);
 
+  /* ---------- "throw to trash" surfaces ---------- */
+  const grabCall = useCallback((op: string, extra: Record<string, unknown>) => new Promise<Record<string, unknown> | null>((resolve) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) { resolve(null); return; }
+    const rpc = grabRpc.current, rid = ++rpc.rid;
+    rpc.pending.set(rid, (r) => resolve((r as Record<string, unknown> | null) ?? null));
+    ws.send(JSON.stringify({ t: "grab", op, rid, ...extra }));
+    setTimeout(() => { if (rpc.pending.delete(rid)) resolve(null); }, 2500);
+  }), []);
+  const liveReady = view.mode === "live" && live === "live" && !liveError && !dialog;
+  const pageMode = view.mode === "embed" || view.mode === "frame" || view.mode === "preview";
+  const surface = useMemo<GrabSurface | null>(() => {
+    const inside = (el: Element | null, x: number, y: number) => { const r = el?.getBoundingClientRect(); return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom; };
+    if (liveReady) {
+      // real elements of the live page (ULTRON finds, hides and restores them — only in this local view)
+      const screenToPage = (x: number, y: number) => {
+        const r = canvasRef.current!.getBoundingClientRect();
+        return { x: ((x - r.left) / r.width) * sizeRef.current.width, y: ((y - r.top) / r.height) * sizeRef.current.height };
+      };
+      const pageToScreen = (pr: { x: number; y: number; w: number; h: number }): Rect | null => {
+        const r = canvasRef.current?.getBoundingClientRect();
+        if (!r) return null;
+        const kx = r.width / sizeRef.current.width, ky = r.height / sizeRef.current.height;
+        // only the part that's on screen
+        const x0 = Math.max(r.left, r.left + pr.x * kx), y0 = Math.max(r.top, r.top + pr.y * ky);
+        const x1 = Math.min(r.right, r.left + (pr.x + pr.w) * kx), y1 = Math.min(r.bottom, r.top + (pr.y + pr.h) * ky);
+        return x1 - x0 >= 6 && y1 - y0 >= 6 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+      };
+      return {
+        key: `live:${url}`,
+        contains: (x, y) => inside(canvasRef.current, x, y),
+        inspect: async (x, y) => {
+          const res = await grabCall("inspect", screenToPage(x, y));
+          return res?.rect ? pageToScreen(res.rect as Rect & { w: number; h: number }) : null;
+        },
+        pick: async (x, y) => {
+          const res = await grabCall("pick", screenToPage(x, y));
+          const rect = res?.rect ? pageToScreen(res.rect as Rect) : null;
+          if (!res?.id || !rect) return null;
+          return { id: String(res.id), rect, label: String(res.label || res.tag || "that") };
+        },
+        snapshot: (t) => {
+          const c = canvasRef.current;
+          if (!c || !c.width) return null;
+          const r = c.getBoundingClientRect();
+          const kx = c.width / r.width, ky = c.height / r.height;
+          const out = document.createElement("canvas");
+          out.width = Math.max(1, Math.round(t.rect.w * kx)); out.height = Math.max(1, Math.round(t.rect.h * ky));
+          out.getContext("2d")?.drawImage(c, (t.rect.x - r.left) * kx, (t.rect.y - r.top) * ky, t.rect.w * kx, t.rect.h * ky, 0, 0, out.width, out.height);
+          return { el: out, w: t.rect.w, h: t.rect.h };
+        },
+        remove: async (t) => {
+          const r = await grabCall("hide", { id: t.id });
+          if (!r?.ok) { setNotice("That part of the page changed — nothing was removed."); return null; }
+          return { undo: async () => !!(await grabCall("restore", { id: t.id }))?.ok };
+        },
+        cancelPointer: () => { pendingTouch.current = null; },
+      };
+    }
+    if (pageMode) {
+      // an embedded page can't be reached inside — the whole page is the thing you pick up; throwing it closes it
+      const areaRect = (): Rect | null => { const r = areaRef.current?.getBoundingClientRect(); return r ? { x: r.left, y: r.top, w: r.width, h: r.height } : null; };
+      return {
+        key: `page:${view.mode}:${url}`,
+        contains: (x, y) => inside(areaRef.current, x, y),
+        inspect: async () => { const r = areaRect(); return r ? { x: r.x + 6, y: r.y + 6, w: r.w - 12, h: r.h - 12 } : null; },
+        pick: async () => { const r = areaRect(); return r ? { id: "page", rect: r, label: title || hostOf(url), whole: true } : null; },
+        snapshot: () => {
+          const el = document.createElement("div");
+          el.className = "jv-grab-card";
+          const small = document.createElement("small"); small.textContent = hostOf(url);
+          const b = document.createElement("div"); b.textContent = title || hostOf(url);
+          el.append(small, b);
+          return { el, w: 340, h: 210 };
+        },
+        remove: async () => { close(); return null; },
+      };
+    }
+    return null;
+  }, [liveReady, pageMode, view.mode, url, title, grabCall, close]);
+
   const secure = url.startsWith("https:");
   const modeChip = view.mode === "live" ? (live === "lost" ? "OFFLINE" : "LIVE · YOUR PC") : view.mode === "embed" ? "PLAYER" : view.mode === "frame" ? "WEB" : view.mode === "preview" ? "PREVIEW" : "…";
 
@@ -312,9 +405,17 @@ export function BrowserPopup({ target, onClose, onOpenTab }: { target: BrowserTa
                 onPointerDown={(e) => {
                   e.currentTarget.focus();
                   e.currentTarget.setPointerCapture(e.pointerId);
+                  if (e.pointerType === "touch") { pendingTouch.current = { ...toPage(e), buttons: 1, clicks: e.detail || 1, m: mods(e) }; return; }
                   send({ t: "mouse", type: "down", ...toPage(e), button: BUTTON[e.button] ?? "left", buttons: e.buttons, clicks: e.detail || 1, ...mods(e) });
                 }}
                 onPointerMove={(e) => {
+                  const pt = pendingTouch.current;
+                  if (pt) {
+                    const p = toPage(e);
+                    if (Math.hypot(p.x - pt.x, p.y - pt.y) < 6) return;
+                    pendingTouch.current = null;
+                    send({ t: "mouse", type: "down", x: pt.x, y: pt.y, button: "left", buttons: 1, clicks: pt.clicks, ...pt.m });
+                  }
                   lastMove.current = { ...toPage(e), buttons: e.buttons, m: mods(e) };
                   if (moveRaf.current == null) {
                     moveRaf.current = requestAnimationFrame(() => {
@@ -324,7 +425,11 @@ export function BrowserPopup({ target, onClose, onOpenTab }: { target: BrowserTa
                     });
                   }
                 }}
-                onPointerUp={(e) => send({ t: "mouse", type: "up", ...toPage(e), button: BUTTON[e.button] ?? "left", buttons: e.buttons, clicks: e.detail || 1, ...mods(e) })}
+                onPointerUp={(e) => {
+                  const pt = pendingTouch.current;
+                  if (pt) { pendingTouch.current = null; send({ t: "mouse", type: "down", x: pt.x, y: pt.y, button: "left", buttons: 1, clicks: pt.clicks, ...pt.m }); }
+                  send({ t: "mouse", type: "up", ...toPage(e), button: BUTTON[e.button] ?? "left", buttons: e.buttons, clicks: e.detail || 1, ...mods(e) });
+                }}
                 onKeyDown={(e) => {
                   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") return; // let the paste event carry the text
                   e.preventDefault(); e.stopPropagation();
@@ -389,6 +494,8 @@ export function BrowserPopup({ target, onClose, onOpenTab }: { target: BrowserTa
               </div>
             </div>
           )}
+
+          <GrabThrowLayer surface={surface} containerRef={areaRef} />
 
           {notice && (
             <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center">

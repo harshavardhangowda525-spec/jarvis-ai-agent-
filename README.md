@@ -37,6 +37,7 @@ registering a **tool** — the agent loop never changes.
 - [Shut down your laptop by voice](#shut-down-your-laptop-by-voice)
 - [Open apps on your PC](#open-apps-on-your-pc)
 - [Open links and websites](#open-links-and-websites)
+- [Throw to trash (gestures)](#throw-to-trash-gestures)
 - [Memory — "remember that…"](#memory--remember-that)
 - [NIOS board notifications](#nios-board-notifications)
 - [EV daily content](#ev-daily-content)
@@ -398,6 +399,33 @@ maximize, "open in a new tab" and close.
 - **Limits of the live view:** file uploads and downloads are off (use "open in a new tab" for those). Some sign-ins, such as Google's, may refuse a browser that's being remote-controlled. If that happens, sign in with "open in a new tab" or use the app. Needs Google Chrome or Microsoft Edge on the PC (or set `ULTRON_BROWSER_PATH`).
 - **Windows, macOS, Linux:** on Windows 10/11 it uses Google Chrome if installed, otherwise Microsoft Edge (always there). Chrome and Edge each keep their own profile folder. If a browser from an earlier run is still holding the profile (for example after closing the ULTRON window), ULTRON stops just that browser and carries on. The Windows side is checked on a real Windows machine by the `Windows (ULTRON)` GitHub Actions job.
 - **Safety:** only your paired JARVIS page (allowed origin + pairing token) can drive the live browser or open links through ULTRON. Only `http`/`https` addresses are opened, as a single argument with no shell. Camera, microphone and location requests from sites are denied. Turn the live browser off with `ULTRON_BROWSER=off` (and link/app opening with `ULTRON_APPS=off`) in `edith/.env`.
+
+## Throw to trash (gestures)
+
+With a page open in JARVIS's browser, you can pick things off it with your hand and throw them into the small holographic bin in the bottom-right corner. Ads, pop-ups and banners are the obvious ones.
+
+1. **Open hand:** move over the page. A glass ring follows your hand, and an outline shows what you'd grab.
+2. **Close your fist** on it and hold it still for a moment. The element lifts off the page, glowing, and follows your hand.
+3. **Carry it to the bin.** It leaves a particle trail. The bin glows as you get close, then opens its lid.
+4. **Open your hand over the bin.** The element flies in, shrinks and disappears in a dust burst, and the bin settles back to idle. An **Undo** button stays up for a few seconds.
+
+Open your hand anywhere else and the element springs back to where it was. Nothing is removed.
+
+- **Safety:** something is removed only after the whole sequence is done on purpose. All of these must hold:
+  - you were holding a real element;
+  - you carried it at least a short distance, toward the bin;
+  - your fist stayed inside the bin's zone for a moment;
+  - your hand opened clearly for a moment.
+
+  So a brief glitch of the camera tracking, a fist over nothing, a fist you never opened, or losing your hand all cancel the grab. While you're grabbing, the other hand gestures (pause, wake, back) are paused so a fist doesn't also pause JARVIS. It uses the gesture camera you already switch on for gesture mode; there is no second camera.
+- **What gets removed:** on live pages (running through ULTRON), the real element is hidden in **your local view only**. The website isn't changed; reloading the page brings it back, and so does Undo. Embedded pages (YouTube players, maps, sites shown directly) can't be reached inside, so there the whole page is the thing you pick up, and throwing it closes it.
+- **Mouse and touch:** hold **Alt** and drag something into the bin, or **long-press** and drag on a touch screen.
+- **Tuning:** the thresholds are in `GRAB_DEFAULTS` in `src/lib/gesture/grab-throw.ts`: fist and open-hand confidence, hold times, grab stillness, release distance, the bin's hitbox and approach radius, and how long lost tracking is tolerated. They can also be passed per page through `<GrabThrowLayer config>`. In development the page shows a small readout and logs `[grab]` steps to the console.
+- **Building blocks:**
+  - `GrabThrowController` is the pure state machine, with no DOM access.
+  - `TrashBin` is the bin component, with the states idle, approaching, ready, receiving and success.
+  - `GrabThrowLayer` handles animation, springs, particles and input.
+  - Each page view provides a small `GrabSurface` adapter that finds, snapshots and removes things.
 
 ## Memory — "remember that…"
 

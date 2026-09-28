@@ -9,3 +9,4 @@ export interface LaunchCandidate { label: string; id: string; opts: { executable
 export function launchCandidates(o?: { platform?: string; env?: Record<string, string | undefined>; exists?: (p: string) => boolean }): LaunchCandidate[];
 export function staleBrowserCommand(platform: string, dir: string): { file: string; args: string[]; env: Record<string, string> };
 export function killStaleBrowsers(dir: string): Promise<number>;
+export function grabInPage(args: [string, number, number, string?]): unknown;

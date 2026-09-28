@@ -85,18 +85,18 @@ export function GestureHud({ ctx, onRetry }: { ctx: Ctx; onRetry: () => void }) 
       if (poseEl.current) poseEl.current.textContent = out?.calibrating != null ? `CALIBRATING ${Math.round(out.calibrating * 100)}%` : pose && pose !== "none" ? POSE_LABEL[pose] : out?.hand ? "TRACKING" : "NO HAND";
       if (confEl.current) confEl.current.style.width = `${Math.round((out?.hand ? out.confidence : 0) * 100)}%`;
       if (hintEl.current) {
-        const hold = out?.hold;
-        hintEl.current.textContent = hold ? `${GESTURE_BY_ID[hold.id].actionLabel} · hold` : out?.pointer ? (out.pinching ? "CLICK" : "AIM · PINCH TO CLICK") : out?.hand ? `${Math.round(out.confidence * 100)}% CONFIDENCE` : "";
+        const hold = ctx.hudHint.current ? null : out?.hold;
+        hintEl.current.textContent = ctx.hudHint.current ? ctx.hudHint.current : hold ? `${GESTURE_BY_ID[hold.id].actionLabel} · hold` : out?.pointer ? (out.pinching ? "CLICK" : "AIM · PINCH TO CLICK") : out?.hand ? `${Math.round(out.confidence * 100)}% CONFIDENCE` : "";
       }
       if (ringEl.current) {
-        const p = out?.hold?.progress ?? 0;
+        const p = ctx.hudHint.current ? 0 : out?.hold?.progress ?? 0;
         ringEl.current.style.strokeDashoffset = String(62.8 * (1 - p));
         ringEl.current.style.opacity = p > 0.05 ? "1" : "0";
       }
     };
     draw();
     return () => cancelAnimationFrame(raf);
-  }, [on, mini, ctx.live, ctx.video, ctx.settings.preview]);
+  }, [on, mini, ctx.live, ctx.video, ctx.settings.preview, ctx.hudHint]);
 
   if (mini && on) {
     return (

@@ -74,6 +74,63 @@ export function viewSize(w, h) {
   return { width: n(w, 1100, 320, 2560), height: n(h, 700, 240, 1600) };
 }
 
+/* ---------------- "throw to trash": find / hide / restore page elements ---------------- */
+
+/**
+ * Runs INSIDE the page. Finds the element worth grabbing at (x, y): the hit
+ * element or the nearest ancestor that's a "thing" (an image, a video, a card,
+ * a paragraph, a button…) — never the page itself or a huge container. With
+ * `register`, remembers it so it can be hidden and restored later. Hiding only
+ * changes this local copy of the page (display:none on the element, undoable,
+ * gone on reload) — the website itself is never touched.
+ */
+export function grabInPage([op, x, y, id]) {
+  const K = Symbol.for("jarvis.grab");
+  const w = /** @type {any} */ (window);
+  if (!w[K]) Object.defineProperty(w, K, { value: { n: 0, els: new Map(), prev: new Map() } });
+  const reg = w[K];
+  if (op === "hide" || op === "restore") {
+    const el = reg.els.get(id);
+    if (!el || !el.isConnected) return { ok: false };
+    if (op === "hide") {
+      reg.prev.set(id, [el.style.getPropertyValue("display"), el.style.getPropertyPriority("display")]);
+      el.style.setProperty("display", "none", "important");
+    } else {
+      const [v, pr] = reg.prev.get(id) ?? ["", ""];
+      if (v) el.style.setProperty("display", v, pr); else el.style.removeProperty("display");
+      reg.prev.delete(id);
+    }
+    return { ok: true };
+  }
+  const vw = innerWidth, vh = innerHeight;
+  let el = document.elementFromPoint(x, y);
+  while (el && el.shadowRoot) { const inner = el.shadowRoot.elementFromPoint(x, y); if (!inner || inner === el) break; el = inner; }
+  if (!el) return null;
+  const THING = /^(IMG|VIDEO|PICTURE|FIGURE|CANVAS|SVG|IFRAME|EMBED|OBJECT|ARTICLE|ASIDE|SECTION|LI|BUTTON|A|H[1-6]|P|BLOCKQUOTE|PRE|TABLE|FORM|INPUT|TEXTAREA|SELECT|DIALOG|UL|OL|DL)$/;
+  const huge = (r) => r.width * r.height > vw * vh * 0.55 || (r.width >= vw * 0.95 && r.height >= vh * 0.6);
+  let pick = null, fallback = null;
+  for (let e = el; e && e !== document.body && e !== document.documentElement; e = e.parentElement || (e.getRootNode && e.getRootNode().host) || null) {
+    const r = e.getBoundingClientRect();
+    if (r.width < 8 || r.height < 8) continue;
+    if (huge(r)) break;
+    const tag = e.tagName.toUpperCase();
+    let boxy = false;
+    try {
+      const cs = getComputedStyle(e);
+      boxy = cs.backgroundImage !== "none" || !/^(rgba\(0, 0, 0, 0\)|transparent)$/.test(cs.backgroundColor) || parseFloat(cs.borderTopWidth) > 0 || cs.boxShadow !== "none";
+    } catch { /* detached */ }
+    if (THING.test(tag) || (boxy && r.width >= 40 && r.height >= 24)) { pick = e; break; }
+    if (!fallback && r.width >= 24 && r.height >= 16) fallback = e;
+  }
+  pick = pick || fallback;
+  if (!pick) return null;
+  const r = pick.getBoundingClientRect();
+  const text = (pick.getAttribute("alt") || pick.getAttribute("aria-label") || pick.getAttribute("title") || pick.innerText || "").replace(/\s+/g, " ").trim().slice(0, 60);
+  let gid = null;
+  if (op === "pick") { gid = `g${++reg.n}`; reg.els.set(gid, pick); }
+  return { id: gid, rect: { x: r.left, y: r.top, w: r.width, h: r.height }, tag: pick.tagName.toLowerCase(), label: text };
+}
+
 /* ---------------- the browser ---------------- */
 
 /** Where Chrome / Edge live on Windows (per-user and machine-wide installs). */
@@ -349,6 +406,17 @@ export function handleBrowserSocket(socket) {
         return;
       case "key": if (cdp) await cdp.send("Input.dispatchKeyEvent", keyEventParams(m)); return;
       case "text": if (cdp && typeof m.text === "string") await cdp.send("Input.insertText", { text: m.text.slice(0, 10_000) }); return;
+      case "grab": {
+        // inspect (hover outline) · pick (remember it) · hide · restore
+        const op = ["inspect", "pick", "hide", "restore"].includes(m.op) ? m.op : null;
+        let result = null;
+        if (op && page) {
+          try { result = await page.evaluate(grabInPage, [op, Number(m.x) || 0, Number(m.y) || 0, String(m.id ?? "")]); }
+          catch { result = null; }
+        }
+        send({ t: "grab", rid: m.rid, op, result });
+        return;
+      }
       case "dialog":
         if (dialog) { const d = dialog; dialog = null; await (m.accept ? d.accept(typeof m.value === "string" ? m.value : undefined) : d.dismiss()).catch(() => {}); }
         return;
@@ -360,7 +428,7 @@ export function handleBrowserSocket(socket) {
     if (isBinary) return;
     let m; try { m = JSON.parse(raw.toString()); } catch { return; }
     // mouse moves and keys are applied in order; a slow navigation doesn't block input
-    const quick = m.t === "mouse" || m.t === "key" || m.t === "text";
+    const quick = m.t === "mouse" || m.t === "key" || m.t === "text" || m.t === "grab";
     const run = () => handle(m).catch(fail);
     if (quick) void run(); else busy = busy.then(run);
   });

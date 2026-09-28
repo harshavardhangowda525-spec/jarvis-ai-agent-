@@ -41,6 +41,15 @@ interface GestureCtx {
   live: React.MutableRefObject<LiveFrame | null>;
   subscribe: (fn: (f: LiveFrame) => void) => () => void;
   video: React.MutableRefObject<HTMLVideoElement | null>;
+  /**
+   * Let an interaction take over the hand for a while (e.g. grab-and-throw):
+   * while `fn(ev)` returns true, that gesture command is swallowed — no action,
+   * no toast — so a held fist doesn't also "pause" and an open hand doesn't
+   * "wake". Returns an unsubscribe.
+   */
+  claim: (fn: (ev: GestureEvent) => boolean) => () => void;
+  /** Set by whoever claimed the hand: the HUD shows this instead of hold rings. */
+  hudHint: React.MutableRefObject<string | null>;
 }
 
 const Ctx = createContext<GestureCtx | null>(null);
@@ -98,6 +107,8 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
   const live = useRef<LiveFrame | null>(null);
   const listeners = useRef(new Set<(f: LiveFrame) => void>());
   const handlers = useRef<GestureHandler[]>([]);
+  const claims = useRef(new Set<(ev: GestureEvent) => boolean>());
+  const hudHint = useRef<string | null>(null);
   const running = useRef(false);
   const want = useRef(false); // the user wants gesture mode on
   const gen = useRef(0);      // bumps on every start/stop so stale async work bails out
@@ -187,6 +198,11 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
   }, [pathname, router]);
 
   const dispatch = useCallback(async (ev: GestureEvent) => {
+    for (const c of claims.current) {
+      let mine = false;
+      try { mine = c(ev); } catch { /* a broken claim never blocks gestures */ }
+      if (mine) return;
+    }
     let result: GestureResult;
     for (const h of [...handlers.current].reverse()) {
       try { result = await h(ev); } catch { result = "SOMETHING WENT WRONG"; }
@@ -306,6 +322,15 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [startCamera, stopCamera]);
 
+  // Test builds only (NEXT_PUBLIC_GESTURE_TEST=1): feed recorded/synthetic hand
+  // frames into the same stream the camera feeds. Compiled out of normal builds.
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_GESTURE_TEST !== "1") return;
+    const w = window as unknown as { __jarvisGestureFrame?: (f: LiveFrame) => void };
+    w.__jarvisGestureFrame = (f) => { live.current = f; listeners.current.forEach((fn) => fn(f)); };
+    return () => { delete w.__jarvisGestureFrame; };
+  }, []);
+
   // leave the app → camera off
   useEffect(() => () => { want.current = false; stopCamera(); tracker.current?.close(); tracker.current = null; }, [stopCamera]);
 
@@ -317,10 +342,14 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
     listeners.current.add(fn);
     return () => { listeners.current.delete(fn); };
   }, []);
+  const claim = useCallback((fn: (ev: GestureEvent) => boolean) => {
+    claims.current.add(fn);
+    return () => { claims.current.delete(fn); };
+  }, []);
 
   const ctx = useMemo<GestureCtx>(() => ({
-    status, error, active: status === "on", enable, disable, settings, setSettings, recalibrate, register, live, subscribe, video,
-  }), [status, error, enable, disable, settings, setSettings, recalibrate, register, subscribe]);
+    status, error, active: status === "on", enable, disable, settings, setSettings, recalibrate, register, live, subscribe, video, claim, hudHint,
+  }), [status, error, enable, disable, settings, setSettings, recalibrate, register, subscribe, claim]);
 
   return (
     <Ctx.Provider value={ctx}>

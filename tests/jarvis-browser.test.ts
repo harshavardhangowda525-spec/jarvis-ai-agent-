@@ -108,6 +108,13 @@ describe.skipIf(!CHROME || !HAVE_DEPS)("ULTRON live browser socket (real Chromiu
     process.env.ULTRON_BROWSER_PROFILE = path.join(os.tmpdir(), `ultron-browser-${Date.now()}`);
     site = http.createServer((req, res) => {
       res.writeHead(200, { "Content-Type": "text/html", "X-Frame-Options": "DENY" });
+      if (req.url!.startsWith("/grab")) {
+        res.end(`<title>Grab</title><body style="margin:0"><main style="width:100%;height:1000px">
+          <div id="ad" style="position:absolute;left:40px;top:40px;width:200px;height:100px;background:#fc0;display:flex"><span style="font-size:14px">Buy now</span></div>
+          <p id="para" style="position:absolute;left:300px;top:40px;width:250px">Some words in a paragraph that you can grab.</p>
+        </main></body>`);
+        return;
+      }
       res.end(req.url!.startsWith("/next") ? `<title>Next</title>${decodeURIComponent(req.url!.split("q=")[1] ?? "")}` : `<title>Form</title><form action="/next"><input name=q autofocus style="position:absolute;left:0;top:0;width:300px;height:40px"></form>`);
     }).listen(0);
     const { startServer } = await import("../edith/src/server.mjs");
@@ -143,6 +150,28 @@ describe.skipIf(!CHROME || !HAVE_DEPS)("ULTRON live browser socket (real Chromiu
     for (const ch of "hi") send({ t: "key", type: "down", key: ch, keyCode: ch.toUpperCase().charCodeAt(0) });
     send({ t: "key", type: "down", key: "Enter", code: "Enter", keyCode: 13 });
     expect(await until(() => states.some((s) => s.t === "state" && /\/next\?q=hi$/.test(s.url) && !s.loading))).toBe(true);
+    // throw-to-trash: find the element under a point, hide it, bring it back
+    send({ t: "nav", url: `http://127.0.0.1:${sitePort}/grab` });
+    expect(await until(() => states.some((s) => s.t === "state" && s.title === "Grab" && !s.loading))).toBe(true);
+    const call = async (m: Record<string, unknown>) => {
+      const rid = Math.floor(Math.random() * 1e9);
+      send({ t: "grab", rid, ...m });
+      expect(await until(() => states.some((s) => s.t === "grab" && s.rid === rid))).toBe(true);
+      return states.find((s) => s.t === "grab" && s.rid === rid).result;
+    };
+    const seen = await call({ op: "inspect", x: 60, y: 60 });           // on the "Buy now" text → the whole banner
+    expect(seen).toMatchObject({ id: null, tag: "div", rect: { x: 40, y: 40, w: 200, h: 100 } });
+    const para = await call({ op: "inspect", x: 320, y: 66 });
+    expect(para.tag).toBe("p");
+    expect(await call({ op: "inspect", x: 600, y: 700 })).toBeNull();  // empty page area — never the page itself
+    const picked = await call({ op: "pick", x: 60, y: 60 });
+    expect(picked.id).toMatch(/^g\d+$/);
+    expect(await call({ op: "hide", id: picked.id })).toEqual({ ok: true });
+    expect((await call({ op: "inspect", x: 60, y: 60 }))).toBeNull();   // it's gone from the page
+    expect(await call({ op: "restore", id: picked.id })).toEqual({ ok: true });
+    expect((await call({ op: "inspect", x: 60, y: 60 })).tag).toBe("div"); // and back
+    expect(await call({ op: "hide", id: "nope" })).toEqual({ ok: false });
+    expect(await call({ op: "drop-tables" })).toBeNull();
     send({ t: "nav", url: "file:///etc/passwd" });
     expect(await until(() => states.some((s) => s.t === "error" && /isn't a web address/.test(s.message)))).toBe(true);
     ws.close();

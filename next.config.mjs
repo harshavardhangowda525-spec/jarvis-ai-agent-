@@ -2,6 +2,8 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Inlined at build time so the gesture test hook is compiled out of normal builds.
+  env: { NEXT_PUBLIC_GESTURE_TEST: process.env.NEXT_PUBLIC_GESTURE_TEST === "1" ? "1" : "" },
   eslint: {
     // Lint is run explicitly in CI via `npm run lint`; don't fail production builds on it.
     ignoreDuringBuilds: true,
