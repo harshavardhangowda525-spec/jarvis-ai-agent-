@@ -91,3 +91,23 @@ export async function probeDatabase(root, url, timeoutMs = 40_000) {
     await client?.$disconnect().catch(() => {});
   }
 }
+
+/** AI keys/models JARVIS, EV and DARWIN can use (the same names the app reads). */
+const CLOUD_AI_VARS = ["GROQ_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "AI_API_KEY", "GROQ_MODEL", "GEMINI_MODEL"];
+const realValue = (v) => typeof v === "string" && v.trim() !== "" && !/^\[sensitive\]$/i.test(v.trim());
+
+/**
+ * The cloud AI keys to give the JARVIS app (pure — tested): .env.local's own
+ * value when it has a real one, otherwise the one in ULTRON's edith/.env (where
+ * they lived when ULTRON ran on Groq). `borrowed` lists the ones taken from
+ * edith/.env, so the runner can say so.
+ */
+export function cloudAiKeys(appEnv, edithEnv) {
+  const values = {};
+  const borrowed = [];
+  for (const k of CLOUD_AI_VARS) {
+    if (realValue(appEnv[k])) values[k] = appEnv[k].trim();
+    else if (realValue(edithEnv[k])) { values[k] = edithEnv[k].trim(); borrowed.push(k); }
+  }
+  return { values, borrowed };
+}

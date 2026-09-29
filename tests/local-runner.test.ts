@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { retireOldUltronProvider, parseNetstat, stopPort, listeningPids, describeDbError, probeDatabase } from "../scripts/local-helpers.mjs";
+import { retireOldUltronProvider, parseNetstat, stopPort, listeningPids, describeDbError, probeDatabase, cloudAiKeys } from "../scripts/local-helpers.mjs";
 
 const tmp = (text: string) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "edenv-")), ".env"); fs.writeFileSync(f, text); return f; };
 
@@ -75,4 +75,16 @@ describe("npm run local explains a database it can't reach", () => {
     expect(r.ok).toBe(false);
     expect(r.error).toBeTruthy();
   }, 30_000);
+});
+
+describe("JARVIS gets the AI keys wherever they are on this PC", () => {
+  it("uses .env.local's key, else the one in ULTRON's edith/.env — never a [Sensitive] placeholder", () => {
+    const r = cloudAiKeys(
+      { GROQ_API_KEY: "[Sensitive]", GEMINI_API_KEY: "", OPENAI_API_KEY: "sk-local" },
+      { GROQ_API_KEY: "gsk_from_edith", GEMINI_API_KEY: "gem_from_edith", OPENAI_API_KEY: "sk-edith", GROQ_MODEL: "llama-3.3-70b-versatile" },
+    );
+    expect(r.values).toEqual({ GROQ_API_KEY: "gsk_from_edith", GEMINI_API_KEY: "gem_from_edith", OPENAI_API_KEY: "sk-local", GROQ_MODEL: "llama-3.3-70b-versatile" });
+    expect(r.borrowed).toEqual(["GROQ_API_KEY", "GEMINI_API_KEY", "GROQ_MODEL"]);
+    expect(cloudAiKeys({}, {})).toEqual({ values: {}, borrowed: [] });
+  });
 });

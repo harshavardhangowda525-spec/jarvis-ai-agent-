@@ -3,7 +3,7 @@ import { recordActivity } from "@/lib/activity/record";
 import { describeToolEvent } from "@/lib/activity/tool-events";
 import type Anthropic from "@anthropic-ai/sdk";
 import type OpenAI from "openai";
-import { getAiConfigs, getAnthropicClient, getOpenAiClient } from "./client";
+import { getAiConfigs, getAnthropicClient, getOpenAiClient, AiNotConfiguredError } from "./client";
 import { getLiveBrain } from "./brain";
 import { trimHistoryForLocal } from "./history";
 import { explicitMemory, loadMemories, memoryPromptBlock, saveMemory, type MemoryRow } from "./user-memory";
@@ -266,10 +266,16 @@ export function agentConfigs(
 ): { configs: AiConfig[]; missing?: string } {
   const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : env.jarvisProvider;
   const picks = pick.split(/[\s,>]+/).filter(Boolean);
-  if (picks.includes("auto")) return { configs: getAiConfigs((agent === "jarvis" && preferred) || undefined, brain) };
+  if (picks.includes("auto")) {
+    try { return { configs: getAiConfigs((agent === "jarvis" && preferred) || undefined, brain) }; }
+    catch (e) { if (!(e instanceof AiNotConfiguredError)) throw e; return { configs: [], missing: `${AGENT_NAMES[agent]} has no AI key to answer with. Add ${KEY_HINT.groq} or ${KEY_HINT.gemini} to .env.local (or your Vercel environment variables), then restart.` }; }
+  }
   const configs: AiConfig[] = [];
   for (const p of picks) {
-    const c = getAiConfigs(p, brain).find((x) => x.provider === p);
+    // no provider configured at all → the plain "add a key" message below, not a crash
+    let all: AiConfig[] = [];
+    try { all = getAiConfigs(p, brain); } catch (e) { if (!(e instanceof AiNotConfiguredError)) throw e; }
+    const c = all.find((x) => x.provider === p);
     if (c && !configs.some((x) => x.provider === c.provider)) configs.push(c);
   }
   if (configs.length) return { configs };

@@ -336,6 +336,7 @@ balancer / uptime monitor.
 | Symptom | Fix |
 |---|---|
 | "Database is not configured" | Set `DATABASE_URL`, run `npm run db:push`. |
+| "The AI model is not configured" in the `npm run local` window | JARVIS found no AI key. `npm run local` now also uses the `GROQ_API_KEY` / `GEMINI_API_KEY` in `edith/.env` (where they lived when ULTRON used Groq) and says so at startup. If neither file has one, add a free key to `.env.local`: console.groq.com/keys or aistudio.google.com/apikey. |
 | "Can't reach database server at `…neon.tech:5432`" | Neon puts the database to sleep when idle. JARVIS now waits up to 30 s for it to wake (`connect_timeout`/`pool_timeout`, unless `DATABASE_URL` sets its own) and retries a failed connection 3 times, logging one line: `[db] … retrying`. If it keeps failing, `npm run local` says why at startup (`Database: …`). The usual causes are an internet drop; a firewall, antivirus, VPN or office/college Wi-Fi blocking port 5432 (try a phone hotspot); or a Neon project that is suspended or out of compute quota (check console.neon.tech). |
 | "The AI model is not configured" | Set `AI_API_KEY`. |
 | "JARVIS voice is not configured" | Set `ELEVENLABS_API_KEY` (+ `ELEVENLABS_VOICE_ID`). |
@@ -540,6 +541,18 @@ recovers by itself:
 
 Magic Hour's exact answer for any failed step is written to the server console
 as `[magichour] …`, with the API key never shown.
+
+**Checking Magic Hour from your PC.** `npm run ev:check-video` runs EV's video
+steps one by one with your key and prints Magic Hour's exact answer at each:
+1. the key;
+2. the upload address;
+3. the picture upload.
+
+These three are free. `npm run ev:check-video -- --create` also starts one
+3-second test video, which uses credits. It tries text-to-video if
+image-to-video is refused, then waits for the render. The output is saved to
+`magichour-check.txt` (git-ignored). The key and upload signatures are never
+printed.
 
 | Time | Step |
 | --- | --- |

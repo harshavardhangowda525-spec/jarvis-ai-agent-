@@ -51,3 +51,4 @@ __pycache__/
 
 # MediaPipe runtime (copied from node_modules on install)
 /public/vision/
+magichour-check.txt

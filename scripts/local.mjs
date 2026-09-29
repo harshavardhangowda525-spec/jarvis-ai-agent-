@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError } from "./local-helpers.mjs";
+import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys } from "./local-helpers.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const EDITH = path.join(ROOT, "edith");
@@ -258,6 +258,9 @@ else if (ultronPick[0] === "ollama" && !/^ollama\b/i.test(String(running.brain ?
 } else say(`  ULTRON already running on ${running.brain || "its brain"} — using it.`);
 
 // ---- 6. the web app (every agent) ------------------------------------------------------------------
+// JARVIS, EV and DARWIN answer with Groq/Gemini. Their keys may be in .env.local
+// or — from when ULTRON ran on Groq — only in edith/.env: hand over whichever exists.
+const aiKeys = cloudAiKeys(appEnv, edithEnv);
 // The NIOS watcher's scheduled check needs a secret; use yours or a one-off one for this run.
 const cronSecret = appEnv.CRON_SECRET && !isPlaceholder(appEnv.CRON_SECRET) ? appEnv.CRON_SECRET : crypto.randomBytes(24).toString("hex");
 const nextBin = path.join(ROOT, "node_modules", "next", "dist", "bin", "next");
@@ -270,6 +273,7 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
       OLLAMA_MODEL: model,
       BRAIN_PRIORITY: appEnv.BRAIN_PRIORITY || "first",        // only matters with JARVIS_PROVIDER=auto
     } : {}),
+    ...aiKeys.values,
     // EV's images must stay publicly reachable for Instagram — keep the Vercel address.
     APP_URL: appEnv.APP_URL || edithEnv.JARVIS_URL || "",
     DATABASE_URL: dbUrl,
@@ -284,7 +288,9 @@ if (await waitFor(`${local}/login`, 120)) {
   const withModel = (pick, m) => only(pick).replace(/^Ollama\b/, `Ollama (${m})`);
   say(`    Brains: JARVIS ${withModel(jarvisPick, model)} · EV ${only(pickOf(appEnv.EV_PROVIDER, "groq,gemini"))} · DARWIN ${only(pickOf(appEnv.DARWIN_PROVIDER, "groq,gemini"))} · ULTRON ${withModel(ultronPick, ultronModel)}`);
   const geminiKey = [edithEnv.GEMINI_API_KEY, appEnv.GEMINI_API_KEY].find((v) => v && !isPlaceholder(v));
-  if (!groqKey && !geminiKey) say("    ! GROQ_API_KEY and GEMINI_API_KEY are both empty in .env.local — JARVIS, EV and DARWIN need at least one.");
+  if (aiKeys.borrowed.length) say(`    Using ${aiKeys.borrowed.join(", ")} from edith/.env for JARVIS, EV and DARWIN (it isn't in .env.local).`);
+  if (!Object.keys(aiKeys.values).some((k) => k.endsWith("_API_KEY"))) say("    ! No AI key found (GROQ_API_KEY / GEMINI_API_KEY) in .env.local or edith/.env — JARVIS, EV and DARWIN can't answer until you add one.\n      Free keys: console.groq.com/keys and aistudio.google.com/apikey — put them in .env.local, then run this again.");
+  else if (!groqKey && !geminiKey) say("    ! GROQ_API_KEY and GEMINI_API_KEY are both empty — JARVIS, EV and DARWIN are set to use those two.");
   else if (!groqKey) say("    ! GROQ_API_KEY is empty — JARVIS, EV and DARWIN will use Gemini only.");
   else if (!geminiKey) say("    (No GEMINI_API_KEY — JARVIS, EV and DARWIN have no backup when Groq is busy. Free at aistudio.google.com/apikey.)");
   if (appEnv.JARVIS_PROVIDER && usesOllama(jarvisPick)) say(`    Note: .env.local sets JARVIS_PROVIDER=${appEnv.JARVIS_PROVIDER}, so JARVIS stays on your PC brain — delete that line to use Groq/Gemini.`);

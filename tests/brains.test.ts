@@ -63,4 +63,20 @@ describe("ULTRON runs on this PC's Ollama", () => {
     const p = await load({ ULTRON_AI_PROVIDER: undefined, OLLAMA_BASE_URL: "http://127.0.0.1:1" });
     await expect(p.askJson("Reply with json", "ping")).rejects.toThrow(/Ollama isn't running on this PC/);
   }, 30_000);
+
+  it("with no AI key at all it says what to add — it doesn't crash the reply", () => {
+    const e = env as unknown as Record<string, string>;
+    const saved = { g: e.groqApiKey, m: e.geminiApiKey, o: e.ollamaBaseUrl, j: e.jarvisProvider };
+    e.groqApiKey = ""; e.geminiApiKey = ""; e.ollamaBaseUrl = "";
+    try {
+      for (const agent of ["jarvis", "ev", "darwin"] as const) {
+        const r = agentConfigs(agent, null);
+        expect(r.configs).toEqual([]);
+        expect(r.missing).toMatch(/GROQ_API_KEY .* or GEMINI_API_KEY/);
+      }
+      e.jarvisProvider = "auto";
+      expect(agentConfigs("jarvis", null).missing).toMatch(/has no AI key/);
+    } finally { e.groqApiKey = saved.g; e.geminiApiKey = saved.m; e.ollamaBaseUrl = saved.o; e.jarvisProvider = saved.j; }
+  });
 });
+
