@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { retireOldUltronProvider, stopPort } from "./local-helpers.mjs";
+import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError } from "./local-helpers.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const EDITH = path.join(ROOT, "edith");
@@ -174,6 +174,16 @@ const stamp = fs.existsSync(stampFile) ? fs.readFileSync(stampFile, "utf8").trim
 if (!built || (head && stamp !== head) || process.argv.includes("--rebuild")) {
   runStep("Building JARVIS (a few minutes the first time, and after each update)", "npm run build", ROOT);
   if (head) fs.writeFileSync(stampFile, head);
+}
+
+// ---- 3b. can this PC reach the database? (Neon sleeps when idle — this also wakes it) -------
+{
+  const db = await probeDatabase(ROOT, dbUrl);
+  if (db.ok) say(`  Database: connected (${db.ms > 4000 ? `it was asleep — woke up in ${(db.ms / 1000).toFixed(1)} s` : `${db.ms} ms`})`);
+  else {
+    say(`  ! Database: can't connect right now.\n    ${describeDbError(db.error) ?? db.error.split("\n").filter(Boolean).pop()}`);
+    say("    JARVIS will still start and keeps retrying, but sign-in and saving need the database.");
+  }
 }
 
 // ---- 4. Ollama: ULTRON's brain (and JARVIS's only when JARVIS_PROVIDER says so) ---------------

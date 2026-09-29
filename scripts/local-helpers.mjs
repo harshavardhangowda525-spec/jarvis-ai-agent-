@@ -41,3 +41,53 @@ export function stopPort(port, platform = process.platform) {
   }
   return pids.length;
 }
+
+/**
+ * What a database connection error means, in plain words (pure — tested).
+ * Returns null when there's nothing to explain.
+ */
+export function describeDbError(message = "") {
+  const m = String(message);
+  if (!m) return null;
+  if (/exceeded the compute time quota|compute time quota|exceeded .*quota/i.test(m)) {
+    return "Neon says the project has used up its compute quota for this month. Open console.neon.tech → your project → Billing/Usage (upgrade the plan or wait for the monthly reset). Until then the database refuses every connection.";
+  }
+  if (/password authentication failed|authentication failed/i.test(m)) {
+    return "The database rejected the password in DATABASE_URL. Copy a fresh connection string from console.neon.tech → Connect into .env.local.";
+  }
+  if (/does not exist/i.test(m) && /database|role/i.test(m)) {
+    return "The database or user named in DATABASE_URL doesn't exist on the server. Copy the connection string again from console.neon.tech → Connect.";
+  }
+  if (/ENOTFOUND|getaddrinfo|could not translate host/i.test(m)) {
+    return "This PC couldn't look up the database's address (DNS). Check the internet connection, or that the host in DATABASE_URL is spelled right.";
+  }
+  if (/Can't reach database server|ETIMEDOUT|ECONNREFUSED|timed out|ECONNRESET/i.test(m)) {
+    return "This PC couldn't open a connection to the database. Usually one of: (1) the internet dropped or is slow, (2) a firewall, antivirus, office/college Wi-Fi or VPN blocks port 5432 — try another network or a phone hotspot, (3) the Neon project is suspended or deleted — check console.neon.tech. JARVIS keeps retrying while it wakes up.";
+  }
+  return null;
+}
+
+/**
+ * Try the database once (up to `timeoutMs`), the way JARVIS will. Resolves to
+ * { ok, ms, error } — never throws. Uses JARVIS's own Prisma client.
+ */
+export async function probeDatabase(root, url, timeoutMs = 40_000) {
+  const { createRequire } = await import("node:module");
+  const started = Date.now();
+  let client;
+  try {
+    const require = createRequire(`${root.replace(/\\/g, "/")}/package.json`);
+    const { PrismaClient } = require("@prisma/client");
+    const { tuneDatabaseUrl } = await import("./db-url.mjs");
+    client = new PrismaClient({ datasources: { db: { url: tuneDatabaseUrl(url) } }, log: [] });
+    await Promise.race([
+      client.$queryRawUnsafe("SELECT 1"),
+      new Promise((_, rej) => setTimeout(() => rej(new Error(`Can't reach database server (no answer in ${Math.round(timeoutMs / 1000)}s)`)), timeoutMs)),
+    ]);
+    return { ok: true, ms: Date.now() - started, error: null };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - started, error: String(e?.message ?? e) };
+  } finally {
+    await client?.$disconnect().catch(() => {});
+  }
+}

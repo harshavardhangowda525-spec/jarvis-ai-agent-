@@ -336,6 +336,7 @@ balancer / uptime monitor.
 | Symptom | Fix |
 |---|---|
 | "Database is not configured" | Set `DATABASE_URL`, run `npm run db:push`. |
+| "Can't reach database server at `…neon.tech:5432`" | Neon puts the database to sleep when idle. JARVIS now waits up to 30 s for it to wake (`connect_timeout`/`pool_timeout`, unless `DATABASE_URL` sets its own) and retries a failed connection 3 times, logging one line: `[db] … retrying`. If it keeps failing, `npm run local` says why at startup (`Database: …`). The usual causes are an internet drop; a firewall, antivirus, VPN or office/college Wi-Fi blocking port 5432 (try a phone hotspot); or a Neon project that is suspended or out of compute quota (check console.neon.tech). |
 | "The AI model is not configured" | Set `AI_API_KEY`. |
 | "JARVIS voice is not configured" | Set `ELEVENLABS_API_KEY` (+ `ELEVENLABS_VOICE_ID`). |
 | Mic not working | Grant permission; use `https://` or `localhost`; click **Enable JARVIS Voice**. |

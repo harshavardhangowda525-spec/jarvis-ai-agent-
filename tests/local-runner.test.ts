@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import http from "node:http";
 import { spawn } from "node:child_process";
-import { retireOldUltronProvider, parseNetstat, stopPort, listeningPids } from "../scripts/local-helpers.mjs";
+import { retireOldUltronProvider, parseNetstat, stopPort, listeningPids, describeDbError, probeDatabase } from "../scripts/local-helpers.mjs";
 
 const tmp = (text: string) => { const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "edenv-")), ".env"); fs.writeFileSync(f, text); return f; };
 
@@ -59,4 +59,20 @@ describe("finding and stopping an older ULTRON on its port", () => {
     expect(listeningPids(port)).toEqual([]);
     void http;
   }, 20_000);
+});
+
+describe("npm run local explains a database it can't reach", () => {
+  it("says what each connection error means, in plain words", () => {
+    expect(describeDbError("Can't reach database server at `ep-soft-water-pooler.neon.tech:5432`")).toMatch(/firewall|hotspot|console\.neon\.tech/);
+    expect(describeDbError("ERROR: Your account or project has exceeded the compute time quota. Upgrade your plan to increase limits.")).toMatch(/compute quota/);
+    expect(describeDbError("password authentication failed for user 'neondb_owner'")).toMatch(/rejected the password/);
+    expect(describeDbError("getaddrinfo ENOTFOUND ep-x.neon.tech")).toMatch(/DNS/);
+    expect(describeDbError("")).toBeNull();
+  });
+
+  it("the startup check reports an unreachable database without hanging or throwing", async () => {
+    const r = await probeDatabase(process.cwd(), "postgresql://u:p@127.0.0.1:1/x?connect_timeout=2", 15_000);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBeTruthy();
+  }, 30_000);
 });
