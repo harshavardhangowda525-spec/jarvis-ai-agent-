@@ -11,6 +11,7 @@ import * as magicHour from "@/lib/ev/magichour";
 import { storeRemoteMedia } from "@/lib/ev/media";
 import { itemText } from "@/lib/ev/memory";
 import { fingerprint, findSimilar } from "@/lib/ev/dedup";
+import { publicBase, publicMediaUrl, NO_PUBLIC_URL } from "@/lib/public-url";
 import { resolveIgCreds, igNotConnectedMessage, igPublishImage, igCreateReel, igWaitContainer, igPublishContainer, IgError } from "@/lib/ev/instagram";
 import { prepareImageForInstagram, IgImageError } from "@/lib/ev/igready";
 import { renderReel, probeMp4, ReelError } from "./reel";
@@ -61,7 +62,8 @@ function evWriters(): { configs: ReturnType<typeof agentConfigs>["configs"]; mis
   try { return agentConfigs("ev", null); } catch { return { configs: [], missing: "EV's writing brain isn't set up. Add GROQ_API_KEY or GEMINI_API_KEY (both free) to your environment, then say retry." }; }
 }
 
-export const isPublicUrl = (u: string) => /^https:\/\//i.test(u) && !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(u);
+export { isPublicUrl } from "@/lib/public-url";
+import { isPublicUrl } from "@/lib/public-url";
 
 export function defaultDeps(): DailyDeps {
   return {
@@ -387,7 +389,7 @@ async function stepQc(p: EvDaily, deps: DailyDeps, log: DailyLogEntry[]): Promis
     creativeConcept: p.creativeConcept ?? "", videoConcept: p.videoConcept ?? "", postingTime: p.postingTime,
     image: img ? { url: p.imageUrl, bytes: img.bytes.length, ...imgMeta } : null,
     video: vid && probe ? { url: p.videoUrl, bytes: vid.bytes.length, mimeType: vid.mimeType, ...probe } : vid ? { url: p.videoUrl, bytes: vid.bytes.length, mimeType: vid.mimeType, seconds: 0, width: 0, height: 0 } : null,
-    history: hist, publicUrl: deps.publicUrl,
+    history: hist, publicUrl: deps.publicUrl || !!(await publicBase(p.userId)),
   }, deps.now());
   const failed = qc.checks.filter((c) => !c.ok && c.severity === "error");
   if (!failed.length) {
@@ -432,23 +434,28 @@ async function stepPublish(p: EvDaily, deps: DailyDeps, log: DailyLogEntry[], bu
     await save(p.id, { publishError: `${igNotConnectedMessage()} Then say publish again.` });
     return "done";
   }
-  if (!deps.publicUrl) {
-    await save(p.id, { publishError: "APP_URL isn't a public https address, so Instagram can't fetch the media. Set APP_URL to your deployed URL." });
+  // Instagram downloads the media itself — from this app's public address, or the
+  // one the deployed (Vercel) app saved when JARVIS runs on your PC
+  const base = await publicBase(p.userId);
+  const imageUrl = p.imageUrl ? publicMediaUrl(p.imageUrl, base) : null;
+  const videoUrl = p.videoUrl ? publicMediaUrl(p.videoUrl, base) : null;
+  if ((p.imageUrl && !imageUrl && !p.postMediaId) || (p.videoUrl && !videoUrl && !p.reelMediaId)) {
+    await save(p.id, { publishError: NO_PUBLIC_URL });
     return "done";
   }
   const caption = publishCaption(p);
   try {
     let { postMediaId, reelContainerId } = p;
-    if (!postMediaId && p.imageUrl) {
-      const ready = await prepareImageForInstagram(p.userId, p.imageUrl);
-      postMediaId = await igPublishImage(creds, ready.url, caption);
+    if (!postMediaId && imageUrl) {
+      const ready = await prepareImageForInstagram(p.userId, imageUrl);
+      postMediaId = await igPublishImage(creds, publicMediaUrl(ready.url, base) ?? ready.url, caption);
       log.push(entry(deps.now(), "publish", `Post published to Instagram (media ${postMediaId}).`));
       await save(p.id, { postMediaId, publishError: null }, log);
       await recordActivity(p.userId, { category: "marketing", agent: "EV", source: "ev", project: "EV", action: "Published the daily post to Instagram", result: p.topic, status: "success", importance: 4, metadata: { mediaId: postMediaId } });
     }
-    if (p.videoUrl && !p.reelMediaId) {
+    if (videoUrl && !p.reelMediaId) {
       if (!reelContainerId) {
-        reelContainerId = await igCreateReel(creds, p.videoUrl, caption);
+        reelContainerId = await igCreateReel(creds, videoUrl, caption);
         await save(p.id, { reelContainerId });
       }
       const st = await igWaitContainer(creds, reelContainerId, Math.min(budgetMs, 45_000));
@@ -683,7 +690,7 @@ export async function dailyView(userId: string, deps: Pick<DailyDeps, "now" | "p
     capabilities: {
       writer, image,
       video: magicHour.isConfigured() && cfg.video !== "motion" ? "Magic Hour + EV Reel" : "EV Reel (motion render)",
-      instagram: !!ig, publicUrl: deps.publicUrl,
+      instagram: !!ig, publicUrl: deps.publicUrl || !!(await publicBase(userId)),
     },
   };
 }

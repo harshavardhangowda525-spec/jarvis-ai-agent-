@@ -789,6 +789,18 @@ To avoid needing the token in `.env.local`:
 If Instagram still isn't connected, EV says exactly why (no token here, or no
 business account for the token).
 
+**Publishing from your PC.** Instagram downloads the post and Reel itself, from a
+public https address, and your PC's JARVIS runs at `localhost`. The media is kept in
+your shared database, so your Vercel app serves the very same files:
+- Your Vercel JARVIS saves its own address when you open EV there. This is just
+  the address; no secret is stored.
+- When you publish from your PC, EV gives Instagram the Vercel address for the
+  media.
+- Setting `APP_URL` in `.env.local` to your Vercel address works too.
+
+Reels are capped at about 2.5 Mbit/s (under 4 MB for 12 s). A Vercel function
+can't send more than 4.5 MB.
+
 ## Which brain each agent uses
 
 | Agent  | Setting             | Default  | Meaning                                  |

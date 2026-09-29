@@ -1,6 +1,7 @@
 import "server-only";
 import { env } from "@/lib/env";
 import { getDb } from "@/lib/db";
+import { rememberPublicBase } from "@/lib/public-url";
 
 /**
  * Instagram Graph API access for EV. Credentials are resolved per-user (an
@@ -75,6 +76,7 @@ export function igMissingReason(): IgMissing { return lastMissing; }
  * when it isn't set, and which is then saved as the connection.
  */
 export async function resolveIgCreds(userId: string): Promise<IgCreds | null> {
+  void rememberPublicBase(userId); // on Vercel: save its address for JARVIS on the PC
   let rowToken = "";
   try {
     const row = await getDb().integration.findUnique({

@@ -6,6 +6,7 @@ import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import {
   resolveIgCreds, igNotConnectedMessage, igPublishImage, igCreateReel, igWaitContainer, igPublishContainer, IgError,
 } from "@/lib/ev/instagram";
+import { publicBase, publicMediaUrl, NO_PUBLIC_URL } from "@/lib/public-url";
 import { getDb } from "@/lib/db";
 import { prepareImageForInstagram, IgImageError } from "@/lib/ev/igready";
 
@@ -21,10 +22,6 @@ const schema = z.object({
   contentId: z.string().optional(),
 });
 
-/** External media must be publicly reachable over https for Instagram to fetch it. */
-function isPublic(url: string): boolean {
-  return /^https:\/\//i.test(url) && !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(url);
-}
 
 /**
  * Deterministic EV → Instagram publish. Called directly by the EV "Publish"
@@ -44,6 +41,12 @@ export async function POST(req: NextRequest) {
       return fail(igNotConnectedMessage(), 409);
     }
 
+    // Instagram downloads the media itself: EV's own media goes out from the public
+    // address (this app's, or the one your deployed app saved when you're on the PC)
+    const base = await publicBase(user.id);
+    const videoUrl = body.videoUrl ? publicMediaUrl(body.videoUrl, base) : null;
+    const imageUrl = body.imageUrl ? publicMediaUrl(body.imageUrl, base) : null;
+
     const markPublished = async (mediaId: string) => {
       if (!body.contentId) return;
       await getDb().evContent.updateMany({
@@ -55,11 +58,9 @@ export async function POST(req: NextRequest) {
     try {
       // ---- Reel (video) ----
       if (body.videoUrl || body.containerId) {
-        if (body.videoUrl && !isPublic(body.videoUrl)) {
-          return fail("The video URL isn't a public https URL Instagram can fetch. Set APP_URL to your public app URL and redeploy.", 422);
-        }
+        if (body.videoUrl && !videoUrl) return fail(NO_PUBLIC_URL, 422);
         let containerId = body.containerId;
-        if (!containerId) containerId = await igCreateReel(creds, body.videoUrl!, body.caption);
+        if (!containerId) containerId = await igCreateReel(creds, videoUrl!, body.caption);
         const st = await igWaitContainer(creds, containerId, 45_000);
         if (st.error) return fail(`Instagram couldn't process the Reel${st.detail ? `: ${st.detail}` : " (must be MP4, 9:16, 3–90s)"}.`, 422);
         if (!st.ready) {
@@ -73,14 +74,12 @@ export async function POST(req: NextRequest) {
 
       // ---- Image ----
       if (!body.imageUrl) return fail("Provide an imageUrl or videoUrl to publish.", 400);
-      if (!isPublic(body.imageUrl)) {
-        return fail("The image URL isn't a public https URL Instagram can fetch. Set APP_URL to your public app URL and redeploy.", 422);
-      }
+      if (!imageUrl) return fail(NO_PUBLIC_URL, 422);
       // Instagram only takes JPEG within 4:5–1.91:1 — convert/pad if needed.
       let ready;
-      try { ready = await prepareImageForInstagram(user.id, body.imageUrl); }
+      try { ready = await prepareImageForInstagram(user.id, imageUrl); }
       catch (e) { if (e instanceof IgImageError) return fail(e.message, 422); throw e; }
-      const mediaId = await igPublishImage(creds, ready.url, body.caption);
+      const mediaId = await igPublishImage(creds, publicMediaUrl(ready.url, base) ?? ready.url, body.caption);
       await markPublished(mediaId);
       await recordActivity(user.id, { category: "marketing", agent: "EV", source: "ev", project: "EV", action: "Published a post to Instagram", result: String(body.caption ?? "").slice(0, 160) || null, status: "success", importance: 4, metadata: { mediaId } });
       return ok({ published: true, mediaId, type: "image", adjusted: ready.note ?? null });

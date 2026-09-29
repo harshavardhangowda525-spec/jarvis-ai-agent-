@@ -132,7 +132,7 @@ export function qualityCheck(p: QcInput, now = new Date()): QcResult {
   // 11. publishing information present
   const missing = [!p.caption && "caption", !p.hashtags.length && "hashtags", !p.postingTime && "posting time", !p.image?.url && "image", !p.video?.url && "video", !p.cta && "call to action"].filter(Boolean);
   add("publishing", "Publishing info complete", !missing.length, missing.length ? `Missing: ${missing.join(", ")}` : `Posting at ${p.postingTime}`);
-  add("public", "Media reachable by Instagram", p.publicUrl, p.publicUrl ? "Served from your public https URL." : "APP_URL isn't a public https address, so Instagram can't fetch the media until it is.", "warn");
+  add("public", "Media reachable by Instagram", p.publicUrl, p.publicUrl ? "Served from your public https URL." : "No public https address for Instagram to download the media from yet — open EV once in your Vercel JARVIS (it saves its address), or set APP_URL.", "warn");
 
   return { passed: checks.every((c) => c.ok || c.severity === "warn"), checks, at: now.toISOString() };
 }

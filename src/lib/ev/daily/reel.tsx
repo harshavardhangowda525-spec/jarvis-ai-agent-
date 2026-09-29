@@ -243,8 +243,10 @@ export async function renderReel(input: ReelInput, opts: { timeoutMs?: number } 
       "-filter_complex", graph,
       "-map", `[${last}]`, "-map", `${audioIdx}:a`,
       "-t", T, "-r", String(REEL_FPS),
-      "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-profile:v", "high", "-pix_fmt", "yuv420p",
-      "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart",
+      // capped at ~2.5 Mbit/s (≈4 MB for 12 s): Instagram downloads the Reel from
+      // the app, and a Vercel function can't send more than 4.5 MB
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-maxrate", "2500k", "-bufsize", "5000k", "-profile:v", "high", "-pix_fmt", "yuv420p",
+      "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart",
       out,
     );
     await run(ffmpegPath(), args, opts.timeoutMs ?? 150_000);

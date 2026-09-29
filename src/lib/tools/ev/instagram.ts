@@ -2,6 +2,7 @@ import "server-only";
 import { z } from "zod";
 import type { ToolDefinition } from "../types";
 import { ToolError } from "../types";
+import { publicBase, publicMediaUrl, NO_PUBLIC_URL } from "@/lib/public-url";
 import {
   resolveIgCreds, igNotConnectedMessage, igProfile, igMedia, igAccountInsights, igPublishImage,
   igCreateReel, igWaitContainer, igPublishContainer, IgError,
@@ -31,12 +32,11 @@ const schema = z.object({
 
 type Input = z.infer<typeof schema>;
 
-/** Instagram fetches media server-side, so the URL must be public https. */
-function assertPublicUrl(url: string, what: string) {
-  if (/^https:\/\//i.test(url) && !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(url)) return;
-  throw new ToolError(
-    `The ${what} isn't a public https URL (${url.slice(0, 40)}…). Instagram can't fetch it. Set APP_URL to your public https app URL (on Vercel it's auto-detected after a redeploy), then try again.`,
-  );
+/** Instagram fetches media server-side: EV's own media goes out from the public address. */
+async function publicUrlFor(userId: string, url: string): Promise<string> {
+  const u = publicMediaUrl(url, await publicBase(userId));
+  if (!u) throw new ToolError(NO_PUBLIC_URL);
+  return u;
 }
 
 export const evInstagramTool: ToolDefinition<Input> = {
@@ -85,10 +85,10 @@ export const evInstagramTool: ToolDefinition<Input> = {
         case "publish_image": {
           if (!input.imageUrl) throw new ToolError("A public 'imageUrl' is required to publish.");
           if (!input.caption) throw new ToolError("A 'caption' is required to publish.");
-          assertPublicUrl(input.imageUrl, "image URL");
+          const imageUrl = await publicUrlFor(ctx.userId, input.imageUrl);
           ctx.activity("Preparing image for Instagram…");
           let readyUrl: string;
-          try { readyUrl = (await prepareImageForInstagram(ctx.userId, input.imageUrl)).url; }
+          try { readyUrl = await publicUrlFor(ctx.userId, (await prepareImageForInstagram(ctx.userId, imageUrl)).url); }
           catch (e) { if (e instanceof IgImageError) throw new ToolError(e.message); throw e; }
           ctx.activity("Publishing to Instagram…");
           const mediaId = await igPublishImage(creds, readyUrl, input.caption);
@@ -110,9 +110,9 @@ export const evInstagramTool: ToolDefinition<Input> = {
           if (!containerId) {
             if (!input.videoUrl) throw new ToolError("A public 'videoUrl' is required to publish a Reel.");
             if (!input.caption) throw new ToolError("A 'caption' is required to publish a Reel.");
-            assertPublicUrl(input.videoUrl, "video URL");
+            const videoUrl = await publicUrlFor(ctx.userId, input.videoUrl);
             ctx.activity("Uploading Reel to Instagram…");
-            containerId = await igCreateReel(creds, input.videoUrl, input.caption);
+            containerId = await igCreateReel(creds, videoUrl, input.caption);
           }
           ctx.activity("Waiting for Instagram to process the video…");
           const st = await igWaitContainer(creds, containerId, 40_000);

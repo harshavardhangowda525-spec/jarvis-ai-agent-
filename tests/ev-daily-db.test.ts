@@ -248,4 +248,42 @@ d("EV daily content pipeline (integration)", () => {
     expect(r.due).toBe(false);
     expect(await P.currentPackage(userId, "2030-05-05")).toBeNull();
   });
+
+  it("published from the PC (localhost): Instagram is given the deployed app's address for the media", async () => {
+    if (!reelBytes) return;
+    // what the deployed (Vercel) app saved: its address, and the Instagram connection
+    await getDb().integration.createMany({ data: [
+      { userId, provider: "jarvis_public_url", status: "connected", metadata: { url: "https://jarvis-ai-agent-self.vercel.app" } },
+      { userId, provider: "instagram", status: "connected", accessToken: "IGQtest-daily", metadata: { businessId: "me" } },
+    ] });
+    const realFetch = globalThis.fetch;
+    const posted: Record<string, string>[] = [];
+    let n = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const u = new URL(String(input));
+      if (u.host !== "graph.instagram.com") return realFetch(input, init);
+      if (init?.method === "POST") {
+        posted.push({ path: u.pathname, ...Object.fromEntries(new URLSearchParams(String(init.body ?? ""))) });
+        return Response.json({ id: u.pathname.endsWith("media_publish") ? `media_${++n}` : `container_${++n}` });
+      }
+      return Response.json(u.searchParams.get("fields")?.includes("status_code") ? { status_code: "FINISHED" } : { username: "infinitywebapps" });
+    }) as typeof fetch;
+    try {
+      // a finished package with its Reel, approved (what pressing Approve does)
+      const ready = await getDb().evDaily.findFirst({ where: { userId, videoUrl: { not: null }, imageUrl: { not: null } }, orderBy: { createdAt: "desc" } });
+      expect(ready?.videoUrl).toMatch(/^http:\/\/localhost/); // built on the PC
+      await getDb().evDaily.update({ where: { id: ready!.id }, data: { status: "approved", stage: "publishing", publishError: null, postMediaId: null, reelMediaId: null, reelContainerId: null } });
+      const p = await P.advance(ready!.id, { deps: deps(), budgetMs: 60_000 });
+      expect(p.publishError).toBeNull();
+      expect(p.status).toBe("published");
+      const media = posted.filter((x) => x.path.endsWith("/media"));
+      const urls = media.map((x) => x.video_url ?? x.image_url);
+      expect(urls.length).toBeGreaterThan(0);
+      expect(urls.every((x) => x.startsWith("https://jarvis-ai-agent-self.vercel.app/api/ev/media/"))).toBe(true);
+      expect(media.some((x) => x.media_type === "REELS" && /kind=video/.test(x.video_url))).toBe(true);
+    } finally {
+      globalThis.fetch = realFetch;
+      await getDb().integration.deleteMany({ where: { userId, provider: { in: ["jarvis_public_url", "instagram"] } } });
+    }
+  }, 90_000);
 });
