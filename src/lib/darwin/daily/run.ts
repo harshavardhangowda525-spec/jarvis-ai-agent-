@@ -1,4 +1,5 @@
 import "server-only";
+import { sendAutoEmails, autoEmailState, type AutoEmailDeps, type AutoEmailResult, type AutoEmailState } from "@/lib/darwin/auto-email";
 import { createHash } from "node:crypto";
 import type { DarwinDailyRun, Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
@@ -31,6 +32,8 @@ export interface DailyConfig {
   radiusKm: number;
   requirePhone: boolean;
   strict: boolean;
+  /** Email every new lead that has a public address, automatically (once each). */
+  autoEmail: boolean;
 }
 
 export const DEFAULT_CATEGORIES = ["gyms", "cafes", "restaurants", "salons", "spas", "clinics", "dentists", "coaching centres", "clothing stores", "bakeries", "yoga studios", "physiotherapists"];
@@ -57,6 +60,7 @@ export async function loadConfig(userId: string): Promise<DailyConfig & { source
     radiusKm: Math.min(Math.max(saved.radiusKm ?? 6, 1), 25),
     requirePhone: saved.requirePhone ?? false,
     strict: saved.strict ?? env.darwinDailyStrict,
+    autoEmail: saved.autoEmail ?? env.darwinAutoEmail,
     source,
   };
 }
@@ -70,6 +74,7 @@ export async function saveConfig(userId: string, c: Partial<DailyConfig>) {
     radiusKm: Math.min(Math.max(c.radiusKm ?? cur.radiusKm, 1), 25),
     requirePhone: c.requirePhone ?? cur.requirePhone,
     strict: c.strict ?? cur.strict,
+    autoEmail: c.autoEmail ?? cur.autoEmail,
   };
   await getDb().integration.upsert({
     where: { userId_provider: { userId, provider: "darwin_daily" } },
@@ -458,6 +463,8 @@ export interface DarwinDailyView {
   spoken: string | null;
   config: DailyConfig & { source: string };
   sources: { geoapify: boolean; google: boolean; search: boolean };
+  /** Automatic outreach: on/off, Gmail connected, sent in the last 24 h, leads waiting for their email. */
+  email: AutoEmailState;
   history: { date: string; verified: number; target: number; status: string }[];
 }
 
@@ -493,6 +500,7 @@ export async function darwinDailyView(userId: string, now = new Date()): Promise
     spoken: report ? spokenReport(report) : null,
     config: cfg,
     sources: { geoapify: !!env.geoapifyApiKey, google: googleAvailable(), search: searchAvailable() },
+    email: await autoEmailState(userId, cfg.autoEmail),
     history: hist,
   };
 }
@@ -521,15 +529,17 @@ const progressOf = (r: DarwinDailyRun) => [r.verified, r.candidates, r.alreadyCh
  * the caller should come straight back (the cron chains itself; the local
  * runner loops) so the day's leads are ready without anyone opening DARWIN.
  */
-export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDeps; userIds?: string[]; earlyMin?: number } = {}) {
+export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDeps; userIds?: string[]; earlyMin?: number; emailDeps?: AutoEmailDeps } = {}) {
   if (!env.darwinDaily) return { skipped: "DARWIN_DAILY is off", results: [], more: false };
   const deps = opts.deps ?? defaultDeps();
   const now = deps.now();
   const users = opts.userIds ?? await darwinUsers();
   const per = Math.max(30_000, Math.floor((opts.budgetMs ?? 240_000) / Math.max(users.length, 1)));
-  const results: { userId: string; status: string; verified: number }[] = [];
+  const results: { userId: string; status: string; verified: number; emailed?: number; emailWaiting?: number; emailNote?: string | null }[] = [];
   let more = false;
+  const clock = opts.emailDeps?.now ?? (() => new Date());
   for (const userId of users) {
+    const userStart = clock().getTime();
     let run = await todayRun(userId, now);
     // set up since the run was created (locations saved, Geoapify key added) → start it properly
     if (run?.status === "needs_setup" && canRun(await loadConfig(userId))) {
@@ -537,15 +547,24 @@ export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDep
       run = null;
     }
     if (!run && dailyDue(now, opts.earlyMin ?? 0)) run = await ensureRun(userId, now);
-    if (!run) continue;
-    if (run.status === "running") {
+    if (run?.status === "running") {
       const stats: { worked?: boolean } = {};
       const before = progressOf(run);
       run = await advanceRun(run.id, { budgetMs: per, deps, stats });
       // come back only when this call really moved the search on (never spin on a stuck one)
       if (run.status === "running" && stats.worked && progressOf(run) !== before) more = true;
     }
-    results.push({ userId, status: run.status, verified: run.verified });
+    // then email the new leads (and any earlier ones not yet written to) with the time left
+    let mail: AutoEmailResult | null = null;
+    if ((await loadConfig(userId)).autoEmail) {
+      mail = await sendAutoEmails(userId, { until: userStart + per - 5_000, deps: opts.emailDeps });
+      if (mail.sent > 0 && mail.waiting > 0 && !mail.stopped) more = true;
+    }
+    if (!run && !mail?.sent) continue;
+    results.push({
+      userId, status: run?.status ?? "not_started", verified: run?.verified ?? 0,
+      ...(mail ? { emailed: mail.sent, emailWaiting: mail.waiting, emailNote: mail.stopped } : {}),
+    });
   }
   return { date: dailyNow(now).date, results, more };
 }

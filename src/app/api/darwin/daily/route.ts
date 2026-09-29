@@ -37,6 +37,7 @@ const schema = z.discriminatedUnion("action", [
     radiusKm: z.number().min(1).max(25).optional(),
     requirePhone: z.boolean().optional(),
     strict: z.boolean().optional(),
+    autoEmail: z.boolean().optional(),
   }),
 ]);
 

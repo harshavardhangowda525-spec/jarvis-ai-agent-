@@ -216,6 +216,12 @@ export const env = {
   darwinDailyCategories: read("DARWIN_DAILY_CATEGORIES"),
   // strict (default): "no website" needs an independent confirmation (Google profile or web search).
   darwinDailyStrict: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY_STRICT")),
+  // DARWIN emails every new lead that has a public email address — once, from
+  // the user's own Gmail — as the leads come in. Also switchable in DARWIN.
+  darwinAutoEmail: !/^(0|off|false|no)$/i.test(read("DARWIN_AUTO_EMAIL")),
+  // at most this many outreach emails in 24 h, at least this many seconds apart
+  darwinAutoEmailCap: Math.min(Math.max(Number(read("DARWIN_AUTO_EMAIL_DAILY_CAP")) || 40, 1), 400),
+  darwinAutoEmailGapSec: Math.min(Math.max(Number(read("DARWIN_AUTO_EMAIL_GAP_SEC")) || 45, 5), 600),
   // NIOS watcher: extra regional centres ("bengaluru,delhi" → rc<name>.nios.ac.in),
   // extra official NIOS pages to watch (comma-separated *.nios.ac.in URLs), and
   // the secret Vercel Cron sends to /api/cron/nios.

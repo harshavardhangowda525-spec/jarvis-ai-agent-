@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, FileText, Loader2, Play, Settings2, X, Database, Eye } from "lucide-react";
+import { Check, FileText, Loader2, Play, Settings2, X, Database, Eye, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DarwinDailyView } from "@/lib/darwin/daily/run";
 
@@ -122,6 +122,8 @@ export function DailyTarget({ daily, onViewLeads, onOpenCrm }: {
           </div>
         )}
 
+        {view.email.enabled && <EmailLine e={view.email} />}
+
         {run?.status === "needs_setup" && <p className="mt-2 text-[11px] leading-snug text-amber-100/80">{run.lastError}</p>}
         {run?.status === "running" && run.lastError && <p className="mt-2 text-[10px] leading-snug text-amber-100/70">{run.lastError}</p>}
         {run?.status === "running" && run.log.length > 0 && <p className="mt-2 truncate text-[10px] text-white/40" title={run.log[run.log.length - 1].text}>{run.log[run.log.length - 1].text}</p>}
@@ -145,6 +147,18 @@ export function DailyTarget({ daily, onViewLeads, onOpenCrm }: {
       {settings && <DailySettings daily={daily} onClose={() => setSettings(false)} />}
       {report && view.report && <DailyReportModal view={view} onClose={() => setReport(false)} onViewLeads={() => { setReport(false); onViewLeads(run!.leadIds); }} />}
     </>
+  );
+}
+
+/** Automatic outreach at a glance: sent in the last 24 h, waiting, or what's blocking it. */
+function EmailLine({ e }: { e: DarwinDailyView["email"] }) {
+  return (
+    <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-white/[0.04] px-2 py-1 text-[10px]" data-darwin-auto-email>
+      <Mail className="h-3 w-3 shrink-0 text-cyan-200/70" />
+      {e.connected
+        ? <span className="text-white/70"><span className="tabular-nums text-white/90">{e.sentLast24h}</span> emailed today{e.waiting > 0 && <> · <span className="tabular-nums">{e.waiting}</span> waiting</>}{e.sentLast24h >= e.cap && " · daily limit reached"}</span>
+        : <span className="text-amber-200/80">Connect Gmail to email leads automatically{e.waiting > 0 ? ` (${e.waiting} waiting)` : ""}</span>}
+    </div>
   );
 }
 
@@ -173,10 +187,11 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
   const [radiusKm, setRadiusKm] = useState(v.config.radiusKm);
   const [requirePhone, setRequirePhone] = useState(v.config.requirePhone);
   const [strict, setStrict] = useState(v.config.strict);
+  const [autoEmail, setAutoEmail] = useState(v.config.autoEmail);
   const [err, setErr] = useState<string | null>(null);
   const save = async () => {
     const e = await daily.act({
-      action: "settings", target, radiusKm, requirePhone, strict,
+      action: "settings", target, radiusKm, requirePhone, strict, autoEmail,
       locations: locations.split(/\n|;/).map((x) => x.trim()).filter((x) => x.length >= 2),
       categories: categories.split(/,|\n/).map((x) => x.trim()).filter((x) => x.length >= 2),
     });
@@ -208,6 +223,11 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
         </div>
         <label className="mt-3 flex items-center gap-2 text-[12px] text-white/80"><input type="checkbox" checked={requirePhone} onChange={(e) => setRequirePhone(e.target.checked)} className="accent-cyan-300" /> Only count businesses with a public phone number</label>
         <label className="mt-1.5 flex items-center gap-2 text-[12px] text-white/80"><input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} className="accent-cyan-300" /> Strict: confirm “no website” with Google or web search</label>
+        <label className="mt-1.5 flex items-start gap-2 text-[12px] text-white/80" data-darwin-auto-email-setting>
+          <input type="checkbox" checked={autoEmail} onChange={(e) => setAutoEmail(e.target.checked)} className="mt-0.5 accent-cyan-300" />
+          <span>Email every new lead automatically <span className="text-white/40">— one email each, from your Gmail, to leads with a public email address (max {v.email.cap} a day)</span>
+            {autoEmail && !v.email.connected && <span className="block text-amber-200/80">Gmail isn&apos;t connected — connect Google in Settings first.</span>}</span>
+        </label>
         <div className="mt-3 rounded-xl bg-white/[0.04] px-3 py-2 text-[10.5px] leading-relaxed text-white/60">
           <div className="text-[9px] tracking-[0.26em] text-white/40">VERIFICATION SOURCES</div>
           <div>Business listings (Geoapify): <Ok on={v.sources.geoapify} /></div>

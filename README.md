@@ -716,6 +716,34 @@ location or no Geoapify key yet) starts on the next round once they're added.
 
 It survives restarts and refreshes: progress lives in `DarwinDailyRun`, checked businesses in `DarwinCandidate`, and leads in `DarwinLead`. Each new day starts a new run; earlier leads and reports are kept.
 
+**Automatic outreach email.** DARWIN emails every new lead that has a public
+email address, with no draft to approve. It's on by default. Turn it off in the
+⚙ daily-search settings or with `DARWIN_AUTO_EMAIL=off`. It needs Google
+connected (Settings → Integrations); the email goes from your own Gmail.
+
+The email is a short, honest introduction from Infinity Web & Apps. It is
+written only from what DARWIN verified:
+- it says "you don't have a website yet" only for leads verified as having none;
+- it includes your phone number and Instagram;
+- it ends with "reply stop" to opt out.
+
+Safeguards:
+- **Once per address, ever.** A second lead with the same address is skipped.
+- **Only uncontacted leads.** Leads you've already contacted are skipped, and
+  so are leads marked not interested or "do not email".
+- **Real addresses only.** Addresses are never guessed, and no-reply addresses
+  are skipped.
+- **Limits.** At most `DARWIN_AUTO_EMAIL_DAILY_CAP` (40) emails in 24 hours,
+  at least `DARWIN_AUTO_EMAIL_GAP_SEC` (45) seconds apart.
+- **Stops if Gmail refuses.** On a quota or sign-in error it stops and tries
+  again later. Nothing is marked "sent" unless Gmail confirms it.
+- **One attempt per lead.** A lead whose email fails is shown as failed and not
+  retried.
+
+The daily job sends the emails, so DARWIN doesn't need to be open. The ring shows
+"N emailed today · M waiting". Many businesses without a website list no email
+at all. Those can't be emailed, so reach them by phone.
+
 Settings (optional):
 - `DARWIN_DAILY=off`
 - `DARWIN_DAILY_TZ`
