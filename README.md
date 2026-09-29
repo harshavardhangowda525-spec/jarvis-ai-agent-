@@ -439,7 +439,7 @@ Open your hand anywhere else and the element springs back to where it was. Nothi
   - your fist stayed inside the bin's zone for a moment;
   - your hand opened clearly for a moment.
 
-  So a brief glitch of the camera tracking, a fist over nothing, a fist you never opened, or losing your hand all cancel the grab. While you're grabbing, the other hand gestures (pause, wake, back) are paused so a fist doesn't also pause JARVIS. It uses the gesture camera you already switch on for gesture mode; there is no second camera.
+  So a brief glitch of the camera tracking, a fist over nothing, a fist you never opened, or losing your hand all cancel the grab. While your hand is over the page, a fist grabs (it doesn't open JARVIS) and an open hand drops (it doesn't wake JARVIS). While you're grabbing, the other hand gestures are paused. It uses the gesture camera you already switch on for gesture mode; there is no second camera.
 - **What gets removed:** on live pages (running through ULTRON), the real element is hidden in **your local view only**. The website isn't changed; reloading the page brings it back, and so does Undo. Embedded pages (YouTube players, maps, sites shown directly) can't be reached inside, so there the whole page is the thing you pick up, and throwing it closes it.
 - **Mouse and touch:** hold **Alt** and drag something into the bin, or **long-press** and drag on a touch screen.
 - **Tuning:** the thresholds are in `GRAB_DEFAULTS` in `src/lib/gesture/grab-throw.ts`: fist and open-hand confidence, hold times, grab stillness, release distance, the bin's hitbox and approach radius, and how long lost tracking is tolerated. They can also be passed per page through `<GrabThrowLayer config>`. In development the page shows a small readout and logs `[grab]` steps to the console.
@@ -622,14 +622,15 @@ come back.
 | Gesture | Action |
 | --- | --- |
 | Open palm (hold still) | Wake JARVIS: turns voice on, or unmutes it |
-| Closed fist (hold) | Pause: stops JARVIS speaking, the reply in progress and playing media. Background jobs keep running |
+| Closed fist (hold) | **Open JARVIS**, from any screen. On the way it stops JARVIS speaking, the reply in progress and playing media, and closes EV, the browser pop-up, Humanoid View and any briefing. Background jobs keep running |
 | Thumbs up (hold) | Approve: EV's daily content, the creative on screen, or text EV is holding |
 | Thumbs down (hold) | Reject: EV's content (makes a new version), dismiss a creative, or cancel a pending shutdown |
 | Point | Aim: a holographic pointer follows your index finger and highlights what it's on |
 | Pinch (thumb + index) | Click whatever you're pointing at, such as an agent node, a button, or EV's Approve |
 | Two-finger swipe ← / → | Previous / next item |
-| Open palm sweep ← | Go back: closes the popup, EV, Humanoid View… |
-| Open palm sweep → | Next interface: JARVIS → EV → Humanoid View → DARWIN → ULTRON |
+| Open hand, swipe → | **Open DARWIN** |
+| Open hand, swipe ← | **Open ULTRON** |
+| Open hand, swipe ↑ | **Open EV**, also from DARWIN or ULTRON. Your hand must already be in view: raising it into the frame doesn't count |
 
 Gestures go through the **same command router as voice**. A thumbs up is the
 same as saying "Approved". Thumbs up never confirms a laptop shutdown; that

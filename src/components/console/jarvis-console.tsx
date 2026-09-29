@@ -984,11 +984,20 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       const ev = (e as CustomEvent<{ action: string; pointer?: { x: number; y: number } }>).detail;
       if (!ev) return;
       if (ev.pointer) motion.current?.keystroke(ev.pointer.x * innerWidth, ev.pointer.y * innerHeight);
-      if (ev.action === "approve" || ev.action === "wake" || ev.action === "forward") motion.current?.taskComplete();
+      if (ev.action === "approve" || ev.action === "wake" || ev.action === "ev" || ev.action === "darwin" || ev.action === "ultron") motion.current?.taskComplete();
     };
     window.addEventListener("jarvis-gesture", on);
     return () => window.removeEventListener("jarvis-gesture", on);
   }, []);
+
+  // Arriving with ?open=ev (swipe up from DARWIN or ULTRON) opens EV straight away.
+  const openEvRef = useRef(openEv); openEvRef.current = openEv;
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("open") !== "ev") return;
+    router.replace("/dashboard");
+    const t = setTimeout(() => { if (!evActiveRef.current) openEvRef.current(); }, 400);
+    return () => clearTimeout(t);
+  }, [router]);
 
   // ===== gestures → the same command router / actions as voice =====
   useGestureHandler((ev) => {
@@ -1004,13 +1013,18 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         say("I'm listening.");
         return "JARVIS ACTIVE";
       }
-      case "pause": {
-        // stop talking and stop the reply in progress — background jobs keep running
+      case "jarvis": {
+        // closed fist → back to JARVIS: stop talking, close whatever is open on top
         voice.stopSpeaking();
         speechRef.current?.end(); speechRef.current = null;
         if (agent.streaming) agent.stop();
-        if (brief) setBriefSpeaking(false);
-        return undefined; // also pause any playing media (default)
+        document.querySelectorAll("video, audio").forEach((m) => { if (!(m as HTMLMediaElement).paused && !m.closest("[data-gesture-ui]")) (m as HTMLMediaElement).pause(); });
+        if (brief) closeBriefing();
+        if (browserRef.current) setBrowser(null);
+        if (weather) setWeather(null);
+        if (evActiveRef.current) closeEv();
+        if (humanoidPhase !== "off") closeHumanoid();
+        return "JARVIS";
       }
       case "approve": {
         if (pendingShutdown.current) return "SAY “YES” TO CONFIRM SHUTDOWN";
@@ -1029,21 +1043,25 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         if (evActiveRef.current && evAwaitingApproval) { sendRef.current("Reject it"); return "REJECTED"; }
         return undefined;
       }
-      case "back": {
-        if (brief) { closeBriefing(); return "BRIEFING CLOSED"; }
-        if (browserRef.current) { setBrowser(null); return "BROWSER CLOSED"; }
-        if (weather) { setWeather(null); return "CLOSED"; }
-        if (evActiveRef.current && evImageRef.current) { setEvImage(null); return "BACK TO THE STUDIO"; }
-        if (evActiveRef.current && evToday) { setEvToday(false); return "EV STUDIO"; }
-        if (evActiveRef.current) { closeEv(); return "JARVIS"; }
-        if (humanoidPhase !== "off") { closeHumanoid(); return "JARVIS"; }
-        return "ALREADY AT JARVIS";
-      }
-      case "forward": {
-        // JARVIS → EV → Humanoid View → DARWIN
+      // open hand: → DARWIN, ← ULTRON, ↑ EV
+      case "darwin": {
         if (brief) closeBriefing();
-        if (evActiveRef.current) { closeEv(); setTimeout(openHumanoid, 950); return "HUMANOID VIEW"; }
-        if (humanoidPhase !== "off") { closeHumanoid(); setTimeout(launchDarwin, 950); return "DARWIN"; }
+        if (evActiveRef.current) closeEv();
+        if (humanoidPhase !== "off") closeHumanoid();
+        launchDarwin();
+        return "DARWIN";
+      }
+      case "ultron": {
+        if (brief) closeBriefing();
+        if (evActiveRef.current) closeEv();
+        if (humanoidPhase !== "off") closeHumanoid();
+        launchUltron();
+        return "ULTRON";
+      }
+      case "ev": {
+        if (evActiveRef.current) return "ALREADY IN EV";
+        if (brief) closeBriefing();
+        if (humanoidPhase !== "off") { closeHumanoid(); setTimeout(openEv, 950); return "EV"; }
         openEv();
         return "EV";
       }

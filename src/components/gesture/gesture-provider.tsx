@@ -18,7 +18,8 @@ import { GestureHud, GestureCursor, GestureToast, type ToastData } from "./gestu
  * - Recognised gestures are sent to whichever screen registered a handler (the
  *   JARVIS console routes them through the same command router as your voice);
  *   anything unhandled falls back to sensible defaults (pinch = click the thing
- *   you're pointing at, swipes = move between items, palm-left = back).
+ *   you're pointing at, two-finger swipes = move between items) — and the agent
+ *   gestures work from every screen: open hand → DARWIN, ← ULTRON, ↑ EV, fist → JARVIS.
  */
 
 export type GestureStatus = "off" | "starting" | "loading" | "on" | "sleeping" | "error";
@@ -44,7 +45,7 @@ interface GestureCtx {
   /**
    * Let an interaction take over the hand for a while (e.g. grab-and-throw):
    * while `fn(ev)` returns true, that gesture command is swallowed — no action,
-   * no toast — so a held fist doesn't also "pause" and an open hand doesn't
+   * no toast — so a held fist doesn't also open JARVIS and an open hand doesn't
    * "wake". Returns an unsubscribe.
    */
   claim: (fn: (ev: GestureEvent) => boolean) => () => void;
@@ -177,20 +178,26 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
         els[i].focus({ preventScroll: false });
         return elementLabel(els[i]).toUpperCase() || (ev.action === "next" ? "NEXT" : "PREVIOUS");
       }
-      case "back":
-        if (history.length > 1) { router.back(); return "BACK"; }
-        return "NOTHING TO GO BACK TO";
-      case "forward": {
-        const ring = ["/dashboard", "/dashboard/darwin", "/dashboard/ultron"];
-        const i = ring.findIndex((p, k) => (k === 0 ? pathname === p : pathname.startsWith(p)));
-        const next = ring[(i + 1) % ring.length];
-        router.push(next);
-        return next === "/dashboard" ? "JARVIS" : next.includes("darwin") ? "DARWIN" : "ULTRON";
-      }
-      case "pause":
+      // the agents, from any screen (the JARVIS console handles these itself when it's open)
+      case "jarvis": {
         document.querySelectorAll("video, audio").forEach((m) => { if (!(m as HTMLMediaElement).paused && !m.closest("[data-gesture-ui]")) (m as HTMLMediaElement).pause(); });
         try { window.speechSynthesis?.cancel(); } catch { /* unsupported */ }
-        return "PAUSED";
+        if (pathname === "/dashboard") return "JARVIS";
+        router.push("/dashboard");
+        return "JARVIS";
+      }
+      case "darwin":
+        if (pathname.startsWith("/dashboard/darwin")) return "ALREADY IN DARWIN";
+        router.push("/dashboard/darwin");
+        return "DARWIN";
+      case "ultron":
+        if (pathname.startsWith("/dashboard/ultron")) return "ALREADY IN ULTRON";
+        router.push("/dashboard/ultron");
+        return "ULTRON";
+      case "ev":
+        // EV lives inside the JARVIS console — it opens EV when it sees ?open=ev
+        router.push("/dashboard?open=ev");
+        return "EV";
       case "wake": return "JARVIS ACTIVE";
       case "approve": case "reject": return "NOTHING WAITING FOR APPROVAL";
       default: return "";
@@ -213,6 +220,8 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
     window.dispatchEvent(new CustomEvent("jarvis-gesture", { detail: ev }));
     setToast({ key: Date.now(), kind: ev.action, title: "GESTURE DETECTED", label: def.label, detail: typeof result === "string" && result ? result : def.actionLabel, confidence: ev.confidence, pointer: ev.pointer ?? null });
   }, [defaultAction]);
+
+  const dispatchRef = useRef(dispatch); dispatchRef.current = dispatch;
 
   /* ---------------- the frame loop ---------------- */
 
@@ -326,9 +335,11 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
   // frames into the same stream the camera feeds. Compiled out of normal builds.
   useEffect(() => {
     if (process.env.NEXT_PUBLIC_GESTURE_TEST !== "1") return;
-    const w = window as unknown as { __jarvisGestureFrame?: (f: LiveFrame) => void };
+    const w = window as unknown as { __jarvisGestureFrame?: (f: LiveFrame) => void; __jarvisGestureEvent?: (ev: GestureEvent) => void };
     w.__jarvisGestureFrame = (f) => { live.current = f; listeners.current.forEach((fn) => fn(f)); };
-    return () => { delete w.__jarvisGestureFrame; };
+    // a recognised gesture, delivered exactly like one from the camera
+    w.__jarvisGestureEvent = (ev) => { void dispatchRef.current(ev); };
+    return () => { delete w.__jarvisGestureFrame; delete w.__jarvisGestureEvent; };
   }, []);
 
   // leave the app → camera off

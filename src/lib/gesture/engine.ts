@@ -9,29 +9,34 @@ import { readPose, POSE_LABEL, type Pose, type PoseReading, type Pt } from "./cl
  * few frames), held still for the hold time, and then it fires ONCE — holding a
  * thumbs-up for 5 s is one approval. It re-arms only after the hand changes pose
  * or leaves, and every action has its own cooldown plus a short global one.
- * Swipes need a fast, mostly-horizontal move of a consistent pose. Pinch-clicks
- * need a clean press-and-release with hysteresis.
+ * Swipes need a fast, mostly-straight move of a consistent pose (a swipe up only
+ * by a hand that was already in view — raising a hand into the frame isn't one).
+ * Pinch-clicks need a clean press-and-release with hysteresis.
+ *
+ * Getting around: open hand swipe → DARWIN, ← ULTRON, ↑ EV; a held fist → JARVIS.
  */
 
 export type GestureId =
   | "open_palm" | "fist" | "thumbs_up" | "thumbs_down" | "point" | "pinch"
-  | "swipe_left" | "swipe_right" | "palm_left" | "palm_right";
+  | "swipe_left" | "swipe_right" | "palm_left" | "palm_right" | "palm_up";
 
-export type GestureAction = "wake" | "pause" | "approve" | "reject" | "select" | "click" | "prev" | "next" | "back" | "forward";
+/** jarvis/darwin/ultron/ev = go to that agent. */
+export type GestureAction = "wake" | "approve" | "reject" | "select" | "click" | "prev" | "next" | "jarvis" | "darwin" | "ultron" | "ev";
 
 export interface GestureDef { id: GestureId; label: string; action: GestureAction; actionLabel: string; how: string }
 
 export const GESTURES: GestureDef[] = [
   { id: "open_palm", label: "OPEN PALM", action: "wake", actionLabel: "WAKE JARVIS", how: "Hold an open hand still for a moment" },
-  { id: "fist", label: "CLOSED FIST", action: "pause", actionLabel: "PAUSE", how: "Close your hand and hold" },
+  { id: "fist", label: "CLOSED FIST", action: "jarvis", actionLabel: "OPEN JARVIS", how: "Close your hand and hold" },
   { id: "thumbs_up", label: "THUMBS UP", action: "approve", actionLabel: "APPROVE", how: "Thumb up, hold" },
   { id: "thumbs_down", label: "THUMBS DOWN", action: "reject", actionLabel: "REJECT", how: "Thumb down, hold" },
   { id: "point", label: "POINT", action: "select", actionLabel: "SELECT", how: "Point with your index finger to aim" },
   { id: "pinch", label: "PINCH", action: "click", actionLabel: "CLICK", how: "Touch thumb and index while pointing" },
   { id: "swipe_left", label: "TWO-FINGER SWIPE ←", action: "prev", actionLabel: "PREVIOUS", how: "Index + middle up, sweep left" },
   { id: "swipe_right", label: "TWO-FINGER SWIPE →", action: "next", actionLabel: "NEXT", how: "Index + middle up, sweep right" },
-  { id: "palm_left", label: "OPEN PALM ←", action: "back", actionLabel: "GO BACK", how: "Open hand, sweep left" },
-  { id: "palm_right", label: "OPEN PALM →", action: "forward", actionLabel: "NEXT INTERFACE", how: "Open hand, sweep right" },
+  { id: "palm_right", label: "SWIPE →", action: "darwin", actionLabel: "OPEN DARWIN", how: "Open hand, sweep right" },
+  { id: "palm_left", label: "SWIPE ←", action: "ultron", actionLabel: "OPEN ULTRON", how: "Open hand, sweep left" },
+  { id: "palm_up", label: "SWIPE ↑", action: "ev", actionLabel: "OPEN EV", how: "Open hand, sweep up" },
 ];
 export const GESTURE_BY_ID = Object.fromEntries(GESTURES.map((g) => [g.id, g])) as Record<GestureId, GestureDef>;
 
@@ -89,6 +94,8 @@ export function params(s: GestureSettings) {
     cooldown: 1400,                      // per action
     globalCooldown: 550,                 // after any command
     swipeCooldown: 800,
+    swipeUpDist: (1.7 - 0.6 * k) * 0.85,  // vertical travel for a swipe up (the frame is shorter than it is wide)
+    settledMs: 250,                      // the hand must be in view this long before a swipe starts
     pinchOn: s.pinchOn,
     pinchOff: s.pinchOn * 1.65,
     clickGap: 380,
@@ -135,6 +142,7 @@ export class GestureEngine {
   private lastAny = -1e9;
   private lastSwipe = -1e9;
   private lastSeen = -1e9;
+  private handSince = -1e9;
   private pinchDown = false;
   private lastClick = -1e9;
   private fx = new OneEuro(); private fy = new OneEuro();
@@ -176,6 +184,7 @@ export class GestureEngine {
       if (this.calib) out.calibrating = Math.min(1, (t - this.calib.start) / 4000);
       return out;
     }
+    if (t - this.lastSeen > 280) this.handSince = t; // the hand (re)appeared
     this.lastSeen = t;
     out.hand = true; out.reading = r;
 
@@ -234,18 +243,26 @@ export class GestureEngine {
     } else if (this.pinchDown && r.pinch > p.pinchOff) this.pinchDown = false;
     out.pinching = this.pinchDown;
 
-    // ---- swipes: fast, mostly horizontal travel of a consistent pose
+    // ---- swipes: fast, mostly straight travel of a consistent pose (two fingers:
+    // left/right; open hand: left/right/up)
     if (t - this.lastSwipe > p.swipeCooldown && this.hist.length >= 4) {
       const win = this.hist.filter((h) => t - h.t <= p.swipeWindow);
       for (const pose of ["two", "open_palm"] as const) {
         const same = win.filter((h) => h.pose === pose);
         if (same.length < 4 || same.length / win.length < 0.7) continue;
         const a = same[0], b = same[same.length - 1];
+        if (b.t - a.t < 100) continue;
         const scale = same.reduce((s, h) => s + h.scale, 0) / same.length;
         const dx = -(b.cx - a.cx) / scale; // mirrored: + = the user's right
-        const dy = (b.cy - a.cy) / scale;
-        if (b.t - a.t < 100 || Math.abs(dx) < p.swipeDist || Math.abs(dy) > Math.abs(dx) * 0.6) continue;
-        const id: GestureId = pose === "two" ? (dx < 0 ? "swipe_left" : "swipe_right") : (dx < 0 ? "palm_left" : "palm_right");
+        const dy = (b.cy - a.cy) / scale;  // + = down
+        let id: GestureId | null = null;
+        if (Math.abs(dx) >= p.swipeDist && Math.abs(dy) <= Math.abs(dx) * 0.6) {
+          id = pose === "two" ? (dx < 0 ? "swipe_left" : "swipe_right") : (dx < 0 ? "palm_left" : "palm_right");
+        } else if (pose === "open_palm" && -dy >= p.swipeUpDist && Math.abs(dx) <= -dy * 0.6 && a.t - this.handSince >= p.settledMs) {
+          // up: only a hand that was already in view (raising a hand into the frame isn't a swipe)
+          id = "palm_up";
+        }
+        if (!id) continue;
         const action = GESTURE_BY_ID[id].action;
         if (this.settings.enabled[id] && t - (this.lastFire[action] ?? -1e9) >= p.swipeCooldown && t - this.lastAny >= p.globalCooldown * 0.6) {
           this.fire(out, id, same.reduce((s, h) => s + h.conf, 0) / same.length, t);

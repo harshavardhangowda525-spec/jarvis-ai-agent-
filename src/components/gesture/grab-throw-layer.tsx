@@ -332,17 +332,18 @@ export function GrabThrowLayer({ surface, containerRef, config }: { surface: Gra
         A.hand = { x, y }; A.handAt = f.t;
       } else { fx.reset(); fy.reset(); }
       A.overPage = pose0 !== "none" && sf.contains(x, y);
-      // outside the page a fist is some other gesture (e.g. pause) — unless we're mid-grab
+      // outside the page a fist is some other gesture (it opens JARVIS) — unless we're mid-grab
       const pose = pose0 === "fist" && !A.overPage && !ctrl.engaged ? "other" : pose0;
       ctrl.input({ t: f.t, pose, x, y, source: "hand" });
       hint(ctrl.state);
       kick.current();
     });
-    // while grabbing, the hand belongs to us: no "pause", "wake" or swipes on the side
+    // while grabbing, the hand belongs to us: over the page a fist grabs (it doesn't
+    // open JARVIS) and an open hand drops (it doesn't "wake"); no swipes on the side
     const unclaim = g?.claim((ev) => {
       if (!surfaceRef.current) return false;
       if (ctrl.engaged || now() < A.quietUntil) return true;
-      return A.overPage && (ev.action === "wake" || ev.action === "pause");
+      return A.overPage && (ev.id === "open_palm" || ev.id === "fist");
     });
 
     /* ---------- mouse (Alt+drag) and touch (long-press) fallback ---------- */

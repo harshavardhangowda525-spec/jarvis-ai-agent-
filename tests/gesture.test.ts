@@ -73,7 +73,7 @@ describe("gesture engine", () => {
     const frames = times(150, () => UP()).map((f, i) => (i % 15 === 7 ? (i % 30 === 7 ? null : FIST()) : f));
     const ev = run(e, frames);
     expect(ev.filter((x) => x.action === "approve")).toHaveLength(1);
-    expect(ev.filter((x) => x.action === "pause")).toHaveLength(0);
+    expect(ev.filter((x) => x.action === "jarvis")).toHaveLength(0);
   });
   it("re-arms after the hand leaves, and respects the cooldown", () => {
     const e = new GestureEngine();
@@ -87,13 +87,31 @@ describe("gesture engine", () => {
   it("maps every hold pose", () => {
     const e = new GestureEngine();
     const ev = run(e, [...times(30, () => OPEN()), ...times(20, () => null), ...times(30, () => FIST()), ...times(20, () => null), ...times(30, () => DOWN())]);
-    expect(ev.map((x) => x.action)).toEqual(["wake", "pause", "reject"]);
+    expect(ev.map((x) => x.action)).toEqual(["wake", "jarvis", "reject"]);
   });
-  it("an open palm sweeping right opens the next interface — and doesn't also wake", () => {
+  it("an open hand swiping right opens DARWIN — and doesn't also wake", () => {
     const e = new GestureEngine();
     const frames = times(14, () => null).concat(Array.from({ length: 12 }, (_, i) => OPEN({ cx: 0.7 - i * 0.03 }))); // image-left = user's right
     const ev = run(e, [...frames, ...times(40, () => OPEN({ cx: 0.37 }))]);
-    expect(ev.map((x) => x.action)).toEqual(["forward"]);
+    expect(ev.map((x) => x.action)).toEqual(["darwin"]);
+  });
+  it("an open hand swiping left opens ULTRON", () => {
+    const ev = run(new GestureEngine(), [...times(6, () => OPEN({ cx: 0.3 })), ...Array.from({ length: 12 }, (_, i) => OPEN({ cx: 0.3 + i * 0.03 }))]);
+    expect(ev.map((x) => [x.id, x.action])).toEqual([["palm_left", "ultron"]]);
+  });
+  it("an open hand swiping up opens EV", () => {
+    // hand already in view, then sweeps up (y grows down in the image)
+    const ev = run(new GestureEngine(), [...times(12, () => OPEN({ cy: 0.85 })), ...Array.from({ length: 10 }, (_, i) => OPEN({ cy: 0.85 - i * 0.035 })), ...times(20, () => OPEN({ cy: 0.5 }))]);
+    expect(ev.map((x) => [x.id, x.action])).toEqual([["palm_up", "ev"]]);
+  });
+  it("raising a hand into view is not a swipe up, and a swipe down does nothing", () => {
+    // appears and rises at once — no settled hand first
+    expect(run(new GestureEngine(), Array.from({ length: 10 }, (_, i) => OPEN({ cy: 0.85 - i * 0.035 }))).filter((x) => x.action === "ev")).toEqual([]);
+    const down = run(new GestureEngine(), [...times(12, () => OPEN({ cy: 0.5 })), ...Array.from({ length: 10 }, (_, i) => OPEN({ cy: 0.5 + i * 0.035 }))]);
+    expect(down.filter((x) => x.id === "palm_up" || x.id === "palm_left" || x.id === "palm_right")).toEqual([]);
+  });
+  it("a closed fist held opens JARVIS", () => {
+    expect(run(new GestureEngine(), times(40, () => FIST())).map((x) => [x.id, x.action])).toEqual([["fist", "jarvis"]]);
   });
   it("two-finger swipes are previous / next", () => {
     const left = run(new GestureEngine(), Array.from({ length: 12 }, (_, i) => TWO({ cx: 0.3 + i * 0.03 })));
@@ -116,7 +134,7 @@ describe("gesture engine", () => {
   });
   it("a fist never clicks and pointing alone never clicks", () => {
     expect(run(new GestureEngine(), times(60, () => POINT())).filter((x) => x.action === "click")).toHaveLength(0);
-    expect(run(new GestureEngine(), times(60, () => FIST())).map((x) => x.action)).toEqual(["pause"]);
+    expect(run(new GestureEngine(), times(60, () => FIST())).map((x) => x.action)).toEqual(["jarvis"]);
   });
   it("disabled gestures stay silent", () => {
     const s: GestureSettings = { ...DEFAULT_SETTINGS, enabled: { ...DEFAULT_SETTINGS.enabled, thumbs_up: false } };
@@ -194,6 +212,6 @@ describe("classifier on real MediaPipe landmarks", () => {
   it("a real fist never becomes a click even though thumb and index are close", () => {
     const fist = (realHands as Record<string, { lm: Pt[] }[]>)["fist.jpg"][0].lm;
     const ev = run(new GestureEngine(), times(90, () => fist));
-    expect(ev.map((x) => x.action)).toEqual(["pause"]);
+    expect(ev.map((x) => x.action)).toEqual(["jarvis"]);
   });
 });
