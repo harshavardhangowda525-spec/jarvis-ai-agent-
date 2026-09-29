@@ -9,7 +9,8 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   experimental: {
-    serverComponentsExternalPackages: ["@prisma/client", "bcryptjs"],
+    // satori + resvg draw the Reel's text overlays (resvg is a native module — never bundled)
+    serverComponentsExternalPackages: ["@prisma/client", "bcryptjs", "satori", "@resvg/resvg-js"],
     // EV renders its daily Reel with ffmpeg + the bundled Inter font — ship both
     // with the functions that render.
     outputFileTracingIncludes: {

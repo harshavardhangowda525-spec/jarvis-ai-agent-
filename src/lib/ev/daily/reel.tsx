@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { existsSync, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { ImageResponse } from "next/og";
+import satori from "satori";
+import { Resvg } from "@resvg/resvg-js";
 import { EV_BUSINESS } from "@/lib/ev/config";
 
 /**
@@ -11,7 +12,7 @@ import { EV_BUSINESS } from "@/lib/ev/config";
  * Magic Hour clip made from it) into a finished 9:16 Instagram Reel: the hook
  * lands in the first second, two short on-screen beats carry the message, and a
  * brand end card closes with the CTA. Text layers are rendered with Satori
- * (next/og) using the bundled Inter font, then composited and encoded to H.264
+ * + resvg using the bundled Inter font, then composited and encoded to H.264
  * MP4 by ffmpeg (the ffmpeg-static binary, or FFMPEG_PATH). Output is a real
  * video file — never a mock-up.
  */
@@ -84,16 +85,21 @@ const ACCENTS = [
   "linear-gradient(90deg, #5cffb0, #3ad1ff, #6b7bff)",
 ];
 
+/**
+ * One overlay frame → PNG: satori lays it out as SVG, resvg paints it.
+ * (Not next/og: its loader builds its file paths with path.join on a file://
+ * URL, which on Windows turns into "Invalid URL" before anything is drawn.)
+ */
 async function png(node: React.ReactElement): Promise<Buffer> {
   const f = await fonts();
-  const res = new ImageResponse(node, {
+  const svg = await satori(node, {
     width: REEL_W, height: REEL_H,
     fonts: [
       { name: "Inter", data: f.bold, weight: 800, style: "normal" },
       { name: "Inter", data: f.medium, weight: 500, style: "normal" },
     ],
   });
-  return Buffer.from(await res.arrayBuffer());
+  return Buffer.from(new Resvg(svg, { fitTo: { mode: "original" }, font: { loadSystemFonts: false } }).render().asPng());
 }
 
 /** Bigger type for short lines, smaller for long ones. */

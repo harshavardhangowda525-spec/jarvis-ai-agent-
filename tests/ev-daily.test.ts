@@ -6,7 +6,7 @@ import { parseDailyCommand } from "@/lib/ev/daily/intent";
 import { qualityCheck, findFakeClaims, brandIssues, findPlaceholders, type QcInput } from "@/lib/ev/daily/qc";
 import { stepStates, plannedTimes, activeStream, autostartDue, localClock, clockLabel, hm } from "@/lib/ev/daily/schedule";
 import { chooseAngle, leastRecent, parsePlan, parseRevision, cleanHashtags, cleanCaption, extractJson, type PriorPackage } from "@/lib/ev/daily/plan";
-import { reelTimeline, probeMp4, renderReel } from "@/lib/ev/daily/reel";
+import { reelTimeline, probeMp4, renderReel, ffmpegPath } from "@/lib/ev/daily/reel";
 import { evTodaySentence } from "@/lib/briefing/build";
 import { spokenStatus, type DailyView } from "@/lib/ev/daily/view";
 
@@ -188,7 +188,8 @@ describe("reel", () => {
   it("probeMp4 rejects garbage", () => {
     expect(probeMp4(Buffer.from("not an mp4 at all"))).toBeNull();
   });
-  const hasFfmpeg = existsSync(path.join(process.cwd(), "node_modules", "ffmpeg-static", "ffmpeg"));
+  // ffmpeg-static ships ffmpeg (Linux/macOS) or ffmpeg.exe (Windows)
+  const hasFfmpeg = (() => { try { return existsSync(ffmpegPath()); } catch { return false; } })();
   it.skipIf(!hasFfmpeg)("renders a real, playable 9:16 MP4 from an image", async () => {
     const img = await sharp({ create: { width: 800, height: 1000, channels: 3, background: { r: 20, g: 30, b: 90 } } }).png().toBuffer();
     const r = await renderReel({ base: { kind: "image", bytes: img }, hook: "Customers search before they visit", beats: ["Be the one they find"], cta: "Call today", seconds: 8, variant: 1 });
