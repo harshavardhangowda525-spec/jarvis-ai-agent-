@@ -772,6 +772,23 @@ Settings (optional):
 
 Without Google Places or web search, strict mode can't confirm the absence of a website. Those businesses are reported as "unclear" rather than counted.
 
+## Instagram on your PC
+
+Vercel doesn't copy "Sensitive" values such as `INSTAGRAM_ACCESS_TOKEN` to your PC.
+To avoid needing the token in `.env.local`:
+- When your Vercel JARVIS uses a working Instagram token (for example when EV
+  opens), it saves the connection to your JARVIS database. That's the same place
+  Google and the other connections are kept. It only saves after Instagram
+  confirms the token works.
+- JARVIS on your PC (`npm run local`) reads that saved connection. Open EV once
+  on Vercel and Instagram shows as connected on the PC too.
+- A renewed token on Vercel replaces the saved one the next time it's used.
+- A Facebook-style token (not starting with `IG`) no longer needs
+  `INSTAGRAM_BUSINESS_ID`: EV looks up the Instagram business account itself.
+
+If Instagram still isn't connected, EV says exactly why (no token here, or no
+business account for the token).
+
 ## Which brain each agent uses
 
 | Agent  | Setting             | Default  | Meaning                                  |

@@ -34,7 +34,7 @@ export interface BrandNode {
 }
 
 export type StudioInstagram =
-  | { connected: false }
+  | { connected: false; reason?: string }
   | { connected: true; error: string }
   | { connected: true; username: string | null; followers: number | null; mediaCount: number | null; recentPosts: number; recentLikes: number; recentComments: number };
 

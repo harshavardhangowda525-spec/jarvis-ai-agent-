@@ -339,7 +339,7 @@ function LiveMetrics({ data }: { data: StudioData | null }) {
       {!data ? (
         <div className="mt-1 text-[11px] text-white/40">Loading…</div>
       ) : !ig || !ig.connected ? (
-        <div className="mt-1 text-[11px] leading-snug text-white/55">Instagram not connected<br /><span className="hidden text-white/35 sm:inline">no live audience numbers</span></div>
+        <div className="mt-1 text-[11px] leading-snug text-white/55" title={ig && "reason" in ig ? ig.reason : undefined} data-ev-ig-reason={ig && "reason" in ig ? ig.reason : undefined}>Instagram not connected<br /><span className="hidden text-white/35 sm:inline">{ig && "reason" in ig && /Vercel/.test(ig.reason ?? "") ? "open EV on Vercel once to link it here" : "no live audience numbers"}</span></div>
       ) : "error" in ig ? (
         <div className="mt-1 text-[11px] text-[#ffb3c4]">{ig.error}</div>
       ) : (

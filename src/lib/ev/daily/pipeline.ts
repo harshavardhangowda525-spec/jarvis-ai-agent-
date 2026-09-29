@@ -11,7 +11,7 @@ import * as magicHour from "@/lib/ev/magichour";
 import { storeRemoteMedia } from "@/lib/ev/media";
 import { itemText } from "@/lib/ev/memory";
 import { fingerprint, findSimilar } from "@/lib/ev/dedup";
-import { resolveIgCreds, igPublishImage, igCreateReel, igWaitContainer, igPublishContainer, IgError } from "@/lib/ev/instagram";
+import { resolveIgCreds, igNotConnectedMessage, igPublishImage, igCreateReel, igWaitContainer, igPublishContainer, IgError } from "@/lib/ev/instagram";
 import { prepareImageForInstagram, IgImageError } from "@/lib/ev/igready";
 import { renderReel, probeMp4, ReelError } from "./reel";
 import { qualityCheck, type QcResult } from "./qc";
@@ -429,7 +429,7 @@ export function publishCaption(p: { caption: string | null; hashtags: string[] }
 async function stepPublish(p: EvDaily, deps: DailyDeps, log: DailyLogEntry[], budgetMs: number): Promise<StepResult> {
   const creds = await resolveIgCreds(p.userId);
   if (!creds) {
-    await save(p.id, { publishError: "Instagram isn't connected. Add INSTAGRAM_ACCESS_TOKEN (and INSTAGRAM_BUSINESS_ID if it doesn't start with IG), then say publish again." });
+    await save(p.id, { publishError: `${igNotConnectedMessage()} Then say publish again.` });
     return "done";
   }
   if (!deps.publicUrl) {

@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
 import { ok, handleError } from "@/lib/api";
-import { resolveIgCreds, igProfile, igMedia } from "@/lib/ev/instagram";
+import { resolveIgCreds, igProfile, igMedia, igNotConnectedMessage } from "@/lib/ev/instagram";
 import { brandDna, studioPipeline, type StudioData, type StudioInstagram, type StudioItem } from "@/lib/ev/studio";
 
 export const runtime = "nodejs";
@@ -65,7 +65,7 @@ export async function GET() {
 /** Live Instagram numbers, or why there are none. Never waits more than 6s. */
 async function instagramNumbers(userId: string): Promise<StudioInstagram> {
   const creds = await resolveIgCreds(userId);
-  if (!creds) return { connected: false };
+  if (!creds) return { connected: false, reason: igNotConnectedMessage() };
   const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 6000));
   try {
     const [profile, media] = await Promise.race([

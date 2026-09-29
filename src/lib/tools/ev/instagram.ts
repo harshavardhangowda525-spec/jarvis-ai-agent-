@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types";
 import { ToolError } from "../types";
 import {
-  resolveIgCreds, igProfile, igMedia, igAccountInsights, igPublishImage,
+  resolveIgCreds, igNotConnectedMessage, igProfile, igMedia, igAccountInsights, igPublishImage,
   igCreateReel, igWaitContainer, igPublishContainer, IgError,
 } from "@/lib/ev/instagram";
 import { getDb } from "@/lib/db";
@@ -57,7 +57,7 @@ export const evInstagramTool: ToolDefinition<Input> = {
         data: { connected: !!creds, source: creds?.source ?? null },
         summary: creds
           ? "Instagram is connected."
-          : "Instagram isn't connected. Add INSTAGRAM_ACCESS_TOKEN + INSTAGRAM_BUSINESS_ID (or connect Instagram in Settings). I can still prepare content meanwhile.",
+          : `${igNotConnectedMessage()} I can still prepare content meanwhile.`,
       };
     }
 

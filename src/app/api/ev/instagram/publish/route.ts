@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import {
-  resolveIgCreds, igPublishImage, igCreateReel, igWaitContainer, igPublishContainer, IgError,
+  resolveIgCreds, igNotConnectedMessage, igPublishImage, igCreateReel, igWaitContainer, igPublishContainer, IgError,
 } from "@/lib/ev/instagram";
 import { getDb } from "@/lib/db";
 import { prepareImageForInstagram, IgImageError } from "@/lib/ev/igready";
@@ -41,10 +41,7 @@ export async function POST(req: NextRequest) {
 
     const creds = await resolveIgCreds(user.id);
     if (!creds) {
-      return fail(
-        "Instagram isn't connected. Add INSTAGRAM_ACCESS_TOKEN (a Business/Creator token; if it starts with 'IG' that's enough, otherwise also INSTAGRAM_BUSINESS_ID) and redeploy.",
-        409,
-      );
+      return fail(igNotConnectedMessage(), 409);
     }
 
     const markPublished = async (mediaId: string) => {

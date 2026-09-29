@@ -26,29 +26,96 @@ function isInstagramLoginToken(token: string): boolean {
   return token.startsWith("IG");
 }
 
-/** Resolve Instagram credentials for a user, or null if not connected. */
+/** Facebook-flavour tokens need the IG business account id — found once per token. */
+const discovered = new Map<string, string | null>();
+async function discoverBusinessId(token: string): Promise<string | null> {
+  if (isInstagramLoginToken(token)) return "me";
+  if (discovered.has(token)) return discovered.get(token)!;
+  let id: string | null = null;
+  try {
+    const qs = new URLSearchParams({ fields: "instagram_business_account{id}", limit: "25", access_token: token });
+    const res = await fetch(`https://graph.facebook.com/${env.instagramGraphVersion}/me/accounts?${qs}`, { signal: AbortSignal.timeout(10_000) });
+    const json = (await res.json().catch(() => ({}))) as { data?: { instagram_business_account?: { id?: string } }[] };
+    id = json.data?.find((p) => p.instagram_business_account?.id)?.instagram_business_account?.id ?? null;
+  } catch { /* offline — try again next time */ return null; }
+  discovered.set(token, id);
+  return id;
+}
+
+/**
+ * Save working env credentials as this user's Instagram connection, so every
+ * copy of JARVIS on the same database finds it — e.g. `npm run local` on your
+ * PC, where Vercel doesn't hand out INSTAGRAM_ACCESS_TOKEN (it's "Sensitive").
+ * Only after Instagram confirms the token works; once per token per server.
+ */
+const synced = new Set<string>();
+async function saveConnection(userId: string, c: IgCreds) {
+  const key = `${userId}:${c.accessToken.slice(-12)}`;
+  if (synced.has(key)) return;
+  synced.add(key);
+  try {
+    await igProfile(c); // the token really works
+    await getDb().integration.upsert({
+      where: { userId_provider: { userId, provider: "instagram" } },
+      create: { userId, provider: "instagram", status: "connected", accessToken: c.accessToken, metadata: { businessId: c.businessId, savedFrom: "server settings" } },
+      update: { status: "connected", accessToken: c.accessToken, metadata: { businessId: c.businessId, savedFrom: "server settings" } },
+    });
+  } catch { synced.delete(key); /* bad token or offline — nothing saved */ }
+}
+
+/** Why there are no credentials (for messages that say what to do). */
+export type IgMissing = "no_token" | "no_business_id";
+let lastMissing: IgMissing = "no_token";
+export function igMissingReason(): IgMissing { return lastMissing; }
+
+/**
+ * Resolve Instagram credentials for a user, or null if not connected: the
+ * saved connection (shared by every copy of JARVIS on this database), then the
+ * server's INSTAGRAM_ACCESS_TOKEN — whose business account id is looked up
+ * when it isn't set, and which is then saved as the connection.
+ */
 export async function resolveIgCreds(userId: string): Promise<IgCreds | null> {
+  let rowToken = "";
   try {
     const row = await getDb().integration.findUnique({
       where: { userId_provider: { userId, provider: "instagram" } },
     });
     if (row?.status === "connected" && row.accessToken) {
+      rowToken = row.accessToken;
       const meta = (row.metadata ?? {}) as { businessId?: string; igUserId?: string };
-      const businessId =
-        meta.businessId || meta.igUserId || env.instagramBusinessId ||
-        (isInstagramLoginToken(row.accessToken) ? "me" : "");
-      if (businessId) return { accessToken: row.accessToken, businessId, source: "integration" };
+      let businessId = meta.businessId || meta.igUserId || env.instagramBusinessId || (isInstagramLoginToken(row.accessToken) ? "me" : "");
+      if (!businessId) {
+        businessId = (await discoverBusinessId(row.accessToken)) ?? "";
+        if (businessId) await getDb().integration.update({ where: { id: row.id }, data: { metadata: { ...meta, businessId } } }).catch(() => {});
+      }
+      // the server's own token wins when it's different (e.g. renewed on Vercel)
+      if (businessId && (!env.instagramAccessToken || env.instagramAccessToken === row.accessToken)) {
+        return { accessToken: row.accessToken, businessId, source: "integration" };
+      }
     }
   } catch {
     /* fall through to env */
   }
   if (env.instagramAccessToken) {
-    // The IG-Login API can use "me"; the Facebook-Graph flavor needs the id.
-    const businessId =
-      env.instagramBusinessId || (isInstagramLoginToken(env.instagramAccessToken) ? "me" : "");
-    if (businessId) return { accessToken: env.instagramAccessToken, businessId, source: "env" };
+    // The IG-Login API can use "me"; the Facebook-Graph flavor needs the id (looked up if not set).
+    const businessId = env.instagramBusinessId || (await discoverBusinessId(env.instagramAccessToken)) || "";
+    if (businessId) {
+      const c: IgCreds = { accessToken: env.instagramAccessToken, businessId, source: "env" };
+      if (rowToken !== c.accessToken) void saveConnection(userId, c);
+      return c;
+    }
+    lastMissing = "no_business_id";
+    return null;
   }
+  lastMissing = "no_token";
   return null;
+}
+
+/** What to tell the user when resolveIgCreds found nothing. */
+export function igNotConnectedMessage(): string {
+  return igMissingReason() === "no_business_id"
+    ? "Instagram isn't connected: INSTAGRAM_ACCESS_TOKEN is set, but I couldn't find the Instagram business account it belongs to. Set INSTAGRAM_BUSINESS_ID, or use a token from Instagram Login (starts with IG)."
+    : "Instagram isn't connected here: this copy of JARVIS has no INSTAGRAM_ACCESS_TOKEN (Vercel doesn't copy \"Sensitive\" values to your PC). Open EV once in your Vercel JARVIS — it saves the connection to your database and this PC picks it up — or paste the token into .env.local.";
 }
 
 function base(token: string): string {
