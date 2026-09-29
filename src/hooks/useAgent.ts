@@ -35,7 +35,7 @@ interface UseAgentOptions {
   /** Open installed desktop apps on this computer (via ULTRON). */
   onOpenApp?: (names: string[]) => void;
   /** A render that isn't done yet (Magic Hour) — the caller watches it in the background. */
-  onPendingMedia?: (p: { kind: "image" | "video"; projectId: string; label: string }) => void;
+  onPendingMedia?: (p: { kind: "image" | "video"; projectId: string; label: string; fallback?: { prompt: string; seconds?: number; aspect?: "square" | "portrait" | "landscape" } }) => void;
   /** Fired for every tool result (used e.g. to drive EV's operating state). */
   onTool?: (t: { name: string; status: "ok" | "error"; summary: string }) => void;
 }
@@ -213,7 +213,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
                 onNavigate?.(ev.path);
                 break;
               case "pending_media":
-                onPendingMedia?.({ kind: ev.kind, projectId: ev.projectId, label: ev.label });
+                onPendingMedia?.({ kind: ev.kind, projectId: ev.projectId, label: ev.label, fallback: ev.fallback });
                 break;
               case "open_app":
                 onOpenApp?.(ev.names);

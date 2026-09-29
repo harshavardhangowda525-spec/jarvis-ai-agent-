@@ -4,7 +4,7 @@ import type { ToolDefinition } from "../types";
 import { ToolError } from "../types";
 import { getDb } from "@/lib/db";
 import { isConfigured as magicHourReady, createVideo, MagicHourError } from "@/lib/ev/magichour";
-import { finishMagicHour } from "@/lib/ev/render";
+import { finishMagicHour, type VideoFallback } from "@/lib/ev/render";
 import { resolveStartImage } from "@/lib/ev/start-image";
 
 /**
@@ -37,17 +37,20 @@ async function attach(userId: string, contentId: string | undefined, url: string
 }
 
 /** Wait briefly for the render; ready → stored + shown, still rendering → the app keeps checking by itself. */
-async function finish(userId: string, projectId: string, contentId: string | undefined, label: string, budgetMs: number) {
-  const st = await finishMagicHour(userId, "video", projectId, { budgetMs, label });
+async function finish(userId: string, projectId: string, contentId: string | undefined, label: string, budgetMs: number, fallback?: VideoFallback, note?: string) {
+  const st = await finishMagicHour(userId, "video", projectId, { budgetMs, label, fallback });
   if (st.status === "failed") throw new ToolError(st.error);
   if (st.status === "rendering") {
+    const why = st.note ?? note;
+    // after a restart from the description there's no picture left to fall back from
+    const fb = st.stage === "restarted" ? undefined : fallback;
     return {
-      data: { projectId, status: st.stage, ready: false, pendingMedia: { kind: "video", projectId, label: label.slice(0, 80) } },
-      summary: `The video is rendering on Magic Hour (usually a few minutes). It will appear here by itself as soon as it's done — no need to ask again.`,
+      data: { projectId: st.projectId, status: st.stage, ready: false, pendingMedia: { kind: "video", projectId: st.projectId, label: label.slice(0, 80), ...(fb ? { fallback: fb } : {}) } },
+      summary: `${why ? `${why} ` : ""}The video is rendering on Magic Hour (usually a few minutes). It will appear here by itself as soon as it's done — no need to ask again.`,
     };
   }
   if (st.mediaId) await attach(userId, contentId, st.url, st.mediaId);
-  return { data: { url: st.url, mediaId: st.mediaId, openUrl: st.url, label: "View video" }, summary: "Video ready to review." };
+  return { data: { url: st.url, mediaId: st.mediaId, openUrl: st.url, label: "View video" }, summary: `${note ? `${note} ` : ""}Video ready to review.` };
 }
 
 export const evVideoTool: ToolDefinition<Input> = {
@@ -83,11 +86,22 @@ export const evVideoTool: ToolDefinition<Input> = {
       image = { bytes: start.bytes, mimeType: start.mimeType };
     }
 
+    const fallback: VideoFallback | undefined = image ? { prompt: input.prompt, seconds: input.seconds, aspect: input.aspect } : undefined;
     try {
       ctx.activity("Starting video render on Magic Hour…");
-      const projectId = await createVideo({ prompt: input.prompt, image, seconds: input.seconds, aspect: input.aspect });
+      let note: string | undefined;
+      let projectId: string;
+      try {
+        projectId = await createVideo({ prompt: input.prompt, image, seconds: input.seconds, aspect: input.aspect });
+      } catch (err) {
+        // Magic Hour wouldn't take the picture even after retrying → still make the video, from the description
+        if (!(err instanceof MagicHourError && err.startImageRejected)) throw err;
+        ctx.activity("Magic Hour won't take the picture — making the video from the description…");
+        note = `Magic Hour wouldn't accept the picture as the first frame (${err.message.replace(/ \(image-to-video.*$/, "")}), so I'm making the video from its description instead.`;
+        projectId = await createVideo({ prompt: input.prompt, seconds: input.seconds, aspect: input.aspect });
+      }
       // A short wait here; a longer render is finished by the app in the background.
-      return finish(ctx.userId, projectId, input.contentId, input.prompt, 35_000);
+      return finish(ctx.userId, projectId, input.contentId, input.prompt, 35_000, note ? undefined : fallback, note);
     } catch (err) {
       if (err instanceof MagicHourError) throw new ToolError(err.message);
       throw err;

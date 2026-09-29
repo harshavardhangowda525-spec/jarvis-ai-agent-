@@ -16,23 +16,26 @@ d("EV: finishing a Magic Hour render in the background", () => {
   const realFetch = globalThis.fetch;
   let project: Record<string, unknown> = {};
   let projectHttp = 200;
-  let downloads = 0;
+  let downloads = 0, textToVideo = 0, imageRejected = false;
   beforeAll(async () => {
     userId = (await getDb().user.create({ data: { email: `evr-${Date.now()}@example.com`, passwordHash: "x" } })).id;
     otherId = (await getDb().user.create({ data: { email: `evr2-${Date.now()}@example.com`, passwordHash: "x" } })).id;
   });
   afterAll(async () => { await getDb().user.deleteMany({ where: { id: { in: [userId, otherId] } } }).catch(() => {}); });
   beforeEach(() => {
-    project = { status: "rendering" }; projectHttp = 200; downloads = 0;
+    project = { status: "rendering" }; projectHttp = 200; downloads = 0; textToVideo = 0; imageRejected = false;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (!url.startsWith("https://api.magichour.ai") && !url.startsWith("https://cdn.magichour.test")) return realFetch(input, init);
+      if (url === "https://cdn.magichour.test/put") return new Response(null, { status: 200 });
       if (url.startsWith("https://cdn.magichour.test")) {
         downloads++;
         // CDNs often label videos as octet-stream — it must still be stored as a video
         return new Response(new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]), { status: 200, headers: { "Content-Type": "application/octet-stream" } });
       }
-      if (url.endsWith("/v1/text-to-video")) return Response.json({ id: "vid_bg1" });
+      if (url.endsWith("/v1/text-to-video")) { textToVideo++; return Response.json({ id: textToVideo > 1 ? `vid_txt${textToVideo}` : "vid_bg1" }); }
+      if (url.endsWith("/v1/files/upload-urls")) return Response.json({ items: [{ upload_url: "https://cdn.magichour.test/put", file_path: "api-assets/u/1.jpg" }] });
+      if (url.endsWith("/v1/image-to-video")) return imageRejected ? Response.json({ message: "Invalid URL" }, { status: 422 }) : Response.json({ id: "vid_img1" });
       if (url.includes("/v1/video-projects/")) return Response.json(project, { status: projectHttp });
       return Response.json({});
     }) as typeof fetch;
@@ -90,4 +93,27 @@ d("EV: finishing a Magic Hour render in the background", () => {
     await expect(evVideoTool.execute({ action: "check", projectId: "vid_bg1" }, { userId, timezone: "UTC", activity: () => {} } as never))
       .rejects.toThrow(/Prompt was flagged/);
   });
+
+  it("a render that fails reading the picture ('Invalid URL') restarts once from the description", async () => {
+    project = { status: "error", error: { message: "Invalid URL" } };
+    const r = await finishMagicHour(userId, "video", "vid_img1", { budgetMs: 0, fallback: { prompt: "slow push-in on bread", aspect: "portrait" } });
+    expect(r).toMatchObject({ status: "rendering", stage: "restarted", note: expect.stringMatching(/from its description/) });
+    expect(r.projectId).not.toBe("vid_img1");
+    expect(textToVideo).toBe(1);
+    // without a fallback (or for any other reason) it's reported as it is
+    expect(await finishMagicHour(userId, "video", "vid_img1", { budgetMs: 0 })).toMatchObject({ status: "failed", error: expect.stringMatching(/Invalid URL/) });
+    project = { status: "error", error: { message: "Prompt was flagged" } };
+    expect(await finishMagicHour(userId, "video", "vid_img1", { budgetMs: 0, fallback: { prompt: "x x x" } })).toMatchObject({ status: "failed" });
+  });
+
+  it("ev_video: if Magic Hour won't take the picture at all, the video is still made from the description", async () => {
+    imageRejected = true;
+    const img = await getDb().evMedia.create({ data: { userId, mimeType: "image/png", data: await (await import("sharp")).default({ create: { width: 64, height: 64, channels: 3, background: "#123" } }).png().toBuffer(), prompt: "p" }, select: { id: true } });
+    let t = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => (t += 60_000));
+    const r = await evVideoTool.execute({ prompt: "slow push-in on fresh bread", contentImageId: img.id }, { userId, timezone: "UTC", activity: () => {} } as never);
+    expect(r.summary).toMatch(/wouldn't accept the picture as the first frame \(Magic Hour: Invalid URL\), so I'm making the video from its description/);
+    expect(r.data).toMatchObject({ ready: false, pendingMedia: { kind: "video", projectId: "vid_bg1" } });
+    expect((r.data as { pendingMedia: { fallback?: unknown } }).pendingMedia.fallback).toBeUndefined();
+  }, 30_000);
 });

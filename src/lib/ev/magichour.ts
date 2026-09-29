@@ -18,11 +18,20 @@ import { env } from "@/lib/env";
  */
 
 export class MagicHourError extends Error {
+  /** Magic Hour wouldn't take the start picture (after retrying) — a text-to-video can still be made. */
+  public startImageRejected = false;
   constructor(message: string, public status?: number) {
     super(message);
     this.name = "MagicHourError";
   }
 }
+
+/** Does Magic Hour's message say it couldn't read a file / link (e.g. "invalid url")? */
+export function isUrlProblem(message: string | undefined | null): boolean {
+  return /\b(invalid|bad|malformed|unreachable|unsupported)\b.{0,20}\b(url|uri|link|path|file|image|asset)|\b(url|uri|file[_ ]?path|image[_ ]?file[_ ]?path|asset)\b.{0,30}\b(invalid|not (found|valid|accessible|reachable)|could ?n[o']t|failed|missing)|download|fetch/i.test(message ?? "");
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type Aspect = "square" | "portrait" | "landscape";
 
@@ -60,7 +69,11 @@ async function post(path: string, body: unknown): Promise<any> {
     signal: AbortSignal.timeout(30_000),
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new MagicHourError(errorMessage(res.status, json), res.status);
+  if (!res.ok) {
+    // the exact answer, for diagnosing (never the key)
+    console.warn(`[magichour] POST ${path} → HTTP ${res.status}: ${JSON.stringify(json).slice(0, 600)}`);
+    throw new MagicHourError(errorMessage(res.status, json), res.status);
+  }
   return json;
 }
 
@@ -101,6 +114,7 @@ export async function waitProject(kind: "image" | "video", id: string, budgetMs:
       const ok = status === "complete";
       const url = ok ? extractUrl(project) : null;
       const error = !ok ? String(project?.error?.message || project?.error?.code || status) : undefined;
+      if (!ok) console.warn(`[magichour] ${kind} project ${id} ${status}: ${JSON.stringify(project?.error ?? null).slice(0, 400)}`);
       return { status, done: true, ok: ok && !!url, url, projectId: id, kind, ...(error ? { error } : {}) };
     }
     if (Date.now() + pollMs >= deadline) {
@@ -150,14 +164,22 @@ export async function asJpeg(bytes: Buffer): Promise<Buffer> {
 
 /**
  * Upload an image to Magic Hour's storage and return its file path — usable as
- * `image_file_path` without any public URL on our side.
+ * `image_file_path` without any public URL on our side. (The same steps as
+ * Magic Hour's official SDK: upload-urls → PUT the raw bytes → file_path.)
  */
-export async function uploadImage(bytes: Buffer): Promise<string> {
-  const jpeg = await asJpeg(bytes);
-  const json = await post("/v1/files/upload-urls", { items: [{ type: "image", extension: "jpg" }] });
+export async function uploadImage(bytes: Buffer, format: "jpg" | "png" = "jpg"): Promise<string> {
+  const data = format === "png"
+    ? await sharp(bytes).rotate().resize(2048, 2048, { fit: "inside", withoutEnlargement: true }).png().toBuffer().catch(() => { throw new MagicHourError("The start image isn't a readable picture, so it can't be animated."); })
+    : await asJpeg(bytes);
+  const json = await post("/v1/files/upload-urls", { items: [{ type: "image", extension: format }] });
   const item = Array.isArray(json?.items) ? json.items[0] : null;
   if (!item?.upload_url || !item?.file_path) throw new MagicHourError("Magic Hour didn't return an upload address for the image.");
-  const res = await fetch(item.upload_url, { method: "PUT", body: new Uint8Array(jpeg), signal: AbortSignal.timeout(60_000) });
+  let res: Response;
+  try {
+    res = await fetch(item.upload_url, { method: "PUT", body: new Uint8Array(data), signal: AbortSignal.timeout(60_000) });
+  } catch (e) {
+    throw new MagicHourError(`Uploading the image to Magic Hour failed (${(e as Error).message}).`);
+  }
   if (!res.ok) throw new MagicHourError(`Uploading the image to Magic Hour failed (HTTP ${res.status}).`, res.status);
   return String(item.file_path);
 }
@@ -187,18 +209,30 @@ export async function createVideo(opts: {
   };
   let json: any;
   if (opts.image) {
-    const start = await uploadImage(opts.image.bytes);
-    try {
-      json = await post("/v1/image-to-video", {
-        ...common,
-        assets: { image_file_path: start },
-        style: { prompt: opts.prompt.slice(0, 4000) },
-      });
-    } catch (e) {
-      if (e instanceof MagicHourError && e.status && e.status >= 400 && e.status < 500 && e.status !== 402 && e.status !== 401 && e.status !== 403) {
-        throw new MagicHourError(`${e.message} (image-to-video, uploaded start image ${start})`, e.status);
+    const start = (path: string) => post("/v1/image-to-video", {
+      ...common,
+      assets: { image_file_path: path },
+      style: { prompt: opts.prompt.slice(0, 4000) },
+    });
+    // Magic Hour's own problems (key, credits, busy) aren't about the picture — pass them on
+    const aboutImage = (e: unknown) => e instanceof MagicHourError && !!e.status && e.status >= 400 && e.status < 500 && ![401, 402, 403, 429].includes(e.status);
+    let path = await uploadImage(opts.image.bytes);
+    let last: unknown;
+    // the upload can take a moment to be readable on Magic Hour's side: try again shortly,
+    // then once more with a fresh PNG upload
+    for (const attempt of [0, 1, 2]) {
+      try { json = await start(path); last = null; break; }
+      catch (e) {
+        if (!aboutImage(e)) throw e;
+        last = e;
+        if (attempt === 0) await sleep(3_000);
+        if (attempt === 1) path = await uploadImage(opts.image.bytes, "png");
       }
-      throw e;
+    }
+    if (last) {
+      const err = new MagicHourError(`${(last as MagicHourError).message} (image-to-video, uploaded start image ${path})`, (last as MagicHourError).status);
+      err.startImageRejected = true;
+      throw err;
     }
   } else {
     json = await post("/v1/text-to-video", {

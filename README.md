@@ -529,6 +529,17 @@ Magic Hour's own reason instead of silence. The check runs through
 `GET /api/ev/render?kind=video&projectId=…`, and each finished file is stored
 only once.
 
+**If Magic Hour won't use the picture** (for example "invalid url"), EV
+recovers by itself:
+1. It tries the same upload again after a few seconds.
+2. It uploads the picture again as a PNG.
+3. If Magic Hour still refuses, or the render fails while reading the
+   picture, EV makes the same video from its description (text-to-video) and
+   tells you why.
+
+Magic Hour's exact answer for any failed step is written to the server console
+as `[magichour] …`, with the API key never shown.
+
 | Time | Step |
 | --- | --- |
 | 04:00 | **Research.** Reads every past package and EV's content memory, then picks a niche, a service (websites, apps, automation, AI, online ordering/booking, software, redesigns, AI marketing) and a format that haven't been used recently. |

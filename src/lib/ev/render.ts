@@ -1,7 +1,7 @@
 import "server-only";
 import { getDb } from "@/lib/db";
 import { env } from "@/lib/env";
-import { waitProject, MagicHourError } from "@/lib/ev/magichour";
+import { waitProject, createVideo, isUrlProblem, MagicHourError, type Aspect } from "@/lib/ev/magichour";
 import { storeRemoteMedia } from "@/lib/ev/media";
 
 /**
@@ -13,7 +13,10 @@ import { storeRemoteMedia } from "@/lib/ev/media";
 export type RenderState =
   | { status: "ready"; kind: "image" | "video"; url: string; mediaId: string | null; projectId: string }
   | { status: "failed"; kind: "image" | "video"; error: string; projectId: string }
-  | { status: "rendering"; kind: "image" | "video"; stage: string; projectId: string };
+  | { status: "rendering"; kind: "image" | "video"; stage: string; projectId: string; note?: string };
+
+/** What to make instead if Magic Hour can't read the start picture: the same video from its description. */
+export interface VideoFallback { prompt: string; seconds?: number; aspect?: Aspect }
 
 const tag = (projectId: string) => `mh:${projectId}`;
 const mediaUrl = (id: string, kind: "image" | "video") => `${env.appUrl.replace(/\/$/, "")}/api/ev/media/${id}${kind === "video" ? "?kind=video" : ""}`;
@@ -28,7 +31,7 @@ export async function finishMagicHour(
   userId: string,
   kind: "image" | "video",
   projectId: string,
-  opts: { budgetMs?: number; label?: string } = {},
+  opts: { budgetMs?: number; label?: string; fallback?: VideoFallback } = {},
 ): Promise<RenderState> {
   if (!/^[A-Za-z0-9_-]{4,80}$/.test(projectId)) return { status: "failed", kind, projectId, error: "That isn't a Magic Hour project id." };
   const have = await stored(userId, projectId, kind);
@@ -42,7 +45,22 @@ export async function finishMagicHour(
     return { status: "failed", kind, projectId, error: (e as MagicHourError).message };
   }
   if (!r.done) return { status: "rendering", kind, projectId, stage: r.status };
-  if (!r.ok || !r.url) return { status: "failed", kind, projectId, error: `Magic Hour couldn't make the ${kind} (${r.error ?? r.status}).` };
+  if (!r.ok || !r.url) {
+    const why = r.error ?? r.status;
+    // an image-to-video whose picture Magic Hour couldn't read ("invalid url"…) → the same video from its description, once
+    if (kind === "video" && opts.fallback?.prompt && r.status === "error" && isUrlProblem(why)) {
+      try {
+        const id = await createVideo({ prompt: opts.fallback.prompt, seconds: opts.fallback.seconds, aspect: opts.fallback.aspect });
+        return {
+          status: "rendering", kind, projectId: id, stage: "restarted",
+          note: `Magic Hour couldn't use the picture as the first frame (${why}), so I'm making the video from its description instead.`,
+        };
+      } catch (e) {
+        return { status: "failed", kind, projectId, error: `Magic Hour couldn't make the video (${why}), and starting it again from the description failed too (${(e as Error).message}).` };
+      }
+    }
+    return { status: "failed", kind, projectId, error: `Magic Hour couldn't make the ${kind} (${why}).` };
+  }
   const again = await stored(userId, projectId, kind); // another check may have stored it meanwhile
   if (again) return { status: "ready", kind, projectId, ...again };
   const s = await storeRemoteMedia(userId, r.url, kind, `${tag(projectId)} · ${opts.label ?? `EV ${kind}`}`.slice(0, 4000));

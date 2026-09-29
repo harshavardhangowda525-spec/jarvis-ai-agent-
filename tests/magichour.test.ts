@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.hoisted(() => { process.env.MAGICHOUR_API_KEY = "mhk_test"; delete process.env.MAGICHOUR_VIDEO_MODEL; delete process.env.MAGICHOUR_IMAGE_MODEL; });
 import sharp from "sharp";
-import { createImage, createVideo, waitProject, videoSeconds, aspectRatio, MagicHourError } from "@/lib/ev/magichour";
+import { createImage, createVideo, waitProject, videoSeconds, aspectRatio, MagicHourError, isUrlProblem } from "@/lib/ev/magichour";
 
 type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
 let calls: Call[] = [];
@@ -67,6 +67,45 @@ describe("Magic Hour client (current API shapes)", () => {
       : c.url.endsWith("/v1/image-to-video") ? { status: 422, json: { message: "Invalid URL" } } : { json: {} };
     const bytes = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#fff" } }).png().toBuffer();
     await expect(createVideo({ prompt: "x", image: { bytes } })).rejects.toThrow("Magic Hour: Invalid URL (image-to-video, uploaded start image api-assets/u1/z.jpg)");
+  });
+
+  it("an 'invalid url' on the first try is retried, then with a fresh PNG upload", async () => {
+    let starts = 0, uploads = 0;
+    respond = (c) => {
+      if (c.url.endsWith("/v1/files/upload-urls")) { uploads++; const ext = (c.body as { items: { extension: string }[] }).items[0].extension; return { json: { items: [{ upload_url: `https://upload.magichour.test/put/${uploads}`, file_path: `api-assets/u1/${uploads}.${ext}` }] } }; }
+      if (c.url.endsWith("/v1/image-to-video")) return ++starts < 3 ? { status: 422, json: { message: "Invalid URL" } } : { json: { id: "vid_ok" } };
+      return { json: {} };
+    };
+    const bytes = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#fff" } }).png().toBuffer();
+    expect(await createVideo({ prompt: "x", image: { bytes } })).toBe("vid_ok");
+    const starts3 = calls.filter((c) => c.url.endsWith("/v1/image-to-video")).map((c) => (c.body as { assets: { image_file_path: string } }).assets.image_file_path);
+    expect(starts3).toEqual(["api-assets/u1/1.jpg", "api-assets/u1/1.jpg", "api-assets/u1/2.png"]);
+    // the PNG upload really is a PNG
+    const png = calls.find((c) => c.url === "https://upload.magichour.test/put/2")!.body as Uint8Array;
+    expect(Buffer.from(png).subarray(1, 4).toString()).toBe("PNG");
+  }, 20_000);
+
+  it("a rejection after the retries is flagged so a text-to-video can still be made; key/credit problems aren't retried", async () => {
+    respond = (c) => c.url.endsWith("/v1/files/upload-urls")
+      ? { json: { items: [{ upload_url: "https://upload.magichour.test/put/z", file_path: "api-assets/u1/z.jpg" }] } }
+      : c.url.endsWith("/v1/image-to-video") ? { status: 422, json: { message: "Invalid URL" } } : { json: {} };
+    const bytes = await sharp({ create: { width: 64, height: 64, channels: 3, background: "#fff" } }).png().toBuffer();
+    const e = await createVideo({ prompt: "x", image: { bytes } }).catch((x) => x);
+    expect(e).toBeInstanceOf(MagicHourError);
+    expect(e.startImageRejected).toBe(true);
+    calls = [];
+    respond = (c) => c.url.endsWith("/v1/files/upload-urls")
+      ? { json: { items: [{ upload_url: "https://upload.magichour.test/put/z", file_path: "api-assets/u1/z.jpg" }] } }
+      : c.url.endsWith("/v1/image-to-video") ? { status: 402, json: {} } : { json: {} };
+    const e2 = await createVideo({ prompt: "x", image: { bytes } }).catch((x) => x);
+    expect(e2.startImageRejected).toBe(false);
+    expect(e2.message).toMatch(/not enough credits/);
+    expect(calls.filter((c) => c.url.endsWith("/v1/image-to-video"))).toHaveLength(1);
+  }, 20_000);
+
+  it("recognises Magic Hour saying it couldn't read the picture", () => {
+    for (const m of ["Invalid URL", "invalid url", "Magic Hour: Invalid url", "image_file_path is not valid", "Failed to download the input file", "Could not fetch asset"]) expect(isUrlProblem(m), m).toBe(true);
+    for (const m of ["Prompt was flagged", "Not enough credits", "rendering", "", undefined]) expect(isUrlProblem(m), String(m)).toBe(false);
   });
 
   it("text-to-video uses aspect_ratio and a length the default model accepts", async () => {

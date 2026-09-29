@@ -224,7 +224,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [evToday, setEvToday] = useState(false);
   const dailyAskedAt = useRef(0);
   const sayRef = useRef<(t: string) => void>(() => {});
-  const watchRenderRef = useRef<(p: { kind: "image" | "video"; projectId: string; label: string }) => void>(() => {});
+  const watchRenderRef = useRef<(p: Parameters<ReturnType<typeof useRenderWatch>["watch"]>[0]) => void>(() => {});
   const agentRef = useRef<{ appendLocalExchange: (u: string, a: string, l?: { url: string; label: string }[], o?: { note?: boolean }) => void }>({ appendLocalExchange: () => {} });
   const daily = useDailyContent({
     onChange: (kind, v) => {
@@ -306,6 +306,10 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       const msg = `Your ${what} is ready${r.label ? ` — ${r.label}` : ""}.`;
       agentRef.current.appendLocalExchange("", msg, [{ url: r.url, label: r.kind === "video" ? "View video" : "View image" }], { note: true });
       sayRef.current(`Your ${what} is ready.`);
+    },
+    onNote: (_r, note) => {
+      agentRef.current.appendLocalExchange("", note, undefined, { note: true });
+      sayRef.current(note);
     },
     onFailed: (r) => {
       if (evActiveRef.current) flashEv("error");
