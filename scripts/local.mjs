@@ -163,7 +163,9 @@ function missingPackages(dir) {
 }
 for (const [dir, label] of [[ROOT, "JARVIS"], [EDITH, "ULTRON"]]) {
   const missing = missingPackages(dir);
-  if (missing.length) runStep(`Installing ${label} packages (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""})`, "npm install", dir);
+  // --no-save: install what's missing without rewriting package-lock.json, so the
+  // next `git pull` never stops on "local changes to package-lock.json"
+  if (missing.length) runStep(`Installing ${label} packages (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""})`, "npm install --no-save --no-audit --no-fund", dir);
 }
 
 // ---- 3. build when the code changed -------------------------------------------------------
