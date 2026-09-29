@@ -269,10 +269,13 @@ npx vercel env pull .env.local --environment=production
 npm run local        # builds when the code changed, starts everything, opens http://localhost:3000
 ```
 
-- JARVIS, EV and DARWIN answer with Groq, with Gemini as the backup; ULTRON runs on
-  this PC's Ollama (see "Which brain each agent uses" below). If Ollama is installed
-  but not running, `npm run local` starts it, and it tells you if ULTRON's model
-  still needs `ollama pull`. ULTRON's model is `ULTRON_OLLAMA_MODEL` (or `OLLAMA_MODEL`)
+- JARVIS, EV and DARWIN answer with Groq, with Gemini as the backup.
+- ULTRON runs on OpenRouter (`OPENROUTER_API_KEY` in `.env.local` or `edith/.env`;
+  get one at openrouter.ai/keys). This PC's Ollama is its backup whenever OpenRouter
+  fails (rate limit, outage, bad key). Without an OpenRouter key it runs on Ollama
+  alone, and `npm run local` says so. See "Which brain each agent uses" below.
+- If Ollama is installed but not running, `npm run local` starts it, and it tells you
+  if ULTRON's model still needs `ollama pull`. ULTRON's model is `ULTRON_OLLAMA_MODEL` (or `OLLAMA_MODEL`)
   in `edith/.env`, `qwen2.5:3b` by default; a coder model such as
   `qwen2.5-coder:7b` writes better code if your PC can run it.
 - EV's images keep your public Vercel address (`JARVIS_URL` in `edith/.env`, or
@@ -776,11 +779,15 @@ Without Google Places or web search, strict mode can't confirm the absence of a 
 | JARVIS | `JARVIS_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
 | EV     | `EV_PROVIDER`       | `groq,gemini` | Groq, Gemini as backup              |
 | DARWIN | `DARWIN_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
-| ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `ollama` | this PC's Ollama only (model: `ULTRON_OLLAMA_MODEL`, else `OLLAMA_MODEL`, else `qwen2.5:3b`) |
+| ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `openrouter,ollama` | OpenRouter (`OPENROUTER_API_KEY`, model `OPENROUTER_MODEL`), with this PC's Ollama as the backup (model: `ULTRON_OLLAMA_MODEL`, else `OLLAMA_MODEL`, else `qwen2.5:3b`) |
 
 `JARVIS_PROVIDER=ollama` puts JARVIS back on your PC brain (then `npm run local`
-starts the brain gateway again), and `ULTRON_AI_PROVIDER=ollama,groq` gives ULTRON a
-cloud backup.
+starts the brain gateway again), and `ULTRON_AI_PROVIDER=ollama` keeps ULTRON on
+this PC only.
+
+An old `ULTRON_AI_PROVIDER=groq,gemini` line in `edith/.env` (a previous default)
+is turned off automatically, with a note. Any other `ULTRON_AI_PROVIDER` line is
+treated as your choice and kept; ULTRON says at startup which setting is in effect.
 
 A provider id (or comma list, tried in that order) means those providers and
 nothing else — if they're all offline or out of quota, the agent says so

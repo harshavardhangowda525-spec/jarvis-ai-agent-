@@ -33,34 +33,60 @@ describe("which brain each agent uses (defaults)", () => {
   });
 });
 
-describe("ULTRON runs on this PC's Ollama", () => {
+describe("ULTRON runs on OpenRouter, with this PC's Ollama as backup", () => {
   const keep = { ...process.env };
-  afterEach(() => { for (const k of ["ULTRON_AI_PROVIDER", "ULTRON_OLLAMA_MODEL", "OLLAMA_MODEL", "OLLAMA_BASE_URL"]) { if (k in keep) process.env[k] = keep[k]; else delete process.env[k]; } vi.resetModules(); });
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    for (const k of ["ULTRON_AI_PROVIDER", "ULTRON_OLLAMA_MODEL", "OLLAMA_MODEL", "OLLAMA_BASE_URL", "OPENROUTER_API_KEY", "OPENROUTER_MODEL"]) { if (k in keep) process.env[k] = keep[k]; else delete process.env[k]; }
+    globalThis.fetch = realFetch;
+    vi.resetModules();
+  });
   const load = async (e: Record<string, string | undefined>) => {
     for (const [k, v] of Object.entries(e)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
     vi.resetModules();
     return import("../edith/src/provider.mjs");
   };
 
-  it("by default: Ollama only (with Groq and Gemini keys present), with a small default model", async () => {
-    const p = await load({ ULTRON_AI_PROVIDER: undefined, ULTRON_OLLAMA_MODEL: undefined, OLLAMA_MODEL: undefined });
-    expect(p.onlyProvider()).toBe("ollama");
-    expect(p.providerSummary()).toBe(`ollama(${p.DEFAULT_OLLAMA_MODEL})`);
+  it("by default: OpenRouter first, then Ollama — nothing else, even with Groq and Gemini keys present", async () => {
+    const p = await load({ ULTRON_AI_PROVIDER: undefined, OPENROUTER_API_KEY: "sk-or-test", OPENROUTER_MODEL: undefined, ULTRON_OLLAMA_MODEL: undefined, OLLAMA_MODEL: undefined });
+    expect(p.onlyProvider()).toBe("openrouter,ollama");
+    expect(p.providerSummary()).toBe(`openrouter(deepseek/deepseek-chat-v3-0324:free) → ollama(${p.DEFAULT_OLLAMA_MODEL})`);
+    expect(p.providerName()).toMatch(/^openrouter \(.+\) \+1 fallback$/);
     expect(p.groqFirst()).toBe(false);
   });
 
-  it("uses ULTRON_OLLAMA_MODEL, then OLLAMA_MODEL", async () => {
-    expect((await load({ ULTRON_AI_PROVIDER: undefined, OLLAMA_MODEL: "llama3.2:3b", ULTRON_OLLAMA_MODEL: undefined })).providerSummary()).toBe("ollama(llama3.2:3b)");
-    expect((await load({ ULTRON_AI_PROVIDER: undefined, OLLAMA_MODEL: "llama3.2:3b", ULTRON_OLLAMA_MODEL: "qwen2.5-coder:7b" })).providerSummary()).toBe("ollama(qwen2.5-coder:7b)");
+  it("without an OpenRouter key it runs on Ollama alone", async () => {
+    const p = await load({ ULTRON_AI_PROVIDER: undefined, OPENROUTER_API_KEY: undefined, ULTRON_OLLAMA_MODEL: undefined, OLLAMA_MODEL: undefined });
+    expect(p.providerSummary()).toBe(`ollama(${p.DEFAULT_OLLAMA_MODEL})`);
   });
 
-  it("a cloud backup or the old setup is one setting away", async () => {
+  it("when OpenRouter fails, the same request is answered by Ollama", async () => {
+    const p = await load({ ULTRON_AI_PROVIDER: undefined, OPENROUTER_API_KEY: "sk-or-test", ULTRON_OLLAMA_MODEL: "qwen2.5:3b", OLLAMA_BASE_URL: "http://127.0.0.1:11999" });
+    const hits: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      const u = String(url);
+      hits.push(u.startsWith("https://openrouter.ai") ? "openrouter" : u.includes("11999") ? "ollama" : u);
+      if (u.startsWith("https://openrouter.ai")) return new Response(JSON.stringify({ error: { message: "Rate limit exceeded: free-models-per-day" } }), { status: 429 });
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"ok": true, "from": "ollama"}' } }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+    const out = await p.askJson("Reply with json", "ping");
+    expect(out).toMatchObject({ ok: true, from: "ollama" });
+    expect(hits[0]).toBe("openrouter");
+    expect(hits).toContain("ollama");
+  }, 30_000);
+
+  it("uses ULTRON_OLLAMA_MODEL, then OLLAMA_MODEL, for the backup", async () => {
+    expect((await load({ ULTRON_AI_PROVIDER: undefined, OPENROUTER_API_KEY: undefined, OLLAMA_MODEL: "llama3.2:3b", ULTRON_OLLAMA_MODEL: undefined })).providerSummary()).toBe("ollama(llama3.2:3b)");
+    expect((await load({ ULTRON_AI_PROVIDER: undefined, OPENROUTER_API_KEY: undefined, OLLAMA_MODEL: "llama3.2:3b", ULTRON_OLLAMA_MODEL: "qwen2.5-coder:7b" })).providerSummary()).toBe("ollama(qwen2.5-coder:7b)");
+  });
+
+  it("another order is one setting away", async () => {
     expect((await load({ ULTRON_AI_PROVIDER: "ollama,groq", ULTRON_OLLAMA_MODEL: undefined, OLLAMA_MODEL: undefined })).providerSummary()).toMatch(/^ollama\(.+\) → groq\(/);
     expect((await load({ ULTRON_AI_PROVIDER: "groq,gemini" })).providerSummary()).toMatch(/^groq\(.+\) → gemini\(/);
   });
 
   it("says plainly when Ollama isn't running (nothing else is tried)", async () => {
-    const p = await load({ ULTRON_AI_PROVIDER: undefined, OLLAMA_BASE_URL: "http://127.0.0.1:1" });
+    const p = await load({ ULTRON_AI_PROVIDER: undefined, OPENROUTER_API_KEY: undefined, OLLAMA_BASE_URL: "http://127.0.0.1:1" });
     await expect(p.askJson("Reply with json", "ping")).rejects.toThrow(/Ollama isn't running on this PC/);
   }, 30_000);
 

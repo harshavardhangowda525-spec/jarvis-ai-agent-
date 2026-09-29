@@ -9,7 +9,7 @@
 import "./src/env-init.mjs"; // must stay first — loads edith/.env before other modules read it
 import { Workspace } from "./src/workspace.mjs";
 import { startServer } from "./src/server.mjs";
-import { askJson, groqFirst, groqKeySource, hasProvider, missingProviderMessage, onlyProvider, providerList, providerName, providerSummary, warmOllama } from "./src/provider.mjs";
+import { askJson, groqFirst, groqKeySource, hasProvider, missingProviderMessage, onlyProvider, providerName, providerSummary, warmOllama, DEFAULT_ULTRON_PROVIDER } from "./src/provider.mjs";
 import { ENV_FILE } from "./src/env-init.mjs";
 import { readEnvFile } from "./src/loadenv.mjs";
 import { log } from "./src/log.mjs";
@@ -24,11 +24,15 @@ if (!hasProvider()) {
   log.warn("ULTRON will pair and run REAL tools, but its reasoning/coding loop needs a provider.");
 } else {
   log.info(`Brain ready: ${providerName()}`);
-  // ULTRON's default is this PC's Ollama — say where a different choice comes from
-  if (!providerList().includes("ollama") && !providerList().includes("auto")) {
+  // ULTRON's default is OpenRouter, with this PC's Ollama as the backup — say where a different choice comes from
+  if (onlyProvider() !== DEFAULT_ULTRON_PROVIDER) {
     const file = readEnvFile(ENV_FILE);
     const where = file.ULTRON_AI_PROVIDER ? "ULTRON_AI_PROVIDER in edith/.env" : file.EDITH_AI_PROVIDER ? "EDITH_AI_PROVIDER in edith/.env" : "ULTRON_AI_PROVIDER in your environment";
-    log.warn(`Not using Ollama because ${where} says "${onlyProvider()}". Delete that setting to run ULTRON on this PC's Ollama.`);
+    log.warn(`Using "${onlyProvider()}" because ${where} says so. Delete that setting for the default: OpenRouter, then this PC's Ollama.`);
+  } else if (!providerSummary().includes("openrouter(")) {
+    log.warn("No OPENROUTER_API_KEY found, so ULTRON is running on this PC's Ollama only. Add a key from openrouter.ai/keys to edith/.env or .env.local to put OpenRouter first.");
+  } else if (!providerSummary().includes("ollama(")) {
+    log.warn("OpenRouter has no backup: this PC's Ollama isn't set up (install it from ollama.com).");
   }
   // Check the Groq key once now (a tiny request), so a bad key shows up here —
   // with the file it's in — instead of in the middle of your first task.

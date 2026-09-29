@@ -26,7 +26,7 @@ describe("a leftover 'Groq' setting can't keep ULTRON off Ollama", () => {
   it.each(["ULTRON_AI_PROVIDER=groq", "EDITH_AI_PROVIDER=groq,gemini", "export ULTRON_AI_PROVIDER = 'groq > gemini'  # from the example", "ULTRON_AI_PROVIDER=Gemini"])("%s → off", (line) => {
     expect(retireOldUltronProvider(tmp(line))).toHaveLength(1);
   });
-  it.each(["ULTRON_AI_PROVIDER=ollama,groq", "ULTRON_AI_PROVIDER=openrouter", "ULTRON_AI_PROVIDER=auto", "# ULTRON_AI_PROVIDER=groq,gemini", "AI_PROVIDER=groq"])("a deliberate choice stays: %s", (line) => {
+  it.each(["ULTRON_AI_PROVIDER=ollama", "ULTRON_AI_PROVIDER=ollama,groq", "ULTRON_AI_PROVIDER=openrouter", "ULTRON_AI_PROVIDER=openrouter,ollama", "ULTRON_AI_PROVIDER=auto", "# ULTRON_AI_PROVIDER=groq,gemini", "AI_PROVIDER=groq"])("a deliberate choice stays: %s", (line) => {
     const f = tmp(line);
     expect(retireOldUltronProvider(f)).toEqual([]);
     expect(fs.readFileSync(f, "utf8")).toBe(line);

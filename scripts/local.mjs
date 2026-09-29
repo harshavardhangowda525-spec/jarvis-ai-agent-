@@ -4,7 +4,7 @@
  * (JARVIS, EV, DARWIN, ULTRON's dashboard) and the ULTRON runtime.
  *
  * Brains: JARVIS, EV and DARWIN answer with Groq (Gemini as the backup);
- * ULTRON runs on this PC's Ollama, reached directly on 127.0.0.1. (Set
+ * ULTRON runs on OpenRouter, with this PC's Ollama (127.0.0.1) as its backup. (Set
  * JARVIS_PROVIDER=ollama to put JARVIS back on the PC brain — then the brain
  * gateway starts too.)
  *
@@ -102,9 +102,9 @@ say("\nJARVIS — running everything on this PC\n");
 // Same precedence as Next.js: .env.local wins over .env.
 const envFile = [".env.local", ".env"].map((f) => path.join(ROOT, f)).find((f) => fs.existsSync(f));
 const appEnv = { ...readEnv(path.join(ROOT, ".env")), ...readEnv(path.join(ROOT, ".env.local")) };
-// ULTRON runs on Ollama now — a leftover old-default line in edith/.env would keep it on Groq.
+// ULTRON runs on OpenRouter, then Ollama — a leftover old-default line in edith/.env would keep it elsewhere.
 for (const line of retireOldUltronProvider(path.join(EDITH, ".env"))) {
-  say(`  edith/.env had ${line} (the old default) — turned that line off so ULTRON runs on this PC's Ollama.`);
+  say(`  edith/.env had ${line} (the old default) — turned that line off so ULTRON runs on OpenRouter, with this PC's Ollama as backup.`);
 }
 const edithEnv = readEnv(path.join(EDITH, ".env"));
 const isPlaceholder = (v) => !v || !v.trim() || /^\[sensitive\]$/i.test(v.trim());
@@ -193,7 +193,9 @@ const pickOf = (v, d) => (v || d).toLowerCase().split(/[\s,>]+/).filter(Boolean)
 const jarvisPick = pickOf(appEnv.JARVIS_PROVIDER, "groq,gemini");
 // what ULTRON itself will read: your environment, then edith/.env (old name EDITH_AI_PROVIDER too)
 const ultronSetting = process.env.ULTRON_AI_PROVIDER || edithEnv.ULTRON_AI_PROVIDER || edithEnv.EDITH_AI_PROVIDER || "";
-const ultronPick = pickOf(ultronSetting, "ollama");
+const ultronPick = pickOf(ultronSetting, "openrouter,ollama");
+// ULTRON's main brain: OpenRouter (its key may be in edith/.env or .env.local)
+const openrouterKey = [edithEnv.OPENROUTER_API_KEY, appEnv.OPENROUTER_API_KEY].find((v) => v && !isPlaceholder(v)) || "";
 const usesOllama = (pick) => pick.includes("ollama") || pick.includes("auto");
 const keyFile = path.join(EDITH, ".brain-key");
 const brainKey = appEnv.OLLAMA_API_KEY || edithEnv.OLLAMA_API_KEY ||
@@ -217,7 +219,9 @@ if (!ollamaUp && (usesOllama(ultronPick) || usesOllama(jarvisPick))) {
 }
 if (usesOllama(ultronPick)) {
   if (!ollamaUp) {
-    say("  ! Ollama isn't running — ULTRON runs on it. Install it from ollama.com (or open the Ollama app), then restart this.");
+    say(ultronPick[0] === "ollama" || !openrouterKey
+      ? "  ! Ollama isn't running — ULTRON runs on it. Install it from ollama.com (or open the Ollama app), then restart this."
+      : "  Ollama isn't running — ULTRON works on OpenRouter, but has no backup when OpenRouter is busy. Install/open Ollama (ollama.com) for one.");
   } else {
     const tags = await fetch(`${OLLAMA}/api/tags`).then((r) => r.json()).catch(() => null);
     const have = (tags?.models ?? []).map((m) => String(m.name));
@@ -244,15 +248,17 @@ if (usesOllama(jarvisPick)) {
 }
 
 // ---- 5. ULTRON runtime ------------------------------------------------------------------------------
-// ULTRON runs on this PC's Ollama. Cloud keys are lent too, for anyone who adds
-// a backup with ULTRON_AI_PROVIDER (e.g. "ollama,groq").
+// ULTRON runs on OpenRouter, then this PC's Ollama. Cloud keys are lent too, for
+// anyone who picks other brains with ULTRON_AI_PROVIDER (e.g. "ollama,groq").
 const groqKey = [edithEnv.GROQ_API_KEY, appEnv.GROQ_API_KEY].find((v) => v && !isPlaceholder(v)) || "";
-const startUltron = () => start("ultron", ["run.mjs"], { cwd: EDITH, env: { ...(groqKey ? { GROQ_API_KEY: groqKey } : {}), ULTRON_OLLAMA_MODEL: ultronModel, OLLAMA_BASE_URL: OLLAMA, ULTRON_ALLOWED_ORIGINS: [edithEnv.ULTRON_ALLOWED_ORIGINS || edithEnv.EDITH_ALLOWED_ORIGINS, `http://localhost:${PORT}`].filter(Boolean).join(",") } });
+const startUltron = () => start("ultron", ["run.mjs"], { cwd: EDITH, env: { ...(groqKey ? { GROQ_API_KEY: groqKey } : {}), ...(openrouterKey ? { OPENROUTER_API_KEY: openrouterKey } : {}), ULTRON_OLLAMA_MODEL: ultronModel, OLLAMA_BASE_URL: OLLAMA, ULTRON_ALLOWED_ORIGINS: [edithEnv.ULTRON_ALLOWED_ORIGINS || edithEnv.EDITH_ALLOWED_ORIGINS, `http://localhost:${PORT}`].filter(Boolean).join(",") } });
+// the brain ULTRON will answer with first (OpenRouter needs its key; "auto" isn't checked)
+const ultronFirst = ultronPick.includes("auto") ? "" : ultronPick.find((p) => (p === "openrouter" ? !!openrouterKey : true)) ?? "";
 const running = await fetch("http://127.0.0.1:7420/health", { signal: AbortSignal.timeout(2500) }).then((r) => r.json()).catch(() => null);
 if (!running) startUltron();
-else if (ultronPick[0] === "ollama" && !/^ollama\b/i.test(String(running.brain ?? ""))) {
+else if (ultronFirst && !new RegExp(`^${ultronFirst}\\b`, "i").test(String(running.brain ?? ""))) {
   // an ULTRON from before (another window, or left behind) — it would keep answering on its old brain
-  say(`  An older ULTRON is still running on ${running.brain || "another brain"} — stopping it so ULTRON starts on Ollama…`);
+  say(`  An older ULTRON is still running on ${running.brain || "another brain"} — stopping it so ULTRON starts on ${ultronFirst === "ollama" ? "Ollama" : ultronFirst === "openrouter" ? "OpenRouter" : ultronFirst}…`);
   stopPort(7420);
   for (let i = 0; i < 20 && (await up("http://127.0.0.1:7420/health", 800)); i++) await new Promise((r) => setTimeout(r, 500));
   if (await up("http://127.0.0.1:7420/health", 800)) say("  ! Couldn't stop it — close the old ULTRON window (or restart the PC), then run this again.");
@@ -296,7 +302,8 @@ if (await waitFor(`${local}/login`, 120)) {
   else if (!groqKey) say("    ! GROQ_API_KEY is empty — JARVIS, EV and DARWIN will use Gemini only.");
   else if (!geminiKey) say("    (No GEMINI_API_KEY — JARVIS, EV and DARWIN have no backup when Groq is busy. Free at aistudio.google.com/apikey.)");
   if (appEnv.JARVIS_PROVIDER && usesOllama(jarvisPick)) say(`    Note: .env.local sets JARVIS_PROVIDER=${appEnv.JARVIS_PROVIDER}, so JARVIS stays on your PC brain — delete that line to use Groq/Gemini.`);
-  if (ultronSetting && !usesOllama(ultronPick)) say(`    Note: ULTRON_AI_PROVIDER=${ultronSetting} keeps ULTRON off Ollama — delete that line in edith/.env to use Ollama.`);
+  if (ultronSetting && ultronPick.join(",") !== "openrouter,ollama") say(`    Note: ULTRON_AI_PROVIDER=${ultronSetting} is set — delete that line in edith/.env for the default (OpenRouter, then Ollama).`);
+  else if (!openrouterKey) say("    ! No OPENROUTER_API_KEY in .env.local or edith/.env — ULTRON runs on Ollama only. Get a key at openrouter.ai/keys to make OpenRouter its main brain.");
   say("    NIOS watch: checking the official NIOS pages every 15 minutes while this runs (new notices are emailed if Gmail is connected).");
   say("    EV daily content: from 4:00 AM EV prepares today's post + Reel for your approval (it never publishes without you).");
   say("    Log in with your usual account. Keep this window open — Ctrl+C stops everything.\n");

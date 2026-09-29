@@ -31,9 +31,9 @@ export const ENV_FILE = path.join(EDITH_DIR, ".env");
   globalThis.__ULTRON_GROQ_KEYS__ = keys;
 }
 
-// ULTRON runs on this PC's Ollama — turn off a leftover old-default provider line first.
+// ULTRON runs on OpenRouter, then this PC's Ollama — turn off a leftover old-default provider line first.
 for (const line of retireOldUltronProvider(ENV_FILE)) {
-  console.log(`[ULTRON] edith/.env had ${line} (the old default) — turned that line off; ULTRON runs on this PC's Ollama.`);
+  console.log(`[ULTRON] edith/.env had ${line} (the old default) — turned that line off; ULTRON runs on OpenRouter, with this PC's Ollama as backup.`);
 }
 
 export const envLoaded = loadEnv(ENV_FILE);

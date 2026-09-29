@@ -47,7 +47,7 @@ function resolveChain() {
     groq.slack = 0;
   }
   // ULTRON runs on the providers listed in ULTRON_AI_PROVIDER, in that order —
-  // by default Groq, with Gemini as the backup. Nothing else is used.
+  // by default OpenRouter, with this PC's Ollama as the backup. Nothing else is used.
   const list = providerList();
   if (!list.includes("auto")) return list.map((name) => configured.find((p) => p.provider === name)).filter(Boolean);
   // "auto": every configured provider. Speed first — cloud keys answer and your
@@ -63,14 +63,17 @@ function resolveChain() {
 /** Used when ULTRON runs on Ollama and no model is named (the one `npm run local` pulls for the PC brain). */
 export const DEFAULT_OLLAMA_MODEL = "qwen2.5:3b";
 
-/** "ollama" (default — this PC's Ollama), another provider id / comma list, or "auto" for the whole chain. */
+/** ULTRON's brains, in order. By default OpenRouter, then this PC's Ollama when OpenRouter fails. */
+export const DEFAULT_ULTRON_PROVIDER = "openrouter,ollama";
+
+/** "openrouter,ollama" (default), another provider id / comma list, or "auto" for the whole chain. */
 export function onlyProvider() {
-  return read("ULTRON_AI_PROVIDER").toLowerCase() || "ollama";
+  return read("ULTRON_AI_PROVIDER").toLowerCase() || DEFAULT_ULTRON_PROVIDER;
 }
 export function providerList() {
   return onlyProvider().split(/[\s,>]+/).filter(Boolean);
 }
-const KEY_FOR = { groq: "GROQ_API_KEY (free at console.groq.com)", gemini: "GEMINI_API_KEY (free at aistudio.google.com/apikey)" };
+const KEY_FOR = { groq: "GROQ_API_KEY (free at console.groq.com)", gemini: "GEMINI_API_KEY (free at aistudio.google.com/apikey)", openrouter: "OPENROUTER_API_KEY (openrouter.ai/keys)" };
 /** What to tell the user when none of ULTRON's providers is set up. */
 export function missingProviderMessage() {
   const list = providerList();
@@ -79,6 +82,7 @@ export function missingProviderMessage() {
     return `ULTRON runs on ${list.map((p) => p[0].toUpperCase() + p.slice(1)).join(", then ")}, and none of them is set up — add ${list.map((p) => KEY_FOR[p]).join(" or ")} to edith/.env or the app's .env.local.`;
   }
   if (list.length === 1 && list[0] === "ollama") return "ULTRON runs on this PC's Ollama — install it from ollama.com, open the Ollama app and set OLLAMA_MODEL in edith/.env (e.g. qwen2.5:3b).";
+  if (list.join(",") === "openrouter,ollama") return "ULTRON runs on OpenRouter, with this PC's Ollama as the backup, and neither is set up — add OPENROUTER_API_KEY (openrouter.ai/keys) to edith/.env or the app's .env.local, and/or install Ollama from ollama.com.";
   return `ULTRON_AI_PROVIDER=${onlyProvider()} — none of those providers is configured in edith/.env.`;
 }
 
