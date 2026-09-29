@@ -80,10 +80,18 @@ export async function saveConfig(userId: string, c: Partial<DailyConfig>) {
 }
 
 export function dailyNow(now = new Date()) { return localClock(now, env.darwinDailyTz); }
-export function dailyDue(now = new Date()) {
+/**
+ * Has today's search time come? `earlyMin` lets the scheduler start a little
+ * before it (Vercel runs a daily cron any time within its hour), so the leads
+ * are ready by the start time rather than after it.
+ */
+export function dailyDue(now = new Date(), earlyMin = 0) {
   const s = hm(env.darwinDailyStart);
-  return dailyNow(now).minutes >= (Number.isFinite(s) ? s : 360);
+  return dailyNow(now).minutes >= (Number.isFinite(s) ? s : 360) - earlyMin;
 }
+
+/** Could a run start with these settings (a location to search and Geoapify)? */
+const canRun = (cfg: DailyConfig) => cfg.locations.length > 0 && !!env.geoapifyApiKey;
 
 /* ---------------- dependencies (real by default; injected in tests) ---------------- */
 
@@ -203,12 +211,13 @@ type Api = { geoapify: number; google: number; search: number };
  * Advance a run within the time budget. Safe to call from anywhere at any time:
  * only one caller works at once (lease); the rest just read.
  */
-export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?: DarwinDeps } = {}): Promise<DarwinDailyRun> {
+export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?: DarwinDeps; stats?: { worked?: boolean } } = {}): Promise<DarwinDailyRun> {
   const deps = opts.deps ?? defaultDeps();
   const budget = opts.budgetMs ?? 240_000;
   const db = getDb();
   const t0 = deps.now().getTime();
   if (!(await lease(runId, deps.now(), budget + 60_000))) return db.darwinDailyRun.findUniqueOrThrow({ where: { id: runId } });
+  if (opts.stats) opts.stats.worked = true;
   try {
     let run = await db.darwinDailyRun.findUniqueOrThrow({ where: { id: runId } });
     if (run.status !== "running") return run;
@@ -488,31 +497,55 @@ export async function darwinDailyView(userId: string, now = new Date()): Promise
   };
 }
 
-/** Who gets the autonomous search: anyone using DARWIN. */
+/**
+ * Who gets the autonomous search: anyone using DARWIN — and, when target
+ * locations are set in the environment, every account (so the leads are ready
+ * even if DARWIN was never opened).
+ */
 export async function darwinUsers(): Promise<string[]> {
   const db = getDb();
-  const [a, b, c] = await Promise.all([
+  const [a, b, c, all] = await Promise.all([
     db.darwinLead.findMany({ distinct: ["userId"], select: { userId: true } }),
     db.darwinSearchCursor.findMany({ distinct: ["userId"], select: { userId: true } }),
     db.integration.findMany({ where: { provider: "darwin_daily" }, select: { userId: true } }),
+    list(env.darwinDailyLocations).length ? db.user.findMany({ select: { id: true }, take: 50 }) : Promise.resolve([] as { id: string }[]),
   ]);
-  return [...new Set([...a, ...b, ...c].map((r) => r.userId))];
+  return [...new Set([...a, ...b, ...c].map((r) => r.userId).concat(all.map((u) => u.id)))];
 }
 
-/** The scheduled tick: start today's run once it's due, and push unfinished runs forward. */
-export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDeps; userIds?: string[] } = {}) {
-  if (!env.darwinDaily) return { skipped: "DARWIN_DAILY is off", results: [] };
+const progressOf = (r: DarwinDailyRun) => [r.verified, r.candidates, r.alreadyChecked, r.duplicates, r.comboIndex, r.exhaustedCombos.length, r.errors].join(":");
+
+/**
+ * The scheduled tick: start today's run once it's due, and push unfinished runs
+ * forward. `more` says a run is still searching and this call did real work —
+ * the caller should come straight back (the cron chains itself; the local
+ * runner loops) so the day's leads are ready without anyone opening DARWIN.
+ */
+export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDeps; userIds?: string[]; earlyMin?: number } = {}) {
+  if (!env.darwinDaily) return { skipped: "DARWIN_DAILY is off", results: [], more: false };
   const deps = opts.deps ?? defaultDeps();
   const now = deps.now();
   const users = opts.userIds ?? await darwinUsers();
   const per = Math.max(30_000, Math.floor((opts.budgetMs ?? 240_000) / Math.max(users.length, 1)));
   const results: { userId: string; status: string; verified: number }[] = [];
+  let more = false;
   for (const userId of users) {
     let run = await todayRun(userId, now);
-    if (!run && dailyDue(now)) run = await ensureRun(userId, now);
+    // set up since the run was created (locations saved, Geoapify key added) → start it properly
+    if (run?.status === "needs_setup" && canRun(await loadConfig(userId))) {
+      await getDb().darwinDailyRun.delete({ where: { id: run.id } }).catch(() => {});
+      run = null;
+    }
+    if (!run && dailyDue(now, opts.earlyMin ?? 0)) run = await ensureRun(userId, now);
     if (!run) continue;
-    if (run.status === "running") run = await advanceRun(run.id, { budgetMs: per, deps });
+    if (run.status === "running") {
+      const stats: { worked?: boolean } = {};
+      const before = progressOf(run);
+      run = await advanceRun(run.id, { budgetMs: per, deps, stats });
+      // come back only when this call really moved the search on (never spin on a stuck one)
+      if (run.status === "running" && stats.worked && progressOf(run) !== before) more = true;
+    }
     results.push({ userId, status: run.status, verified: run.verified });
   }
-  return { date: dailyNow(now).date, results };
+  return { date: dailyNow(now).date, results, more };
 }

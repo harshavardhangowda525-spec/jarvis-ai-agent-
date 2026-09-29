@@ -220,6 +220,51 @@ d("DARWIN daily run (integration)", () => {
     expect(v.run).toMatchObject({ verified: 6, target: 50, remaining: 44, status: "partial" });
     expect(v.history.find((h) => h.date === "2026-09-28")).toMatchObject({ verified: 5, target: 5 });
   });
+
+  it("keeps going call after call by itself until today's leads are all found", async () => {
+    let t = new Date("2026-10-02T02:00:00Z").getTime(); // 07:30 IST
+    pages.gyms = [[50, 51, 52, 53, 54, 55, 56, 57].map((i) => feature(i, "gyms"))];
+    pages.cafes = [[]];
+    await R.saveConfig(userId, { target: 6 });
+    // time moves on as it works, so one call can't do the whole day
+    const ticking = (): DarwinDeps => ({ ...deps(), now: () => new Date((t += 4_000)) });
+    const seen: boolean[] = [];
+    let r;
+    for (let i = 0; i < 20; i++) {
+      r = await R.runDarwinDaily({ userIds: [userId], deps: ticking(), budgetMs: 30_000 });
+      seen.push(r.more);
+      if (!r.more) break;
+    }
+    expect(seen.length).toBeGreaterThan(1);           // it needed more than one call…
+    expect(seen.slice(0, -1).every(Boolean)).toBe(true); // …said "more" each time it wasn't done…
+    expect(r!.results[0]).toMatchObject({ status: "completed", verified: 6 }); // …and finished without DARWIN open
+  });
+
+  it("a call that can't move the search on doesn't ask to be called again (no spinning)", async () => {
+    let t = new Date("2026-10-06T02:00:00Z").getTime();
+    pages.gyms = [[70, 71, 72].map((i) => feature(i, "gyms"))];
+    const stuck = (): DarwinDeps => ({ ...deps(), now: () => new Date((t += 60_000)) }); // no time to do anything
+    const r = await R.runDarwinDaily({ userIds: [userId], deps: stuck(), budgetMs: 30_000 });
+    expect(r.results[0].status).toBe("running");
+    expect(r.more).toBe(false);
+  });
+
+  it("the scheduler may start up to its early window before the start time", async () => {
+    const at = new Date("2026-10-03T23:45:00Z"); // 05:15 IST on the 4th
+    expect(R.dailyDue(at)).toBe(false);
+    expect(R.dailyDue(at, 60)).toBe(true);
+    expect(R.dailyDue(new Date("2026-10-03T23:15:00Z"), 60)).toBe(false); // 04:45 — still too early
+  });
+
+  it("a day that was waiting for settings starts once they're there", async () => {
+    const at = new Date("2026-10-05T02:00:00Z");
+    const date = R.dailyNow(at).date;
+    await getDb().darwinDailyRun.create({ data: { userId, date, target: 4, status: "needs_setup", config: {}, log: [] } });
+    const r = await R.runDarwinDaily({ userIds: [userId], deps: { ...deps(), now: () => at }, budgetMs: 10_000 });
+    expect(r.results[0].status).not.toBe("needs_setup");
+    const run = await R.todayRun(userId, at);
+    expect(run?.status).not.toBe("needs_setup");
+  });
 });
 
 import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";

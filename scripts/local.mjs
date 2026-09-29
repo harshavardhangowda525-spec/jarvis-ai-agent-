@@ -309,20 +309,26 @@ if (await waitFor(`${local}/login`, 120)) {
     } catch { /* offline — next round */ } finally { evTicking = false; }
   };
   const evAnnounced = new Set();
-  // DARWIN's daily search: starts at 6:00 AM (DARWIN_DAILY_TZ) and continues every few minutes until done.
+  // DARWIN's daily search: starts at 6:00 AM (DARWIN_DAILY_TZ) and keeps going
+  // back-to-back until today's leads are all found — no need to open DARWIN.
   let dwTicking = false;
   const dwAnnounced = new Set();
+  let dwTimer = null;
   const darwinDaily = async () => {
     if (dwTicking) return;
     dwTicking = true;
+    let more = false;
     try {
-      const r = await fetch(`${local}/api/cron/darwin-daily`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(320_000) });
+      const r = await fetch(`${local}/api/cron/darwin-daily?chain=off`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(320_000) });
       const j = await r.json().catch(() => ({}));
+      more = !!j?.data?.more;
       for (const x of j?.data?.results ?? []) if ((x.status === "completed" || x.status === "partial") && !dwAnnounced.has(j.data.date)) { dwAnnounced.add(j.data.date); say(`  [darwin] Daily lead search finished — ${x.verified} verified no-website leads saved. Open JARVIS for the report.`); }
     } catch { /* offline — next round */ } finally { dwTicking = false; }
+    // still searching → carry straight on; otherwise look again in 5 minutes
+    clearTimeout(dwTimer);
+    dwTimer = setTimeout(darwinDaily, more ? 5_000 : 5 * 60_000);
   };
-  setTimeout(darwinDaily, 150_000);
-  setInterval(darwinDaily, 5 * 60_000);
+  dwTimer = setTimeout(darwinDaily, 60_000);
   setTimeout(evDaily, 120_000);
   setInterval(evDaily, 5 * 60_000);
   if (!process.argv.includes("--no-open")) {

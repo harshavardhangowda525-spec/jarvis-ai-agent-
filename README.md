@@ -649,7 +649,7 @@ website** (the target is configurable) in your target locations. It verifies
 each one, saves them to the CRM and reports to you through JARVIS. You don't
 need to start it.
 
-**How a day runs** (from 06:00 in `DARWIN_DAILY_TZ`, default Asia/Kolkata):
+**How a day runs** (from about 06:00 in `DARWIN_DAILY_TZ`, default Asia/Kolkata):
 1. For every location × category you configured, DARWIN reads real businesses from Geoapify (OpenStreetMap). It keeps its position, so a restart continues where it stopped.
 2. It removes duplicates. A business is skipped if it's already in DARWIN: same place id, same name/address/coordinates fingerprint, same phone, or the same name within 150 m. It also skips businesses already checked on an earlier day that had a website. Unclear ones are re-checked after 3 weeks.
 3. It verifies the website with every available signal:
@@ -679,10 +679,29 @@ At the target it shows **DAILY TARGET COMPLETE**, with **VIEW LEADS**, **OPEN CR
 - strict verification;
 - which verification sources are on.
 
-**What drives it:**
-- Vercel Cron `/api/cron/darwin-daily` at 06:00 and 09:00 IST (needs `CRON_SECRET`).
-- `npm run local`, every 5 minutes.
-- JARVIS or DARWIN whenever they're open.
+**What drives it.** The leads are ready before you open DARWIN. You don't
+need to have JARVIS or DARWIN open while it searches:
+- **On Vercel:** Cron `/api/cron/darwin-daily` fires at 06:00 IST and again at
+  09:00 as a backup. It needs `CRON_SECRET`. Each call works for about 4
+  minutes. If the day's search isn't finished, the call hands on to a fresh
+  call of itself, and so on until the target is reached or the search area runs
+  out (up to 30 hand-ons, about 2 hours).
+- **With `npm run local`:** it searches back-to-back (a few seconds apart) while
+  the day's search is unfinished, then checks every 5 minutes. The PC just needs
+  to be on.
+- **Opening JARVIS or DARWIN** also moves it along.
+
+The scheduler may start up to an hour before `DARWIN_DAILY_START`, because
+Vercel fires a daily cron at some point within its hour. So the leads are
+ready by the start time, not an hour after it.
+
+A call only hands on when it actually made progress, so a stuck search can't
+loop. Only one call works on a day's run at a time.
+
+**Accounts searched.** With `DARWIN_DAILY_LOCATIONS` set, every account gets the
+daily search, even one that has never opened DARWIN. Without it, only accounts
+that already use DARWIN get it. A day that was waiting for settings (no
+location or no Geoapify key yet) starts on the next round once they're added.
 
 It survives restarts and refreshes: progress lives in `DarwinDailyRun`, checked businesses in `DarwinCandidate`, and leads in `DarwinLead`. Each new day starts a new run; earlier leads and reports are kept.
 
