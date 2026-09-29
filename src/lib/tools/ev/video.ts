@@ -3,8 +3,8 @@ import { z } from "zod";
 import type { ToolDefinition } from "../types";
 import { ToolError } from "../types";
 import { getDb } from "@/lib/db";
-import { isConfigured as magicHourReady, createVideo, waitProject, MagicHourError } from "@/lib/ev/magichour";
-import { storeRemoteMedia } from "@/lib/ev/media";
+import { isConfigured as magicHourReady, createVideo, MagicHourError } from "@/lib/ev/magichour";
+import { finishMagicHour } from "@/lib/ev/render";
 import { resolveStartImage } from "@/lib/ev/start-image";
 
 /**
@@ -36,12 +36,26 @@ async function attach(userId: string, contentId: string | undefined, url: string
   }
 }
 
+/** Wait briefly for the render; ready → stored + shown, still rendering → the app keeps checking by itself. */
+async function finish(userId: string, projectId: string, contentId: string | undefined, label: string, budgetMs: number) {
+  const st = await finishMagicHour(userId, "video", projectId, { budgetMs, label });
+  if (st.status === "failed") throw new ToolError(st.error);
+  if (st.status === "rendering") {
+    return {
+      data: { projectId, status: st.stage, ready: false, pendingMedia: { kind: "video", projectId, label: label.slice(0, 80) } },
+      summary: `The video is rendering on Magic Hour (usually a few minutes). It will appear here by itself as soon as it's done — no need to ask again.`,
+    };
+  }
+  if (st.mediaId) await attach(userId, contentId, st.url, st.mediaId);
+  return { data: { url: st.url, mediaId: st.mediaId, openUrl: st.url, label: "View video" }, summary: "Video ready to review." };
+}
+
 export const evVideoTool: ToolDefinition<Input> = {
   name: "ev_video",
   description:
-    "Generate a REAL marketing video/reel for Infinity Web & Apps with Magic Hour. text-to-video from a prompt, or image-to-video " +
-    "from an image URL. Async: 'generate' starts it and returns a projectId; call again with action 'check' + that projectId to " +
-    "fetch the finished video. Requires Magic Hour to be connected; never fabricates a video.",
+    "Generate a REAL marketing video/reel for Infinity Web & Apps with Magic Hour: text-to-video from a prompt, or image-to-video " +
+    "from an EV image (contentImageId = its mediaId). Renders take minutes: if it isn't done at once the app keeps checking and shows " +
+    "the video by itself when it's ready — just tell the user it's rendering. 'check' + projectId fetches it on request. Never fabricates a video.",
   schema,
   agentScope: "ev",
   activityLabel: "Generating marketing video",
@@ -54,17 +68,7 @@ export const evVideoTool: ToolDefinition<Input> = {
     if (input.action === "check") {
       if (!input.projectId) throw new ToolError("Provide the Magic Hour projectId to check.");
       ctx.activity("Checking Magic Hour video…");
-      try {
-        const r = await waitProject("video", input.projectId, 40_000);
-        if (!r.done) return { data: { status: r.status, projectId: r.projectId, ready: false }, summary: `Still rendering (${r.status}). Ask me to check again in a bit.` };
-        if (!r.ok || !r.url) throw new ToolError(`Magic Hour couldn't make the video (${r.error ?? r.status}).`);
-        const stored = await storeRemoteMedia(ctx.userId, r.url, "video", input.prompt ?? "EV video");
-        await attach(ctx.userId, input.contentId, stored.url, stored.id);
-        return { data: { url: stored.url, mediaId: stored.id, openUrl: stored.url, label: "View video" }, summary: "Video ready." };
-      } catch (err) {
-        if (err instanceof MagicHourError) throw new ToolError(err.message);
-        throw err;
-      }
+      return finish(ctx.userId, input.projectId, input.contentId, input.prompt ?? "EV video", 30_000);
     }
 
     if (!input.prompt || input.prompt.trim().length < 3) throw new ToolError("Provide a 'prompt' describing the video.");
@@ -82,18 +86,8 @@ export const evVideoTool: ToolDefinition<Input> = {
     try {
       ctx.activity("Starting video render on Magic Hour…");
       const projectId = await createVideo({ prompt: input.prompt, image, seconds: input.seconds, aspect: input.aspect });
-      // Give it a short window; videos usually need longer → return projectId to check.
-      const r = await waitProject("video", projectId, 40_000);
-      if (!r.done) {
-        return {
-          data: { projectId, status: r.status, ready: false },
-          summary: `Video is rendering on Magic Hour (project ${projectId}). This takes a few minutes — ask me to check it shortly.`,
-        };
-      }
-      if (!r.ok || !r.url) throw new ToolError(`Magic Hour couldn't make the video (${r.error ?? r.status}).`);
-      const stored = await storeRemoteMedia(ctx.userId, r.url, "video", input.prompt);
-      await attach(ctx.userId, input.contentId, stored.url, stored.id);
-      return { data: { url: stored.url, mediaId: stored.id, openUrl: stored.url, label: "View video" }, summary: "Video ready to review." };
+      // A short wait here; a longer render is finished by the app in the background.
+      return finish(ctx.userId, projectId, input.contentId, input.prompt, 35_000);
     } catch (err) {
       if (err instanceof MagicHourError) throw new ToolError(err.message);
       throw err;

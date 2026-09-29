@@ -5,8 +5,8 @@ import { ToolError } from "../types";
 import { getDb } from "@/lib/db";
 import { env } from "@/lib/env";
 import { generateImage, ImageGenError, type Aspect } from "@/lib/ev/image";
-import { isConfigured as magicHourReady, createImage as mhCreateImage, waitProject, MagicHourError } from "@/lib/ev/magichour";
-import { storeRemoteMedia } from "@/lib/ev/media";
+import { isConfigured as magicHourReady, createImage as mhCreateImage, MagicHourError } from "@/lib/ev/magichour";
+import { finishMagicHour } from "@/lib/ev/render";
 
 /**
  * EV's image generator. Produces a REAL image and returns a public URL usable
@@ -39,6 +39,23 @@ async function attach(userId: string, contentId: string | undefined, url: string
   }
 }
 
+/** Wait briefly; ready → stored + shown, still rendering → the app keeps checking and shows it by itself. */
+async function finishImage(userId: string, projectId: string, contentId: string | undefined, label: string, budgetMs: number, aspect: Aspect) {
+  const st = await finishMagicHour(userId, "image", projectId, { budgetMs, label });
+  if (st.status === "failed") throw new ToolError(st.error);
+  if (st.status === "rendering") {
+    return {
+      data: { projectId, status: st.stage, ready: false, provider: "magichour", pendingMedia: { kind: "image", projectId, label: label.slice(0, 80) } },
+      summary: "The image is still rendering on Magic Hour — it will appear here by itself when it's done.",
+    };
+  }
+  if (st.mediaId) await attach(userId, contentId, st.url, st.mediaId);
+  return {
+    data: { url: st.url, mediaId: st.mediaId, provider: "magichour", openUrl: st.url, label: "View image", ...(st.mediaId ? { toAnimate: { tool: "ev_video", contentImageId: st.mediaId } } : {}) },
+    summary: `Generated a ${aspect} image (Magic Hour). Ready to review${contentId ? " and attached to the post" : ""}.`,
+  };
+}
+
 export const evImageTool: ToolDefinition<Input> = {
   name: "ev_image",
   description:
@@ -62,17 +79,7 @@ export const evImageTool: ToolDefinition<Input> = {
     if (input.action === "check") {
       if (!input.projectId) throw new ToolError("Provide the Magic Hour projectId to check.");
       ctx.activity("Checking Magic Hour image…");
-      try {
-        const r = await waitProject("image", input.projectId, 30_000);
-        if (!r.done) return { data: { status: r.status, projectId: r.projectId, ready: false }, summary: `Still rendering (${r.status}). Ask me to check again shortly.` };
-        if (!r.ok || !r.url) throw new ToolError(`Magic Hour couldn't make the image (${r.error ?? r.status}).`);
-        const stored = await storeRemoteMedia(ctx.userId, r.url, "image", input.prompt ?? "EV image");
-        await attach(ctx.userId, input.contentId, stored.url, stored.id);
-        return { data: { url: stored.url, mediaId: stored.id, provider: "magichour", openUrl: stored.url, label: "View image", toAnimate: { tool: "ev_video", contentImageId: stored.id } }, summary: "Image ready." };
-      } catch (err) {
-        if (err instanceof MagicHourError) throw new ToolError(err.message);
-        throw err;
-      }
+      return finishImage(ctx.userId, input.projectId, input.contentId, input.prompt ?? "EV image", 30_000, aspect);
     }
 
     if (!input.prompt || input.prompt.trim().length < 3) throw new ToolError("Provide a 'prompt' describing the image.");
@@ -82,20 +89,7 @@ export const evImageTool: ToolDefinition<Input> = {
       try {
         ctx.activity("Generating image with Magic Hour…");
         const projectId = await mhCreateImage(input.prompt, aspect);
-        const r = await waitProject("image", projectId, 30_000);
-        if (!r.done) {
-          return {
-            data: { projectId, status: r.status, ready: false, provider: "magichour" },
-            summary: `Image is rendering on Magic Hour (project ${projectId}). Ask me to check it in a moment.`,
-          };
-        }
-        if (!r.ok || !r.url) throw new ToolError(`Magic Hour couldn't make the image (${r.error ?? r.status}).`);
-        const stored = await storeRemoteMedia(ctx.userId, r.url, "image", input.prompt);
-        await attach(ctx.userId, input.contentId, stored.url, stored.id);
-        return {
-          data: { url: stored.url, mediaId: stored.id, provider: "magichour", openUrl: stored.url, label: "View image", toAnimate: { tool: "ev_video", contentImageId: stored.id } },
-          summary: `Generated a ${aspect} image (Magic Hour). Ready to review${input.contentId ? " and attached to the post" : ""}.`,
-        };
+        return finishImage(ctx.userId, projectId, input.contentId, input.prompt, 30_000, aspect);
       } catch (err) {
         if (err instanceof MagicHourError) throw new ToolError(err.message);
         throw err;

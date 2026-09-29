@@ -17,6 +17,7 @@ import { parseMemoryCommand } from "@/lib/memory/intent";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import type { AgentTiming } from "@/hooks/useAgent";
 import { useAgent } from "@/hooks/useAgent";
+import { useRenderWatch } from "@/hooks/useRenderWatch";
 import { useWakeWord } from "@/hooks/useWakeWord";
 import { useScreenVision } from "@/hooks/useScreenVision";
 import { HumanoidView } from "@/components/console/humanoid-view";
@@ -223,6 +224,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [evToday, setEvToday] = useState(false);
   const dailyAskedAt = useRef(0);
   const sayRef = useRef<(t: string) => void>(() => {});
+  const watchRenderRef = useRef<(p: { kind: "image" | "video"; projectId: string; label: string }) => void>(() => {});
+  const agentRef = useRef<{ appendLocalExchange: (u: string, a: string, l?: { url: string; label: string }[], o?: { note?: boolean }) => void }>({ appendLocalExchange: () => {} });
   const daily = useDailyContent({
     onChange: (kind, v) => {
       const p = v.pkg;
@@ -277,6 +280,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     },
     onNavigate,
     onOpenApp: (names) => { void openAppsRef.current("", names); },
+    // A Magic Hour render still going — watched in the background, shown when done.
+    onPendingMedia: (p) => watchRenderRef.current(p),
     onOpen: (url) => {
       // An EV-generated image reveals as a liquid-glass message inside the EV
       // dashboard rather than hijacking a tab.
@@ -292,6 +297,24 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       showInJarvis({ url, label });
     },
   });
+
+  // EV's Magic Hour renders finish minutes later: show them the moment they're done.
+  const renders = useRenderWatch({
+    onReady: (r) => {
+      const what = r.kind === "video" ? "video" : "image";
+      if (evActiveRef.current) { setEvImage({ url: r.url }); flashEv("success"); }
+      const msg = `Your ${what} is ready${r.label ? ` — ${r.label}` : ""}.`;
+      agentRef.current.appendLocalExchange("", msg, [{ url: r.url, label: r.kind === "video" ? "View video" : "View image" }], { note: true });
+      sayRef.current(`Your ${what} is ready.`);
+    },
+    onFailed: (r) => {
+      if (evActiveRef.current) flashEv("error");
+      agentRef.current.appendLocalExchange("", `The ${r.kind} didn't render. ${r.error}`, undefined, { note: true });
+      sayRef.current(`The ${r.kind} didn't render. ${r.error}`);
+    },
+  });
+  watchRenderRef.current = renders.watch;
+  agentRef.current = agent;
 
   const sleep = useCallback(() => { voice.stop(); setVoiceStarted(false); }, [voice]);
   sayRef.current = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
@@ -887,6 +910,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const lastUserMsg = [...agent.messages].reverse().find((m) => m.role === "user");
   const subtitle = lastAssistant?.content ?? "";
   const subtitleLinks = lastAssistant?.links ?? [];
+  // The caption under a creative on EV's screen is EV's own words — never a note like "your video is ready".
+  const evCaption = evImage ? ([...agent.messages].reverse().find((m) => m.role === "assistant" && !m.note)?.content ?? "") : subtitle;
   const hasMessages = agent.messages.length > 0;
 
   // ================= what the motion OS shows =================
@@ -1034,7 +1059,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           level={voice.level}
           phase={evPhase === "in" ? "in" : evPhase === "out" ? "out" : "active"}
           image={evImage}
-          caption={subtitle}
+          caption={evCaption}
           onDismissImage={() => setEvImage(null)}
           publishSignal={evPublishSignal}
           captionOverride={evCaptionOverride}

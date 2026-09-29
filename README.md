@@ -520,6 +520,15 @@ brings back Gemini/OpenAI as a backup. Optional: `MAGICHOUR_IMAGE_MODEL`,
 `MAGICHOUR_VIDEO_MODEL` and their `_RESOLUTION` settings (blank = Magic Hour's
 recommended model). Each render uses Magic Hour credits.
 
+A Magic Hour video takes a few minutes. When you ask EV for one in chat, EV
+waits about half a minute. If the video isn't done by then, JARVIS keeps
+checking in the background (every 10 s, for up to 30 minutes, even across a
+page reload). The finished video shows up on EV's screen by itself, ready to
+approve, and JARVIS says "Your video is ready". If Magic Hour fails, you get
+Magic Hour's own reason instead of silence. The check runs through
+`GET /api/ev/render?kind=video&projectId=…`, and each finished file is stored
+only once.
+
 | Time | Step |
 | --- | --- |
 | 04:00 | **Research.** Reads every past package and EV's content memory, then picks a niche, a service (websites, apps, automation, AI, online ordering/booking, software, redesigns, AI marketing) and a format that haven't been used recently. |

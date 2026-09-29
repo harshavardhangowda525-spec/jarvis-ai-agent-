@@ -33,6 +33,8 @@ export type AgentEvent =
   | { type: "open_app"; names: string[] }
   /** An extra clickable link for the reply (not opened automatically). */
   | { type: "link"; url: string; label: string }
+  /** A Magic Hour render still in progress — the app keeps checking and shows it when done. */
+  | { type: "pending_media"; kind: "image" | "video"; projectId: string; label: string }
   | { type: "provider"; name: string }
   /**
    * An email being sent: "sending" (with the full email, shown typing out in the
@@ -364,6 +366,10 @@ async function* runOneTool(
     }
     if (data && Array.isArray(data.openApp)) {
       yield { type: "open_app", names: (data.openApp as unknown[]).map(String).slice(0, 4) };
+    }
+    const pm = data?.pendingMedia as { kind?: unknown; projectId?: unknown; label?: unknown } | undefined;
+    if (pm && (pm.kind === "image" || pm.kind === "video") && typeof pm.projectId === "string") {
+      yield { type: "pending_media", kind: pm.kind, projectId: pm.projectId, label: String(pm.label ?? "").slice(0, 80) };
     }
     if (data && typeof data.openUrl === "string") {
       yield { type: "open", url: data.openUrl, label: String(data.label ?? "link") };

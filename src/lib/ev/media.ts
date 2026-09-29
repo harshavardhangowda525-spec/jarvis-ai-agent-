@@ -41,8 +41,9 @@ export async function storeRemoteMedia(
   try {
     const res = await fetch(sourceUrl, { signal: AbortSignal.timeout(45_000) });
     if (res.ok) {
-      const ct = res.headers.get("content-type");
-      if (ct) mimeType = ct.split(";")[0].trim();
+      // trust the server's type only when it names a real media type (CDNs often say octet-stream)
+      const ct = (res.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+      if (ct.startsWith(`${kind}/`)) mimeType = ct;
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.length > 0 && buf.length <= MAX_STORE_BYTES) bytes = buf;
     }
