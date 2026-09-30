@@ -89,7 +89,8 @@ export const env = {
   // Gemini as the backup when Groq is rate-limited or down).
   evProvider: read("EV_PROVIDER").toLowerCase() || "groq,gemini",
   darwinProvider: read("DARWIN_PROVIDER").toLowerCase() || "groq,gemini",
-  mikeProvider: read("MIKE_PROVIDER").toLowerCase() || "groq,gemini",
+  // MIKE (market analysis) thinks with Gemini first, Groq as the backup.
+  mikeProvider: read("MIKE_PROVIDER").toLowerCase() || "gemini,groq",
   // Reasoning models (gpt-oss) think before answering; "low" keeps replies quick.
   reasoningEffort: read("AI_REASONING_EFFORT").toLowerCase() || "low",
 

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 
 // No JARVIS_PROVIDER / ULTRON_AI_PROVIDER set: the real defaults.
 vi.hoisted(() => {
-  delete process.env.JARVIS_PROVIDER; delete process.env.EV_PROVIDER; delete process.env.DARWIN_PROVIDER; delete process.env.AI_PROVIDER;
+  delete process.env.JARVIS_PROVIDER; delete process.env.EV_PROVIDER; delete process.env.DARWIN_PROVIDER; delete process.env.MIKE_PROVIDER; delete process.env.AI_PROVIDER;
   process.env.GROQ_API_KEY = "gsk_test"; process.env.GEMINI_API_KEY = "gem_test";
 });
 import { env } from "@/lib/env";
@@ -21,6 +21,11 @@ describe("which brain each agent uses (defaults)", () => {
   it("EV and DARWIN stay on Groq, then Gemini", () => {
     expect(agentConfigs("ev", pcBrain).configs.map((c) => c.provider)).toEqual(["groq", "gemini"]);
     expect(agentConfigs("darwin", pcBrain).configs.map((c) => c.provider)).toEqual(["groq", "gemini"]);
+  });
+
+  it("MIKE thinks with Gemini first, Groq as the backup", () => {
+    expect(env.mikeProvider).toBe("gemini,groq");
+    expect(agentConfigs("mike", pcBrain).configs.map((c) => c.provider)).toEqual(["gemini", "groq"]);
   });
 
   it("JARVIS can still be put back on the PC brain with JARVIS_PROVIDER=ollama", () => {
