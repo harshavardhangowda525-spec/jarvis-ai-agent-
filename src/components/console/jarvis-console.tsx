@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MikeLaunchOverlay } from "@/components/console/mike/launch-overlay";
 import { BriefingPopup } from "@/components/console/briefing-popup";
 import type { Briefing } from "@/lib/briefing/build";
 import { briefingRequest } from "@/lib/briefing/intent";
@@ -413,11 +414,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Opening DARWIN. Lead systems online.");
     setTimeout(() => router.push("/dashboard/darwin"), 1000);
   }, [router, voice, voiceStarted]);
+  const [mikeLaunch, setMikeLaunch] = useState(false);
   const launchMike = useCallback(() => {
-    // MIKE takes over the trading-analysis interface.
+    // MIKE takes over the trading-analysis interface: an iris opens onto MIKE's
+    // floor, then MIKE's own boot sequence runs.
     logActivity({ category: "agent", agent: "MIKE", action: "Activated MIKE", importance: 1 });
-    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Activating MIKE. Market intelligence online.");
-    setTimeout(() => router.push("/dashboard/mike"), 900);
+    setMikeLaunch(true);
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Activating MIKE.");
+    setTimeout(() => router.push("/dashboard/mike"), 1050);
   }, [router, voice, voiceStarted]);
   const openHumanoid = useCallback(() => {
     logActivity({ category: "agent", agent: "HUMANOID", action: "Opened Humanoid View", importance: 1 });
@@ -1157,6 +1161,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         />
       )}
       {emails.current && <EmailComposePopup key={emails.current.id} email={emails.current} waiting={emails.waiting} onClose={emails.close} />}
+      {mikeLaunch && <MikeLaunchOverlay />}
 
       {/* the living environment */}
       <JarvisMotion ref={motion} className="absolute inset-0" cssTarget={stageRef}

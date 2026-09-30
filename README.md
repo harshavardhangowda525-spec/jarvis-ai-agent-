@@ -901,6 +901,11 @@ claims an accuracy figure, never promises profit and never places a trade.
 
 **Open it:** say or type *"Activate Mike"* in JARVIS (or pick **MIKE** in the
 nav, `/dashboard/mike`). Say *"back to JARVIS"* to leave.
+MIKE powers up with its own sequence: JARVIS opens an iris onto MIKE's floor,
+then the core ignites, market data streams in from every edge, the rings draw
+themselves, the boot log reports how the market feeds really came up, and the
+panels fly into place. Click or press any key to skip; with "reduce motion"
+turned on in your OS it's skipped automatically.
 
 **Data (no key needed):**
 

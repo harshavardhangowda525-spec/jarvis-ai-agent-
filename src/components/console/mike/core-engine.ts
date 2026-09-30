@@ -49,6 +49,7 @@ export class MikeCoreEngine {
   private waves: Wave[] = [];
   private reduced = false;
   private hidden = false;
+  private bootStart = 0; private bootMs = 3000; private bootBurst = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d", { alpha: true });
@@ -125,6 +126,29 @@ export class MikeCoreEngine {
   }
   pulse(hue: number = HUE.cyan, delay = 0) { this.waves.push({ t: -delay / 1000, hue, max: 3.2 }); }
 
+  /**
+   * BOOT: a point of light ignites, a scanline sweeps the screen, market data
+   * converges from every edge, the core blooms out and its rings draw in.
+   */
+  boot(ms = 3000) {
+    if (this.reduced) return;
+    this.bootStart = performance.now(); this.bootMs = ms; this.bootBurst = false;
+    for (let i = 0; i < 240; i++) {
+      const edge = Math.floor(Math.random() * 4);
+      const x0 = edge === 0 ? -20 : edge === 1 ? this.w + 20 : Math.random() * this.w;
+      const y0 = edge === 2 ? -20 : edge === 3 ? this.h + 20 : Math.random() * this.h;
+      this.flyers.push({ x0, y0, x1: this.cx, y1: this.cy, t: -0.15 - Math.random() * 0.75, speed: 0.6 + Math.random() * 0.5, bend: (Math.random() - 0.5) * 240, hue: Math.random() < 0.75 ? HUE.cyan : HUE.white, size: 0.7 + Math.random() * 1.5 });
+    }
+    this.pulse(HUE.white, ms * 0.16); this.pulse(HUE.cyan, ms * 0.3); this.pulse(HUE.cyan, ms * 0.8);
+  }
+  get booting() { return this.bootStart > 0; }
+  private bootK(now: number) {
+    if (!this.bootStart) return 1;
+    const k = (now - this.bootStart) / this.bootMs;
+    if (k >= 1) { this.bootStart = 0; return 1; }
+    return Math.max(0, k);
+  }
+
   start() { this.last = performance.now(); this.loop(); }
   destroy() { cancelAnimationFrame(this.raf); document.removeEventListener("visibilitychange", this.onVis); }
 
@@ -140,7 +164,7 @@ export class MikeCoreEngine {
     this.time += dt;
     const vmul = this.voice === "processing" ? 2.6 : this.voice === "speaking" ? 1.3 : 1;
     this.speed += (this.targetSpeed * vmul - this.speed) * Math.min(1, dt * 2.2);
-    this.rot += dt * 0.35 * this.speed;
+    this.rot += dt * 0.35 * this.speed + (this.bootStart ? dt * 2.4 * (1 - this.bootK(now)) : 0);
     this.smoothLevel += (this.level - this.smoothLevel) * Math.min(1, dt * 12);
     this.px += (this.tpx - this.px) * Math.min(1, dt * 6); this.py += (this.tpy - this.py) * Math.min(1, dt * 6);
     this.draw(now, dt);
@@ -154,7 +178,10 @@ export class MikeCoreEngine {
     // subtle parallax: the core leans toward the cursor
     const parX = this.px > -900 ? (this.px - this.w / 2) / this.w * 14 : 0;
     const parY = this.px > -900 ? (this.py - this.h / 2) / this.h * 10 : 0;
-    const cx = this.cx + parX, cy = this.cy + parY, R = this.R * (1 + Math.sin(this.time * 1.4) * 0.018 + this.smoothLevel * 0.05);
+    const bk = this.bootK(now);
+    const grow = bk >= 1 ? 1 : easeOutBack(clamp01((bk - 0.16) / 0.4));
+    const cx = this.cx + parX, cy = this.cy + parY, R = this.R * (1 + Math.sin(this.time * 1.4) * 0.018 + this.smoothLevel * 0.05) * Math.max(0.002, grow);
+    if (bk < 1 && bk >= 0.16 && !this.bootBurst) { this.bootBurst = true; this.burst(cx, cy, HUE.white, 70); this.burst(cx, cy, HUE.cyan, 50); }
 
     // cursor-following glow
     if (this.px > -900) {
@@ -164,11 +191,17 @@ export class MikeCoreEngine {
     }
     ctx.globalCompositeOperation = "lighter";
     this.drawField(dt);
+    if (bk < 1) this.drawBoot(bk, cx, cy);
     if (this.state === "scanning" || this.tokens.length) this.drawScan(now, dt, cx, cy, R);
-    this.drawOrbits(cx, cy, R);
-    this.drawSphere(cx, cy, R);
-    this.drawWaveform(cx, cy, R);
-    this.drawLabels(cx, cy, R);
+    ctx.globalAlpha = stage(bk, 0.3, 0.3);
+    if (ctx.globalAlpha > 0) this.drawOrbits(cx, cy, R, bk);
+    ctx.globalAlpha = 1;
+    if (grow > 0.01) this.drawSphere(cx, cy, R);
+    ctx.globalAlpha = stage(bk, 0.5, 0.25);
+    if (ctx.globalAlpha > 0) this.drawWaveform(cx, cy, R);
+    ctx.globalAlpha = stage(bk, 0.8, 0.2);
+    if (ctx.globalAlpha > 0) this.drawLabels(cx, cy, R);
+    ctx.globalAlpha = 1;
     if (this.candles.length && (this.state === "analyzing" || this.state === "validating" || this.state === "complete" || this.state === "alert" || this.state === "no_trade")) this.drawHoloChart(cx, cy, R, dt);
     this.drawLayers(now, cx, cy, R);
     this.drawRings(now, cx, cy, R);
@@ -176,6 +209,47 @@ export class MikeCoreEngine {
     this.drawFlyers(dt);
     this.drawBursts(dt);
     ctx.globalCompositeOperation = "source-over";
+  }
+
+  /** The ignition: pinpoint + lens streak, a sweeping scanline, and a reticle locking on. */
+  private drawBoot(bk: number, cx: number, cy: number) {
+    const { ctx } = this;
+    // pinpoint of light with a horizontal lens streak
+    const ignite = clamp01(bk / 0.16), fade = 1 - clamp01((bk - 0.2) / 0.25);
+    if (fade > 0) {
+      const r = 4 + 46 * easeOut(ignite);
+      let g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, `rgba(255,255,255,${0.95 * fade})`); g.addColorStop(0.35, `rgba(165,243,252,${0.6 * fade})`); g.addColorStop(1, "rgba(34,211,238,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+      const len = this.w * 0.42 * easeOut(ignite);
+      g = ctx.createLinearGradient(cx - len, cy, cx + len, cy);
+      g.addColorStop(0, "rgba(34,211,238,0)"); g.addColorStop(0.5, `rgba(224,251,255,${0.8 * fade})`); g.addColorStop(1, "rgba(34,211,238,0)");
+      ctx.fillStyle = g; ctx.fillRect(cx - len, cy - 1, len * 2, 2);
+      ctx.fillStyle = `rgba(103,232,249,${0.12 * fade})`; ctx.fillRect(cx - len * 0.6, cy - 6, len * 1.2, 12);
+    }
+    // scanline sweeping top → bottom
+    const sk = clamp01(bk / 0.42);
+    if (sk < 1) {
+      const y = this.h * easeOut(sk);
+      const g = ctx.createLinearGradient(0, y - 60, 0, y + 2);
+      g.addColorStop(0, "rgba(34,211,238,0)"); g.addColorStop(1, `rgba(103,232,249,${0.22 * (1 - sk)})`);
+      ctx.fillStyle = g; ctx.fillRect(0, y - 60, this.w, 62);
+      ctx.fillStyle = `rgba(224,251,255,${0.55 * (1 - sk)})`; ctx.fillRect(0, y, this.w, 1);
+    }
+    // reticle brackets spin in and lock onto the core
+    const rk = clamp01((bk - 0.08) / 0.62), ra = Math.sin(Math.PI * clamp01((bk - 0.08) / 0.9));
+    if (ra > 0) {
+      const d = this.R * (3.4 - 1.9 * easeOut(rk)), rot = (1 - easeOut(rk)) * 2.4, arm = this.R * 0.35;
+      ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
+      ctx.strokeStyle = `rgba(165,243,252,${0.75 * ra})`; ctx.lineWidth = 1.5;
+      for (let q = 0; q < 4; q++) {
+        ctx.rotate(Math.PI / 2);
+        ctx.beginPath(); ctx.moveTo(d - arm, -d); ctx.lineTo(d, -d); ctx.lineTo(d, -d + arm); ctx.stroke();
+      }
+      ctx.restore();
+      ctx.strokeStyle = `rgba(103,232,249,${0.3 * ra})`; ctx.setLineDash([2, 6]);
+      ctx.beginPath(); ctx.arc(cx, cy, d * 1.05, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    }
   }
 
   private drawField(dt: number) {
@@ -228,17 +302,20 @@ export class MikeCoreEngine {
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R * 0.42 * beat, 0, TAU); ctx.fill();
   }
 
-  private drawOrbits(cx: number, cy: number, R: number) {
+  private drawOrbits(cx: number, cy: number, R: number, bk = 1) {
     const { ctx } = this;
     const tilts = [0.28, 0.42, -0.3, 0.6];
     ctx.lineWidth = 1;
     tilts.forEach((tilt, i) => {
+      // during boot each orbit draws itself in, one after another
+      const sweep = bk >= 1 ? 1 : clamp01((bk - 0.3 - i * 0.08) / 0.24);
+      if (sweep <= 0) return;
       const rr = R * (1.35 + i * 0.22);
       ctx.save(); ctx.translate(cx, cy); ctx.rotate(tilt + this.rot * (i % 2 ? -0.25 : 0.18));
       ctx.setLineDash(i % 2 ? [2, 7] : [30, 10, 4, 10]);
       ctx.lineDashOffset = -this.rot * 60 * (i + 1);
       ctx.strokeStyle = `rgba(103,232,249,${this.state === "no_trade" ? 0.1 : 0.2})`;
-      ctx.beginPath(); ctx.ellipse(0, 0, rr, rr * 0.32, 0, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0, 0, rr, rr * 0.32, 0, 0, TAU * sweep); ctx.stroke();
       ctx.restore();
     });
     ctx.setLineDash([]);
@@ -246,7 +323,8 @@ export class MikeCoreEngine {
     const tr = R * 1.18;
     ctx.strokeStyle = "rgba(186,230,253,0.28)";
     ctx.beginPath();
-    for (let k = 0; k < 120; k++) {
+    const ticks = bk >= 1 ? 120 : Math.floor(120 * clamp01((bk - 0.42) / 0.3));
+    for (let k = 0; k < ticks; k++) {
       const a = (k / 120) * TAU + this.rot * 0.2;
       const len = k % 10 === 0 ? 9 : k % 5 === 0 ? 5 : 2.5;
       ctx.moveTo(cx + Math.cos(a) * tr, cy + Math.sin(a) * tr);
@@ -482,5 +560,11 @@ export class MikeCoreEngine {
     this.bursts = this.bursts.filter((b) => b.life < b.max);
   }
 }
+
+function clamp01(t: number) { return t < 0 ? 0 : t > 1 ? 1 : t; }
+/** Fade-in of a layer during boot: starts at `from`, fully visible `len` later. */
+function stage(bk: number, from: number, len: number) { return bk >= 1 ? 1 : clamp01((bk - from) / len); }
+function easeOutBack(t: number) { const c1 = 1.70158, c3 = c1 + 1; return t <= 0 ? 0 : 1 + c3 * (t - 1) ** 3 + c1 * (t - 1) ** 2; }
+function easeOut(t: number) { return 1 - (1 - t) ** 3; }
 
 function easeInOut(t: number) { return t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2; }

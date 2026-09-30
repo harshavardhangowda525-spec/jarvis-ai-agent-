@@ -18,6 +18,7 @@ import { MikeChart, DEFAULT_TOGGLES, type ChartToggles, type LevelKey, type Leve
 import { TradeSheet, type SheetPhase } from "./trade-sheet";
 import { IntelStream, RegimeOrb, Ticker, MarketPanel, AlignmentTable, Connectors, type StreamItem, type TickerItem, type MarketSummary } from "./widgets";
 import { BacktestPanel, JournalPanel, AlertsPanel, RiskPanel } from "./panels";
+import { BootOverlay, type FeedStatus } from "./boot-overlay";
 
 /**
  * MIKE Intelligence Center. Everything on screen comes from real market data
@@ -35,6 +36,19 @@ const LAYERS = ["MARKET STRUCTURE", "TREND", "MOMENTUM", "VOLUME", "VOLATILITY",
 const DEACTIVATE = /\b(deactivate|close|exit|shut ?down|stand ?down)\b.*\bmike\b|^(back to|open|return to) jarvis\b/i;
 const short = (d: string) => d.replace("/USDT", "");
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const BOOT_MS = 3200;
+const prefersReduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+/** Panel entrance after the boot titles: slides in from its side, then clears the transform. */
+function fly(booted: boolean, from: "left" | "right" | "up" | "down", delayMs: number): React.CSSProperties {
+  const off = { left: "translateX(-56px)", right: "translateX(56px)", up: "translateY(-28px)", down: "translateY(36px)" }[from];
+  return {
+    opacity: booted ? 1 : 0,
+    transform: booted ? "none" : `${off} scale(0.98)`,
+    filter: booted ? "none" : "blur(6px)",
+    transition: "opacity .7s ease, transform .9s cubic-bezier(.2,.8,.2,1), filter .7s ease",
+    transitionDelay: booted ? `${delayMs}ms` : "0ms",
+  };
+}
 
 interface ScanRowDTO { asset: { display: string; symbol: string }; price: number | null; change24hPct: number | null; bias: "bullish" | "bearish" | "neutral" | null; regimeLabel: string | null; events: string[]; eventLabels: string[]; freshness: string; interest: number; spark: number[]; volumeRatio: number | null }
 interface ActiveSetup { id: string; asset: string; direction: string | null; confidence: number; status: string }
@@ -72,6 +86,12 @@ export function MikeConsole() {
   const [reply, setReply] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [showChartOpts, setShowChartOpts] = useState(false);
+  // power-up sequence: the core boots, titles run, then the panels fly in
+  const [booted, setBooted] = useState(false);
+  const [showBoot, setShowBoot] = useState(true);
+  const [feeds, setFeeds] = useState<FeedStatus>({ state: "pending" });
+  const [bootTop, setBootTop] = useState<number | null>(null);
+  useEffect(() => { if (prefersReduced()) { setBooted(true); setShowBoot(false); } }, []);
   const seq = useRef(0);
   const runId = useRef(0);
 
@@ -98,6 +118,13 @@ export function MikeConsole() {
     const move = (ev: PointerEvent) => e.pointer(ev.clientX, ev.clientY);
     window.addEventListener("pointermove", move);
     e.start();
+    e.boot(BOOT_MS);
+    // boot titles sit just below the core's rings, never on top of it
+    const a = anchorRef.current?.getBoundingClientRect();
+    if (a) {
+      const R = Math.min(a.width, a.height) * 0.2;
+      setBootTop(Math.max(0, Math.min(a.top + a.height / 2 + R * 1.75, window.innerHeight - 330)));
+    }
     return () => { e.destroy(); ro.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); window.removeEventListener("pointermove", move); };
   }, []);
   useEffect(() => { engine.current?.setState(coreState); }, [coreState]);
@@ -113,6 +140,15 @@ export function MikeConsole() {
   }, [voiceStarted]);
   async function enableVoice() { const ok = await voice.init(); if (ok) setVoiceStarted(true); return ok; }
   useResumeVoice(enableVoice);
+  // boot finished → MIKE announces itself once
+  const announced = useRef(false);
+  useEffect(() => {
+    if (!booted || announced.current) return;
+    announced.current = true;
+    push("MIKE ONLINE", "ok");
+    const t = setTimeout(() => speak("MIKE online. Market intelligence ready."), 350);
+    return () => clearTimeout(t);
+  }, [booted, push, speak]);
 
   const showAnalysisRef = useRef<(a: MikeAnalysis, animate: boolean) => Promise<void>>(async () => {});
   const agent = useAgent({
@@ -183,11 +219,13 @@ export function MikeConsole() {
       const first = set.watchlist[0] ?? "BTC";
       setAssetQ(first);
       void loadChart(first, set.defaultTimeframe);
+      // the boot log reports how the market feeds really came up
+      const m = await refreshMarket(false);
+      setFeeds(m && m.summary.withData > 0 ? { state: "ok", withData: m.summary.withData, total: m.summary.assets } : { state: "down" });
       const j = await fetch("/api/mike/journal?limit=5&insights=0").then((r) => r.json()).catch(() => null);
       for (const x of [...(j?.data?.signals ?? [])].reverse()) {
         push(`${x.asset} ${TF_LABEL[x.timeframe as Timeframe] ?? x.timeframe} · ${x.decision === "setup" ? `${String(x.direction).toUpperCase()} SETUP ${x.confidence}` : "NO TRADE"} · ${x.status.replace("_", " ")}`, x.decision === "setup" ? "ok" : "warn", new Date(x.createdAt).getTime());
       }
-      await refreshMarket(false);
     })();
     const iv = setInterval(() => { if (!document.hidden) void refreshMarket(false); }, 90_000);
     return () => clearInterval(iv);
@@ -373,7 +411,7 @@ export function MikeConsole() {
 
       <div className="relative z-10 flex min-h-[calc(100vh-4rem)] flex-col xl:h-[calc(100vh-4rem)]">
         {/* ---- command bar ---- */}
-        <div className="flex flex-wrap items-center gap-2 px-3 pt-3 sm:px-4">
+        <div className="flex flex-wrap items-center gap-2 px-3 pt-3 sm:px-4" style={fly(booted, "up", 0)}>
           <div className="mr-2 leading-none">
             <div className="text-2xl font-bold tracking-[0.35em] text-white" style={{ textShadow: "0 0 18px rgba(34,211,238,.6)" }}>MIKE</div>
             <div className="hud-label text-[8px] tracking-[0.25em] text-cyan-300/70">MARKET INTELLIGENCE &amp; KNOWLEDGE ENGINE</div>
@@ -407,7 +445,7 @@ export function MikeConsole() {
         {/* ---- main three-part composition ---- */}
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 p-3 sm:px-4 xl:grid-cols-[290px_minmax(0,1fr)_400px]">
           {/* LEFT — market intelligence */}
-          <div className="mike-scroll order-3 flex min-h-0 flex-col gap-3 xl:order-1 xl:overflow-y-auto">
+          <div className="mike-scroll order-3 flex min-h-0 flex-col gap-3 xl:order-1 xl:overflow-y-auto" style={fly(booted, "left", 120)}>
             <div className="mike-glass rounded-xl p-3">
               <div className="hud-label mb-2 text-[9px] tracking-[0.25em] text-cyan-300/80">MARKET INTELLIGENCE</div>
               <RegimeOrb regime={regime?.id ?? null} volatility={regime?.volatility ?? null} label={regime?.label ?? null} />
@@ -422,15 +460,15 @@ export function MikeConsole() {
           {/* CENTER — MIKE core + chart */}
           <div className="order-1 flex min-h-0 flex-col gap-3 xl:order-2">
             <div ref={anchorRef} className="relative flex h-[40vh] min-h-[260px] items-end justify-center xl:h-auto xl:flex-1">
-              <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 text-center">
+              <div className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 text-center" style={fly(booted, "up", 300)}>
                 <div className="hud-label text-[9px] tracking-[0.4em] text-cyan-300/60">MIKE AI CORE</div>
               </div>
-              <div className="pointer-events-none mb-2 text-center">
+              <div className="pointer-events-none mb-2 text-center" style={fly(booted, "down", 380)}>
                 <div key={vState ?? coreState} className={cn("mike-in font-mono text-xs font-bold tracking-[0.3em]", coreState === "no_trade" ? "text-amber-200" : coreState === "alert" ? "text-white" : "text-cyan-200")} style={{ textShadow: "0 0 12px rgba(34,211,238,.6)" }}>{vState ?? CORE_TEXT[coreState]}</div>
                 {chartMeta && <div className="mt-0.5 font-mono text-[10px] text-slate-400">{chartMeta.asset} · {TF_LABEL[chartMeta.tf]} · {chartMeta.price != null ? fmtPrice(chartMeta.price) : "—"}</div>}
               </div>
             </div>
-            <div className="mike-glass relative h-[330px] shrink-0 rounded-xl p-2">
+            <div className="mike-glass relative h-[330px] shrink-0 rounded-xl p-2" style={fly(booted, "down", 240)}>
               <div className="flex items-center justify-between px-1 pb-1">
                 <div className="flex items-center gap-2">
                   <span className="hud-label text-[9px] tracking-[0.2em] text-cyan-300/80">CHART</span>
@@ -463,7 +501,7 @@ export function MikeConsole() {
           </div>
 
           {/* RIGHT — the large trade sheet */}
-          <div className="mike-scroll order-2 flex min-h-0 flex-col gap-3 xl:order-3 xl:overflow-y-auto xl:pr-1">
+          <div className="mike-scroll order-2 flex min-h-0 flex-col gap-3 xl:order-3 xl:overflow-y-auto xl:pr-1" style={fly(booted, "right", 180)}>
             <div ref={sheetRef}><TradeSheet analysis={analysis} phase={phase} alertKey={alertKey} rowRef={setRow} onExplain={analysis ? explain : undefined} /></div>
             <AlignmentTable a={analysis} />
             {analysis?.external && (
@@ -486,7 +524,7 @@ export function MikeConsole() {
         </div>
 
         {/* ---- MIKE line + text command ---- */}
-        <div className="flex flex-wrap items-center gap-2 px-3 pb-2 sm:px-4">
+        <div className="flex flex-wrap items-center gap-2 px-3 pb-2 sm:px-4" style={fly(booted, "down", 420)}>
           <form onSubmit={(e) => { e.preventDefault(); handle(input); setInput(""); }} className="mike-glass flex min-w-[260px] flex-1 items-center gap-2 rounded-lg px-2 py-1">
             <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="“Mike, analyze NIFTY on the 4 hour” · “find high-confidence setups” · “why is this a no-trade?”" className="flex-1 bg-transparent py-1 text-xs text-white outline-none placeholder:text-slate-500" aria-label="Command MIKE" />
             <button type="submit" aria-label="Send" className="text-cyan-200 hover:text-white">{agent.streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
@@ -499,8 +537,10 @@ export function MikeConsole() {
         </div>
 
         {/* ---- global market ticker ---- */}
-        <div className="border-t border-cyan-400/10 bg-slate-950/40"><Ticker items={ticker} /></div>
+        <div className="border-t border-cyan-400/10 bg-slate-950/40" style={fly(booted, "down", 500)}><Ticker items={ticker} /></div>
       </div>
+
+      {showBoot && <BootOverlay durationMs={BOOT_MS} feeds={feeds} top={bootTop} onExit={() => setBooted(true)} onGone={() => setShowBoot(false)} />}
 
       {modal?.kind === "backtest" && <BacktestPanel asset={modal.asset ?? (analysis ? short(analysis.asset.display) : assetQ)} timeframe={modal.tf ?? tf} autoRun={modal.auto} onClose={() => setModal(null)} onResult={(r) => { push(`BACKTEST · ${short(r.asset.display)} · ${r.totalTrades} TRADES · ${r.winRate}%`, "info"); speak(`Backtest done: ${r.totalTrades} trades, win rate ${r.winRate} percent, expectancy ${r.expectancyR} R. These are backtest results, not live performance.`); }} />}
       {modal?.kind === "journal" && <JournalPanel onClose={() => setModal(null)} />}
