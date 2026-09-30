@@ -21,6 +21,8 @@ import { resolveIgCreds } from "@/lib/ev/instagram";
 import { darwinConfigured } from "@/lib/ev/darwin";
 import { capabilities } from "@/lib/env";
 import { buildDarwinSystemPrompt } from "@/lib/darwin/prompt";
+import { buildMikeSystemPrompt } from "@/lib/mike/prompt";
+import { loadSettings as loadMikeSettings } from "@/lib/mike/analyze";
 import { emailChannelReady } from "@/lib/darwin/email";
 
 export type AgentEvent =
@@ -63,7 +65,7 @@ export interface AgentInput {
   /** Per-user preferred primary AI provider (from Settings); overrides env default. */
   preferredProvider?: string | null;
   /** Which internal agent is driving: "ev" (marketing) or "darwin" (lead-gen/CRM). */
-  agent?: "ev" | "darwin";
+  agent?: "ev" | "darwin" | "mike";
 }
 
 const MAX_STEPS = 8;
@@ -84,6 +86,7 @@ export async function* runAgent(
 
   const isEv = input.agent === "ev";
   const isDarwin = input.agent === "darwin";
+  const isMike = input.agent === "mike";
 
   // "Remember that …" / "From now on …" is saved straight away, so it's kept
   // even if the model (especially a small local one) forgets to call the tool.
@@ -138,6 +141,20 @@ export async function* runAgent(
       discoveryAvailable: !!env.geoapifyApiKey,
       emailAvailable: emailReady,
     });
+  } else if (isMike) {
+    // MIKE's market-analysis brain — every number must come from a tool result.
+    const [settings, counts] = await Promise.all([
+      loadMikeSettings(input.userId),
+      db.mikeSignal.groupBy({ by: ["status"], where: { userId: input.userId }, _count: true }).catch(() => []),
+    ]);
+    const c = Object.fromEntries(counts.map((r) => [r.status, r._count]));
+    system = buildMikeSystemPrompt({
+      userDisplayName: input.displayName,
+      timezone: input.timezone,
+      newsAvailable: capabilities.search,
+      settingsSummary: `Risk settings: ${settings.accountSize ? `account ${settings.accountSize} ${settings.currency}, ` : "account size not set, "}${settings.riskPct}% per trade, ${settings.maxDailyRiskPct}% max per day, minimum confidence ${settings.minConfidence}, minimum R:R 1:${settings.minRiskReward}. Default timeframe ${settings.defaultTimeframe}. Watchlist: ${settings.watchlist.join(", ")}.`,
+      journalSummary: `Journal: ${(c.open ?? 0) + (c.triggered ?? 0)} open setup(s), ${c.won ?? 0} won, ${c.lost ?? 0} lost, ${c.expired ?? 0} expired, ${c.no_trade ?? 0} no-trade decisions.`,
+    });
   } else {
     system = buildSystemPrompt({
       assistantName: input.assistantName,
@@ -146,21 +163,21 @@ export async function* runAgent(
       memories: await memoriesLookup,
     });
   }
-  if (isEv || isDarwin) {
-    // EV and DARWIN share JARVIS's memory of the user (preferences, business…).
+  if (isEv || isDarwin || isMike) {
+    // EV, DARWIN and MIKE share JARVIS's memory of the user (preferences, business…).
     system += memoryPromptBlock(await memoriesLookup,
       `# What you know about ${input.displayName || "the user"} (shared memory with JARVIS — use it to personalise; never contradict it)`);
   }
   system += memoryNote;
 
   const brain = await brainLookup;
-  const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : "jarvis", brain, input.preferredProvider);
+  const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : "jarvis", brain, input.preferredProvider);
   if (!brainPick.configs.length) {
     yield { type: "error", message: brainPick.missing ?? "No AI provider is configured." };
     return;
   }
   const configs = brainPick.configs;
-  const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : undefined);
+  const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {
     userId: input.userId,
@@ -244,7 +261,7 @@ export async function* runAgent(
   }
 }
 
-const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN" } as const;
+const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE" } as const;
 
 const PROVIDER_NAMES: Record<string, string> = { groq: "Groq", gemini: "Gemini", ollama: "your PC brain (Ollama)", cerebras: "Cerebras", openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude" };
 const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.groq.com)", gemini: "GEMINI_API_KEY (free at aistudio.google.com/apikey)" };
@@ -264,7 +281,7 @@ export function agentConfigs(
   brain: BrainEndpoint | null,
   preferred?: string | null,
 ): { configs: AiConfig[]; missing?: string } {
-  const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : env.jarvisProvider;
+  const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : agent === "mike" ? env.mikeProvider : env.jarvisProvider;
   const picks = pick.split(/[\s,>]+/).filter(Boolean);
   if (picks.includes("auto")) {
     try { return { configs: getAiConfigs((agent === "jarvis" && preferred) || undefined, brain) }; }
@@ -646,7 +663,7 @@ function aiErrorMessage(err: unknown): string {
 
 /** Remember meaningful tool actions (and every failure) in the activity history. */
 async function recordToolActivity(userId: string, tool: { name: string; agentScope?: string }, input: unknown, ok: boolean, summary: string | null, error: string | null) {
-  const agent = tool.agentScope === "ev" ? "EV" : tool.agentScope === "darwin" ? "DARWIN" : "JARVIS";
+  const agent = tool.agentScope === "ev" ? "EV" : tool.agentScope === "darwin" ? "DARWIN" : tool.agentScope === "mike" ? "MIKE" : "JARVIS";
   const ev = describeToolEvent(tool.name, (input ?? {}) as Record<string, unknown>, agent, ok, summary, error);
   if (ev) await recordActivity(userId, { ...ev, agent, source: "tool", metadata: { tool: tool.name } });
 }

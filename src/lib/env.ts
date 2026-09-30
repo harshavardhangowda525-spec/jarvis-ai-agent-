@@ -89,6 +89,7 @@ export const env = {
   // Gemini as the backup when Groq is rate-limited or down).
   evProvider: read("EV_PROVIDER").toLowerCase() || "groq,gemini",
   darwinProvider: read("DARWIN_PROVIDER").toLowerCase() || "groq,gemini",
+  mikeProvider: read("MIKE_PROVIDER").toLowerCase() || "groq,gemini",
   // Reasoning models (gpt-oss) think before answering; "low" keeps replies quick.
   reasoningEffort: read("AI_REASONING_EFFORT").toLowerCase() || "low",
 
@@ -114,6 +115,8 @@ export const env = {
   // DARWIN voice — deep, analytical operator. Defaults to "Charlie" (Australian
   // male). Override with DARWIN_VOICE_ID.
   darwinVoiceId: read("DARWIN_VOICE_ID") || "IKne3meq5aSn9XLyUdCD",
+  // MIKE voice — calm, precise market analyst. Defaults to "Brian". Override with MIKE_VOICE_ID.
+  mikeVoiceId: read("MIKE_VOICE_ID") || "nPczCjzI2devNBz1zQrb",
   elevenLabsModelId: read("ELEVENLABS_MODEL_ID") || "eleven_turbo_v2_5",
   elevenLabsSttModelId: read("ELEVENLABS_STT_MODEL_ID") || "scribe_v1",
 

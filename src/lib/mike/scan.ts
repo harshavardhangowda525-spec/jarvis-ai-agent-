@@ -106,7 +106,7 @@ export function summarize(rows: ScanRow[]): ScanResult["summary"] {
   const vols = [...live].filter((r) => (r.volumeRatio ?? 0) >= 1.5).sort((a, b) => (b.volumeRatio ?? 0) - (a.volumeRatio ?? 0)).slice(0, 4);
   return {
     assets: rows.length, withData: live.length,
-    status: live.length === 0 ? "LIVE DATA UNAVAILABLE" : live.every((r) => r.freshness === "live") ? "LIVE" : live.some((r) => r.freshness === "live") ? "LIVE + DELAYED FEEDS" : "DELAYED / CLOSED FEEDS",
+    status: live.length === 0 ? "LIVE DATA UNAVAILABLE" : live.every((r) => r.freshness === "live") ? "LIVE" : live.some((r) => r.freshness === "live") ? "LIVE / DELAYED" : "DELAYED / CLOSED",
     trend, volatility, sentiment,
     topMovers: movers.map((r) => `${r.asset.display} ${r.change24hPct! > 0 ? "+" : ""}${r.change24hPct!.toFixed(2)}%`),
     highVolume: vols.map((r) => `${r.asset.display} ${r.volumeRatio!.toFixed(1)}× avg`),

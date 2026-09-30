@@ -43,6 +43,7 @@ registering a **tool** — the agent loop never changes.
 - [EV daily content](#ev-daily-content)
 - [Gesture control](#gesture-control)
 - [DARWIN daily lead search](#darwin-daily-lead-search)
+- [MIKE — market intelligence](#mike--market-intelligence)
 
 ---
 
@@ -888,3 +889,71 @@ nothing else — if they're all offline or out of quota, the agent says so
 instead of quietly answering with another model.
 `auto` restores the old behaviour: every configured provider, fastest first,
 with automatic fallback.
+
+
+## MIKE — market intelligence
+
+MIKE (**Market Intelligence & Knowledge Engine**) is JARVIS's trading-analysis
+specialist: a decision-support system that analyses real market data and tells
+you when the evidence lines up — and, just as often, that it doesn't. It never
+claims an accuracy figure, never promises profit and never places a trade.
+
+**Open it:** say or type *"Activate Mike"* in JARVIS (or pick **MIKE** in the
+nav, `/dashboard/mike`). Say *"back to JARVIS"* to leave.
+
+**Data (no key needed):**
+
+| Market | Source | Shown as |
+|---|---|---|
+| Crypto | Binance public market data (Yahoo `BTC-USD` if Binance is blocked in your region) | `LIVE` |
+| Indices, stocks, forex, commodities, ETFs, futures | Yahoo Finance chart feed | `DELAYED` (free feed, may lag), `MARKET CLOSED` or `STALE` |
+
+If a feed can't be reached MIKE shows **LIVE DATA UNAVAILABLE** and makes no
+analysis. News context is optional: with `SEARCH_API_KEY` (Tavily) MIKE reads
+the last 3 days of headlines and shows them separately as *EXTERNAL
+INFORMATION*; without it the analysis is price data only and says so.
+
+**What an analysis does**
+
+1. Fetches the setup timeframe plus up to three higher timeframes and one lower
+   (e.g. 15M → 1D, 4H, 1H, 15M, 5M).
+2. Analyses each: HH/HL/LH/LL structure, break of structure / change of
+   character, support/resistance, liquidity zones, EMA 20/50/200, SMA, RSI,
+   MACD, ATR, ADX, Bollinger Bands, VWAP, OBV, Stochastic, Fibonacci — and the
+   market regime (trend strength, volatility, breakout, reversal).
+3. Runs 8 independent confirmations (structure, trend, momentum, volume,
+   volatility, support/resistance, multi-timeframe, news context).
+4. Scores **confidence 0–100** as a transparent weighted sum of those checks
+   (90+ very strong · 80+ strong · 70+ moderate · 60+ weak · below 60 no-trade
+   zone). Confidence measures evidence quality — **it is not a win probability**.
+5. Either builds a trade sheet (entry zone, structural stop, 3 targets, R:R,
+   invalidation, position size) or says **NO HIGH-CONVICTION SETUP** with the
+   reasons (timeframe conflict, weak momentum, poor R:R, abnormal volatility,
+   stale data, …).
+
+Position size comes only from your risk settings and the stop distance —
+never from confidence. Correlated open setups halve the risk and the daily
+limit caps it. Set the account size in **Risk settings** (shield icon).
+
+**Also in MIKE:** a market scanner with a live market panel and ticker; a
+**backtester** that replays strategies bar by bar with no look-ahead
+(next-bar entries, conservative stops, fees) and labels everything
+*BACKTEST RESULTS*; a **signal journal** that records every analysis,
+resolves setups from the candles that followed (MFE/MAE, outcome) and adds a
+self-audit without ever editing the original; and **alerts** (price levels,
+breakouts, volume spikes, RSI, trend reversals, new validated setups) that
+only notify you. Alerts are checked while MIKE is open, every 5 minutes by
+`npm run local`, and once a day by the Vercel cron (`/api/cron/mike`).
+
+**Voice:** "Mike, scan the market" · "Mike, analyze Bitcoin on the 4 hour" ·
+"Mike, find high-confidence setups" · "Mike, explain this chart" ·
+"Mike, why is this a no-trade?" · "Mike, compare BTC and ETH" ·
+"Mike, backtest this strategy". JARVIS can also ask MIKE directly
+("how are the markets?") and gets a structured summary.
+
+> Trading involves substantial risk. Analytical confidence does not guarantee profit.
+
+Env (all optional): `MIKE_PROVIDER` (default `groq,gemini`), `MIKE_VOICE_ID`,
+`SEARCH_API_KEY` for news. The new `MikeSignal` / `MikeAlert` tables come with
+migration `0011_mike`: your next Vercel deploy applies it (the PC uses the same
+database). With a separate local database, run `npm run db:migrate`.

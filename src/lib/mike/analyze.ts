@@ -159,6 +159,15 @@ function chartData(series: Series, p: TfAnalysis, n: number, now: number): Chart
 
 async function journal(userId: string, a: MikeAnalysis): Promise<string> {
   const s = a.setup;
+  // The same setup analysed again while it's still open isn't a new trade (it would
+  // double-count open risk) — point at the existing journal entry instead.
+  if (a.decision === "setup" && s) {
+    const same = await getDb().mikeSignal.findFirst({
+      where: { userId, symbol: a.asset.symbol, timeframe: a.timeframe, decision: "setup", direction: s.direction, status: { in: ["open", "triggered"] } },
+      select: { id: true },
+    });
+    if (same) return same.id;
+  }
   const row = await getDb().mikeSignal.create({
     data: {
       userId, asset: a.asset.display, symbol: a.asset.symbol, provider: a.asset.provider, assetGroup: a.asset.group,

@@ -42,7 +42,7 @@ interface UseAgentOptions {
 
 /** Per-send options. `agent` routes the turn through a specific internal brain. */
 export interface SendOptions {
-  agent?: "jarvis" | "ev" | "darwin";
+  agent?: "jarvis" | "ev" | "darwin" | "mike";
 }
 
 let idc = 0;

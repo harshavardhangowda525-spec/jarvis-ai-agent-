@@ -413,6 +413,12 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Opening DARWIN. Lead systems online.");
     setTimeout(() => router.push("/dashboard/darwin"), 1000);
   }, [router, voice, voiceStarted]);
+  const launchMike = useCallback(() => {
+    // MIKE takes over the trading-analysis interface.
+    logActivity({ category: "agent", agent: "MIKE", action: "Activated MIKE", importance: 1 });
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Activating MIKE. Market intelligence online.");
+    setTimeout(() => router.push("/dashboard/mike"), 900);
+  }, [router, voice, voiceStarted]);
   const openHumanoid = useCallback(() => {
     logActivity({ category: "agent", agent: "HUMANOID", action: "Opened Humanoid View", importance: 1 });
     setHumanoidPhase("in");
@@ -684,6 +690,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           .catch(() => { agent.appendLocalExchange(t, "I couldn't reach the server."); say("I couldn't reach the server."); });
         return;
       }
+      // "Activate Mike", "open MIKE", "Mike online" → MIKE takes over (trading intelligence).
+      if (/^mike[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+mike\b|\bmike[,\s]+(online|wake up|come online|take over)\b/.test(low)) {
+        launchMike();
+        return;
+      }
       // "DARWIN", "open DARWIN", "activate DARWIN" → open the lead-gen/CRM console.
       if (/^darwin[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+darwin\b|\bdarwin[,\s]+(online|wake up|come online)\b/.test(low)) {
         launchDarwin();
@@ -742,7 +753,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchUltron, launchDarwin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase, evToday, flashEv, voice, voiceStarted]);
+  }, [agent, sleep, launchUltron, launchDarwin, launchMike, openHumanoid, closeHumanoid, openEv, closeEv, evPhase, evToday, flashEv, voice, voiceStarted]);
 
   // Voice was on in the agent you just left → switch it back on here.
   const resumingVoice = useResumeVoice(enableVoice);

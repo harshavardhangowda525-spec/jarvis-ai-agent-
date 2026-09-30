@@ -562,3 +562,67 @@ body {
 .jv-grab-card small { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: rgba(165,243,252,.7); }
 .jv-grab-undo { animation: dw-pop-in .45s cubic-bezier(.2,.9,.25,1.15) both; }
 @media (prefers-reduced-motion: reduce) { .jv-bin-float, .jv-bin-scan { animation: none !important; } }
+
+/* ---- MIKE — Market Intelligence & Knowledge Engine -------------------------
+   Transform/opacity-only animations (GPU-composited). */
+.mike-bg {
+  background:
+    radial-gradient(1200px 700px at 50% 38%, rgba(8, 47, 73, 0.55), transparent 70%),
+    radial-gradient(900px 600px at 85% 90%, rgba(30, 58, 138, 0.18), transparent 70%),
+    linear-gradient(180deg, #02040a 0%, #030712 55%, #01030a 100%);
+}
+.mike-grid {
+  background-image:
+    linear-gradient(rgba(56, 189, 248, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at 50% 45%, black 30%, transparent 80%);
+}
+.mike-glass {
+  background: linear-gradient(160deg, rgba(15, 23, 42, 0.62), rgba(2, 6, 23, 0.5));
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 10px 40px -12px rgba(8, 145, 178, 0.35);
+  backdrop-filter: blur(10px) saturate(130%);
+  -webkit-backdrop-filter: blur(10px) saturate(130%);
+}
+.mike-glass-strong {
+  background: linear-gradient(165deg, rgba(15, 30, 50, 0.78), rgba(2, 8, 23, 0.7));
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(8, 145, 178, 0.08), 0 20px 60px -18px rgba(34, 211, 238, 0.45);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+.mike-btn { transition: transform .18s ease, box-shadow .25s ease, background-color .25s ease, border-color .25s ease; }
+.mike-btn:hover { box-shadow: 0 0 18px -2px rgba(34, 211, 238, 0.55); border-color: rgba(103, 232, 249, 0.6); }
+.mike-btn:active { transform: scale(0.97); }
+@keyframes mike-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes mike-row { from { opacity: 0; transform: translateX(-14px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes mike-outline { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes mike-glass-in { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes mike-alert { 0% { transform: translateX(0) scale(1); } 25% { transform: translateX(-10px) scale(1.025); } 60% { transform: translateX(-6px) scale(1.015); } 100% { transform: none; } }
+@keyframes mike-radial { from { transform: scale(0.6); opacity: 0.7; } to { transform: scale(1.8); opacity: 0; } }
+@keyframes mike-stream-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes mike-ping { 0% { transform: scale(0.6); opacity: .9; } 100% { transform: scale(2.4); opacity: 0; } }
+@keyframes mike-ticker { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes mike-dash { to { stroke-dashoffset: -24; } }
+@keyframes mike-reason { from { opacity: 0; transform: translateY(6px); letter-spacing: .3em; } to { opacity: 1; transform: none; letter-spacing: .12em; } }
+@keyframes mike-scanline { from { transform: translateY(-100%); } to { transform: translateY(100%); } }
+.mike-in { animation: mike-in .5s cubic-bezier(.2,.7,.2,1) both; }
+.mike-row { animation: mike-row .45s cubic-bezier(.2,.7,.2,1) both; }
+.mike-glass-in { animation: mike-glass-in .5s cubic-bezier(.2,.7,.2,1) both; }
+.mike-alert { animation: mike-alert 1.2s cubic-bezier(.2,.7,.2,1) both; }
+.mike-radial { animation: mike-radial 1.4s ease-out both; }
+.mike-stream-in { animation: mike-stream-in .5s cubic-bezier(.2,.7,.2,1) both; }
+.mike-ping { animation: mike-ping 1.1s ease-out both; }
+.mike-ticker { animation: mike-ticker 60s linear infinite; will-change: transform; }
+.mike-ticker:hover { animation-play-state: paused; }
+.mike-dash { animation: mike-dash 1.2s linear infinite; }
+.mike-reason { animation: mike-reason .6s cubic-bezier(.2,.7,.2,1) both; }
+.mike-scanline { animation: mike-scanline 2.4s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .mike-ticker, .mike-dash, .mike-scanline { animation: none; }
+  .mike-in, .mike-row, .mike-glass-in, .mike-alert, .mike-radial, .mike-stream-in, .mike-reason { animation-duration: 1ms; }
+}
+.mike-scroll { scrollbar-width: thin; scrollbar-color: rgba(103, 232, 249, 0.25) transparent; }
+.mike-scroll::-webkit-scrollbar { width: 5px; }
+.mike-scroll::-webkit-scrollbar-thumb { background: rgba(103, 232, 249, 0.25); border-radius: 4px; }

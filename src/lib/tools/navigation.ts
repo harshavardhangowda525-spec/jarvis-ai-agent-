@@ -9,11 +9,13 @@ const DESTINATIONS = {
   memory: "/dashboard/memory",
   settings: "/dashboard/settings",
   integrations: "/dashboard/settings#integrations",
+  mike: "/dashboard/mike",
+  darwin: "/dashboard/darwin",
 } as const;
 
 const schema = z.object({
   destination: z
-    .enum(["home", "chat", "tasks", "notes", "memory", "settings", "integrations"])
+    .enum(["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin"])
     .describe("Which section of the app to open."),
 });
 
@@ -26,14 +28,14 @@ export const navigationTool: ToolDefinition<z.infer<typeof schema>> = {
   name: "navigate",
   description:
     "Open a section of the JARVIS app for the user (home, chat, tasks, notes, " +
-    "memory, settings, integrations). Use when the user asks to go to or open a page.",
+    "memory, settings, integrations, mike = MIKE trading intelligence center, darwin = DARWIN lead generation). Use when the user asks to go to or open a page.",
   schema,
   inputSchema: {
     type: "object",
     properties: {
       destination: {
         type: "string",
-        enum: ["home", "chat", "tasks", "notes", "memory", "settings", "integrations"],
+        enum: ["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin"],
       },
     },
     required: ["destination"],

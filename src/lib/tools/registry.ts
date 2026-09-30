@@ -40,6 +40,7 @@ import { darwinOutreachTool } from "./darwin/outreach";
 import { darwinMessageTool } from "./darwin/message";
 import { darwinMapTool } from "./darwin/map";
 import { niosTool } from "./nios";
+import { mikeAnalyzeTool, mikeScanTool, mikeBacktestTool, mikeJournalTool, mikeAlertTool, mikeMarketSummaryTool } from "./mike";
 import { activityTool } from "./activity";
 
 const ALL_TOOLS: ToolDefinition[] = [
@@ -79,6 +80,12 @@ const ALL_TOOLS: ToolDefinition[] = [
   darwinMapTool as ToolDefinition,
   niosTool as ToolDefinition,
   activityTool as ToolDefinition,
+  mikeAnalyzeTool as ToolDefinition,
+  mikeScanTool as ToolDefinition,
+  mikeBacktestTool as ToolDefinition,
+  mikeJournalTool as ToolDefinition,
+  mikeAlertTool as ToolDefinition,
+  mikeMarketSummaryTool as ToolDefinition,
 ];
 
 /**
@@ -86,7 +93,7 @@ const ALL_TOOLS: ToolDefinition[] = [
  * the active agent. EV's marketing tools only appear when `agent` is "ev"; the
  * base JARVIS toolset never includes them (and never excludes anything it had).
  */
-export function availableTools(agent?: "ev" | "darwin"): ToolDefinition[] {
+export function availableTools(agent?: "ev" | "darwin" | "mike"): ToolDefinition[] {
   const googleReady = isProviderConfigured("google");
   return ALL_TOOLS.filter((t) => {
     // Agent-scoped tools (EV's) only surface for their agent.

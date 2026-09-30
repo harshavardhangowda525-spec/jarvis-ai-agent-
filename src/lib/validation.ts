@@ -40,7 +40,7 @@ export const agentRequestSchema = z.object({
   message: z.string().trim().min(1).max(8000),
   // Which internal agent should handle this turn. "ev" = marketing brain/tools,
   // "darwin" = lead-gen/CRM brain/tools; omitted/"jarvis" is the default assistant.
-  agent: z.enum(["jarvis", "ev", "darwin"]).optional(),
+  agent: z.enum(["jarvis", "ev", "darwin", "mike"]).optional(),
   // Client may confirm a previously-requested destructive action.
   confirm: z
     .object({
@@ -54,5 +54,5 @@ export const ttsSchema = z.object({
   text: z.string().trim().min(1).max(5000),
   // Which agent is speaking — selects a distinct voice. Defaults to JARVIS.
   // "edith" = ULTRON's former name (still accepted from open tabs).
-  agent: z.enum(["jarvis", "ultron", "edith", "ev", "darwin"]).optional(),
+  agent: z.enum(["jarvis", "ultron", "edith", "ev", "darwin", "mike"]).optional(),
 });
