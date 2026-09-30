@@ -218,6 +218,8 @@ export const env = {
   darwinDailyCategories: read("DARWIN_DAILY_CATEGORIES"),
   // strict (default): "no website" needs an independent confirmation (Google profile or web search).
   darwinDailyStrict: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY_STRICT")),
+  // only count leads with a public phone number (on by default — they're the ones you can call)
+  darwinDailyRequirePhone: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY_REQUIRE_PHONE")),
   // DARWIN emails every new lead that has a public email address — once, from
   // the user's own Gmail — as the leads come in. Also switchable in DARWIN.
   darwinAutoEmail: !/^(0|off|false|no)$/i.test(read("DARWIN_AUTO_EMAIL")),

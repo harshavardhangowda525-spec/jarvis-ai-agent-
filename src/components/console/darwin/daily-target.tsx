@@ -108,7 +108,7 @@ export function DailyTarget({ daily, onViewLeads, onOpenCrm }: {
               {run ? (STATUS[run.status] ?? run.status.toUpperCase()) : view.due ? "STARTING" : `STARTS ${view.startLabel}`}
               {run?.status === "running" && <Loader2 className="ml-1 inline h-2.5 w-2.5 animate-spin" />}
             </div>
-            {!complete && run?.status !== "partial" && <div className="mt-0.5 text-[9px] tracking-[0.16em] text-white/40" data-darwin-deadline>GOAL {target} BY {view.deadlineLabel}</div>}
+            {!complete && run?.status !== "partial" && <div className="mt-0.5 text-[9px] tracking-[0.16em] text-white/40" data-darwin-deadline>GOAL {target}{view.config.requirePhone ? " WITH PHONES" : ""} BY {view.deadlineLabel}</div>}
           </div>
         </div>
 

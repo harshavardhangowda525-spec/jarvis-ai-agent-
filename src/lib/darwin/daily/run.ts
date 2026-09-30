@@ -32,6 +32,8 @@ export interface DailyConfig {
   target: number;
   radiusKm: number;
   requirePhone: boolean;
+  /** Set once you choose the phone setting yourself in DARWIN (otherwise the default applies). */
+  requirePhoneChosen?: boolean;
   strict: boolean;
   /** Email every new lead that has a public address, automatically (once each). */
   autoEmail: boolean;
@@ -64,7 +66,9 @@ export async function loadConfig(userId: string): Promise<DailyConfig & { source
     categories: categories.slice(0, 24),
     target: Math.min(Math.max(saved.target ?? env.darwinDailyTarget, 1), 200),
     radiusKm: Math.min(Math.max(saved.radiusKm ?? 6, 1), 25),
-    requirePhone: saved.requirePhone ?? false,
+    // your own choice in DARWIN's settings; otherwise the default (phone required)
+    requirePhone: saved.requirePhoneChosen ? !!saved.requirePhone : env.darwinDailyRequirePhone,
+    ...(saved.requirePhoneChosen ? { requirePhoneChosen: true } : {}),
     strict: saved.strict ?? env.darwinDailyStrict,
     autoEmail: saved.autoEmail ?? env.darwinAutoEmail,
     source,
@@ -79,6 +83,7 @@ export async function saveConfig(userId: string, c: Partial<DailyConfig>) {
     target: Math.min(Math.max(Math.round(c.target ?? cur.target), 1), 200),
     radiusKm: Math.min(Math.max(c.radiusKm ?? cur.radiusKm, 1), 25),
     requirePhone: c.requirePhone ?? cur.requirePhone,
+    ...(c.requirePhone !== undefined || cur.requirePhoneChosen ? { requirePhoneChosen: true } : {}),
     strict: c.strict ?? cur.strict,
     autoEmail: c.autoEmail ?? cur.autoEmail,
   };
@@ -137,7 +142,7 @@ export function defaultDeps(): DarwinDeps {
 const PAGE = 50;
 const MAX_GEO_REQUESTS = 600;         // per day (room to widen the search) — well inside Geoapify's free 3,000/day
 const PAID_CALLS_PER_TARGET = 4;      // Google / search lookups allowed per wanted lead
-const RECHECK_AFTER_DAYS = 21;        // unclear / temporarily-down businesses get another look later
+const RECHECK_AFTER_DAYS = 21;        // unclear / temporarily-down / phoneless businesses get another look later
 const BATCH = 4;
 
 type Log = { at: string; text: string; tone?: "ok" | "warn" }[];
@@ -199,7 +204,7 @@ async function knowledge(userId: string, now: Date, run: { id: string; date: str
   const phones = new Set(leads.map((l) => (l.phone ?? "").replace(/\D/g, "").slice(-10)).filter((p) => p.length === 10));
   const named = leads.filter((l) => l.latitude != null && l.longitude != null).map((l) => ({ n: normName(l.businessName), lat: l.latitude!, lon: l.longitude! }));
   const cutoff = now.getTime() - RECHECK_AFTER_DAYS * 86_400_000;
-  const settled = (c: { status: string; checkedAt: Date }) => !(["unclear", "temporarily_unavailable"].includes(c.status) && c.checkedAt.getTime() < cutoff);
+  const settled = (c: { status: string; checkedAt: Date }) => !(["unclear", "temporarily_unavailable", "no_phone"].includes(c.status) && c.checkedAt.getTime() < cutoff);
   const candFp = new Set(cands.filter(settled).map((c) => c.fingerprint));
   const candRef = new Set(cands.filter(settled).map((c) => c.placeId).filter(Boolean) as string[]);
   return {
@@ -320,6 +325,26 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
           consider(l);
         }
         if (nextStep >= radii.length && !fresh.length) { exhausted.add(combo.key); comboIndex++; }
+      }
+
+      // ---- phone required: businesses that list one are checked first; without a Google
+      // profile to find a number, one that lists none can't count — skip its checks
+      if (cfg.requirePhone && fresh.length) {
+        const hasPhone = (x: { l: GeoLead }) => verifyPhone(x.l.phone).ok;
+        const keep = fresh.filter(hasPhone);
+        const rest = fresh.filter((x) => !hasPhone(x));
+        if (!deps.google) {
+          for (const x of rest) {
+            c.missingPhone++;
+            k.rememberChecked(x.l, x.fp);
+            await db.darwinCandidate.upsert({
+              where: { userId_fingerprint: { userId: run.userId, fingerprint: x.fp } },
+              create: { userId: run.userId, fingerprint: x.fp, placeId: x.l.placeId, name: x.l.name, category: x.l.category, address: x.l.address, status: "no_phone", website: x.l.website, reasons: ["No public phone number listed"], runDate: run.date },
+              update: { status: "no_phone", reasons: ["No public phone number listed"], runDate: run.date, checkedAt: deps.now() },
+            }).catch(() => {});
+          }
+          fresh.splice(0, fresh.length, ...keep);
+        } else fresh.splice(0, fresh.length, ...keep, ...rest);
       }
 
       // ---- verify, a few at a time
@@ -472,9 +497,9 @@ export function widen(cfg: DailyConfig): { step: number; note: string; clearExha
       return { step, note: `added ${add.length} more kinds of business (${add.slice(0, 4).join(", ")}${add.length > 4 ? "…" : ""})`, clearExhausted: false };
     }
   }
-  if (step <= 2 && cfg.radiusKm < 25) {
-    cfg.radiusKm = Math.min(25, Math.max(cfg.radiusKm * 2, 12));
-    return { step: 2, note: `searching up to ${cfg.radiusKm} km out`, clearExhausted: true };
+  if (step <= 3 && cfg.radiusKm < 25) {
+    cfg.radiusKm = step >= 3 ? 25 : Math.min(25, Math.max(cfg.radiusKm * 2, 12));
+    return { step: Math.max(step, 2), note: `searching up to ${cfg.radiusKm} km out`, clearExhausted: true };
   }
   return null;
 }

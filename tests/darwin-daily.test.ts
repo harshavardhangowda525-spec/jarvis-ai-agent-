@@ -295,6 +295,8 @@ d("DARWIN daily run (integration)", () => {
     expect(R.widen(cfg)).toMatchObject({ step: 2, clearExhausted: true, note: "searching up to 12 km out" });
     expect(cfg.radiusKm).toBe(12);
     cfg.widened = 2;
+    expect(R.widen(cfg)).toMatchObject({ step: 3, note: "searching up to 25 km out" });
+    cfg.widened = 3;
     expect(R.widen(cfg)).toBeNull();
   });
 
@@ -310,6 +312,37 @@ d("DARWIN daily run (integration)", () => {
     expect(r.reasons[0]).toMatch(/Reached the 2:00 PM deadline before finding 40/);
     expect(R.pastDeadline(afternoon)).toBe(true);
     expect(R.pastDeadline(morning)).toBe(false);
+  }, 60_000);
+
+  it("leads need a phone by default — also for settings saved before; your own choice still wins", async () => {
+    const other = (await getDb().user.create({ data: { email: `dwphone-${Date.now()}@example.com`, passwordHash: "x" } })).id;
+    try {
+      expect((await R.loadConfig(other)).requirePhone).toBe(true);
+      // settings saved by an older version (requirePhone false, never chosen) → the new default
+      await getDb().integration.create({ data: { userId: other, provider: "darwin_daily", status: "connected", metadata: { locations: ["Indiranagar"], categories: ["gyms"], target: 50, radiusKm: 6, requirePhone: false, strict: true } } });
+      expect((await R.loadConfig(other)).requirePhone).toBe(true);
+      // switched off in DARWIN's settings → stays off
+      await R.saveConfig(other, { requirePhone: false });
+      expect((await R.loadConfig(other)).requirePhone).toBe(false);
+      await R.saveConfig(other, { target: 40 });
+      expect((await R.loadConfig(other)).requirePhone).toBe(false);
+    } finally { await getDb().user.deleteMany({ where: { id: other } }); }
+  });
+
+  it("with no Google profile to find a number, businesses without a listed phone aren't checked at all — only ones you can call are counted", async () => {
+    const at = new Date("2026-10-12T02:00:00Z");
+    await R.saveConfig(userId, { categories: ["gyms"], target: 2, requirePhone: true });
+    const noPhone = (i: number) => { const f = feature(i, "gyms", { name: `Quiet${i} Fitness Studio` }); delete (f.properties as { contact?: unknown }).contact; return f; };
+    pages.gyms = [[noPhone(100), noPhone(101), feature(102, "gyms", { name: `Callable102 Fitness Studio` }), feature(103, "gyms", { name: `Callable103 Fitness Studio` })]];
+    const run = await R.ensureRun(userId, at);
+    const g0 = calls.gather;
+    const r = await R.advanceRun(run.id, { deps: { ...deps(), google: false, now: () => at }, budgetMs: 60_000 });
+    expect(r).toMatchObject({ status: "completed", verified: 2, missingPhone: 2 });
+    expect(calls.gather - g0).toBe(2); // only the two with phones were verified
+    const leads = await getDb().darwinLead.findMany({ where: { userId, metadata: { path: ["dailyRunId"], equals: run.id } } });
+    expect(leads.every((l) => !!l.phone)).toBe(true);
+    const skipped = await getDb().darwinCandidate.findMany({ where: { userId, name: { startsWith: "Quiet" } } });
+    expect(skipped.map((c) => c.status)).toEqual(["no_phone", "no_phone"]);
   }, 60_000);
 
   it("a search that only started after 2 PM isn't cut off", async () => {

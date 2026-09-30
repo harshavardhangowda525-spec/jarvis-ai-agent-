@@ -732,11 +732,19 @@ daily search, even one that has never opened DARWIN. Without it, only accounts
 that already use DARWIN get it. A day that was waiting for settings (no
 location or no Geoapify key yet) starts on the next round once they're added.
 
+**Every lead has a phone number.** Leads have no website *and* a public phone
+number by default, so every one of them is someone you can call. Turn this off with
+the ⚙ setting "Only count businesses with a phone", or with
+`DARWIN_DAILY_REQUIRE_PHONE=off`. Businesses that list a phone are checked first.
+Without a Google Places key, which can supply a number, businesses with no listed
+phone are skipped before any verification lookups are spent on them. They're looked
+at again after 3 weeks, in case they add a number.
+
 **50 leads by 2:00 PM.** The day's search has a deadline, `DARWIN_DAILY_DEADLINE`
 (default `14:00`, in `DARWIN_DAILY_TZ`). If the configured area runs out before the
 target, DARWIN widens the search by itself instead of stopping:
 1. It adds more kinds of business, 27 in total. Each is one DARWIN can search precisely.
-2. It searches further out, to at least 12 km and at most 25 km.
+2. It searches further out: first 12 km (or double your radius), then 25 km.
 
 It never pads the count with unverified businesses. A search that started before
 the deadline stops there and reports what it found and why it fell short. A search
@@ -784,6 +792,7 @@ Settings (optional):
 - `DARWIN_DAILY_TZ`
 - `DARWIN_DAILY_START` (`06:00`)
 - `DARWIN_DAILY_DEADLINE` (`14:00`)
+- `DARWIN_DAILY_REQUIRE_PHONE` (`on`)
 - `DARWIN_DAILY_TARGET` (`50`)
 - `DARWIN_DAILY_LOCATIONS` and `DARWIN_DAILY_CATEGORIES` (comma- or line-separated; also editable in DARWIN)
 - `DARWIN_DAILY_STRICT` (`on`)
