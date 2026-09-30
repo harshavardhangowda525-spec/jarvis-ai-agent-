@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MikeLaunchOverlay } from "@/components/console/mike/launch-overlay";
+import { isMikeActivation } from "@/lib/mike/wake";
 import { BriefingPopup } from "@/components/console/briefing-popup";
 import type { Briefing } from "@/lib/briefing/build";
 import { briefingRequest } from "@/lib/briefing/intent";
@@ -698,7 +699,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         return;
       }
       // "Activate Mike", "open MIKE", "Mike online" → MIKE takes over (trading intelligence).
-      if (/^mike[\s!.,]*$|\b(open|launch|activate|start|switch to|go to|bring up)\s+mike\b|\bmike[,\s]+(online|wake up|come online|take over)\b/.test(low)) {
+      // (speech recognition often hears "Mike" as "mic" / "Mick" — those count too)
+      if (isMikeActivation(low)) {
         launchMike();
         return;
       }

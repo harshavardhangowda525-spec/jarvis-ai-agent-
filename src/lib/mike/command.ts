@@ -1,5 +1,6 @@
 import type { AssetRef, Timeframe } from "./types";
 import { assetInText } from "./assets";
+import { isMikeDeactivation, stripMikeWake } from "./wake";
 
 /**
  * What a spoken/typed MIKE command means. Fast local routing for the commands
@@ -38,8 +39,8 @@ const TF_WORDS = /\b(weekly|daily|hourly|one|five|fifteen|thirty|four|minute|min
 export function chartSubject(text: string): string | null {
   const known = assetInText(text, { catalogOnly: true });
   if (known) return known.symbol;
-  const rest = text
-    .replace(/^(hey\s+|ok(ay)?\s+)?(mike|jarvis)[,!.\s]+/i, "")
+  const rest = stripMikeWake(text)
+    .replace(/^(hey\s+|ok(ay)?\s+)?jarvis[,!.\s]+/i, "")
     .replace(/[?!.,]/g, " ")
     .replace(TF_WORDS, " ")
     .replace(CHART_WORDS, " ")
@@ -49,9 +50,9 @@ export function chartSubject(text: string): string | null {
 }
 
 export function parseMikeCommand(raw: string): MikeCommand {
-  const text = raw.trim().replace(/^(hey\s+|ok(ay)?\s+)?mike[,!.\s]+/i, "").trim();
+  const text = stripMikeWake(raw);
   const low = text.toLowerCase();
-  if (/^(deactivate|close|exit|shut ?down|stand ?down)( mike)?[.!\s]*$|\b(back to|return to|open|go to) jarvis\b|\bmike[,\s]+(deactivate|stand ?down|off)\b/.test(low)) return { kind: "exit" };
+  if (/^(deactivate|close|exit|shut ?down|stand ?down)[.!\s]*$/.test(low) || isMikeDeactivation(raw)) return { kind: "exit" };
   if (/\bbacktest/.test(low)) return { kind: "backtest", asset: assetInText(text), timeframe: timeframeInText(text) };
   if (/^(close|hide|exit|minimi[sz]e)( the)?( live)? chart\b|\b(close|hide) (the )?(live )?chart\b/.test(low)) return { kind: "close_chart" };
   if (/\b(scan|sweep)\b.*\b(market|markets|watchlist)\b|^scan\b|\bwhat changed\b|\b(strongest|best|high[- ]confidence|today'?s)\b.*\bsetups?\b|\bfind\b.*\bsetups?\b/.test(low)) {

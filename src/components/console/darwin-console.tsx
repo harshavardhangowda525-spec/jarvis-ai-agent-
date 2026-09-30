@@ -21,6 +21,7 @@ import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import { DailyTarget, useDarwinDaily } from "./darwin/daily-target";
 import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";
 import { parseMemoryCommand } from "@/lib/memory/intent";
+import { isMikeActivation } from "@/lib/mike/wake";
 
 /**
  * DARWIN — a living geographic intelligence map. Every node is a REAL business
@@ -266,6 +267,7 @@ export function DarwinConsole() {
       const s = t.trim();
       if (!s) return;
       if (DEACTIVATE_RE.test(s)) { deactivateRef.current(); return; }
+      if (isMikeActivation(s)) { speak("Handing over to MIKE."); router.push("/dashboard/mike"); return; }
       // shared memory with JARVIS — saved directly, no AI needed
       if (parseMemoryCommand(s)) {
         fetch("/api/memories/command", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: s }) })
@@ -309,7 +311,7 @@ export function DarwinConsole() {
       }
       agent.send(s, { agent: "darwin" });
     };
-  }, [agent, form, lastForm, speak, pushFeed]);
+  }, [agent, form, lastForm, speak, pushFeed, router]);
 
   async function enableVoice() { const ok = await voice.init(); if (ok) setVoiceStarted(true); return ok; }
   useResumeVoice(enableVoice);

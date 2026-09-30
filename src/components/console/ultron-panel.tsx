@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isMikeActivation } from "@/lib/mike/wake";
 import { logActivity } from "@/lib/activity/client";
 import {
   Square, PlugZap, Plug, Volume2, VolumeX, ShieldCheck, AlertTriangle, Check, Loader2, Mic, MicOff,
@@ -187,6 +188,7 @@ export function UltronPanel() {
         e.speak("Handing you back to JARVIS."); setTimeout(() => router.push("/dashboard"), 900); return;
       }
       if (/\b(open|go to|switch to|launch|activate)\s+darwin\b/.test(low)) { router.push("/dashboard/darwin"); return; }
+      if (isMikeActivation(low)) { router.push("/dashboard/mike"); return; }
       if (/\b(stop|halt|cancel|abort)\b/.test(low)) { e.stop(); return; }
       if (e.conn !== "connected") { setPairMsg("ULTRON isn't connected yet — start it with `npm run ultron` in the edith folder, then pair."); return; }
       // Echo guard: the mic picking up what ULTRON just said is not a new goal.

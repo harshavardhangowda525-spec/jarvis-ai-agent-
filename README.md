@@ -900,7 +900,10 @@ you when the evidence lines up — and, just as often, that it doesn't. It never
 claims an accuracy figure, never promises profit and never places a trade.
 
 **Open it:** say or type *"Activate Mike"* in JARVIS (or pick **MIKE** in the
-nav, `/dashboard/mike`). Say *"back to JARVIS"* to leave.
+nav, `/dashboard/mike`). Speech recognition often hears "Mike" as "mic",
+"Mick" or "Myke" — *"activate mic"* works too (and from DARWIN and ULTRON),
+while microphone phrases like "turn on the mic" or "unmute mic" never open
+MIKE. Say *"back to JARVIS"* or *"deactivate mic"* to leave.
 MIKE powers up with its own sequence: JARVIS opens an iris onto MIKE's floor,
 then the core ignites, market data streams in from every edge, the rings draw
 themselves, the boot log reports how the market feeds really came up, and the

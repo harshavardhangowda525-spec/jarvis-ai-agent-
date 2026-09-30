@@ -11,6 +11,7 @@ import type { ChartData, MarketKind, MikeAnalysis, MikeSettings, Timeframe } fro
 import { DEFAULT_SETTINGS, MARKETS, TIMEFRAMES, TF_LABEL, CHECK_LABEL, SCAN_EVENT_LABEL, TF_MS, RISK_WARNING } from "@/lib/mike/types";
 import { catalog, catalogMatch } from "@/lib/mike/assets";
 import { parseMikeCommand } from "@/lib/mike/command";
+import { isMikeDeactivation } from "@/lib/mike/wake";
 import { spokenSummary } from "@/lib/mike/summary";
 import { fmtPct, fmtPrice } from "@/lib/mike/format";
 import { MikeCoreEngine, type CoreState, type RingSpec } from "./core-engine";
@@ -35,7 +36,7 @@ const CORE_TEXT: Record<CoreState, string> = {
 const RING_ORDER = ["trend", "momentum", "volume", "structure", "volatility", "mtf"] as const;
 const RING_NAME: Record<(typeof RING_ORDER)[number], string> = { trend: "TREND", momentum: "MOMENTUM", volume: "VOLUME", structure: "STRUCTURE", volatility: "VOLATILITY", mtf: "MULTI-TIMEFRAME" };
 const LAYERS = ["MARKET STRUCTURE", "TREND", "MOMENTUM", "VOLUME", "VOLATILITY", "MULTI-TIMEFRAME"];
-const DEACTIVATE = /\b(deactivate|close|exit|shut ?down|stand ?down)\b.*\bmike\b|^(back to|open|return to) jarvis\b/i;
+
 const short = (d: string) => d.replace("/USDT", "");
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const BOOT_MS = 3200;
@@ -458,7 +459,7 @@ export function MikeConsole() {
   const handle = useCallback((raw: string) => {
     const text = raw.trim();
     if (!text) return;
-    if (DEACTIVATE.test(text)) { deactivate(); return; }
+    if (isMikeDeactivation(text)) { deactivate(); return; }
     const cmd = parseMikeCommand(text);
     switch (cmd.kind) {
       case "exit": deactivate(); return;
