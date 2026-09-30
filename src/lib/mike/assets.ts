@@ -50,6 +50,21 @@ const CATALOG: Entry[] = [
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
 
+/** Exact match in the built-in catalogue (names, aliases, symbols) — no guessing. */
+export function catalogMatch(query: string): AssetRef | null {
+  const q = norm(query).replace(/^(the|a)\s+/, "");
+  const hit = q ? CATALOG.find((e) => e.aliases.includes(q) || norm(e.display) === q || e.symbol.toLowerCase() === q) : undefined;
+  if (!hit) return null;
+  const { aliases: _a, ...a } = hit;
+  return { ...a, provider: hit.provider ?? "yahoo" };
+}
+
+/** Looks like an exact provider symbol already (AAPL, RELIANCE.NS, ^NSEI, EURUSD=X, ES=F, SOLUSDT). */
+export function looksLikeSymbol(query: string): boolean {
+  const q = query.trim();
+  return /^[\^]?[A-Z0-9]{1,12}([.=-][A-Z0-9]{1,6})?$/.test(q) && q === q.toUpperCase();
+}
+
 /** Resolve what the user typed/said to an asset. Never guesses a price — only a symbol. */
 export function resolveAsset(query: string, market?: MarketKind): AssetRef | null {
   const q = norm(query).replace(/^(the|a)\s+/, "");
@@ -76,7 +91,7 @@ export function catalog(market?: MarketKind): AssetRef[] {
 }
 
 /** Pull an asset name out of a sentence ("Mike, analyze Bitcoin on the 4 hour"). */
-export function assetInText(text: string): AssetRef | null {
+export function assetInText(text: string, opts: { catalogOnly?: boolean } = {}): AssetRef | null {
   const low = ` ${norm(text).replace(/[,.!?]/g, " ")} `;
   let best: { e: Entry; len: number } | null = null;
   for (const e of CATALOG) {
@@ -86,6 +101,7 @@ export function assetInText(text: string): AssetRef | null {
     }
   }
   if (best) { const { aliases: _a, ...a } = best.e; return { ...a, provider: a.provider ?? "yahoo" }; }
+  if (opts.catalogOnly) return null;
   // "analyze AAPL" / "analyze reliance.ns"
   const m = text.match(/\b(?:analy[sz]e|chart|check|scan|explain|on)\s+([A-Za-z0-9^.=\-/]{2,16})\b/i);
   return m && !/^(the|market|markets|this|it|chart)$/i.test(m[1]) ? resolveAsset(m[1]) : null;

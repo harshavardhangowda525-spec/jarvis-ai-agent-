@@ -40,7 +40,7 @@ import { darwinOutreachTool } from "./darwin/outreach";
 import { darwinMessageTool } from "./darwin/message";
 import { darwinMapTool } from "./darwin/map";
 import { niosTool } from "./nios";
-import { mikeAnalyzeTool, mikeScanTool, mikeBacktestTool, mikeJournalTool, mikeAlertTool, mikeMarketSummaryTool } from "./mike";
+import { mikeAnalyzeTool, mikeScanTool, mikeBacktestTool, mikeJournalTool, mikeAlertTool, mikeMarketSummaryTool, mikeChartTool } from "./mike";
 import { activityTool } from "./activity";
 
 const ALL_TOOLS: ToolDefinition[] = [
@@ -86,6 +86,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   mikeJournalTool as ToolDefinition,
   mikeAlertTool as ToolDefinition,
   mikeMarketSummaryTool as ToolDefinition,
+  mikeChartTool as ToolDefinition,
 ];
 
 /**

@@ -919,6 +919,18 @@ analysis. News context is optional: with `SEARCH_API_KEY` (Tavily) MIKE reads
 the last 3 days of headlines and shows them separately as *EXTERNAL
 INFORMATION*; without it the analysis is price data only and says so.
 
+**Live chart of any market:** say *"Mike, pull up the Tesla chart"*, *"show me
+Reliance on the daily"*, *"open the Bitcoin chart"* — or ask JARVIS
+(*"JARVIS, show me the gold chart"* opens MIKE straight onto it). Names are
+looked up across every exchange Yahoo Finance covers (NSE/BSE, NYSE/NASDAQ,
+LSE, indices, forex, futures, ETFs) plus crypto; the chart's search box does
+the same. Crypto streams **tick by tick** from Binance's public WebSocket
+(`LIVE STREAM`); other markets have no free streaming feed, so they refresh
+every 10 seconds and stay labelled `DELAYED` / `MARKET CLOSED`. If the stream is
+blocked where you are, the chart says so and falls back to polling. Scroll to
+zoom, hover for OHLC, toggle indicators, and press **Analyze** for a full
+MIKE analysis of what's on screen.
+
 **What an analysis does**
 
 1. Fetches the setup timeframe plus up to three higher timeframes and one lower

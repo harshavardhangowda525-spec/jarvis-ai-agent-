@@ -2,7 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { recordActivity } from "@/lib/activity/record";
-import { resolveAsset } from "@/lib/mike/assets";
+import { findAsset } from "@/lib/mike/search";
 import { closedBars, fetchSeries } from "@/lib/mike/data";
 import { backtest, STRATEGIES, type StrategyId } from "@/lib/mike/backtest";
 import { loadSettings } from "@/lib/mike/analyze";
@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     const user = await requireUser();
     if (!rateLimit(`mike:bt:${user.id}`, 6, 60_000).allowed) return fail("Too many backtests — wait a minute.", 429);
     const b = body.parse(await req.json());
-    const asset = resolveAsset(b.asset);
+    const asset = await findAsset(b.asset);
     if (!asset) return fail(`MIKE doesn't recognise "${b.asset}".`, 422);
     const s = await fetchSeries(asset, b.timeframe, { historyBars: 2000 });
     if (!s.candles.length) return fail(`LIVE DATA UNAVAILABLE — ${s.note}`, 503);

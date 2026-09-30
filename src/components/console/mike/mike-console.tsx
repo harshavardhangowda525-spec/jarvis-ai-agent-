@@ -2,19 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Mic, MicOff, Loader2, LogOut, Radar, FlaskConical, BookOpen, Bell, ShieldCheck, Send, SlidersHorizontal } from "lucide-react";
+import { Mic, MicOff, Loader2, LogOut, Radar, FlaskConical, BookOpen, Bell, ShieldCheck, Send, SlidersHorizontal, Maximize2, CandlestickChart } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logActivity } from "@/lib/activity/client";
 import { useVoice, useResumeVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import type { ChartData, MarketKind, MikeAnalysis, MikeSettings, Timeframe } from "@/lib/mike/types";
 import { DEFAULT_SETTINGS, MARKETS, TIMEFRAMES, TF_LABEL, CHECK_LABEL, SCAN_EVENT_LABEL, TF_MS, RISK_WARNING } from "@/lib/mike/types";
-import { catalog, resolveAsset } from "@/lib/mike/assets";
+import { catalog, catalogMatch } from "@/lib/mike/assets";
 import { parseMikeCommand } from "@/lib/mike/command";
 import { spokenSummary } from "@/lib/mike/summary";
 import { fmtPct, fmtPrice } from "@/lib/mike/format";
 import { MikeCoreEngine, type CoreState, type RingSpec } from "./core-engine";
 import { MikeChart, DEFAULT_TOGGLES, type ChartToggles, type LevelKey, type LevelPos } from "./mike-chart";
+import { LiveChartView, type ChartMeta } from "./live-chart";
+import { useBinanceStream } from "./use-live-stream";
 import { TradeSheet, type SheetPhase } from "./trade-sheet";
 import { IntelStream, RegimeOrb, Ticker, MarketPanel, AlignmentTable, Connectors, type StreamItem, type TickerItem, type MarketSummary } from "./widgets";
 import { BacktestPanel, JournalPanel, AlertsPanel, RiskPanel } from "./panels";
@@ -70,7 +72,18 @@ export function MikeConsole() {
   const [analysis, setAnalysis] = useState<MikeAnalysis | null>(null);
   const [phase, setPhase] = useState<SheetPhase>("empty");
   const [alertKey, setAlertKey] = useState(0);
-  const [chart, setChart] = useState<ChartData | null>(null);
+  const [chart, setChartState] = useState<ChartData | null>(null);
+  // The chart object is shared with the canvas; live ticks update its last candle in place
+  // (no re-render per tick), so this ref always points at the one being drawn.
+  const chartRef = useRef<ChartData | null>(null);
+  const setChart = useCallback((c: ChartData | null) => { chartRef.current = c; setChartState(c); }, []);
+  const [liveMeta, setLiveMeta] = useState<ChartMeta | null>(null);
+  const [streamSym, setStreamSym] = useState<string | null>(null);
+  const [liveView, setLiveView] = useState(false);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [livePrice, setLivePrice] = useState<{ price: number; at: number } | null>(null);
+  const [assetHits, setAssetHits] = useState<{ symbol: string; display: string; name?: string; exchange: string }[]>([]);
+  const openChartRef = useRef<(q: string | null, tf: Timeframe | null) => Promise<void>>(async () => {});
   const [chartMeta, setChartMeta] = useState<{ asset: string; tf: Timeframe; freshness: string; note: string; price: number | null; regime?: { id: any; volatility: any; label: string } } | null>(null);
   const [toggles, setToggles] = useState<ChartToggles>(DEFAULT_TOGGLES);
   const [levels, setLevels] = useState<LevelPos[]>([]);
@@ -153,7 +166,13 @@ export function MikeConsole() {
   const showAnalysisRef = useRef<(a: MikeAnalysis, animate: boolean) => Promise<void>>(async () => {});
   const agent = useAgent({
     onAssistantComplete: (text) => speak(text.replace(/\*\*/g, "")),
-    onNavigate: (p) => router.push(p),
+    onNavigate: (p) => {
+      // "show me the X chart" from MIKE's brain → open it right here
+      const m = p.match(/^\/dashboard\/mike\?(.*)$/);
+      const sp = m ? new URLSearchParams(m[1]) : null;
+      if (sp?.get("chart")) { void openChartRef.current(sp.get("chart"), (sp.get("tf") as Timeframe) || null); return; }
+      router.push(p);
+    },
     onTool: (t) => {
       if (t.status !== "ok") return;
       if (t.name === "mike_analyze") {
@@ -184,17 +203,38 @@ export function MikeConsole() {
   }, [agent.streaming, busy]);
 
   // ---- data loads -------------------------------------------------------------------
-  const loadChart = useCallback(async (asset: string, timeframe: Timeframe) => {
+  const liveKey = useRef("");
+  const loadChart = useCallback(async (asset: string, timeframe: Timeframe): Promise<{ error: string } | { data: any }> => {
     try {
-      const r = await fetch(`/api/mike/chart?asset=${encodeURIComponent(asset)}&tf=${timeframe}&bars=180`, { cache: "no-store" });
+      const r = await fetch(`/api/mike/chart?asset=${encodeURIComponent(asset)}&tf=${timeframe}&bars=240`, { cache: "no-store" });
       const j = await r.json();
-      if (!r.ok) return;
+      if (!r.ok) return { error: j.error || "Couldn't load that chart." };
       const d = j.data;
       setChart(d.chart);
       setChartMeta({ asset: d.asset.display, tf: timeframe, freshness: d.freshness, note: d.note, price: d.price, regime: d.regime });
+      setLiveMeta({ symbol: d.asset.symbol, display: d.asset.display, name: d.asset.name ?? null, exchange: d.asset.exchange, tf: timeframe, freshness: d.freshness, note: d.note, source: d.source, fetchedAt: d.fetchedAt });
+      setStreamSym(d.stream?.symbol ?? null);
+      const key = `${d.asset.symbol}:${timeframe}`;
+      if (key !== liveKey.current) { liveKey.current = key; setLivePrice(null); }
       if (d.chart) engine.current?.setCandles(d.chart.candles.map((c: any) => ({ o: c.o, h: c.h, l: c.l, c: c.c })));
-    } catch { /* keep the last chart */ }
-  }, []);
+      return { data: d };
+    } catch { return { error: "Network error — couldn't reach the chart feed." }; }
+  }, [setChart]);
+
+  // crypto: every trade updates the last candle live (Binance public stream)
+  const lastTickUi = useRef(0);
+  const streamState = useBinanceStream(streamSym, liveMeta?.tf ?? tf, (k) => {
+    const c = chartRef.current;
+    if (!c?.candles.length) return;
+    const arr = c.candles, last = arr[arr.length - 1];
+    if (k.t === last.t) arr[arr.length - 1] = k;
+    else if (k.t > last.t) {
+      arr.push(k);
+      for (const key of ["ema20", "ema50", "ema200", "bbUpper", "bbLower", "vwap", "rsi"] as const) c[key].push(null);
+    } else return;
+    const now = Date.now();
+    if (now - lastTickUi.current > 350) { lastTickUi.current = now; setLivePrice({ price: k.c, at: now }); }
+  });
 
   const refreshMarket = useCallback(async (announce: boolean) => {
     try {
@@ -231,15 +271,26 @@ export function MikeConsole() {
     return () => clearInterval(iv);
   }, [loadChart, refreshMarket, push]);
 
-  // live chart: refresh while open (faster on short timeframes)
+  // keep the chart current: streamed markets refresh their indicators every minute; everything
+  // else is polled — every 10 s while the live chart is open, otherwise every 15–30 s
   const chartKey = useRef({ asset: "BTC", tf: "1h" as Timeframe });
+  const chartTf = liveMeta?.tf ?? tf;
   useEffect(() => {
-    const cur = analysis ? short(analysis.asset.display) : assetQ;
-    chartKey.current = { asset: cur, tf };
-    const every = TF_MS[tf] <= 900_000 ? 15_000 : 30_000;
+    chartKey.current = { asset: liveMeta?.symbol ?? assetQ, tf: chartTf };
+    const every = streamState === "live" ? 60_000 : liveView ? 10_000 : TF_MS[chartTf] <= 900_000 ? 15_000 : 30_000;
     const iv = setInterval(() => { if (!document.hidden) void loadChart(chartKey.current.asset, chartKey.current.tf); }, every);
     return () => clearInterval(iv);
-  }, [analysis, assetQ, tf, loadChart]);
+  }, [liveMeta?.symbol, assetQ, chartTf, liveView, streamState, loadChart]);
+
+  // asset box: suggestions for ANY market as you type
+  useEffect(() => {
+    const q = assetQ.trim();
+    if (q.length < 2 || catalogMatch(q)) { setAssetHits([]); return; }
+    const t = setTimeout(() => {
+      fetch(`/api/mike/search?q=${encodeURIComponent(q)}`).then((r) => r.json()).then((j) => setAssetHits(j?.data?.results ?? [])).catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [assetQ]);
 
   // alerts + journal outcomes: checked every 2 minutes while MIKE is open
   useEffect(() => {
@@ -260,6 +311,7 @@ export function MikeConsole() {
     const e = engine.current;
     setAnalysis(a);
     if (a.chart) { setChart(a.chart); e?.setCandles(a.chart.candles.map((c) => ({ o: c.o, h: c.h, l: c.l, c: c.c })), true); }
+    void loadChart(a.asset.symbol, a.timeframe); // same bars, plus the live stream when there is one
     setChartMeta({ asset: a.asset.display, tf: a.timeframe, freshness: a.data.freshness, note: a.data.note, price: a.primary?.snapshot.price ?? null, regime: a.regime });
     if (a.data.freshness === "unavailable" || !a.primary) {
       push(`${a.asset.display} · LIVE DATA UNAVAILABLE`, "warn");
@@ -296,18 +348,20 @@ export function MikeConsole() {
       await wait(9000);
       if (my === runId.current) setCoreState("idle");
     }
-  }, [push, speak]);
+  }, [push, speak, loadChart, setChart]);
   showAnalysisRef.current = showAnalysis;
 
   const runAnalysis = useCallback(async (assetText: string, timeframe: Timeframe, opts: { quiet?: boolean } = {}) => {
-    const ref = resolveAsset(assetText, market === "all" ? undefined : market);
-    if (!ref) { const m = `I don't recognise "${assetText}". Try BTC, NIFTY, GOLD, EUR/USD or a ticker like AAPL.`; push("UNKNOWN ASSET", "warn"); speak(m); return null; }
+    // catalogue names resolve here; anything else (Reliance, Tesla, PEPE…) is looked up by the server
+    const known = catalogMatch(assetText);
+    const ref = known ?? { display: assetText.trim().toUpperCase(), symbol: assetText.trim(), kind: market === "all" ? undefined : market };
+    if (!ref.symbol) return null;
     setBusy("analyze");
     runId.current++;
     setPhase("building"); setCoreState("analyzing");
     engine.current?.layers(LAYERS, 480);
     push(`ANALYZING ${ref.display} · ${TF_LABEL[timeframe]}${mode === "mtf" ? " + MTF" : ""}`, "info");
-    if (!opts.quiet) void loadChart(short(ref.display), timeframe);
+    if (!opts.quiet) void loadChart(ref.symbol, timeframe);
     const t0 = Date.now();
     try {
       const res = await fetch("/api/mike/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ asset: ref.symbol, timeframe, mode, market: ref.kind }) });
@@ -360,6 +414,40 @@ export function MikeConsole() {
   }, [settings.watchlist, push, speak, refreshMarket, runAnalysis, tf]);
 
   // ---- commands (voice + text) ----------------------------------------------------------
+  // ---- LIVE CHART of any market ---------------------------------------------------------
+  const openChart = useCallback(async (query: string | null, timeframe: Timeframe | null) => {
+    const q = (query ?? liveMeta?.symbol ?? assetQ).trim();
+    const t = timeframe ?? liveMeta?.tf ?? tf;
+    if (!q) return;
+    setLiveView(true); setChartLoading(true);
+    push(`PULLING UP ${q.toUpperCase()} · ${TF_LABEL[t]}`, "info");
+    engine.current?.pulse();
+    const r = await loadChart(q, t);
+    setChartLoading(false);
+    if ("error" in r) { push(`CHART · ${r.error}`.slice(0, 90), "warn"); speak(r.error); return; }
+    const d = r.data;
+    setTf(t); setAssetQ(short(d.asset.display));
+    const label = d.freshness === "unavailable" ? "DATA UNAVAILABLE" : d.stream ? "LIVE STREAM" : String(d.freshness).toUpperCase();
+    push(`CHART · ${short(d.asset.display)} · ${TF_LABEL[t]} · ${label}`, d.freshness === "unavailable" ? "warn" : "ok");
+    const who = d.asset.name ?? short(d.asset.display).replace("/", " ");
+    speak(d.freshness === "unavailable" ? `Live data for ${who} is unavailable right now.`
+      : `Here's the live ${who} chart.${d.freshness === "delayed" ? " This feed can lag the exchange by up to fifteen minutes." : d.freshness === "closed" ? " The market is closed, so this is the last session." : ""}`);
+  }, [liveMeta, assetQ, tf, loadChart, push, speak]);
+  openChartRef.current = openChart;
+
+  // opened from JARVIS with ?chart=… → pull it up once MIKE has booted
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    if (!booted || deepLinked.current) return;
+    deepLinked.current = true;
+    const sp = new URLSearchParams(window.location.search);
+    const sym = sp.get("chart");
+    if (!sym) return;
+    const tfp = sp.get("tf");
+    window.history.replaceState(null, "", window.location.pathname);
+    void openChart(sym, (TIMEFRAMES as readonly string[]).includes(tfp ?? "") ? (tfp as Timeframe) : null);
+  }, [booted, openChart]);
+
   const deactivate = useCallback(() => {
     if (leaving) return;
     setLeaving(true);
@@ -374,6 +462,8 @@ export function MikeConsole() {
     const cmd = parseMikeCommand(text);
     switch (cmd.kind) {
       case "exit": deactivate(); return;
+      case "chart": void openChart(cmd.query, cmd.timeframe); return;
+      case "close_chart": setLiveView(false); speak("Chart closed."); return;
       case "scan": void runScan(cmd.setups); return;
       case "analyze": {
         const name = cmd.asset ? short(cmd.asset.display) : assetQ;
@@ -392,7 +482,7 @@ export function MikeConsole() {
         void agent.send((text + ctx).slice(0, 7800), { agent: "mike" });
       }
     }
-  }, [deactivate, runScan, runAnalysis, assetQ, tf, analysis, agent, speak]);
+  }, [deactivate, runScan, runAnalysis, openChart, assetQ, tf, analysis, agent, speak]);
   handleRef.current = handle;
 
   const explain = useCallback(() => handle(phase === "no_trade" ? "Mike, why is this a no-trade?" : "Mike, explain this chart and the setup."), [handle, phase]);
@@ -421,16 +511,20 @@ export function MikeConsole() {
             {MARKETS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
           <input list="mike-assets" value={assetQ} onChange={(e) => setAssetQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void runAnalysis(assetQ, tf); }} aria-label="Asset" placeholder="Asset or ticker" className="mike-glass w-32 rounded-lg px-2 py-1.5 text-xs text-white placeholder:text-slate-500" />
-          <datalist id="mike-assets">{suggestions.map((s) => <option key={s.symbol} value={short(s.display)}>{s.exchange}</option>)}</datalist>
+          <datalist id="mike-assets">
+            {assetHits.map((s) => <option key={`h-${s.symbol}`} value={s.symbol}>{`${s.name ?? s.display} · ${s.exchange}`}</option>)}
+            {suggestions.map((s) => <option key={s.symbol} value={short(s.display)}>{s.exchange}</option>)}
+          </datalist>
           <div className="mike-glass flex overflow-hidden rounded-lg">
             {TIMEFRAMES.map((t) => (
-              <button key={t} onClick={() => { setTf(t); void loadChart(analysis ? short(analysis.asset.display) : assetQ, t); }} className={cn("px-2 py-1.5 font-mono text-[10.5px] transition", t === tf ? "bg-cyan-400/20 text-cyan-100" : "text-slate-400 hover:text-slate-100")}>{TF_LABEL[t]}</button>
+              <button key={t} onClick={() => { setTf(t); void loadChart(liveMeta?.symbol ?? assetQ, t); }} className={cn("px-2 py-1.5 font-mono text-[10.5px] transition", t === tf ? "bg-cyan-400/20 text-cyan-100" : "text-slate-400 hover:text-slate-100")}>{TF_LABEL[t]}</button>
             ))}
           </div>
           <button onClick={() => setMode(mode === "mtf" ? "single" : "mtf")} className="mike-btn mike-glass rounded-lg px-2 py-1.5 text-[10.5px] text-slate-200" title="Analysis mode">{mode === "mtf" ? "MULTI-TIMEFRAME" : "SINGLE TIMEFRAME"}</button>
           <button onClick={() => void runAnalysis(assetQ, tf)} disabled={!!busy} className="mike-btn rounded-lg border border-cyan-300/50 bg-cyan-400/15 px-3 py-1.5 text-xs font-semibold tracking-wider text-cyan-50 disabled:opacity-50">
             {busy === "analyze" ? <Loader2 className="h-4 w-4 animate-spin" /> : "ANALYZE"}
           </button>
+          <button onClick={() => void openChart(assetQ, tf)} className="mike-btn mike-glass flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wider text-slate-100" title="Open the live chart of this market"><CandlestickChart className="h-3.5 w-3.5" /> LIVE CHART</button>
           <button onClick={() => void runScan(false)} disabled={!!busy} className="mike-btn mike-glass flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wider text-slate-100 disabled:opacity-50"><Radar className="h-3.5 w-3.5" /> SCAN</button>
           <div className="ml-auto flex items-center gap-1.5">
             <IconBtn label="Backtest" onClick={() => setModal({ kind: "backtest" })}><FlaskConical className="h-4 w-4" /></IconBtn>
@@ -465,7 +559,7 @@ export function MikeConsole() {
               </div>
               <div className="pointer-events-none mb-2 text-center" style={fly(booted, "down", 380)}>
                 <div key={vState ?? coreState} className={cn("mike-in font-mono text-xs font-bold tracking-[0.3em]", coreState === "no_trade" ? "text-amber-200" : coreState === "alert" ? "text-white" : "text-cyan-200")} style={{ textShadow: "0 0 12px rgba(34,211,238,.6)" }}>{vState ?? CORE_TEXT[coreState]}</div>
-                {chartMeta && <div className="mt-0.5 font-mono text-[10px] text-slate-400">{chartMeta.asset} · {TF_LABEL[chartMeta.tf]} · {chartMeta.price != null ? fmtPrice(chartMeta.price) : "—"}</div>}
+                {chartMeta && <div className="mt-0.5 font-mono text-[10px] text-slate-400">{chartMeta.asset} · {TF_LABEL[chartMeta.tf]} · {livePrice ? fmtPrice(livePrice.price) : chartMeta.price != null ? fmtPrice(chartMeta.price) : "—"}</div>}
               </div>
             </div>
             <div className="mike-glass relative h-[330px] shrink-0 rounded-xl p-2" style={fly(booted, "down", 240)}>
@@ -476,6 +570,7 @@ export function MikeConsole() {
                 </div>
                 <div className="relative">
                   <button onClick={() => setShowChartOpts((v) => !v)} className="mike-btn flex items-center gap-1 rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-slate-300"><SlidersHorizontal className="h-3 w-3" /> INDICATORS</button>
+                  <button onClick={() => setLiveView(true)} aria-label="Full-screen live chart" title="Full-screen live chart" className="mike-btn ml-1 inline-flex items-center rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-slate-300"><Maximize2 className="h-3 w-3" /></button>
                   {showChartOpts && (
                     <div className="mike-glass-strong absolute right-0 top-6 z-20 w-44 rounded-lg p-2">
                       {(Object.keys(toggles) as (keyof ChartToggles)[]).map((k) => (
@@ -540,6 +635,17 @@ export function MikeConsole() {
         <div className="border-t border-cyan-400/10 bg-slate-950/40" style={fly(booted, "down", 500)}><Ticker items={ticker} /></div>
       </div>
 
+      {liveView && (
+        <LiveChartView
+          meta={liveMeta} chart={chart} livePrice={livePrice} stream={streamState} loading={chartLoading}
+          toggles={toggles} setToggles={setToggles}
+          setup={showSetup && analysis && liveMeta && analysis.asset.symbol === liveMeta.symbol && analysis.timeframe === liveMeta.tf ? analysis.setup : null}
+          onTimeframe={(t) => void openChart(liveMeta?.symbol ?? assetQ, t)}
+          onPick={(q) => void openChart(q, null)}
+          onClose={() => setLiveView(false)}
+          onAnalyze={() => { setLiveView(false); void runAnalysis(liveMeta?.symbol ?? assetQ, liveMeta?.tf ?? tf); }}
+        />
+      )}
       {showBoot && <BootOverlay durationMs={BOOT_MS} feeds={feeds} top={bootTop} onExit={() => setBooted(true)} onGone={() => setShowBoot(false)} />}
 
       {modal?.kind === "backtest" && <BacktestPanel asset={modal.asset ?? (analysis ? short(analysis.asset.display) : assetQ)} timeframe={modal.tf ?? tf} autoRun={modal.auto} onClose={() => setModal(null)} onResult={(r) => { push(`BACKTEST · ${short(r.asset.display)} · ${r.totalTrades} TRADES · ${r.winRate}%`, "info"); speak(`Backtest done: ${r.totalTrades} trades, win rate ${r.winRate} percent, expectancy ${r.expectancyR} R. These are backtest results, not live performance.`); }} />}

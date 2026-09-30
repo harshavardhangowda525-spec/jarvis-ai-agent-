@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { getDb } from "@/lib/db";
 import { recordActivity } from "@/lib/activity/record";
-import { resolveAsset } from "@/lib/mike/assets";
+import { findAsset } from "@/lib/mike/search";
 import { ALERT_KINDS, ALERT_LABEL, NEEDS_LEVEL, checkAlerts, type AlertKind } from "@/lib/mike/alerts";
 import { resolveOpenSignals } from "@/lib/mike/journal";
 import { TIMEFRAMES } from "@/lib/mike/types";
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     const b = create.parse(raw);
     if (!rateLimit(`mike:alert:${user.id}`, 20, 60_000).allowed) return fail("Too many alerts at once.", 429);
     if (NEEDS_LEVEL.includes(b.kind as AlertKind) && b.level == null) return fail(`${ALERT_LABEL[b.kind as AlertKind]} needs a level.`, 422);
-    const asset = resolveAsset(b.asset);
+    const asset = await findAsset(b.asset);
     if (!asset) return fail(`MIKE doesn't recognise "${b.asset}".`, 422);
     const n = await getDb().mikeAlert.count({ where: { userId: user.id, status: "active" } });
     if (n >= 40) return fail("You already have 40 active alerts — remove some first.", 422);

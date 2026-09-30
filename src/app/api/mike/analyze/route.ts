@@ -2,7 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { recordActivity } from "@/lib/activity/record";
-import { resolveAsset } from "@/lib/mike/assets";
+import { findAsset } from "@/lib/mike/search";
 import { analyzeAsset } from "@/lib/mike/analyze";
 import { TIMEFRAMES, MARKETS } from "@/lib/mike/types";
 
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     const user = await requireUser();
     if (!rateLimit(`mike:analyze:${user.id}`, 20, 60_000).allowed) return fail("Too many analyses — wait a minute.", 429);
     const b = body.parse(await req.json());
-    const asset = resolveAsset(b.asset, b.market as never);
+    const asset = await findAsset(b.asset, b.market as never);
     if (!asset) return fail(`MIKE doesn't recognise "${b.asset}". Try a name like BTC, NIFTY, GOLD, EUR/USD or a ticker like AAPL.`, 422);
     const a = await analyzeAsset(user.id, asset, b.timeframe, { mode: b.mode, journal: b.journal });
     if (b.journal) {

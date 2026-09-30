@@ -31,6 +31,8 @@ const YAHOO_HISTORY: Partial<Record<Timeframe, string>> = { "1h": "2y", "4h": "2
 type FetchFn = typeof fetch;
 export interface DataOpts {
   fetchImpl?: FetchFn; now?: number; noCache?: boolean;
+  /** Re-fetch when the cached copy is older than this (the live chart asks for fresher data). */
+  maxAgeMs?: number;
   /** Backtests: as many bars as the free feed allows (up to this many). */
   historyBars?: number;
 }
@@ -44,13 +46,13 @@ export async function fetchSeries(asset: AssetRef, timeframe: Timeframe, opts: D
   const key = `${asset.provider}:${asset.symbol}:${timeframe}:${want}`;
   const now = opts.now ?? Date.now();
   const hit = cache.get(key);
-  if (!opts.noCache && hit && now - hit.at < ttl(timeframe)) return hit.series;
+  if (!opts.noCache && hit && now - hit.at < Math.min(ttl(timeframe), opts.maxAgeMs ?? Infinity)) return hit.series;
   const f = opts.fetchImpl ?? fetch;
   let series = asset.provider === "binance" ? await fromBinance(asset, timeframe, f, now, want) : await fromYahoo(asset, timeframe, f, now, want);
-  if (asset.provider === "binance" && series.freshness === "unavailable" && !/doesn't list/.test(series.note)) {
-    // Binance blocks some regions (e.g. US cloud servers) — Yahoo carries the major coins as BTC-USD.
+  if (asset.provider === "binance" && series.freshness === "unavailable" && (asset.alt || !/doesn't list/.test(series.note))) {
+    // Binance blocks some regions (e.g. US cloud servers) and doesn't list every coin — Yahoo carries them as BTC-USD.
     const base = asset.symbol.replace(/USDT$/, "");
-    const alt = await fromYahoo({ ...asset, symbol: `${base}-USD`, provider: "yahoo" }, timeframe, f, now, want);
+    const alt = await fromYahoo({ ...asset, symbol: asset.alt ?? `${base}-USD`, provider: "yahoo" }, timeframe, f, now, want);
     if (alt.candles.length) series = { ...alt, asset, note: `${alt.note} (Binance unreachable: ${series.note})` };
   }
   if (series.candles.length) cache.set(key, { at: now, series });

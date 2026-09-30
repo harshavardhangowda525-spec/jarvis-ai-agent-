@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
-import { resolveAsset } from "@/lib/mike/assets";
+import { findAsset } from "@/lib/mike/search";
 import { closedBars, fetchSeries } from "@/lib/mike/data";
 import { analyzeAt, prepare } from "@/lib/mike/timeframe";
 import { TIMEFRAMES, type ChartData, type Timeframe } from "@/lib/mike/types";
@@ -17,13 +17,18 @@ export async function GET(req: Request) {
     const user = await requireUser();
     if (!rateLimit(`mike:chart:${user.id}`, 90, 60_000).allowed) return fail("Too many chart refreshes.", 429);
     const url = new URL(req.url);
-    const asset = resolveAsset(url.searchParams.get("asset") ?? "");
+    const asset = await findAsset(url.searchParams.get("asset") ?? "");
     const tfp = url.searchParams.get("tf") ?? "1h";
-    if (!asset) return fail("Unknown asset.", 422);
+    if (!asset) return fail(`MIKE couldn't find a market called "${url.searchParams.get("asset") ?? ""}".`, 422);
     const tf: Timeframe = (TIMEFRAMES as readonly string[]).includes(tfp) ? (tfp as Timeframe) : "1h";
     const n = Math.min(Math.max(Number(url.searchParams.get("bars")) || 180, 40), 400);
-    const s = await fetchSeries(asset, tf);
-    const base = { asset: s.asset, timeframe: tf, source: s.source, freshness: s.freshness, note: s.note, lastBarAt: s.lastBarAt, fetchedAt: s.fetchedAt };
+    // the live chart wants fresh bars — at most a few seconds old
+    const s = await fetchSeries(asset, tf, { maxAgeMs: 5000 });
+    const base = {
+      asset: s.asset, timeframe: tf, source: s.source, freshness: s.freshness, note: s.note, lastBarAt: s.lastBarAt, fetchedAt: s.fetchedAt,
+      // crypto served by Binance can stream tick-by-tick in the browser (public market data, no key)
+      stream: s.source.startsWith("Binance") && s.freshness === "live" ? { provider: "binance" as const, symbol: s.asset.symbol } : null,
+    };
     const bars = closedBars(s);
     if (bars.length < 30) return ok({ ...base, chart: null, price: s.candles.at(-1)?.c ?? null });
     const prep = prepare(bars, tf, s.hasVolume);

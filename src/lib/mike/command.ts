@@ -8,6 +8,9 @@ import { assetInText } from "./assets";
 export type MikeCommand =
   | { kind: "scan"; setups: boolean }
   | { kind: "analyze"; asset: AssetRef | null; timeframe: Timeframe | null }
+  /** Pull up the live chart. `query` is a catalogue name or free text for the server to look up. */
+  | { kind: "chart"; query: string | null; timeframe: Timeframe | null }
+  | { kind: "close_chart" }
   | { kind: "backtest"; asset: AssetRef | null; timeframe: Timeframe | null }
   | { kind: "journal" }
   | { kind: "alerts" }
@@ -28,11 +31,36 @@ export function timeframeInText(text: string): Timeframe | null {
   return null;
 }
 
+const CHART_WORDS = /\b(pull(?:ing)? up|bring up|show(?: me)?|open|display|load|switch to|go to|get me|put up|chart(?:s|ing)?|graph|live|price(?: action)?|candles?|candlesticks?|of|for|on|in|the|a|an|please|now|me|full ?screen|view|time ?frame|timeframe|chart)\b/gi;
+const TF_WORDS = /\b(weekly|daily|hourly|one|five|fifteen|thirty|four|minute|minutes|min|hour|hours|day|week|\d+ ?(m|h|d|w|min|mins|minute|minutes|hour|hours|hr|hrs)?)\b/gi;
+
+/** The market named in "pull up the live chart of Reliance Industries on the daily" → "Reliance Industries". */
+export function chartSubject(text: string): string | null {
+  const known = assetInText(text, { catalogOnly: true });
+  if (known) return known.symbol;
+  const rest = text
+    .replace(/^(hey\s+|ok(ay)?\s+)?(mike|jarvis)[,!.\s]+/i, "")
+    .replace(/[?!.,]/g, " ")
+    .replace(TF_WORDS, " ")
+    .replace(CHART_WORDS, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return rest.length >= 2 && rest.length <= 40 ? rest : null;
+}
+
 export function parseMikeCommand(raw: string): MikeCommand {
   const text = raw.trim().replace(/^(hey\s+|ok(ay)?\s+)?mike[,!.\s]+/i, "").trim();
   const low = text.toLowerCase();
   if (/^(deactivate|close|exit|shut ?down|stand ?down)( mike)?[.!\s]*$|\b(back to|return to|open|go to) jarvis\b|\bmike[,\s]+(deactivate|stand ?down|off)\b/.test(low)) return { kind: "exit" };
   if (/\bbacktest/.test(low)) return { kind: "backtest", asset: assetInText(text), timeframe: timeframeInText(text) };
+  if (/^(close|hide|exit|minimi[sz]e)( the)?( live)? chart\b|\b(close|hide) (the )?(live )?chart\b/.test(low)) return { kind: "close_chart" };
+  if (/\b(scan|sweep)\b.*\b(market|markets|watchlist)\b|^scan\b|\bwhat changed\b|\b(strongest|best|high[- ]confidence|today'?s)\b.*\bsetups?\b|\bfind\b.*\bsetups?\b/.test(low)) {
+    return { kind: "scan", setups: /\bsetups?\b/.test(low) };
+  }
+  // "pull up / show me / open the chart of X" → the live chart (no trade call)
+  if (!/\banaly[sz]/.test(low) && (/\b(chart|graph|candles?|candlesticks?|price action)\b/.test(low) || /^(pull up|bring up|show me|open|display)\b/.test(low)) && !/\b(why|explain|what)\b/.test(low) && !/\b(journal|alerts?|risk|settings|backtest)\b/.test(low)) {
+    return { kind: "chart", query: chartSubject(text), timeframe: timeframeInText(text) };
+  }
   if (/\b(why|explain|compare|what does|what is|how)\b/.test(low) && !/\bscan\b/.test(low)) return { kind: "ask", text: raw.trim() };
   if (/\b(scan|sweep)\b.*\b(market|markets|watchlist)\b|^scan\b|\bwhat changed\b|\b(strongest|best|high[- ]confidence|today'?s)\b.*\bsetups?\b|\bfind\b.*\bsetups?\b/.test(low)) {
     return { kind: "scan", setups: /\bsetups?\b/.test(low) };
@@ -41,7 +69,7 @@ export function parseMikeCommand(raw: string): MikeCommand {
   if (/\b(alerts?)\b/.test(low) && !/\b(set|create|add|alert me)\b/.test(low)) return { kind: "alerts" };
   if (/\b(risk settings|account size|position siz)/.test(low)) return { kind: "risk" };
   const asset = assetInText(text);
-  if (/\b(analy[sz]e|analysis|check|look at|chart|pull up|show me)\b/.test(low) && asset && !/\balert\b/.test(low)) {
+  if (/\b(analy[sz]e|analysis|check|look at)\b/.test(low) && asset && !/\balert\b/.test(low)) {
     return { kind: "analyze", asset, timeframe: timeframeInText(text) };
   }
   return { kind: "ask", text: raw.trim() };

@@ -4,7 +4,7 @@ import type { ToolDefinition } from "./types";
 import { ToolError } from "./types";
 import { getDb } from "@/lib/db";
 import { recordActivity } from "@/lib/activity/record";
-import { resolveAsset } from "@/lib/mike/assets";
+import { findAsset } from "@/lib/mike/search";
 import { analyzeAsset, loadSettings } from "@/lib/mike/analyze";
 import { compactAnalysis } from "@/lib/mike/summary";
 import { scanMarket } from "@/lib/mike/scan";
@@ -21,9 +21,9 @@ import { fmtPct, fmtPrice } from "@/lib/mike/format";
  */
 
 const tf = z.enum(TIMEFRAMES);
-const assetOf = (q: string, market?: MarketKind) => {
-  const a = resolveAsset(q, market);
-  if (!a) throw new ToolError(`I don't recognise "${q}". Use a name like BTC, ETH, NIFTY, SENSEX, NASDAQ, GOLD, EUR/USD, or a ticker like AAPL / RELIANCE.NS.`);
+const assetOf = async (q: string, market?: MarketKind) => {
+  const a = await findAsset(q, market);
+  if (!a) throw new ToolError(`I couldn't find a market called "${q}". Try a name (Bitcoin, Reliance, Tesla, gold) or a ticker (AAPL, RELIANCE.NS, EURUSD=X).`);
   return a;
 };
 
@@ -43,7 +43,7 @@ export const mikeAnalyzeTool: ToolDefinition<z.infer<typeof analyzeSchema>> = {
   agentScope: "mike",
   activityLabel: "Analysing the chart",
   async execute(input, ctx) {
-    const asset = assetOf(input.asset, input.market);
+    const asset = await assetOf(input.asset, input.market);
     const settings = await loadSettings(ctx.userId);
     const timeframe = (input.timeframe ?? settings.defaultTimeframe) as Timeframe;
     ctx.activity(`Scanning ${asset.display} across timeframes…`);
@@ -118,7 +118,7 @@ export const mikeBacktestTool: ToolDefinition<z.infer<typeof btSchema>> = {
   agentScope: "mike",
   activityLabel: "Backtesting",
   async execute(input, ctx) {
-    const asset = assetOf(input.asset);
+    const asset = await assetOf(input.asset);
     const settings = await loadSettings(ctx.userId);
     const timeframe = (input.timeframe ?? settings.defaultTimeframe) as Timeframe;
     const s = await fetchSeries(asset, timeframe, { historyBars: 2000 });
@@ -192,7 +192,7 @@ export const mikeAlertTool: ToolDefinition<z.infer<typeof aSchema>> = {
     }
     if (!input.asset || !input.kind) throw new ToolError("Give the asset and the kind of alert.");
     if (NEEDS_LEVEL.includes(input.kind as AlertKind) && input.level == null) throw new ToolError(`${ALERT_LABEL[input.kind as AlertKind]} needs a level.`);
-    const asset = assetOf(input.asset);
+    const asset = await assetOf(input.asset);
     const alert = await db.mikeAlert.create({ data: { userId: ctx.userId, asset: asset.display, symbol: asset.symbol, provider: asset.provider, kind: input.kind, level: input.level ?? null, timeframe: input.timeframe ?? "1h" } });
     await recordActivity(ctx.userId, { category: "decision", agent: "MIKE", source: "tool", action: `MIKE alert set: ${asset.display} ${ALERT_LABEL[input.kind as AlertKind]}${input.level != null ? ` ${input.level}` : ""}`, status: "success", importance: 2 });
     return { data: { id: alert.id, asset: asset.display, kind: input.kind, level: input.level ?? null, note: "Alerts notify only — MIKE never places trades." }, summary: `Alert set: ${asset.display} ${ALERT_LABEL[input.kind as AlertKind]}${input.level != null ? ` ${input.level}` : ""}.` };
@@ -202,6 +202,37 @@ export const mikeAlertTool: ToolDefinition<z.infer<typeof aSchema>> = {
     properties: { action: { type: "string", enum: ["create", "list", "delete"] }, asset: { type: "string" }, kind: { type: "string", enum: [...ALERT_KINDS] }, level: { type: "number" }, timeframe: { type: "string", enum: [...TIMEFRAMES] }, id: { type: "string" } },
     required: ["action"],
   },
+};
+
+// ---- mike_chart (MIKE + JARVIS) -----------------------------------------------
+const chartSchema = z.object({
+  asset: z.string().min(1).max(60).describe("Any market by name or ticker: Bitcoin, Reliance, Tesla, Nifty, gold, EUR/USD, AAPL, RELIANCE.NS, PEPE…"),
+  timeframe: tf.optional(),
+});
+/** Pull up the LIVE chart of any market on MIKE's screen. */
+export const mikeChartTool: ToolDefinition<z.infer<typeof chartSchema>> = {
+  name: "mike_chart",
+  description:
+    "Pull up the LIVE price chart of any market (stocks on any exchange, indices, crypto, forex, commodities, ETFs, futures) on MIKE's screen — candlesticks, volume, indicators. " +
+    "Use for 'show me the chart of X', 'pull up Tesla', 'open the Bitcoin chart', 'chart gold on the daily'. It only shows the chart; it makes no trade call. Opens MIKE if needed.",
+  schema: chartSchema,
+  activityLabel: "Pulling up the chart",
+  async execute(input) {
+    const asset = await assetOf(input.asset);
+    const timeframe = (input.timeframe ?? "1h") as Timeframe;
+    const s = await fetchSeries(asset, timeframe, { maxAgeMs: 5000 });
+    const last = s.candles.at(-1);
+    const status = s.freshness === "live" ? "LIVE" : s.freshness === "unavailable" ? "LIVE DATA UNAVAILABLE" : s.freshness.toUpperCase();
+    return {
+      data: {
+        navigate: `/dashboard/mike?chart=${encodeURIComponent(asset.symbol)}&tf=${timeframe}`,
+        asset: asset.display, name: asset.name ?? null, exchange: s.asset.exchange, timeframe: TF_LABEL[timeframe],
+        data: status, note: s.note, lastPrice: last ? fmtPrice(last.c) : null, currency: s.currency ?? null,
+      },
+      summary: s.freshness === "unavailable" ? `${asset.display}: ${status} — ${s.note}` : `Chart: ${asset.name ?? asset.display} · ${TF_LABEL[timeframe]} · ${status}${last ? ` · ${fmtPrice(last.c)}` : ""}`,
+    };
+  },
+  inputSchema: { type: "object", properties: { asset: { type: "string" }, timeframe: { type: "string", enum: [...TIMEFRAMES] } }, required: ["asset"] },
 };
 
 // ---- JARVIS → MIKE ----------------------------------------------------------

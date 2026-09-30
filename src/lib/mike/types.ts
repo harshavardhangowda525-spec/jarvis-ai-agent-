@@ -43,6 +43,10 @@ export interface AssetRef {
   exchange: string;
   /** Correlation bucket for exposure checks. */
   group: string;
+  /** Full name when known ("Reliance Industries Limited"). */
+  name?: string;
+  /** Yahoo symbol to use if Binance can't serve a coin ("PEPE24478-USD"). */
+  alt?: string;
 }
 
 export interface Series {

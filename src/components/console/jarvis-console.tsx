@@ -197,7 +197,10 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const turnFailed = useRef(false);
 
   const onNavigate = useCallback((path: string) => {
-    if (path.startsWith("/dashboard") && path !== "/dashboard") router.push(path);
+    if (!path.startsWith("/dashboard") || path === "/dashboard") return;
+    // MIKE (e.g. "show me the Tesla chart") opens through its launch iris
+    if (path.startsWith("/dashboard/mike")) { setMikeLaunch(true); setTimeout(() => router.push(path), 1050); return; }
+    router.push(path);
   }, [router]);
 
   const flashEv = useCallback((kind: "success" | "error") => {
