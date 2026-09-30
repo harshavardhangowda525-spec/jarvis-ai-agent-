@@ -329,20 +329,41 @@ d("DARWIN daily run (integration)", () => {
     } finally { await getDb().user.deleteMany({ where: { id: other } }); }
   });
 
-  it("with no Google profile to find a number, businesses without a listed phone aren't checked at all — only ones you can call are counted", async () => {
+  it("with no source that could find a number, businesses without a listed phone aren't checked at all — only ones you can call are counted", async () => {
     const at = new Date("2026-10-12T02:00:00Z");
     await R.saveConfig(userId, { categories: ["gyms"], target: 2, requirePhone: true });
     const noPhone = (i: number) => { const f = feature(i, "gyms", { name: `Quiet${i} Fitness Studio` }); delete (f.properties as { contact?: unknown }).contact; return f; };
     pages.gyms = [[noPhone(100), noPhone(101), feature(102, "gyms", { name: `Callable102 Fitness Studio` }), feature(103, "gyms", { name: `Callable103 Fitness Studio` })]];
     const run = await R.ensureRun(userId, at);
     const g0 = calls.gather;
-    const r = await R.advanceRun(run.id, { deps: { ...deps(), google: false, now: () => at }, budgetMs: 60_000 });
+    const r = await R.advanceRun(run.id, { deps: { ...deps(), google: false, search: false, foursquare: false, now: () => at }, budgetMs: 60_000 });
     expect(r).toMatchObject({ status: "completed", verified: 2, missingPhone: 2 });
     expect(calls.gather - g0).toBe(2); // only the two with phones were verified
     const leads = await getDb().darwinLead.findMany({ where: { userId, metadata: { path: ["dailyRunId"], equals: run.id } } });
     expect(leads.every((l) => !!l.phone)).toBe(true);
     const skipped = await getDb().darwinCandidate.findMany({ where: { userId, name: { startsWith: "Quiet" } } });
     expect(skipped.map((c) => c.status)).toEqual(["no_phone", "no_phone"]);
+  }, 60_000);
+
+  it("without Google Places, a phone found by the web search makes a business count — and says where it came from", async () => {
+    const at = new Date("2026-10-13T02:00:00Z");
+    await R.saveConfig(userId, { categories: ["gyms"], target: 1, requirePhone: true });
+    const f = feature(110, "gyms", { name: "Hidden110 Fitness Studio" });
+    delete (f.properties as { contact?: unknown }).contact;
+    pages.gyms = [[f]];
+    const run = await R.ensureRun(userId, at);
+    const found: DarwinDeps = {
+      ...deps(), google: false, search: true, now: () => at,
+      gather: async (c, o) => {
+        const g = await deps().gather(c, o);
+        return { ...g, google: null, signals: { ...g.signals, google: null }, phoneFound: { phone: "+91 98450 77777", source: "justdial.com" } };
+      },
+    };
+    const r = await R.advanceRun(run.id, { deps: found, budgetMs: 60_000 });
+    expect(r).toMatchObject({ status: "completed", verified: 1, missingPhone: 0 });
+    const lead = await getDb().darwinLead.findFirst({ where: { userId, businessName: "Hidden110 Fitness Studio" } });
+    expect(lead?.phone).toBe("+91 98450 77777");
+    expect((lead?.metadata as { phoneSource?: string }).phoneSource).toBe("web search (justdial.com)");
   }, 60_000);
 
   it("a search that only started after 2 PM isn't cut off", async () => {

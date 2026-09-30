@@ -735,10 +735,24 @@ location or no Geoapify key yet) starts on the next round once they're added.
 **Every lead has a phone number.** Leads have no website *and* a public phone
 number by default, so every one of them is someone you can call. Turn this off with
 the ⚙ setting "Only count businesses with a phone", or with
-`DARWIN_DAILY_REQUIRE_PHONE=off`. Businesses that list a phone are checked first.
-Without a Google Places key, which can supply a number, businesses with no listed
-phone are skipped before any verification lookups are spent on them. They're looked
-at again after 3 weeks, in case they add a number.
+`DARWIN_DAILY_REQUIRE_PHONE=off`. The phone can come from any of these, and no
+Google Places key is needed:
+- **The map listing:** phone, mobile or WhatsApp.
+- **Web search** (`SEARCH_API_KEY`), the same search DARWIN uses to confirm there's
+  no website. For a business with no listed phone, it also asks for the "contact
+  number".
+  - A number only counts if it's in a result that names the business, such as
+    Justdial, IndiaMART, Sulekha or its Facebook or Instagram page.
+  - A number seen once also needs a listing page or the area named. Seen twice, it
+    counts either way.
+  - Toll-free lines, directory helplines and junk numbers are ignored.
+- **Foursquare** (`FOURSQUARE_API_KEY`): the place with the same name within 300 m.
+- **Google Places** (`GOOGLE_PLACES_API_KEY`), if you have it.
+
+Each lead records where its phone came from, for example
+`web search (www.justdial.com)`. Businesses that list a phone are checked first. With
+none of these sources set up, businesses with no listed phone are skipped before any
+checks are spent on them. They're looked at again after 3 weeks.
 
 **50 leads by 2:00 PM.** The day's search has a deadline, `DARWIN_DAILY_DEADLINE`
 (default `14:00`, in `DARWIN_DAILY_TZ`). If the configured area runs out before the

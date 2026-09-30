@@ -223,3 +223,48 @@ export function scoreLead(i: ScoreInput): Score {
   if (i.bucket === "Coaching Centers") needs.push("Enrolment & student app");
   return { score, highPotential: score >= 70 && i.phoneOk, parts, needs };
 }
+
+/* ---------------- phone numbers from public web pages ---------------- */
+
+/** Numbers that are never a small business's own line: toll-free, repeated digits, directory helplines. */
+const NOT_A_BUSINESS_LINE = [/^\+91 1[89]00/, /^\+91 (\d)\1{3} ?\1{5}$/, /^\+91 (88888 88888|99999 99999|12345 67890)$/];
+
+/** Valid phone numbers written in a piece of text (Indian formats), normalised, in order, without repeats. */
+export function phonesInText(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(/(?:\+\s?91[\s.-]*|\b0?91[\s.-]*|\b0)?\(?\d{2,5}\)?(?:[\s.-]?\d){5,10}\b/g)) {
+    const digits = m[0].replace(/\D/g, "");
+    if (digits.length < 10 || digits.length > 13) continue;
+    const v = verifyPhone(m[0]);
+    if (!v.ok || !v.normalized || NOT_A_BUSINESS_LINE.some((re) => re.test(v.normalized!))) continue;
+    if (!out.includes(v.normalized)) out.push(v.normalized);
+  }
+  return out;
+}
+
+export interface SearchResultText { url: string; title?: string | null; content?: string | null }
+
+/**
+ * The business's own phone number from web search results — never a guess:
+ * only numbers inside results that name the business count. A number seen in
+ * two such results wins; one seen once also needs the result to be a business
+ * listing (directory/social page) or to mention the locality.
+ */
+export function phoneFromResults(results: SearchResultText[], name: string, locality: string): { phone: string; source: string } | null {
+  const place = nameTokens(locality).slice(0, 2);
+  const tally = new Map<string, { n: number; strong: boolean; source: string }>();
+  for (const r of results) {
+    const text = `${r.title ?? ""}\n${r.content ?? ""}`;
+    if (!textNamesBusiness(text, name)) continue;
+    const host = hostOf(r.url);
+    const listing = isDirectoryHost(host) || isSocialUrl(r.url);
+    const local = place.some((w) => text.toLowerCase().includes(w));
+    for (const p of phonesInText(text)) {
+      const t = tally.get(p) ?? { n: 0, strong: false, source: host || "web" };
+      t.n++; t.strong ||= listing || local;
+      tally.set(p, t);
+    }
+  }
+  const best = [...tally.entries()].filter(([, t]) => t.n >= 2 || t.strong).sort((a, b) => b[1].n - a[1].n)[0];
+  return best ? { phone: best[0], source: best[1].source } : null;
+}

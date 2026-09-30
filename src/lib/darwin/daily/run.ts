@@ -122,9 +122,11 @@ export interface DarwinDeps {
   now: () => Date;
   geocode: (text: string) => Promise<GeoCenter>;
   page: (o: { center: GeoCenter; radiusM: number; category: string; offset: number }) => Promise<unknown[]>;
-  gather: (c: { name: string; address: string | null; lat: number; lon: number; website: string | null; locality: string; phone?: string | null }, o: { google: boolean; search: boolean }) => Promise<Gathered>;
+  gather: (c: { name: string; address: string | null; lat: number; lon: number; website: string | null; locality: string; phone?: string | null }, o: { google: boolean; search: boolean; foursquare?: boolean }) => Promise<Gathered>;
   google: boolean;
   search: boolean;
+  /** Foursquare can supply a phone number (FOURSQUARE_API_KEY). */
+  foursquare?: boolean;
 }
 
 export function defaultDeps(): DarwinDeps {
@@ -136,6 +138,7 @@ export function defaultDeps(): DarwinDeps {
     gather: gatherSignals,
     google: googleAvailable(),
     search: searchAvailable(),
+    foursquare: env.foursquareApiKey.length > 0,
   };
 }
 
@@ -333,7 +336,8 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         const hasPhone = (x: { l: GeoLead }) => verifyPhone(x.l.phone).ok;
         const keep = fresh.filter(hasPhone);
         const rest = fresh.filter((x) => !hasPhone(x));
-        if (!deps.google) {
+        // Google, the web search and Foursquare can each find a number; with none of them, skip
+        if (!deps.google && !deps.search && !deps.foursquare) {
           for (const x of rest) {
             c.missingPhone++;
             k.rememberChecked(x.l, x.fp);
@@ -356,7 +360,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         if ((deps.google && !useGoogle) || (deps.search && !useSearch)) { stopReason = "paid_cap"; break; }
         const batch = fresh.slice(i, i + BATCH);
         const results = await Promise.all(batch.map(async ({ l, fp }) => {
-          try { return { l, fp, g: await deps.gather({ name: l.name, address: l.address, lat: l.lat, lon: l.lon, website: l.website, phone: l.phone, locality: center.label.split(",").slice(0, 2).join(",") }, { google: useGoogle, search: useSearch }) }; }
+          try { return { l, fp, g: await deps.gather({ name: l.name, address: l.address, lat: l.lat, lon: l.lon, website: l.website, phone: l.phone, locality: center.label.split(",").slice(0, 2).join(",") }, { google: useGoogle, search: useSearch, foursquare: !!deps.foursquare }) }; }
           catch (e) { return { l, fp, err: (e as Error).message }; }
         }));
         for (const r of results) {
@@ -367,7 +371,11 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
           const v = classifyWebsite(r.g.signals, { strict: cfg.strict });
           const listingPhone = verifyPhone(r.l.phone);
           const googlePhone = verifyPhone(r.g.google?.phone);
-          const phone = listingPhone.ok ? { ...listingPhone, raw: r.l.phone, source: "listing" } : googlePhone.ok ? { ...googlePhone, raw: r.g.google!.phone, source: "google" } : null;
+          const foundPhone = verifyPhone(r.g.phoneFound?.phone);
+          const phone = listingPhone.ok ? { ...listingPhone, raw: r.l.phone, source: "listing" }
+            : googlePhone.ok ? { ...googlePhone, raw: r.g.google!.phone, source: "google" }
+            : foundPhone.ok ? { ...foundPhone, raw: foundPhone.normalized, source: r.g.phoneFound!.source === "Foursquare" ? "Foursquare" : `web search (${r.g.phoneFound!.source})` }
+            : null;
           if (v.status !== "no_website" || (cfg.requirePhone && !phone)) {
             const status = v.status === "no_website" ? "no_phone" : v.status;
             if (v.status === "website_exists") c.websiteRejected++;

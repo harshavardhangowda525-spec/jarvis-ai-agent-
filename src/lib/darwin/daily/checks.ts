@@ -3,7 +3,7 @@ import { promises as dns } from "node:dns";
 import net from "node:net";
 import { env } from "@/lib/env";
 import {
-  guessDomains, hostMatchesName, hostOf, isDirectoryHost, isSocialUrl, looksParked, nameTokens, textNamesBusiness,
+  guessDomains, hostMatchesName, hostOf, isDirectoryHost, isSocialUrl, looksParked, nameTokens, textNamesBusiness, phoneFromResults, verifyPhone,
   type Signals, type UrlCheck,
 } from "./verify";
 
@@ -167,15 +167,16 @@ export async function googleProfile(name: string, address: string | null, at: { 
 
 export function searchAvailable() { return !!env.searchApiKey; }
 
-export interface SearchSignal { officialUrl: string | null; social: string[]; directories: number; error?: string }
+export interface SearchSignal { officialUrl: string | null; social: string[]; directories: number; error?: string; phone?: { phone: string; source: string } | null }
 
 /** Search the web for the business; pick out an official site vs directory/social listings. */
-export async function webSearchSignal(name: string, locality: string): Promise<SearchSignal> {
+export async function webSearchSignal(name: string, locality: string, wantPhone = false): Promise<SearchSignal> {
   try {
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ api_key: env.searchApiKey, query: `"${name}" ${locality}`, max_results: 8, search_depth: "basic", include_answer: false }),
+      // no listed phone → ask for the contact number too (directory pages show it)
+      body: JSON.stringify({ api_key: env.searchApiKey, query: `"${name}" ${locality}${wantPhone ? " contact number" : ""}`, max_results: 8, search_depth: "basic", include_answer: false }),
       signal: AbortSignal.timeout(20_000),
     });
     if (res.status === 401) return { officialUrl: null, social: [], directories: 0, error: "search credentials invalid" };
@@ -193,7 +194,8 @@ export async function webSearchSignal(name: string, locality: string): Promise<S
       if (/\.business\.site$/.test(host) && !official) { official = url; continue; } // Google's free sites are websites too
       if (!official && hostMatchesName(host, name)) official = `https://${host}/`;
     }
-    return { officialUrl: official, social: [...new Set(social)].slice(0, 4), directories };
+    const phone = phoneFromResults((j?.results ?? []).map((r: any) => ({ url: String(r?.url ?? ""), title: r?.title, content: r?.content })), name, locality);
+    return { officialUrl: official, social: [...new Set(social)].slice(0, 4), directories, phone };
   } catch (e) {
     return { officialUrl: null, social: [], directories: 0, error: (e as Error)?.name === "TimeoutError" ? "search timed out" : "search unreachable" };
   }
@@ -202,9 +204,42 @@ export async function webSearchSignal(name: string, locality: string): Promise<S
 /* ---------------- all signals for one business ---------------- */
 
 export interface CandidateInput { name: string; address: string | null; lat: number; lon: number; website: string | null; locality: string; phone?: string | null }
-export interface Gathered { signals: Signals; google: GoogleProfile | null; search: SearchSignal | null; calls: { google: number; search: number } }
+export interface Gathered {
+  signals: Signals; google: GoogleProfile | null; search: SearchSignal | null; calls: { google: number; search: number };
+  /** A phone number found outside the listing and Google (web search or Foursquare), with where it came from. */
+  phoneFound?: { phone: string; source: string } | null;
+}
 
-export async function gatherSignals(c: CandidateInput, opts: { google: boolean; search: boolean }): Promise<Gathered> {
+/**
+ * The business's phone on Foursquare: the nearest place (within 300 m) whose
+ * name matches. Tries the new Places API, then legacy v3, like discovery does.
+ */
+export async function foursquarePhone(name: string, lat: number, lon: number): Promise<{ phone: string; source: string } | null> {
+  const key = env.foursquareApiKey;
+  if (!key) return null;
+  const params = new URLSearchParams({ query: name.slice(0, 80), ll: `${lat},${lon}`, radius: "300", limit: "5", fields: "name,tel,distance" });
+  const attempts: { url: string; headers: Record<string, string> }[] = [
+    { url: `https://places-api.foursquare.com/places/search?${params}`, headers: { accept: "application/json", authorization: `Bearer ${key}`, "X-Places-Api-Version": env.foursquareApiVersion } },
+    { url: `https://api.foursquare.com/v3/places/search?${params}`, headers: { accept: "application/json", authorization: key } },
+  ];
+  for (const a of attempts) {
+    try {
+      const res = await fetch(a.url, { headers: a.headers, signal: AbortSignal.timeout(12_000) });
+      if (res.status === 401 || res.status === 403 || res.status === 404) continue; // other key generation
+      if (!res.ok) return null;
+      const j: any = await res.json();
+      for (const p of j?.results ?? []) {
+        if (!textNamesBusiness(String(p?.name ?? ""), name)) continue;
+        const v = verifyPhone(p?.tel);
+        if (v.ok && v.normalized) return { phone: v.normalized, source: "Foursquare" };
+      }
+      return null;
+    } catch { return null; }
+  }
+  return null;
+}
+
+export async function gatherSignals(c: CandidateInput, opts: { google: boolean; search: boolean; foursquare?: boolean }): Promise<Gathered> {
   const listed = c.website ? await checkUrl(c.website, c.name) : null;
   // a live listed website settles it — no paid lookups needed
   if (listed?.ok && !listed.parked) {
@@ -212,7 +247,7 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
   }
   const [g, s, guessed] = await Promise.all([
     opts.google ? googleProfile(c.name, c.address, c) : Promise.resolve(null),
-    opts.search ? webSearchSignal(c.name, c.locality) : Promise.resolve(null),
+    opts.search ? webSearchSignal(c.name, c.locality, !verifyPhone(c.phone).ok) : Promise.resolve(null),
     (async () => {
       const out: UrlCheck[] = [];
       for (const d of guessDomains(c.name)) {
@@ -223,6 +258,9 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
     })(),
   ]);
   const gCheck = g?.website ? await checkUrl(g.website, c.name) : undefined;
+  // no phone on the listing or Google → the web search's, else Foursquare's
+  const needPhone = !verifyPhone(c.phone).ok && !verifyPhone(g?.phone).ok;
+  const phoneFound = !needPhone ? null : s?.phone ?? (opts.foursquare ? await foursquarePhone(c.name, c.lat, c.lon) : null);
   const official = s?.officialUrl ? await checkUrl(s.officialUrl, c.name) : null;
   return {
     signals: {
@@ -232,7 +270,7 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
       guessed,
       distinctive: nameTokens(c.name).length > 0,
     },
-    google: g, search: s,
+    google: g, search: s, phoneFound,
     calls: { google: opts.google ? 1 : 0, search: opts.search ? 1 : 0 },
   };
 }
