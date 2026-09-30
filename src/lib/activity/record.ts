@@ -15,7 +15,7 @@ import { localDate, validTz } from "./dates";
 import type { ActivityCategory } from "./record-types";
 export type { ActivityCategory };
 
-export const AGENTS = ["JARVIS", "DARWIN", "EV", "ULTRON", "HUMANOID"] as const;
+export const AGENTS = ["JARVIS", "DARWIN", "EV", "ULTRON", "HUMANOID", "MIKE"] as const;
 
 export interface ActivityInput {
   category: ActivityCategory;

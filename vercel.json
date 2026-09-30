@@ -38,6 +38,18 @@
     },
     "src/app/api/darwin/daily/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/cron/mike/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/mike/analyze/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/mike/backtest/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/mike/scan/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
@@ -68,6 +80,10 @@
     {
       "path": "/api/cron/darwin-daily",
       "schedule": "30 3 * * *"
+    },
+    {
+      "path": "/api/cron/mike",
+      "schedule": "20 4 * * *"
     }
   ]
 }

@@ -355,6 +355,19 @@ if (await waitFor(`${local}/login`, 120)) {
     dwTimer = setTimeout(darwinDaily, more ? 5_000 : 5 * 60_000);
   };
   dwTimer = setTimeout(darwinDaily, 60_000);
+  // MIKE: check market alerts and finish open journal setups every 5 minutes (it never trades).
+  let mkTicking = false;
+  const mikeTick = async () => {
+    if (mkTicking) return;
+    mkTicking = true;
+    try {
+      const r = await fetch(`${local}/api/cron/mike`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(320_000) });
+      const j = await r.json().catch(() => ({}));
+      for (const x of j?.data?.results ?? []) for (const m of x.messages ?? []) say(`  [mike] ${m}`);
+    } catch { /* offline — next round */ } finally { mkTicking = false; }
+  };
+  setTimeout(mikeTick, 90_000);
+  setInterval(mikeTick, 5 * 60_000);
   setTimeout(evDaily, 120_000);
   setInterval(evDaily, 5 * 60_000);
   if (!process.argv.includes("--no-open")) {

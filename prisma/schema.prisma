@@ -41,6 +41,8 @@ model User {
   darwinDailyRuns  DarwinDailyRun[]
   darwinCandidates DarwinCandidate[]
   dailySummaries   DailySummary[]
+  mikeSignals      MikeSignal[]
+  mikeAlerts       MikeAlert[]
 
   @@index([email])
 }
@@ -413,6 +415,70 @@ model NiosNotice {
 
   @@unique([userId, fingerprint])
   @@index([userId, firstSeenAt])
+}
+
+/// MIKE's signal journal: every analysis MIKE produced (a setup or a deliberate
+/// NO TRADE), with the evidence at the time. The analysis fields are written
+/// once and never changed; only the outcome (resolved from later real candles)
+/// and the self-audit are added when the setup finishes.
+model MikeSignal {
+  id          String    @id @default(cuid())
+  userId      String
+  asset       String // display name, e.g. "BTC/USDT"
+  symbol      String // provider symbol, e.g. "BTCUSDT"
+  provider    String // binance | yahoo
+  assetGroup  String // correlation bucket
+  timeframe   String
+  mode        String    @default("mtf")
+  decision    String // setup | no_trade
+  direction   String? // long | short
+  status      String    @default("open") // open | triggered | won | lost | expired | not_triggered | no_trade
+  entryLow    Float?
+  entryHigh   Float?
+  stop        Float?
+  targets     Json? // [{ price, basis, rr }]
+  riskReward  Float?
+  riskPct     Float? // % of the account at risk (from the risk plan)
+  confidence  Int
+  regime      String?
+  freshness   String // live | delayed | closed | stale
+  source      String
+  priceAtSignal Float?
+  reasoning   Json // checks, no-trade reasons, alignment, confidence breakdown
+  indicators  Json? // snapshot at the time
+  outcome     Json? // { result, exitPrice, targetsHit, rMultiple, mfeR, maeR, bars }
+  audit       Json?
+  createdAt   DateTime  @default(now())
+  triggeredAt DateTime?
+  resolvedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
+}
+
+/// Market alerts MIKE watches (price levels, breakouts, volume spikes, new setups…).
+/// MIKE only NOTIFIES — it never places orders.
+model MikeAlert {
+  id            String    @id @default(cuid())
+  userId        String
+  asset         String
+  symbol        String
+  provider      String
+  timeframe     String    @default("1h")
+  kind          String // price_above | price_below | breakout | breakdown | volume_spike | trend_reversal | rsi_above | rsi_below | new_setup
+  level         Float?
+  note          String?
+  status        String    @default("active") // active | triggered | disabled
+  lastCheckedAt DateTime?
+  triggeredAt   DateTime?
+  triggerInfo   Json?
+  createdAt     DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
 }
 
 /// JARVIS's persistent activity history — what happened across every agent,
