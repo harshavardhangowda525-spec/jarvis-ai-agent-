@@ -268,3 +268,55 @@ export function phoneFromResults(results: SearchResultText[], name: string, loca
   const best = [...tally.entries()].filter(([, t]) => t.n >= 2 || t.strong).sort((a, b) => b[1].n - a[1].n)[0];
   return best ? { phone: best[0], source: best[1].source } : null;
 }
+
+/* ---------------- email addresses from public web pages ---------------- */
+
+/** Free mailbox providers — an address there says nothing about a website. */
+const FREE_MAIL = /^(gmail|googlemail|yahoo|yahoo\.co|ymail|rediffmail|rediff|hotmail|outlook|live|msn|icloud|me|aol|zoho|zohomail|proton|protonmail|gmx|mail|yandex|inbox)\.[a-z.]+$/i;
+export function isFreeMail(domain: string): boolean { return FREE_MAIL.test(domain.toLowerCase()); }
+
+const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/gi;
+/** Role mailboxes of the site itself (support@justdial.com, …), never the business's. */
+const NOT_A_BUSINESS_MAIL = /^(no-?reply|do-?not-?reply|support|help|care|feedback|privacy|abuse|legal|press|media|webmaster|admin|postmaster|mailer-daemon|grievance|compliance|dpo)@/i;
+
+/** Addresses written in a piece of text, lower-cased, in order, without repeats. */
+export function emailsInText(text: string): string[] {
+  const out: string[] = [];
+  for (const m of text.matchAll(EMAIL_RE)) {
+    const e = m[0].toLowerCase().replace(/\.+$/, "");
+    if (/\.(png|jpe?g|gif|webp|svg|css|js)$/.test(e) || /@(example|test|domain|email|sentry|wixpress)\./.test(e) || NOT_A_BUSINESS_MAIL.test(e)) continue;
+    if (!out.includes(e)) out.push(e);
+  }
+  return out;
+}
+
+/**
+ * The business's own email from web search results — never guessed or built
+ * from its name. Only addresses inside results that name the business count,
+ * and never the directory's own domain. An address seen twice wins; one seen
+ * once also needs a listing page, the locality, or an address that itself
+ * carries the business's name.
+ */
+export function emailFromResults(results: SearchResultText[], name: string, locality: string): { email: string; source: string } | null {
+  const place = nameTokens(locality).slice(0, 2);
+  const tokens = nameTokens(name);
+  const tally = new Map<string, { n: number; strong: boolean; source: string }>();
+  for (const r of results) {
+    const text = `${r.title ?? ""}\n${r.content ?? ""}`;
+    if (!textNamesBusiness(text, name)) continue;
+    const host = hostOf(r.url);
+    const siteDomain = host.split(".").slice(-2).join(".");
+    const listing = isDirectoryHost(host) || isSocialUrl(r.url);
+    const local = place.some((w) => text.toLowerCase().includes(w));
+    for (const e of emailsInText(text)) {
+      const domain = e.split("@")[1];
+      if (siteDomain && domain.endsWith(siteDomain) && isDirectoryHost(host)) continue; // the directory's own mailbox
+      const named = tokens.some((t) => t.length >= 4 && e.includes(t));
+      const t = tally.get(e) ?? { n: 0, strong: false, source: host || "web" };
+      t.n++; t.strong ||= listing || local || named;
+      tally.set(e, t);
+    }
+  }
+  const best = [...tally.entries()].filter(([, t]) => t.n >= 2 || t.strong).sort((a, b) => b[1].n - a[1].n)[0];
+  return best ? { email: best[0], source: best[1].source } : null;
+}

@@ -1,6 +1,6 @@
 import "server-only";
 import { syncLeadsToSheet, leadSheet } from "@/lib/darwin/daily/sheet";
-import { sendAutoEmails, autoEmailState, type AutoEmailDeps, type AutoEmailResult, type AutoEmailState } from "@/lib/darwin/auto-email";
+import { sendAutoEmails, autoEmailState, usableEmail, type AutoEmailDeps, type AutoEmailResult, type AutoEmailState } from "@/lib/darwin/auto-email";
 import { createHash } from "node:crypto";
 import type { DarwinDailyRun, Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
@@ -37,6 +37,8 @@ export interface DailyConfig {
   strict: boolean;
   /** Email every new lead that has a public address, automatically (once each). */
   autoEmail: boolean;
+  /** Email goal: this many no-website businesses WITH a public email, each emailed by the email deadline (0 = off). */
+  emailTarget: number;
   /** How many times today's search has widened itself to reach the target (run config only). */
   widened?: number;
 }
@@ -71,6 +73,7 @@ export async function loadConfig(userId: string): Promise<DailyConfig & { source
     ...(saved.requirePhoneChosen ? { requirePhoneChosen: true } : {}),
     strict: saved.strict ?? env.darwinDailyStrict,
     autoEmail: saved.autoEmail ?? env.darwinAutoEmail,
+    emailTarget: Math.min(Math.max(saved.emailTarget ?? env.darwinEmailTarget, 0), 40),
     source,
   };
 }
@@ -86,6 +89,7 @@ export async function saveConfig(userId: string, c: Partial<DailyConfig>) {
     ...(c.requirePhone !== undefined || cur.requirePhoneChosen ? { requirePhoneChosen: true } : {}),
     strict: c.strict ?? cur.strict,
     autoEmail: c.autoEmail ?? cur.autoEmail,
+    emailTarget: Math.min(Math.max(Math.round(c.emailTarget ?? cur.emailTarget), 0), 40),
   };
   await getDb().integration.upsert({
     where: { userId_provider: { userId, provider: "darwin_daily" } },
@@ -113,6 +117,17 @@ export function pastDeadline(now = new Date()) { return dailyNow(now).minutes >=
 /** "2:00 PM" */
 export function deadlineLabel() { const m = deadlineMin(); const h = Math.floor(m / 60); return `${((h + 11) % 12) + 1}:${String(m % 60).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; }
 
+/**
+ * The email goal's deadline (default 6:00 PM): every email must be SENT by then, so the search
+ * for more addresses stops early enough for the last ones to go out (one email per gap).
+ */
+function emailDeadlineMin() { const d = hm(env.darwinEmailDeadline); return Number.isFinite(d) ? d : 18 * 60; }
+export function emailDeadlineLabel() { const m = emailDeadlineMin(); const h = Math.floor(m / 60); return `${((h + 11) % 12) + 1}:${String(m % 60).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; }
+/** Minutes before the email deadline when the search for addresses stops (time to send what's left). */
+export function emailSearchCutoffMin(target: number) { return Math.min(90, Math.max(20, Math.ceil((target * env.darwinAutoEmailGapSec) / 60) + 10)); }
+export function pastEmailSearch(now: Date, target: number) { return dailyNow(now).minutes >= emailDeadlineMin() - emailSearchCutoffMin(target); }
+export function pastEmailDeadline(now = new Date()) { return dailyNow(now).minutes >= emailDeadlineMin(); }
+
 /** Could a run start with these settings (a location to search and Geoapify)? */
 const canRun = (cfg: DailyConfig) => cfg.locations.length > 0 && !!env.geoapifyApiKey;
 
@@ -122,7 +137,7 @@ export interface DarwinDeps {
   now: () => Date;
   geocode: (text: string) => Promise<GeoCenter>;
   page: (o: { center: GeoCenter; radiusM: number; category: string; offset: number }) => Promise<unknown[]>;
-  gather: (c: { name: string; address: string | null; lat: number; lon: number; website: string | null; locality: string; phone?: string | null }, o: { google: boolean; search: boolean; foursquare?: boolean }) => Promise<Gathered>;
+  gather: (c: { name: string; address: string | null; lat: number; lon: number; website: string | null; locality: string; phone?: string | null; email?: string | null }, o: { google: boolean; search: boolean; foursquare?: boolean; wantEmail?: boolean }) => Promise<Gathered>;
   google: boolean;
   search: boolean;
   /** Foursquare can supply a phone number (FOURSQUARE_API_KEY). */
@@ -145,6 +160,7 @@ export function defaultDeps(): DarwinDeps {
 const PAGE = 50;
 const MAX_GEO_REQUESTS = 600;         // per day (room to widen the search) — well inside Geoapify's free 3,000/day
 const PAID_CALLS_PER_TARGET = 4;      // Google / search lookups allowed per wanted lead
+const PAID_CALLS_PER_EMAIL = 8;       // …and per wanted email lead (most small businesses list no email, so more are checked)
 const RECHECK_AFTER_DAYS = 21;        // unclear / temporarily-down / phoneless businesses get another look later
 const BATCH = 4;
 
@@ -169,16 +185,40 @@ export async function ensureRun(userId: string, now = new Date()): Promise<Darwi
   try {
     return await getDb().darwinDailyRun.create({
       data: {
-        userId, date, target: cfg.target, config: cfg as unknown as Prisma.InputJsonValue,
+        userId, date, target: cfg.target, emailTarget: cfg.emailTarget, config: cfg as unknown as Prisma.InputJsonValue,
         status: needsSetup ? "needs_setup" : "running",
         lastError: !env.geoapifyApiKey ? "Geoapify isn't configured (GEOAPIFY_API_KEY), so DARWIN can't search." : !cfg.locations.length ? "No target locations yet — add them in DARWIN's daily search settings." : null,
-        log: [{ at: now.toISOString(), text: needsSetup ? "Daily search needs setup." : `Daily search started — target ${cfg.target} verified no-website leads across ${cfg.locations.length} location${cfg.locations.length === 1 ? "" : "s"} × ${cfg.categories.length} categories.` }] as unknown as Prisma.InputJsonValue,
+        log: [{ at: now.toISOString(), text: needsSetup ? "Daily search needs setup." : `Daily search started — target ${cfg.target} verified no-website leads${cfg.emailTarget ? ` and ${cfg.emailTarget} with an email address (each emailed by ${emailDeadlineLabel()})` : ""} across ${cfg.locations.length} location${cfg.locations.length === 1 ? "" : "s"} × ${cfg.categories.length} categories.` }] as unknown as Prisma.InputJsonValue,
       },
     });
   } catch (e) {
     if ((e as { code?: string }).code === "P2002") return (await getDb().darwinDailyRun.findUnique({ where: { userId_date: { userId, date } } }))!;
     throw e;
   }
+}
+
+/**
+ * Today's run takes the CURRENT email goal: set or changed in DARWIN during the day, or a run
+ * that started before the goal existed. A finished run re-opens to look for the email
+ * businesses when there's still time to email them all before the deadline.
+ */
+export async function adoptEmailGoal(run: DarwinDailyRun, now = new Date()): Promise<DarwinDailyRun> {
+  if (run.status === "needs_setup") return run;
+  const cfg = run.config as unknown as DailyConfig;
+  const want = (await loadConfig(run.userId)).emailTarget;
+  if ((cfg.emailTarget ?? 0) === want && run.emailTarget === want) return run;
+  const found = want ? await getDb().darwinLead.count({ where: { userId: run.userId, email: { not: null }, metadata: { path: ["dailyRunId"], equals: run.id } } }) : 0;
+  const reopen = want > found && (run.status === "completed" || run.status === "partial") && !pastEmailSearch(now, want);
+  const log = [...logOf(run), { at: now.toISOString(), text: want ? `Email goal set: ${want} no-website businesses with an email, each emailed by ${emailDeadlineLabel()}${reopen ? " — searching again for them." : "."}` : "Email goal turned off." }];
+  return getDb().darwinDailyRun.update({
+    where: { id: run.id },
+    data: {
+      emailTarget: want,
+      config: { ...cfg, emailTarget: want } as unknown as Prisma.InputJsonValue,
+      log: log.slice(-80) as unknown as Prisma.InputJsonValue,
+      ...(reopen ? { status: "running", completedAt: null, lockedUntil: null } : {}),
+    },
+  });
 }
 
 async function lease(id: string, now: Date, ms: number) {
@@ -207,7 +247,7 @@ async function knowledge(userId: string, now: Date, run: { id: string; date: str
   const phones = new Set(leads.map((l) => (l.phone ?? "").replace(/\D/g, "").slice(-10)).filter((p) => p.length === 10));
   const named = leads.filter((l) => l.latitude != null && l.longitude != null).map((l) => ({ n: normName(l.businessName), lat: l.latitude!, lon: l.longitude! }));
   const cutoff = now.getTime() - RECHECK_AFTER_DAYS * 86_400_000;
-  const settled = (c: { status: string; checkedAt: Date }) => !(["unclear", "temporarily_unavailable", "no_phone"].includes(c.status) && c.checkedAt.getTime() < cutoff);
+  const settled = (c: { status: string; checkedAt: Date }) => !(["unclear", "temporarily_unavailable", "no_phone", "no_email"].includes(c.status) && c.checkedAt.getTime() < cutoff);
   const candFp = new Set(cands.filter(settled).map((c) => c.fingerprint));
   const candRef = new Set(cands.filter(settled).map((c) => c.placeId).filter(Boolean) as string[]);
   return {
@@ -230,7 +270,7 @@ async function knowledge(userId: string, now: Date, run: { id: string; date: str
   };
 }
 
-type Counters = Pick<DarwinDailyRun, "verified" | "candidates" | "duplicates" | "alreadyChecked" | "websiteRejected" | "unclear" | "tempUnavailable" | "closed" | "missingPhone" | "outOfArea" | "errors">;
+type Counters = Pick<DarwinDailyRun, "verified" | "candidates" | "duplicates" | "alreadyChecked" | "websiteRejected" | "unclear" | "tempUnavailable" | "closed" | "missingPhone" | "missingEmail" | "outOfArea" | "errors">;
 type Api = { geoapify: number; google: number; search: number };
 
 /**
@@ -251,11 +291,16 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     const combos = combosOf(cfg);
     const k = await knowledge(run.userId, deps.now(), run);
     const c: Counters = { ...run };
+    // what today's saved leads already count toward: the leads goal (phones) and the email goal
+    const emailTarget = cfg.emailTarget ?? 0;
+    const savedToday = await db.darwinLead.findMany({ where: { userId: run.userId, metadata: { path: ["dailyRunId"], equals: run.id } }, select: { phone: true, email: true } });
+    let phoneLeads = savedToday.filter((l) => l.phone).length;
+    let emailLeads = savedToday.filter((l) => usableEmail(l.email)).length;
     const api: Api = { geoapify: 0, google: 0, search: 0, ...((run.apiRequests as Api | null) ?? {}) };
     const log = logOf(run);
     const exhausted = new Set(run.exhaustedCombos);
     let comboIndex = run.comboIndex;
-    const paidCap = cfg.target * PAID_CALLS_PER_TARGET;
+    const paidCap = cfg.target * PAID_CALLS_PER_TARGET + (cfg.emailTarget ?? 0) * PAID_CALLS_PER_EMAIL;
     const say = (text: string, tone?: "ok" | "warn") => log.push({ at: deps.now().toISOString(), text: text.slice(0, 300), ...(tone ? { tone } : {}) });
     const persist = async (extra: Prisma.DarwinDailyRunUpdateInput = {}) => {
       run = await db.darwinDailyRun.update({
@@ -265,9 +310,15 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     };
     let stopReason: string | null = null;
 
-    // the deadline binds a search that started before it (one started later just runs to the end)
+    // each deadline binds a search that started before it (one started later just runs to the end)
     const hasDeadline = !pastDeadline(run.startedAt);
-    while (c.verified < cfg.target && deps.now().getTime() - t0 < budget - 8_000 && !(hasDeadline && pastDeadline(deps.now()))) {
+    const hasEmailDeadline = !pastEmailSearch(run.startedAt, emailTarget);
+    const leadsCount = () => (cfg.requirePhone ? phoneLeads : c.verified);
+    /** Still looking for the day's leads (default: with a phone, by 2 PM)? */
+    const leadsOpen = () => leadsCount() < cfg.target && !(hasDeadline && pastDeadline(deps.now()));
+    /** Still looking for businesses with an email (in time to email them all by 6 PM)? */
+    const emailOpen = () => emailTarget > 0 && emailLeads < emailTarget && !(hasEmailDeadline && pastEmailSearch(deps.now(), emailTarget));
+    while ((leadsOpen() || emailOpen()) && deps.now().getTime() - t0 < budget - 8_000) {
       if (comboIndex >= combos.length) { stopReason = "scope"; break; }
       const combo = combos[comboIndex];
       if (exhausted.has(combo.key)) { comboIndex++; continue; }
@@ -330,21 +381,25 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         if (nextStep >= radii.length && !fresh.length) { exhausted.add(combo.key); comboIndex++; }
       }
 
-      // ---- phone required: businesses that list one are checked first; without a Google
-      // profile to find a number, one that lists none can't count — skip its checks
-      if (cfg.requirePhone && fresh.length) {
-        const hasPhone = (x: { l: GeoLead }) => verifyPhone(x.l.phone).ok;
-        const keep = fresh.filter(hasPhone);
-        const rest = fresh.filter((x) => !hasPhone(x));
-        // Google, the web search and Foursquare can each find a number; with none of them, skip
+      // ---- businesses that already list what an open goal needs (a phone / an email) are checked
+      // first; with nothing that could find the missing contact, the rest can't count — skip them
+      if (fresh.length && (cfg.requirePhone || emailOpen())) {
+        const useful = (x: { l: GeoLead }) =>
+          (leadsOpen() && (!cfg.requirePhone || verifyPhone(x.l.phone).ok)) || (emailOpen() && !!usableEmail(x.l.email));
+        const keep = fresh.filter(useful);
+        const rest = fresh.filter((x) => !useful(x));
+        // Google, the web search and Foursquare can each find a number; the web search an email
         if (!deps.google && !deps.search && !deps.foursquare) {
           for (const x of rest) {
-            c.missingPhone++;
+            const noEmail = emailOpen() && !leadsOpen();
+            if (noEmail) c.missingEmail++; else c.missingPhone++;
+            const status = noEmail ? "no_email" : "no_phone";
+            const reasons = [noEmail ? "No public email address listed" : "No public phone number listed"];
             k.rememberChecked(x.l, x.fp);
             await db.darwinCandidate.upsert({
               where: { userId_fingerprint: { userId: run.userId, fingerprint: x.fp } },
-              create: { userId: run.userId, fingerprint: x.fp, placeId: x.l.placeId, name: x.l.name, category: x.l.category, address: x.l.address, status: "no_phone", website: x.l.website, reasons: ["No public phone number listed"], runDate: run.date },
-              update: { status: "no_phone", reasons: ["No public phone number listed"], runDate: run.date, checkedAt: deps.now() },
+              create: { userId: run.userId, fingerprint: x.fp, placeId: x.l.placeId, name: x.l.name, category: x.l.category, address: x.l.address, status, website: x.l.website, reasons, runDate: run.date },
+              update: { status, reasons, runDate: run.date, checkedAt: deps.now() },
             }).catch(() => {});
           }
           fresh.splice(0, fresh.length, ...keep);
@@ -353,18 +408,18 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
 
       // ---- verify, a few at a time
       let processed = 0;
-      for (let i = 0; i < fresh.length && c.verified < cfg.target; i += BATCH) {
+      for (let i = 0; i < fresh.length && (leadsOpen() || emailOpen()); i += BATCH) {
         if (deps.now().getTime() - t0 > budget - 8_000) break;
         const useGoogle = deps.google && api.google < paidCap;
         const useSearch = deps.search && api.search < paidCap;
         if ((deps.google && !useGoogle) || (deps.search && !useSearch)) { stopReason = "paid_cap"; break; }
         const batch = fresh.slice(i, i + BATCH);
         const results = await Promise.all(batch.map(async ({ l, fp }) => {
-          try { return { l, fp, g: await deps.gather({ name: l.name, address: l.address, lat: l.lat, lon: l.lon, website: l.website, phone: l.phone, locality: center.label.split(",").slice(0, 2).join(",") }, { google: useGoogle, search: useSearch, foursquare: !!deps.foursquare }) }; }
+          try { return { l, fp, g: await deps.gather({ name: l.name, address: l.address, lat: l.lat, lon: l.lon, website: l.website, phone: l.phone, email: l.email, locality: center.label.split(",").slice(0, 2).join(",") }, { google: useGoogle, search: useSearch, foursquare: !!deps.foursquare, wantEmail: emailOpen() }) }; }
           catch (e) { return { l, fp, err: (e as Error).message }; }
         }));
         for (const r of results) {
-          if (c.verified >= cfg.target) break;
+          if (!leadsOpen() && !emailOpen()) break;
           processed = i + results.indexOf(r) + 1;
           if ("err" in r) { c.errors++; continue; }
           api.google += r.g.calls.google; api.search += r.g.calls.search;
@@ -376,12 +431,21 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
             : googlePhone.ok ? { ...googlePhone, raw: r.g.google!.phone, source: "google" }
             : foundPhone.ok ? { ...foundPhone, raw: foundPhone.normalized, source: r.g.phoneFound!.source === "Foursquare" ? "Foursquare" : `web search (${r.g.phoneFound!.source})` }
             : null;
-          if (v.status !== "no_website" || (cfg.requirePhone && !phone)) {
-            const status = v.status === "no_website" ? "no_phone" : v.status;
+          // an email the listing gave, else one found on public pages naming the business — never guessed
+          const listedEmail = usableEmail(r.l.email);
+          const foundEmail = usableEmail(r.g.emailFound?.email);
+          const email = listedEmail ? { email: listedEmail, source: "listing" } : foundEmail ? { email: foundEmail, source: `web search (${r.g.emailFound!.source})` } : null;
+          // kept when it serves a goal that's still open
+          const forLeads = leadsOpen() && (!cfg.requirePhone || !!phone);
+          const forEmail = emailOpen() && !!email;
+          if (v.status !== "no_website" || (!forLeads && !forEmail)) {
+            const noEmail = v.status === "no_website" && emailOpen() && !leadsOpen();
+            const status = v.status === "no_website" ? (noEmail ? "no_email" : "no_phone") : v.status;
             if (v.status === "website_exists") c.websiteRejected++;
             else if (v.status === "temporarily_unavailable") c.tempUnavailable++;
             else if (v.status === "unclear") c.unclear++;
             else if (v.status === "closed") c.closed++;
+            else if (noEmail) c.missingEmail++;
             else c.missingPhone++;
             k.rememberChecked(r.l, r.fp);
             await db.darwinCandidate.upsert({
@@ -396,7 +460,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
           const bucket = categoryBucket(r.l.category);
           const social = r.g.search?.social ?? [];
           const s = scoreLead({
-            verdict: "no_website", bucket, phoneOk: !!phone, mobile: !!phone?.mobile, email: !!r.l.email,
+            verdict: "no_website", bucket, phoneOk: !!phone, mobile: !!phone?.mobile, email: !!email,
             social: social.length + (r.l.instagram ? 1 : 0), distanceM: r.l.distanceM, reviews: r.g.google?.reviews ?? null, rating: r.g.google?.rating ?? null,
           });
           const links = mapLinks(r.l.lat, r.l.lon);
@@ -404,17 +468,17 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
           await db.darwinLead.create({
             data: {
               userId: run.userId, businessName: r.l.name, category: r.l.category, location: r.l.address,
-              website: null, phone: phone?.raw ?? null, email: r.l.email, instagram: r.l.instagram ?? social.find((u) => /instagram/i.test(u)) ?? null,
+              website: null, phone: phone?.raw ?? null, email: email?.email ?? null, instagram: r.l.instagram ?? social.find((u) => /instagram/i.test(u)) ?? null,
               source: "geoapify", sourceRef: r.l.placeId, sourceUrl: links.osmUrl,
               latitude: r.l.lat, longitude: r.l.lon, lastSeenAt: deps.now(), lastVerifiedAt: deps.now(),
               stage: "new", opportunityType: "no_website", leadScore: s.score,
-              verifiedFields: ["businessName", "location", "coordinates", "websiteStatus", ...(phone ? ["phone"] : []), ...(r.l.email ? ["email"] : [])],
+              verifiedFields: ["businessName", "location", "coordinates", "websiteStatus", ...(phone ? ["phone"] : []), ...(email ? ["email"] : [])],
               fingerprint: r.fp,
               notes: `DARWIN daily search ${today}: verified no website — ${v.reasons.join(" ")}${s.needs.length > 1 ? ` Could use: ${s.needs.join(", ")}.` : ""}`,
               metadata: {
                 dailyRunId: run.id, dailyDate: today, bucket, highPotential: s.highPotential,
                 websiteVerification: { status: v.status, reasons: v.reasons, independent: v.independent, checkedAt: deps.now().toISOString() },
-                score: s.parts, needs: s.needs, phoneSource: phone?.source ?? null,
+                score: s.parts, needs: s.needs, phoneSource: phone?.source ?? null, emailSource: email?.source ?? null,
                 google: r.g.google?.found ? { mapsUri: r.g.google.mapsUri, rating: r.g.google.rating, reviews: r.g.google.reviews } : null,
                 social, distanceM: r.l.distanceM, geoapifyCategories: r.l.geoCategories,
                 search: { category: combo.cat, location: combo.loc },
@@ -424,6 +488,8 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
           });
           k.remember(r.l, r.fp);
           c.verified++;
+          if (phone) phoneLeads++;
+          if (email) emailLeads++;
         }
         await persist();
       }
@@ -435,15 +501,19 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         if (after?.exhausted && !exhausted.has(combo.key)) { exhausted.add(combo.key); comboIndex++; }
       }
       if (stopReason) break;
-      if (fresh.length) say(`${combo.cat} · ${combo.loc}: ${fresh.length} new candidate${fresh.length === 1 ? "" : "s"} checked — ${c.verified}/${cfg.target} verified so far.`);
+      if (fresh.length) say(`${combo.cat} · ${combo.loc}: ${fresh.length} new candidate${fresh.length === 1 ? "" : "s"} checked — ${leadsCount()}/${cfg.target} verified so far${emailTarget ? `, ${emailLeads}/${emailTarget} with an email` : ""}.`);
       await persist();
     }
 
     // ---- finish, or stay running for the next tick
-    const done = c.verified >= cfg.target;
+    const leadsDone = leadsCount() >= cfg.target;
+    const emailDone = !emailTarget || emailLeads >= emailTarget;
+    const done = leadsDone && emailDone;
     const outOfScope = stopReason === "scope" || (comboIndex >= combos.length);
     const capped = stopReason === "geo_cap" || stopReason === "paid_cap";
-    const late = !done && hasDeadline && pastDeadline(deps.now());
+    // nothing left to look for in time: each unfinished goal has passed its deadline
+    const late = !done && !leadsOpen() && !emailOpen();
+    const emailInfo = emailTarget ? { found: emailLeads, target: emailTarget } : undefined;
     // the area ran out before the target and there's still time → widen the search and carry on
     if (outOfScope && !done && !late && !capped) {
       const w = widen(cfg);
@@ -451,15 +521,16 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         cfg.widened = w.step;
         if (w.clearExhausted) exhausted.clear();
         comboIndex = 0;
-        say(`${c.verified}/${cfg.target} so far and the search area ran out — widening it to reach ${cfg.target} by ${deadlineLabel()}: ${w.note}.`);
+        say(`${leadsCount()}/${cfg.target} so far${emailTarget ? ` (${emailLeads}/${emailTarget} with an email)` : ""} and the search area ran out — widening it: ${w.note}.`);
         await persist({ config: cfg as unknown as Prisma.InputJsonValue });
         return run;
       }
     }
     if (done || outOfScope || capped || late) {
-      const reasons = shortfallReasons(c, cfg, { outOfScope: outOfScope && !late, capped, late, api, google: deps.google, search: deps.search });
+      const reasons = shortfallReasons({ ...c, verified: leadsCount() }, cfg, { outOfScope: outOfScope && !late, capped, late, api, google: deps.google, search: deps.search, email: emailInfo });
       const status = done ? "completed" : "partial";
-      say(done ? `Daily target reached: ${c.verified}/${cfg.target}.` : `Search finished with ${c.verified}/${cfg.target} verified — ${reasons[0] ?? "scope exhausted"}.`, done ? "ok" : "warn");
+      const emailPart = emailTarget ? ` · ${emailLeads}/${emailTarget} with an email` : "";
+      say(done ? `Daily target reached: ${leadsCount()}/${cfg.target}${emailPart}.` : `Search finished with ${leadsCount()}/${cfg.target} verified${emailPart} — ${reasons[0] ?? "scope exhausted"}.`, done ? "ok" : "warn");
       await persist({ status, completedAt: deps.now(), reasons, lockedUntil: null });
       const report = await buildReport(run);
       run = await db.darwinDailyRun.update({ where: { id: run.id }, data: { report: report as unknown as Prisma.InputJsonValue } });
@@ -513,17 +584,21 @@ export function widen(cfg: DailyConfig): { step: number; note: string; clearExha
 }
 
 /** Why the target wasn't reached — from the counters only. */
-export function shortfallReasons(c: Counters, cfg: DailyConfig, o: { outOfScope: boolean; capped: boolean; late?: boolean; api: Api; google: boolean; search: boolean }): string[] {
-  if (c.verified >= cfg.target) return [];
+export function shortfallReasons(c: Counters, cfg: DailyConfig, o: { outOfScope: boolean; capped: boolean; late?: boolean; api: Api; google: boolean; search: boolean; email?: { found: number; target: number } }): string[] {
+  const emailShort = !!o.email && o.email.found < o.email.target;
+  if (c.verified >= cfg.target && !emailShort) return [];
   const r: string[] = [];
-  if (o.late) r.push(`Reached the ${deadlineLabel()} deadline before finding ${cfg.target}`);
+  if (emailShort) {
+    r.push(`Found ${o.email!.found} of ${o.email!.target} no-website businesses with a public email address${c.missingEmail ? ` — ${c.missingEmail} other${c.missingEmail === 1 ? "" : "s"} had no email anywhere public` : ""}${!o.search ? " (add SEARCH_API_KEY so DARWIN can look up emails beyond the map listing)" : ""}`);
+  }
+  if (o.late && c.verified < cfg.target) r.push(`Reached the ${deadlineLabel()} deadline before finding ${cfg.target}`);
   if (o.outOfScope) r.push(`Insufficient businesses found — every location × category in the search area (${cfg.locations.join(", ")}) was searched${cfg.widened ? `, even after widening it to ${cfg.categories.length} kinds of business within ${cfg.radiusKm} km` : ""}`);
   if (o.capped) r.push("API/search limitations — today's request budget was used up");
   if (c.duplicates) r.push(`${c.duplicates} were already in your DARWIN database`);
   if (c.alreadyChecked) r.push(`${c.alreadyChecked} were checked on earlier days (had websites or were unclear)`);
   if (c.unclear) r.push(`${c.unclear} had an unclear website status${!o.google && !o.search && cfg.strict ? " — no Google Places or web-search key is set, so the absence of a website couldn't be independently confirmed" : ""}`);
   if (c.tempUnavailable) r.push(`${c.tempUnavailable} had websites that were temporarily unavailable`);
-  if (c.missingPhone && cfg.requirePhone) r.push(`${c.missingPhone} had no public phone number`);
+  if (c.missingPhone && cfg.requirePhone && c.verified < cfg.target) r.push(`${c.missingPhone} had no public phone number`);
   if (c.errors) r.push(`${c.errors} verification failure${c.errors === 1 ? "" : "s"}`);
   return r;
 }
@@ -531,6 +606,12 @@ export function shortfallReasons(c: Counters, cfg: DailyConfig, o: { outOfScope:
 /** One natural sentence for JARVIS to say — never more than the report holds. */
 export function spokenReport(r: DailyReport): string {
   const n = r.verified;
+  const mail = r.emailTarget
+    ? ` For email outreach, ${r.withEmail} of the ${r.emailTarget} I aimed for have a public email address, and ${r.emailed} ${r.emailed === 1 ? "has" : "have"} been emailed so far.`
+    : "";
+  return spokenCore(r, n) + mail;
+}
+function spokenCore(r: DailyReport, n: number): string {
   if (r.status === "completed") {
     return `DARWIN has finished today's lead search. I found ${n} new business${n === 1 ? "" : "es"} without verified websites. ${r.contactable} ${r.contactable === 1 ? "has a" : "have"} publicly available phone number${r.contactable === 1 ? "" : "s"}, and ${r.highPotential} ${r.highPotential === 1 ? "was" : "were"} marked as high-potential lead${r.highPotential === 1 ? "" : "s"}. I've saved them to your CRM.`;
   }
@@ -552,6 +633,8 @@ export interface DarwinDailyView {
     id: string; date: string; status: string; target: number; verified: number; remaining: number;
     candidates: number; duplicates: number; alreadyChecked: number; websiteRejected: number; unclear: number; tempUnavailable: number; closed: number;
     contactable: number; highPotential: number; reasons: string[]; lastError: string | null;
+    /** Email goal: found with a public email / goal / emailed so far. */
+    withEmail: number; emailTarget: number; emailed: number;
     log: Log; startedAt: string; completedAt: string | null; reportedAt: string | null;
     leadIds: string[];
   };
@@ -563,6 +646,8 @@ export interface DarwinDailyView {
   email: AutoEmailState;
   /** When the day's leads should be ready ("2:00 PM"), and the Google Sheet they're added to. */
   deadlineLabel: string;
+  /** When every email-goal email should be sent ("6:00 PM"). */
+  emailDeadlineLabel: string;
   sheetUrl: string | null;
   history: { date: string; verified: number; target: number; status: string }[];
 }
@@ -591,6 +676,9 @@ export async function darwinDailyView(userId: string, now = new Date()): Promise
       unclear: run.unclear, tempUnavailable: run.tempUnavailable, closed: run.closed,
       contactable: leads.filter((l) => l.phone).length,
       highPotential: leads.filter((l) => (l.metadata as { highPotential?: boolean } | null)?.highPotential).length,
+      withEmail: leads.filter((l) => l.email).length,
+      emailTarget: run.emailTarget,
+      emailed: leads.length ? await db.darwinMessage.count({ where: { userId, channel: "email", status: { in: ["sent", "delivered", "replied"] }, leadId: { in: leads.map((l) => l.id) } } }) : 0,
       reasons: run.reasons, lastError: run.lastError, log: logOf(run).slice(-14),
       startedAt: run.startedAt.toISOString(), completedAt: run.completedAt?.toISOString() ?? null, reportedAt: run.reportedAt?.toISOString() ?? null,
       leadIds: leads.map((l) => l.id),
@@ -601,6 +689,7 @@ export async function darwinDailyView(userId: string, now = new Date()): Promise
     sources: { geoapify: !!env.geoapifyApiKey, google: googleAvailable(), search: searchAvailable() },
     email: await autoEmailState(userId, cfg.autoEmail),
     deadlineLabel: deadlineLabel(),
+    emailDeadlineLabel: emailDeadlineLabel(),
     sheetUrl: (await leadSheet(userId))?.url ?? null,
     history: hist,
   };
@@ -648,10 +737,14 @@ export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDep
       run = null;
     }
     if (!run && dailyDue(now, opts.earlyMin ?? 0)) run = await ensureRun(userId, now);
+    if (run) run = await adoptEmailGoal(run, now);
+    const ucfg = await loadConfig(userId);
     if (run?.status === "running") {
       const stats: { worked?: boolean } = {};
       const before = progressOf(run);
-      run = await advanceRun(run.id, { budgetMs: per, deps, stats });
+      // with automatic email on, part of each tick is kept for sending — so the day's emails
+      // go out while the search is still running (and all of them by the email deadline)
+      run = await advanceRun(run.id, { budgetMs: ucfg.autoEmail ? Math.max(30_000, Math.floor(per * 0.6)) : per, deps, stats });
       // come back only when this call really moved the search on (never spin on a stuck one)
       if (run.status === "running" && stats.worked && progressOf(run) !== before) more = true;
     }
@@ -659,7 +752,7 @@ export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDep
     if (run?.verified) await syncRunToSheet(run.id);
     // then email the new leads (and any earlier ones not yet written to) with the time left
     let mail: AutoEmailResult | null = null;
-    if ((await loadConfig(userId)).autoEmail) {
+    if (ucfg.autoEmail) {
       mail = await sendAutoEmails(userId, { until: userStart + per - 5_000, deps: opts.emailDeps });
       if (mail.sent > 0 && mail.waiting > 0 && !mail.stopped) more = true;
     }

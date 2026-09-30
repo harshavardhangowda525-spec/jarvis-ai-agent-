@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-vi.hoisted(() => { process.env.GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY || "test-key-requests-go-through-injected-deps"; });
+// these tests pin down the leads goal; the email goal has its own suite (darwin-email-goal)
+vi.hoisted(() => { process.env.GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY || "test-key-requests-go-through-injected-deps"; process.env.DARWIN_EMAIL_TARGET = "0"; });
 import {
   classifyWebsite, scoreLead, verifyPhone, guessDomains, hostMatchesName, isDirectoryHost, categoryBucket, nameTokens, textNamesBusiness, looksParked,
   type Signals, type UrlCheck,
@@ -283,7 +284,7 @@ d("DARWIN daily run (integration)", () => {
     expect(r.status).toBe("running"); // not "partial" — it widened instead
     expect((r.config as { widened?: number; categories: string[] }).widened).toBe(1);
     expect((r.config as { categories: string[] }).categories).toContain("pharmacies");
-    expect(JSON.stringify(r.log)).toMatch(/widening it to reach 3 by 2:00 PM: added \d+ more kinds of business/);
+    expect(JSON.stringify(r.log)).toMatch(/widening it: added \d+ more kinds of business/);
     r = await R.advanceRun(run.id, { deps: { ...deps(), now: () => at }, budgetMs: 60_000 });
     expect(r).toMatchObject({ status: "completed", verified: 3 });
   }, 60_000);

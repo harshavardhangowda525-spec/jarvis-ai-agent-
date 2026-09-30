@@ -45,27 +45,41 @@ export function usableEmail(raw: string | null | undefined): string | null {
   return e;
 }
 
+/** What a website does for this kind of business — the one line that makes the email about THEM. */
+const PITCH: Record<string, string> = {
+  "Restaurants/Cafes": "A simple site with your menu, photos, timings and a button to order or reserve means people who search for you online can choose you in seconds.",
+  "Salons/Spas": "A simple site with your services, prices and online booking lets new clients find you and book an appointment any time, even when you're busy.",
+  "Clinics": "A simple site with your services, doctor timings and appointment booking helps patients who search online find you and book without calling.",
+  "Gyms": "A simple site with your plans, timings, trainers and a membership enquiry form helps people nearby who search for a gym pick you.",
+  "Coaching Centers": "A simple site with your courses, batch timings, results and an enquiry form helps parents and students who search online reach you directly.",
+  "Retail Stores": "A simple site with your products, store timings and a WhatsApp order button lets nearby customers who search online see what you stock and reach you.",
+};
+const DEFAULT_PITCH = "A simple site lets people who search for you online see your services, timings and location, and contact you directly.";
+
 /** The email, written only from what's known about the lead (verified facts; nothing invented). */
 export function composeOutreach(lead: {
-  businessName: string; category?: string | null; location?: string | null; website?: string | null; opportunityType?: string | null;
+  businessName: string; category?: string | null; location?: string | null; website?: string | null; opportunityType?: string | null; metadata?: unknown;
 }): { subject: string; body: string } {
   const name = lead.businessName.trim();
   const where = (lead.location ?? "").split(",").map((x) => x.trim()).filter(Boolean).slice(-3, -1)[0] ?? "";
   const cat = (lead.category ?? "").trim().toLowerCase();
   const noSite = !lead.website && lead.opportunityType === "no_website";
+  const m = (lead.metadata ?? {}) as { bucket?: string; google?: { rating?: number | null; reviews?: number | null } | null };
   const b = EV_BUSINESS;
   const intro = `I came across ${name}${cat ? ` (${cat})` : ""}${where ? ` in ${where}` : ""}`;
+  // a real, verified Google rating is worth mentioning — people already like them
+  const g = m.google;
+  const praise = g?.rating != null && g.rating >= 4 && (g.reviews ?? 0) >= 10 ? ` Your ${g.rating}★ rating from ${g.reviews} Google reviews shows customers love you` : "";
   const body = [
     `Hi ${name} team,`,
     "",
     noSite
-      ? `${intro} and noticed you don't have a website yet.`
-      : `${intro} and wanted to reach out.`,
+      ? `${intro} and noticed you don't have a website yet.${praise ? `${praise} — a website would help many more people find you.` : ""}`
+      : `${intro} and wanted to reach out.${praise ? `${praise}.` : ""}`,
     "",
-    `I run ${b.name} — we build websites and mobile apps for local businesses (websites from ${b.websiteFrom}). ` +
-      "A simple site lets people who search for you online see your services, timings and location, and contact you directly.",
+    `I run ${b.name} — we build websites and mobile apps for local businesses (websites from ${b.websiteFrom}). ` + (PITCH[m.bucket ?? ""] ?? DEFAULT_PITCH),
     "",
-    `If that sounds useful, just reply to this email or call/WhatsApp ${b.phone}, and I'll send you a few examples.`,
+    `If that sounds useful, just reply to this email or call/WhatsApp ${b.phone}, and I'll send you a few examples${cat ? ` of sites we've made for ${cat.replace(/s$/, "")} businesses` : ""}.`,
     "",
     "Best regards,",
     b.name,
@@ -74,7 +88,7 @@ export function composeOutreach(lead: {
     "—",
     "If you'd rather not hear from us, reply \"stop\" and we won't email you again.",
   ].join("\n");
-  return { subject: noSite ? `A website for ${name}` : `A quick idea for ${name}`, body };
+  return { subject: noSite ? `A website for ${name}${where ? ` in ${where}` : ""}` : `A quick idea for ${name}`, body };
 }
 
 const DONE = ["sending", "sent", "delivered", "replied"];

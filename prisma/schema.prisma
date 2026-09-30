@@ -611,6 +611,10 @@ model DarwinDailyRun {
   tempUnavailable Int      @default(0)
   closed         Int       @default(0)
   missingPhone   Int       @default(0)
+  /// email outreach goal for the day (no-website businesses WITH a public email, each emailed by the deadline)
+  emailTarget    Int       @default(0)
+  /// verified no-website businesses skipped for the email goal because no public email could be found
+  missingEmail   Int       @default(0)
   outOfArea      Int       @default(0)
   errors         Int       @default(0)
   apiRequests    Json? // { geoapify, google, search }

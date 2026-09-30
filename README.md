@@ -802,6 +802,33 @@ The daily job sends the emails, so DARWIN doesn't need to be open. The ring show
 "N emailed today · M waiting". Many businesses without a website list no email
 at all. Those can't be emailed, so reach them by phone.
 
+**25 emailed by 6:00 PM (email goal).** Alongside the leads goal, DARWIN looks for
+`DARWIN_EMAIL_TARGET` (default 25, max 40, 0 turns it off) new no-website businesses
+**that have an email address**. It emails each one as it's found, and all of them
+by `DARWIN_EMAIL_DEADLINE` (default `18:00`). Change the number any time under
+"EMAIL GOAL PER DAY" in the ⚙ settings; today's run picks it up straight away and
+re-opens if it had already finished.
+- **Where the address comes from.** It comes from the map listing, or from public pages the web search
+  (`SEARCH_API_KEY`) finds that name the business. That includes directory listings,
+  social pages, and pages mentioning its area. An address is never guessed or built
+  from the name. It is taken only if it appears twice, or on a page clearly about
+  that business. A directory's own mailbox (support@justdial.com…) never counts.
+- **Still no website.** An email at the business's own domain (not Gmail and so on)
+  gets that domain checked. If a live site is there, the business has a website and
+  is dropped.
+- **The search keeps going** after the leads goal is met, until enough businesses with
+  an email are found. It stops with enough time to send the last emails before the
+  deadline, around 5:30 PM for 25 at a 45-second gap.
+- **Each email is written for that business**: its kind of business, its area, and
+  its Google rating when that's verified and good. It's sent from your Gmail
+  under the safeguards above.
+- **Honest shortfall.** If fewer are found, the report says how many and why.
+  For example, the others had no public email, or `SEARCH_API_KEY` isn't set.
+
+The email goal needs automatic email on, Google connected, and ideally
+`SEARCH_API_KEY`. Without the web search, only emails on the map listing count, and
+those are rare. Keep `DARWIN_AUTO_EMAIL_DAILY_CAP` at least as high as the goal.
+
 Settings (optional):
 - `DARWIN_DAILY=off`
 - `DARWIN_DAILY_TZ`
@@ -811,6 +838,7 @@ Settings (optional):
 - `DARWIN_DAILY_TARGET` (`50`)
 - `DARWIN_DAILY_LOCATIONS` and `DARWIN_DAILY_CATEGORIES` (comma- or line-separated; also editable in DARWIN)
 - `DARWIN_DAILY_STRICT` (`on`)
+- `DARWIN_EMAIL_TARGET` (`25`) and `DARWIN_EMAIL_DEADLINE` (`18:00`)
 
 Without Google Places or web search, strict mode can't confirm the absence of a website. Those businesses are reported as "unclear" rather than counted.
 

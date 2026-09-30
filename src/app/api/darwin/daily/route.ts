@@ -2,7 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { env } from "@/lib/env";
-import { advanceRun, darwinDailyView, dailyDue, ensureRun, saveConfig, todayRun, syncRunToSheet } from "@/lib/darwin/daily/run";
+import { advanceRun, adoptEmailGoal, darwinDailyView, dailyDue, ensureRun, saveConfig, todayRun, syncRunToSheet } from "@/lib/darwin/daily/run";
 import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -38,6 +38,7 @@ const schema = z.discriminatedUnion("action", [
     requirePhone: z.boolean().optional(),
     strict: z.boolean().optional(),
     autoEmail: z.boolean().optional(),
+    emailTarget: z.number().int().min(0).max(40).optional(),
   }),
 ]);
 
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
       if (run && (run.status === "needs_setup" || (run.status === "running" && run.verified === 0 && run.candidates === 0))) {
         await getDb().darwinDailyRun.delete({ where: { id: run.id } });
         if (dailyDue()) await ensureRun(user.id);
-      }
+      } else if (run) await adoptEmailGoal(run); // a new email goal applies to today straight away
     } else if (body.action === "start") {
       let run = await todayRun(user.id);
       if (!run) run = await ensureRun(user.id);

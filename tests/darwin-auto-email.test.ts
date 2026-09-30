@@ -13,7 +13,7 @@ describe("DARWIN automatic outreach: what gets written", () => {
 
   it("the email says only what's known, who it's from, and how to opt out", () => {
     const e = composeOutreach({ businessName: "Iron Temple Gym", category: "Gyms", location: "12 CMH Road, Indiranagar, Bengaluru, 560038", website: null, opportunityType: "no_website" });
-    expect(e.subject).toBe("A website for Iron Temple Gym");
+    expect(e.subject).toBe("A website for Iron Temple Gym in Indiranagar");
     expect(e.body).toMatch(/^Hi Iron Temple Gym team,/);
     expect(e.body).toContain("noticed you don't have a website yet");
     expect(e.body).toContain("Infinity Web & Apps");
@@ -23,6 +23,11 @@ describe("DARWIN automatic outreach: what gets written", () => {
     const f = composeOutreach({ businessName: "Cafe Bloom", website: "https://cafebloom.in", opportunityType: "outdated_website" });
     expect(f.body).not.toMatch(/don't have a website/);
     expect(f.subject).toBe("A quick idea for Cafe Bloom");
+    // written for the business: its kind of business, and a real Google rating when DARWIN verified one
+    const g = composeOutreach({ businessName: "Cafe Bloom", category: "Cafes", location: "5 Main Rd, Koramangala, Bengaluru, 560034", website: null, opportunityType: "no_website", metadata: { bucket: "Restaurants/Cafes", google: { rating: 4.6, reviews: 212 } } });
+    expect(g.body).toMatch(/menu, photos, timings/);
+    expect(g.body).toContain("4.6★ rating from 212 Google reviews");
+    expect(composeOutreach({ businessName: "X Salon", website: null, opportunityType: "no_website", metadata: { bucket: "Salons/Spas", google: { rating: 3.1, reviews: 4 } } }).body).not.toMatch(/Google reviews/);
   });
 });
 

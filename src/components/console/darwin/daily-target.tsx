@@ -123,6 +123,22 @@ export function DailyTarget({ daily, onViewLeads, onOpenCrm }: {
           </div>
         )}
 
+        {run && run.emailTarget > 0 && run.status !== "needs_setup" && (
+          <div className="mt-2 rounded-lg border border-cyan-200/15 bg-cyan-200/[0.05] px-2 py-1.5 text-[10px]" data-darwin-email-goal>
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1 tracking-[0.16em] text-cyan-50/80"><Mail className="h-3 w-3" />EMAIL GOAL</span>
+              <span className="text-white/45">ALL SENT BY {view.emailDeadlineLabel}</span>
+            </div>
+            <div className="mt-1 grid grid-cols-2 gap-x-3">
+              <Stat k="With an email" v={run.withEmail} />
+              <Stat k="Emailed" v={run.emailed} hot />
+            </div>
+            <div className="mt-1 h-1 overflow-hidden rounded bg-white/10">
+              <div className="h-full rounded bg-gradient-to-r from-cyan-300 to-emerald-300 transition-[width] duration-700" style={{ width: `${Math.min(100, (run.emailed / run.emailTarget) * 100)}%` }} />
+            </div>
+            <div className="mt-0.5 text-[9px] text-white/40">{run.emailed}/{run.emailTarget} businesses without a website emailed today</div>
+          </div>
+        )}
         {view.email.enabled && <EmailLine e={view.email} />}
 
         {run?.status === "needs_setup" && <p className="mt-2 text-[11px] leading-snug text-amber-100/80">{run.lastError}</p>}
@@ -195,10 +211,11 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
   const [requirePhone, setRequirePhone] = useState(v.config.requirePhone);
   const [strict, setStrict] = useState(v.config.strict);
   const [autoEmail, setAutoEmail] = useState(v.config.autoEmail);
+  const [emailTarget, setEmailTarget] = useState(v.config.emailTarget ?? 25);
   const [err, setErr] = useState<string | null>(null);
   const save = async () => {
     const e = await daily.act({
-      action: "settings", target, radiusKm, requirePhone, strict, autoEmail,
+      action: "settings", target, radiusKm, requirePhone, strict, autoEmail, emailTarget,
       locations: locations.split(/\n|;/).map((x) => x.trim()).filter((x) => x.length >= 2),
       categories: categories.split(/,|\n/).map((x) => x.trim()).filter((x) => x.length >= 2),
     });
@@ -228,6 +245,10 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
               className="dw-bare mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[12px] text-white outline-none" />
           </label>
         </div>
+        <label className="mt-3 block text-[10px] tracking-[0.2em] text-white/50" data-darwin-email-target>EMAIL GOAL PER DAY <span className="normal-case tracking-normal text-white/30">(no-website businesses with an email, all emailed by {v.emailDeadlineLabel} · 0 = off)</span>
+          <input type="number" min={0} max={40} value={emailTarget} onChange={(e) => setEmailTarget(Math.min(Math.max(Math.round(+e.target.value || 0), 0), 40))}
+            className="dw-bare mt-1 w-28 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[12px] text-white outline-none" />
+        </label>
         <label className="mt-3 flex items-center gap-2 text-[12px] text-white/80"><input type="checkbox" checked={requirePhone} onChange={(e) => setRequirePhone(e.target.checked)} className="accent-cyan-300" /> Only count businesses with a public phone number</label>
         <label className="mt-1.5 flex items-center gap-2 text-[12px] text-white/80"><input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} className="accent-cyan-300" /> Strict: confirm “no website” with Google or web search</label>
         <label className="mt-1.5 flex items-start gap-2 text-[12px] text-white/80" data-darwin-auto-email-setting>

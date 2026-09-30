@@ -230,6 +230,10 @@ export const env = {
   // at most this many outreach emails in 24 h, at least this many seconds apart
   darwinAutoEmailCap: Math.min(Math.max(Number(read("DARWIN_AUTO_EMAIL_DAILY_CAP")) || 40, 1), 400),
   darwinAutoEmailGapSec: Math.min(Math.max(Number(read("DARWIN_AUTO_EMAIL_GAP_SEC")) || 45, 5), 600),
+  // Email outreach goal: every day find this many no-website businesses that HAVE a public email
+  // and email each of them by DARWIN_EMAIL_DEADLINE (0 turns the goal off). Also editable in DARWIN.
+  darwinEmailTarget: Math.min(Math.max(Number(read("DARWIN_EMAIL_TARGET") || 25), 0), 40),
+  darwinEmailDeadline: read("DARWIN_EMAIL_DEADLINE") || "18:00",
   // NIOS watcher: extra regional centres ("bengaluru,delhi" → rc<name>.nios.ac.in),
   // extra official NIOS pages to watch (comma-separated *.nios.ac.in URLs), and
   // the secret Vercel Cron sends to /api/cron/nios.

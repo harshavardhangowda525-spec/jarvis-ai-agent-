@@ -3,7 +3,7 @@ import { promises as dns } from "node:dns";
 import net from "node:net";
 import { env } from "@/lib/env";
 import {
-  guessDomains, hostMatchesName, hostOf, isDirectoryHost, isSocialUrl, looksParked, nameTokens, textNamesBusiness, phoneFromResults, verifyPhone,
+  guessDomains, hostMatchesName, hostOf, isDirectoryHost, isSocialUrl, looksParked, nameTokens, textNamesBusiness, phoneFromResults, verifyPhone, emailFromResults, isFreeMail,
   type Signals, type UrlCheck,
 } from "./verify";
 
@@ -167,16 +167,16 @@ export async function googleProfile(name: string, address: string | null, at: { 
 
 export function searchAvailable() { return !!env.searchApiKey; }
 
-export interface SearchSignal { officialUrl: string | null; social: string[]; directories: number; error?: string; phone?: { phone: string; source: string } | null }
+export interface SearchSignal { officialUrl: string | null; social: string[]; directories: number; error?: string; phone?: { phone: string; source: string } | null; email?: { email: string; source: string } | null }
 
 /** Search the web for the business; pick out an official site vs directory/social listings. */
-export async function webSearchSignal(name: string, locality: string, wantPhone = false): Promise<SearchSignal> {
+export async function webSearchSignal(name: string, locality: string, wantPhone = false, wantEmail = false): Promise<SearchSignal> {
   try {
     const res = await fetch("https://api.tavily.com/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       // no listed phone → ask for the contact number too (directory pages show it)
-      body: JSON.stringify({ api_key: env.searchApiKey, query: `"${name}" ${locality}${wantPhone ? " contact number" : ""}`, max_results: 8, search_depth: "basic", include_answer: false }),
+      body: JSON.stringify({ api_key: env.searchApiKey, query: `"${name}" ${locality}${wantPhone || wantEmail ? " contact" : ""}${wantPhone ? " number" : ""}${wantEmail ? " email" : ""}`, max_results: 8, search_depth: "basic", include_answer: false }),
       signal: AbortSignal.timeout(20_000),
     });
     if (res.status === 401) return { officialUrl: null, social: [], directories: 0, error: "search credentials invalid" };
@@ -194,8 +194,10 @@ export async function webSearchSignal(name: string, locality: string, wantPhone 
       if (/\.business\.site$/.test(host) && !official) { official = url; continue; } // Google's free sites are websites too
       if (!official && hostMatchesName(host, name)) official = `https://${host}/`;
     }
-    const phone = phoneFromResults((j?.results ?? []).map((r: any) => ({ url: String(r?.url ?? ""), title: r?.title, content: r?.content })), name, locality);
-    return { officialUrl: official, social: [...new Set(social)].slice(0, 4), directories, phone };
+    const texts = (j?.results ?? []).map((r: any) => ({ url: String(r?.url ?? ""), title: r?.title, content: r?.content }));
+    const phone = phoneFromResults(texts, name, locality);
+    const email = wantEmail ? emailFromResults(texts, name, locality) : null;
+    return { officialUrl: official, social: [...new Set(social)].slice(0, 4), directories, phone, email };
   } catch (e) {
     return { officialUrl: null, social: [], directories: 0, error: (e as Error)?.name === "TimeoutError" ? "search timed out" : "search unreachable" };
   }
@@ -203,11 +205,13 @@ export async function webSearchSignal(name: string, locality: string, wantPhone 
 
 /* ---------------- all signals for one business ---------------- */
 
-export interface CandidateInput { name: string; address: string | null; lat: number; lon: number; website: string | null; locality: string; phone?: string | null }
+export interface CandidateInput { name: string; address: string | null; lat: number; lon: number; website: string | null; locality: string; phone?: string | null; email?: string | null }
 export interface Gathered {
   signals: Signals; google: GoogleProfile | null; search: SearchSignal | null; calls: { google: number; search: number };
   /** A phone number found outside the listing and Google (web search or Foursquare), with where it came from. */
   phoneFound?: { phone: string; source: string } | null;
+  /** An email address found on public pages naming the business (web search), with where it came from. */
+  emailFound?: { email: string; source: string } | null;
 }
 
 /**
@@ -239,7 +243,7 @@ export async function foursquarePhone(name: string, lat: number, lon: number): P
   return null;
 }
 
-export async function gatherSignals(c: CandidateInput, opts: { google: boolean; search: boolean; foursquare?: boolean }): Promise<Gathered> {
+export async function gatherSignals(c: CandidateInput, opts: { google: boolean; search: boolean; foursquare?: boolean; wantEmail?: boolean }): Promise<Gathered> {
   const listed = c.website ? await checkUrl(c.website, c.name) : null;
   // a live listed website settles it — no paid lookups needed
   if (listed?.ok && !listed.parked) {
@@ -247,7 +251,7 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
   }
   const [g, s, guessed] = await Promise.all([
     opts.google ? googleProfile(c.name, c.address, c) : Promise.resolve(null),
-    opts.search ? webSearchSignal(c.name, c.locality, !verifyPhone(c.phone).ok) : Promise.resolve(null),
+    opts.search ? webSearchSignal(c.name, c.locality, !verifyPhone(c.phone).ok, !!opts.wantEmail && !c.email) : Promise.resolve(null),
     (async () => {
       const out: UrlCheck[] = [];
       for (const d of guessDomains(c.name)) {
@@ -262,6 +266,15 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
   const needPhone = !verifyPhone(c.phone).ok && !verifyPhone(g?.phone).ok;
   const phoneFound = !needPhone ? null : s?.phone ?? (opts.foursquare ? await foursquarePhone(c.name, c.lat, c.lon) : null);
   const official = s?.officialUrl ? await checkUrl(s.officialUrl, c.name) : null;
+  // an address at the business's OWN domain (not Gmail etc.) means that domain may carry its website:
+  // check it — a live site there is its website, so it isn't a "no website" lead
+  const emailFound = s?.email ?? null;
+  for (const e of [c.email, emailFound?.email]) {
+    const domain = (e ?? "").split("@")[1]?.toLowerCase();
+    if (!domain || isFreeMail(domain) || isDirectoryHost(domain) || guessed.some((x) => hostOf(x.url) === domain)) continue;
+    const site = await checkUrl(domain, c.name, 6000);
+    if (site.ok && !site.parked) guessed.push({ ...site, nameMatch: true });
+  }
   return {
     signals: {
       listed,
@@ -270,7 +283,7 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
       guessed,
       distinctive: nameTokens(c.name).length > 0,
     },
-    google: g, search: s, phoneFound,
+    google: g, search: s, phoneFound, emailFound,
     calls: { google: opts.google ? 1 : 0, search: opts.search ? 1 : 0 },
   };
 }

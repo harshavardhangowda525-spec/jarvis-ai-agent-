@@ -23,6 +23,10 @@ export interface DailyReport {
   missingPhone: number;
   contactable: number;
   highPotential: number;
+  /** Email goal: businesses found with a public email, the goal, and how many have been emailed. */
+  withEmail: number;
+  emailTarget: number;
+  emailed: number;
   breakdown: { bucket: Bucket; count: number }[];
   reasons: string[];
   sources: { listing: boolean; domain: boolean; google: boolean; search: boolean };
@@ -35,7 +39,7 @@ export async function runLeads(run: Pick<DarwinDailyRun, "id" | "userId">) {
   return getDb().darwinLead.findMany({
     where: { userId: run.userId, metadata: { path: ["dailyRunId"], equals: run.id } },
     orderBy: [{ leadScore: "desc" }, { discoveredAt: "asc" }],
-    select: { id: true, businessName: true, category: true, phone: true, leadScore: true, location: true, metadata: true },
+    select: { id: true, businessName: true, category: true, phone: true, email: true, leadScore: true, location: true, metadata: true },
   });
 }
 
@@ -51,6 +55,7 @@ export async function buildReport(run: DarwinDailyRun): Promise<DailyReport> {
     if (m.highPotential) high++;
   }
   const api = { geoapify: 0, google: 0, search: 0, ...((run.apiRequests as DailyReport["apiRequests"] | null) ?? {}) };
+  const emailed = leads.length ? await getDb().darwinMessage.count({ where: { userId: run.userId, channel: "email", status: { in: ["sent", "delivered", "replied"] }, leadId: { in: leads.map((l) => l.id) } } }) : 0;
   return {
     date: run.date,
     status: run.status,
@@ -67,6 +72,9 @@ export async function buildReport(run: DarwinDailyRun): Promise<DailyReport> {
     missingPhone: leads.filter((l) => !l.phone).length,
     contactable,
     highPotential: high,
+    withEmail: leads.filter((l) => l.email).length,
+    emailTarget: run.emailTarget,
+    emailed,
     breakdown: BUCKETS.map((b) => ({ bucket: b, count: counts.get(b) ?? 0 })).filter((x) => x.count > 0),
     reasons: run.reasons,
     sources: { listing: true, domain: true, google: api.google > 0, search: api.search > 0 },
