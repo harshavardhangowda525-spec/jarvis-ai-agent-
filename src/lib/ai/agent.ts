@@ -271,7 +271,7 @@ const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.
  *   JARVIS → JARVIS_PROVIDER, default "groq,gemini" = Groq, Gemini as backup
  *   EV     → EV_PROVIDER,     default "groq,gemini" = Groq, Gemini as backup
  *   DARWIN → DARWIN_PROVIDER, default "groq,gemini" = Groq, Gemini as backup
- *   MIKE   → MIKE_PROVIDER,   default "gemini,groq" = Gemini, Groq as backup
+ *   MIKE   → MIKE_PROVIDER,   default "groq,gemini" = Groq, Gemini as backup
  * A provider id (or a comma list) means those providers in that order and
  * nothing else. "auto" = every configured provider, fastest first (JARVIS also
  * honours the per-user Settings pick). If none of them is set up, `missing`

@@ -902,7 +902,7 @@ Google shows a warning for the Drive permission until the app is verified.
 | JARVIS | `JARVIS_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
 | EV     | `EV_PROVIDER`       | `groq,gemini` | Groq, Gemini as backup              |
 | DARWIN | `DARWIN_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
-| MIKE   | `MIKE_PROVIDER`     | `gemini,groq` | Gemini, Groq as backup              |
+| MIKE   | `MIKE_PROVIDER`     | `groq,gemini` | Groq, Gemini as backup              |
 | ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `openrouter,ollama` | OpenRouter (`OPENROUTER_API_KEY`, model `OPENROUTER_MODEL`), with this PC's Ollama as the backup (model: `ULTRON_OLLAMA_MODEL`, else `OLLAMA_MODEL`, else `qwen2.5:3b`) |
 
 `JARVIS_PROVIDER=ollama` puts JARVIS back on your PC brain (then `npm run local`
@@ -1002,7 +1002,7 @@ only notify you. Alerts are checked while MIKE is open, every 5 minutes by
 
 > Trading involves substantial risk. Analytical confidence does not guarantee profit.
 
-Env (all optional): `MIKE_PROVIDER` (default `gemini,groq` — Gemini, Groq as backup), `MIKE_VOICE_ID`,
+Env (all optional): `MIKE_PROVIDER` (default `groq,gemini` — Groq, Gemini as backup), `MIKE_VOICE_ID`,
 `SEARCH_API_KEY` for news. The new `MikeSignal` / `MikeAlert` tables come with
 migration `0011_mike`: your next Vercel deploy applies it (the PC uses the same
 database). With a separate local database, run `npm run db:migrate`.

@@ -25,6 +25,9 @@ interface Integration {
   status: string;
   kind?: "oauth" | "key";
   callbackUrl?: string;
+  /** Not configured: env vars that are empty / hold Vercel's "[sensitive]" placeholder. */
+  missing?: string[];
+  sensitive?: string[];
 }
 interface SessionRow {
   id: string;
@@ -263,7 +266,7 @@ export function SettingsClient() {
         )}
         <div className="grid gap-2 sm:grid-cols-2">
           {integrations.map((it) => (
-            <div key={it.id} className="flex items-center gap-3 rounded-xl bg-muted/40 px-3 py-2.5">
+            <div key={it.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-muted/40 px-3 py-2.5">
               <span className="text-sm font-medium">{it.label}</span>
               <div className="ml-auto">
                 {it.kind === "key" ? (
@@ -292,6 +295,13 @@ export function SettingsClient() {
                   </a>
                 )}
               </div>
+              {it.kind !== "key" && !it.available && !!it.missing?.length && (
+                <p className="w-full text-[10.5px] leading-snug text-muted-foreground">
+                  {it.sensitive?.length
+                    ? <>{it.sensitive.join(" and ")} came from Vercel as a hidden &quot;Sensitive&quot; value. Paste the real value into <code className="text-accent">.env.local</code> on this PC and restart JARVIS.</>
+                    : <>Missing {it.missing.map((m, i) => <span key={m}>{i ? " and " : ""}<code className="text-accent">{m}</code></span>)} on this server. Add {it.missing.length > 1 ? "them" : "it"} ({"Vercel → Settings → Environment Variables, then redeploy — or .env.local on your PC, then restart"}).</>}
+                </p>
+              )}
             </div>
           ))}
         </div>

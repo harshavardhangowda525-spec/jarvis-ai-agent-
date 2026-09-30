@@ -1,6 +1,6 @@
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { DISPLAY_INTEGRATIONS, isProviderConfigured, isKeyIntegrationConfigured, callbackUrl, requestOrigin } from "@/lib/integrations/providers";
+import { DISPLAY_INTEGRATIONS, isProviderConfigured, isKeyIntegrationConfigured, missingCredentials, callbackUrl, requestOrigin } from "@/lib/integrations/providers";
 import { ok, handleError } from "@/lib/api";
 
 export const runtime = "nodejs";
@@ -36,6 +36,8 @@ export async function GET(req: Request) {
         label: d.label,
         kind: d.kind,
         available: configured, // OAuth credentials present in env
+        // when not: the env var names to set (never their values)
+        ...(configured ? {} : missingCredentials(d.id)),
         // The exact redirect URI to register with the provider (e.g. Google Cloud
         // → Credentials → Authorized redirect URIs). Must match character for character.
         callbackUrl: callbackUrl(d.id, requestOrigin(req)),

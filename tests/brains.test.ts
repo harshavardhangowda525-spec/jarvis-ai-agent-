@@ -23,9 +23,9 @@ describe("which brain each agent uses (defaults)", () => {
     expect(agentConfigs("darwin", pcBrain).configs.map((c) => c.provider)).toEqual(["groq", "gemini"]);
   });
 
-  it("MIKE thinks with Gemini first, Groq as the backup", () => {
-    expect(env.mikeProvider).toBe("gemini,groq");
-    expect(agentConfigs("mike", pcBrain).configs.map((c) => c.provider)).toEqual(["gemini", "groq"]);
+  it("MIKE thinks with Groq first, Gemini as the backup", () => {
+    expect(env.mikeProvider).toBe("groq,gemini");
+    expect(agentConfigs("mike", pcBrain).configs.map((c) => c.provider)).toEqual(["groq", "gemini"]);
   });
 
   it("JARVIS can still be put back on the PC brain with JARVIS_PROVIDER=ollama", () => {

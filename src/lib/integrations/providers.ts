@@ -115,6 +115,21 @@ export function isProviderConfigured(id: string): boolean {
 }
 
 /**
+ * Why a provider isn't connectable: which of its env vars are empty, and which
+ * hold Vercel's "[sensitive]" placeholder (a Sensitive value that `vercel env
+ * pull` won't copy to a PC — it has to be pasted into .env.local by hand).
+ */
+export function missingCredentials(id: string): { missing: string[]; sensitive: string[] } {
+  if (!OAUTH_PROVIDERS[id]) return { missing: [], sensitive: [] };
+  const names = [`${id.toUpperCase()}_CLIENT_ID`, `${id.toUpperCase()}_CLIENT_SECRET`];
+  const raw = (n: string) => (process.env[n] ?? "").trim();
+  return {
+    missing: names.filter((n) => !raw(n)),
+    sensitive: names.filter((n) => /^\[sensitive\]$/i.test(raw(n))),
+  };
+}
+
+/**
  * The site's address as the user is actually visiting it (e.g.
  * https://jarvis-ai-agent-self.vercel.app). OAuth uses THIS rather than APP_URL,
  * so the redirect always matches the domain in the address bar — a renamed
