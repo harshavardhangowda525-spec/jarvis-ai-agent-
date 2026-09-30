@@ -2,7 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { env } from "@/lib/env";
-import { advanceRun, darwinDailyView, dailyDue, ensureRun, saveConfig, todayRun } from "@/lib/darwin/daily/run";
+import { advanceRun, darwinDailyView, dailyDue, ensureRun, saveConfig, todayRun, syncRunToSheet } from "@/lib/darwin/daily/run";
 import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -63,9 +63,11 @@ export async function POST(req: Request) {
       if (!run) run = await ensureRun(user.id);
       else if (run.status === "needs_setup") { await getDb().darwinDailyRun.delete({ where: { id: run.id } }); run = await ensureRun(user.id); }
       if (run.status === "running") await advanceRun(run.id, { budgetMs: 250_000 });
+      await syncRunToSheet(run.id);
     } else if (body.action === "tick") {
       const run = await todayRun(user.id);
       if (run?.status === "running") await advanceRun(run.id, { budgetMs: 250_000 });
+      if (run) await syncRunToSheet(run.id);
     } else if (body.action === "ack") {
       await getDb().darwinDailyRun.updateMany({ where: { userId: user.id, reportedAt: null, status: { in: ["completed", "partial"] } }, data: { reportedAt: new Date() } });
     }

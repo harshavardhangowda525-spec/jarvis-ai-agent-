@@ -732,6 +732,23 @@ daily search, even one that has never opened DARWIN. Without it, only accounts
 that already use DARWIN get it. A day that was waiting for settings (no
 location or no Geoapify key yet) starts on the next round once they're added.
 
+**50 leads by 2:00 PM.** The day's search has a deadline, `DARWIN_DAILY_DEADLINE`
+(default `14:00`, in `DARWIN_DAILY_TZ`). If the configured area runs out before the
+target, DARWIN widens the search by itself instead of stopping:
+1. It adds more kinds of business, 27 in total. Each is one DARWIN can search precisely.
+2. It searches further out, to at least 12 km and at most 25 km.
+
+It never pads the count with unverified businesses. A search that started before
+the deadline stops there and reports what it found and why it fell short. A search
+that only started after the deadline, for example because the PC was off all
+morning, runs to the end. The daily budget allows up to 600 map requests (Geoapify's
+free tier is 3,000 a day).
+
+**Google Sheet.** With Google connected, each verified lead is added once to a
+Google Sheet named **DARWIN Leads** in your Drive. The sheet is created on the first
+lead, isn't shared with anyone, and gets a new copy if you delete it. The DAILY TARGET
+card has a GOOGLE SHEET button.
+
 It survives restarts and refreshes: progress lives in `DarwinDailyRun`, checked businesses in `DarwinCandidate`, and leads in `DarwinLead`. Each new day starts a new run; earlier leads and reports are kept.
 
 **Automatic outreach email.** DARWIN emails every new lead that has a public
@@ -766,6 +783,7 @@ Settings (optional):
 - `DARWIN_DAILY=off`
 - `DARWIN_DAILY_TZ`
 - `DARWIN_DAILY_START` (`06:00`)
+- `DARWIN_DAILY_DEADLINE` (`14:00`)
 - `DARWIN_DAILY_TARGET` (`50`)
 - `DARWIN_DAILY_LOCATIONS` and `DARWIN_DAILY_CATEGORIES` (comma- or line-separated; also editable in DARWIN)
 - `DARWIN_DAILY_STRICT` (`on`)
@@ -800,6 +818,30 @@ your shared database, so your Vercel app serves the very same files:
 
 Reels are capped at about 2.5 Mbit/s (under 4 MB for 12 s). A Vercel function
 can't send more than 4.5 MB.
+
+## Google Workspace (DARWIN and JARVIS)
+
+Connecting Google (Settings → Integrations) gives JARVIS and DARWIN:
+- Gmail and Calendar;
+- **Drive, Docs and Sheets**, through the `google_workspace` tool;
+- **Contacts**, read-only.
+
+With it they can:
+- find files and read Docs, Sheets, Slides and text files;
+- create new Docs and Sheets;
+- add rows to a Sheet;
+- look people up in your Contacts.
+
+They can't delete, overwrite or share anything. Sending email still needs your
+approval, except DARWIN's automatic outreach if it's on. DARWIN also uses this for
+the DARWIN Leads sheet.
+
+**Reconnect to allow the new permissions.** If Google was connected before this
+update, disconnect it and connect again. Until then, Drive, Sheets and Contacts
+requests say so, and Gmail and Calendar keep working. In your Google Cloud project,
+enable the Google Drive API, the Google Sheets API and the People API. While the
+app's OAuth consent screen is in "Testing", add your account as a test user;
+Google shows a warning for the Drive permission until the app is verified.
 
 ## Which brain each agent uses
 

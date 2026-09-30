@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, FileText, Loader2, Play, Settings2, X, Database, Eye, Mail } from "lucide-react";
+import { Check, FileText, Loader2, Play, Settings2, X, Database, Eye, Mail, Sheet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DarwinDailyView } from "@/lib/darwin/daily/run";
 
@@ -108,6 +108,7 @@ export function DailyTarget({ daily, onViewLeads, onOpenCrm }: {
               {run ? (STATUS[run.status] ?? run.status.toUpperCase()) : view.due ? "STARTING" : `STARTS ${view.startLabel}`}
               {run?.status === "running" && <Loader2 className="ml-1 inline h-2.5 w-2.5 animate-spin" />}
             </div>
+            {!complete && run?.status !== "partial" && <div className="mt-0.5 text-[9px] tracking-[0.16em] text-white/40" data-darwin-deadline>GOAL {target} BY {view.deadlineLabel}</div>}
           </div>
         </div>
 
@@ -134,6 +135,12 @@ export function DailyTarget({ daily, onViewLeads, onOpenCrm }: {
             <Btn onClick={onOpenCrm} icon={<Database className="h-3 w-3" />}>OPEN CRM</Btn>
             <Btn onClick={() => setReport(true)} icon={<FileText className="h-3 w-3" />}>DAILY REPORT</Btn>
           </div>
+        )}
+        {view.sheetUrl && (
+          <a href={view.sheetUrl} target="_blank" rel="noreferrer" data-darwin-sheet
+            className="mt-1.5 flex w-fit items-center gap-1 rounded-full border border-emerald-200/25 bg-emerald-200/[0.07] px-2.5 py-1 text-[9.5px] tracking-[0.16em] text-emerald-50 transition hover:bg-emerald-200/15">
+            <Sheet className="h-3 w-3" />GOOGLE SHEET
+          </a>
         )}
         {(!run || run.status === "needs_setup") && (
           <div className="mt-2.5 flex gap-1.5">

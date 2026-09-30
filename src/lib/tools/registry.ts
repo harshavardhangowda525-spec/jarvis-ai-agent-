@@ -19,6 +19,7 @@ import { openLinkTool } from "./openLink";
 import { openAppTool } from "./openApp";
 import { gmailTool } from "./gmail";
 import { calendarTool } from "./calendar";
+import { googleWorkspaceTool } from "./googleWorkspace";
 import { analyticsTool } from "./analytics";
 import { websiteDataTool } from "./websiteData";
 import { compassTool } from "./compass";
@@ -54,6 +55,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   openAppTool as ToolDefinition,
   gmailTool as ToolDefinition,
   calendarTool as ToolDefinition,
+  googleWorkspaceTool as ToolDefinition,
   analyticsTool as ToolDefinition,
   websiteDataTool as ToolDefinition,
   compassTool as ToolDefinition,
@@ -95,7 +97,7 @@ export function availableTools(agent?: "ev" | "darwin"): ToolDefinition[] {
     if (t.requiresCapability === "compass") return capabilities.compass;
     if (t.requiresCapability === "pluslide") return capabilities.pluslide;
     // Google tools only appear once the OAuth client is configured.
-    if (t.name === "gmail" || t.name === "google_calendar" || t.name === "google_analytics")
+    if (t.name === "gmail" || t.name === "google_calendar" || t.name === "google_analytics" || t.name === "google_workspace")
       return googleReady;
     return true;
   });

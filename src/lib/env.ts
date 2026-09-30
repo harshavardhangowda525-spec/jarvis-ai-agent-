@@ -211,6 +211,8 @@ export const env = {
   darwinDaily: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY")),
   darwinDailyTz: read("DARWIN_DAILY_TZ") || read("EV_DAILY_TZ") || "Asia/Kolkata",
   darwinDailyStart: read("DARWIN_DAILY_START") || "06:00",
+  // the day's leads should be ready by this time (the search widens itself to get there)
+  darwinDailyDeadline: read("DARWIN_DAILY_DEADLINE") || "14:00",
   darwinDailyTarget: Math.min(Math.max(Number(read("DARWIN_DAILY_TARGET")) || 50, 1), 200),
   darwinDailyLocations: read("DARWIN_DAILY_LOCATIONS"),
   darwinDailyCategories: read("DARWIN_DAILY_CATEGORIES"),

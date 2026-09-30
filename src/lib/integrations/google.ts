@@ -65,3 +65,45 @@ export async function getGoogleAccessToken(userId: string): Promise<string> {
   });
   return accessToken;
 }
+
+/** Google Workspace areas and the permission each needs. */
+export const WORKSPACE_SCOPES = {
+  drive: "https://www.googleapis.com/auth/drive",
+  sheets: "https://www.googleapis.com/auth/spreadsheets",
+  contacts: "https://www.googleapis.com/auth/contacts.readonly",
+} as const;
+
+export const RECONNECT_FOR_WORKSPACE =
+  "Google is connected, but without access to Drive, Docs, Sheets and Contacts yet. Open Settings → Integrations, disconnect Google and connect it again, and allow the new permissions.";
+
+/** Whether the user's Google connection granted this permission (older connections didn't). */
+export async function hasGoogleScope(userId: string, scope: string): Promise<boolean> {
+  const row = await getDb().integration.findUnique({ where: { userId_provider: { userId, provider: "google" } }, select: { status: true, scope: true } }).catch(() => null);
+  if (row?.status !== "connected") return false;
+  return (row.scope ?? "").split(/\s+/).includes(scope) || (scope === WORKSPACE_SCOPES.sheets && (row.scope ?? "").includes(WORKSPACE_SCOPES.drive));
+}
+
+/**
+ * A Google API request as the user. A missing permission becomes a clear
+ * "reconnect Google" message; other errors carry Google's own reason.
+ */
+export async function googleFetch(userId: string, url: string, init: RequestInit = {}): Promise<any> {
+  const token = await getGoogleAccessToken(userId);
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, ...(init.headers ?? {}) }, signal: init.signal ?? AbortSignal.timeout(20_000) });
+  } catch {
+    throw new ToolError("Couldn't reach Google right now. Try again shortly.");
+  }
+  const text = await res.text();
+  let json: any = null;
+  try { json = text ? JSON.parse(text) : null; } catch { /* not JSON (e.g. an exported file) */ }
+  if (!res.ok) {
+    const msg = String(json?.error?.message ?? json?.error ?? text ?? "").slice(0, 300);
+    if (res.status === 403 && /insufficient|scope|permission/i.test(msg)) throw new ToolError(RECONNECT_FOR_WORKSPACE);
+    if (res.status === 401) throw new ToolError("Your Google session expired. Please reconnect Google in Settings → Integrations.");
+    if (res.status === 404) throw new ToolError("Google couldn't find that file (or it isn't shared with this account).");
+    throw new ToolError(`Google: ${msg || `HTTP ${res.status}`}`);
+  }
+  return json ?? text;
+}

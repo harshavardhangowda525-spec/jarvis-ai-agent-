@@ -38,10 +38,15 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProvider> = {
       "https://www.googleapis.com/auth/gmail.send",
       "https://www.googleapis.com/auth/calendar",
       "https://www.googleapis.com/auth/analytics.readonly",
+      // the rest of Google Workspace, for DARWIN and JARVIS: Drive (incl. Docs
+      // and Sheets files), Sheets values, and your contacts (read-only)
+      "https://www.googleapis.com/auth/drive",
+      "https://www.googleapis.com/auth/spreadsheets",
+      "https://www.googleapis.com/auth/contacts.readonly",
     ],
     clientId: read("GOOGLE_CLIENT_ID"),
     clientSecret: read("GOOGLE_CLIENT_SECRET"),
-    extraAuthParams: { access_type: "offline", prompt: "consent" },
+    extraAuthParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
   },
   github: {
     id: "github",

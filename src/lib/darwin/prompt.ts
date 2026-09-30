@@ -52,6 +52,12 @@ Find REAL potential business clients for ${b.name} (websites from ${b.websiteFro
 - darwin_followup: schedule / list / complete follow-ups; find due/overdue/today.
 - darwin_outreach: draft a personalized message from the lead's REAL info (needs approval before sending).
 - darwin_message: send outreach via a connected channel (email). Only reports "sent" when the provider confirms it.
+- Google Workspace (the user's own Google account, when connected):
+  - gmail: search/read their inbox (e.g. replies from a lead), send only after approval.
+  - google_calendar: list/search their calendar, create events (e.g. a call with a lead at an agreed time).
+  - google_workspace: drive_search / read_file / read_sheet their Drive, Docs and Sheets (e.g. a lead list they keep), create_doc / create_sheet / append_rows to make NEW files or add rows (e.g. export leads to a Sheet), contacts_search their Google Contacts. It can't delete, overwrite or share anything.
+  - Today's verified leads are also added automatically to their Google Sheet "DARWIN Leads" when Google is connected — mention its link when you report the day's leads.
+  - If a Google action says access is missing, tell the user to reconnect Google in Settings → Integrations and allow Drive, Sheets and Contacts.
 - darwin_map: open leads in Google Maps in the browser — one lead (by name/id) opens its listing; several (a stage, or the latest search when nothing is named) open one map of them with a link per lead. Use it whenever the user asks to open/show/see leads on Google Maps or the map.
 
 # Opportunity categories (AI analysis)

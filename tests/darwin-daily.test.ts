@@ -126,6 +126,12 @@ d("DARWIN daily run (integration)", () => {
     google: true, search: true,
   });
 
+  /** Advance until the day's search is finished (it may widen itself a couple of times first). */
+  const finish = async (id: string, dp: DarwinDeps = deps(), budgetMs = 60_000) => {
+    let r = await R.advanceRun(id, { deps: dp, budgetMs });
+    for (let i = 0; i < 6 && r.status === "running"; i++) r = await R.advanceRun(id, { deps: dp, budgetMs });
+    return r;
+  };
   beforeAll(async () => {
     R = await import("@/lib/darwin/daily/run");
     const u = await getDb().user.create({ data: { email: `dwd-${Date.now()}@example.com`, passwordHash: "x" } });
@@ -176,7 +182,7 @@ d("DARWIN daily run (integration)", () => {
     expect(run.verified).toBe(0);
     // tiny budget: it stops part-way and keeps its place
     const g0 = calls.gather;
-    const done = await R.advanceRun(run.id, { deps: deps(), budgetMs: 60_000 });
+    const done = await finish(run.id);
     // gyms: 3 genuine left (8 − 5 used yesterday); cafes: 3 → only 6 exist in scope
     expect(done.status).toBe("partial");
     expect(done.verified).toBe(6);
@@ -190,7 +196,7 @@ d("DARWIN daily run (integration)", () => {
     // the previous day's leads and report are preserved
     const yesterday = await getDb().darwinDailyRun.findUnique({ where: { userId_date: { userId, date: "2026-09-28" } } });
     expect(yesterday?.verified).toBe(5);
-  });
+  }, 60_000);
 
   it("with no independent check configured, nothing is counted as 'no website'", async () => {
     clock = new Date("2026-09-30T02:00:00Z");
@@ -202,11 +208,11 @@ d("DARWIN daily run (integration)", () => {
       gather: async (c) => ({ signals: { listed: null, google: null, search: null, guessed: [], distinctive: true }, google: null, search: null, calls: { google: 0, search: 0 } }),
       google: false, search: false,
     };
-    const done = await R.advanceRun(run.id, { deps: noKeys, budgetMs: 30_000 });
+    const done = await finish(run.id, noKeys, 30_000);
     expect(done.verified).toBe(0);
     expect(done.unclear).toBe(2);
     expect(done.reasons.join(" ")).toMatch(/no Google Places or web-search key is set/);
-  });
+  }, 60_000);
 
   it("before the start time no run is created", async () => {
     clock = new Date("2026-10-01T23:00:00Z"); // 04:30 IST
@@ -265,6 +271,56 @@ d("DARWIN daily run (integration)", () => {
     const run = await R.todayRun(userId, at);
     expect(run?.status).not.toBe("needs_setup");
   });
+
+  it("when the area runs out before the target, the search widens itself — more kinds of business, then further out", async () => {
+    const at = new Date("2026-10-07T02:00:00Z"); // 07:30 IST
+    await R.saveConfig(userId, { categories: ["gyms"], target: 3, radiusKm: 6 });
+    pages.gyms = [[]];                                            // nothing new nearby
+    pages.pharmacies = [[80, 81, 82].map((i) => feature(i, "pharmacies", { name: `Pharma${i} Wellness Store` }))];
+    const run = await R.ensureRun(userId, at);
+    await getDb().darwinDailyRun.update({ where: { id: run.id }, data: { startedAt: at } });
+    let r = await R.advanceRun(run.id, { deps: { ...deps(), now: () => at }, budgetMs: 60_000 });
+    expect(r.status).toBe("running"); // not "partial" — it widened instead
+    expect((r.config as { widened?: number; categories: string[] }).widened).toBe(1);
+    expect((r.config as { categories: string[] }).categories).toContain("pharmacies");
+    expect(JSON.stringify(r.log)).toMatch(/widening it to reach 3 by 2:00 PM: added \d+ more kinds of business/);
+    r = await R.advanceRun(run.id, { deps: { ...deps(), now: () => at }, budgetMs: 60_000 });
+    expect(r).toMatchObject({ status: "completed", verified: 3 });
+  }, 60_000);
+
+  it("widening: categories first, then the radius, then it stops", () => {
+    const cfg = { locations: ["X"], categories: ["gyms"], target: 50, radiusKm: 6, requirePhone: false, strict: true, autoEmail: false } as import("@/lib/darwin/daily/run").DailyConfig;
+    expect(R.widen(cfg)).toMatchObject({ step: 1, clearExhausted: false });
+    cfg.widened = 1;
+    expect(R.widen(cfg)).toMatchObject({ step: 2, clearExhausted: true, note: "searching up to 12 km out" });
+    expect(cfg.radiusKm).toBe(12);
+    cfg.widened = 2;
+    expect(R.widen(cfg)).toBeNull();
+  });
+
+  it("a search that started in the morning stops at 2 PM and reports what it has", async () => {
+    const morning = new Date("2026-10-08T02:00:00Z"); // 07:30 IST
+    const afternoon = new Date("2026-10-08T08:45:00Z"); // 14:15 IST
+    await R.saveConfig(userId, { categories: ["gyms"], target: 40 });
+    pages.gyms = [[90, 91].map((i) => feature(i, "gyms", { name: `Late${i} Fitness Studio` }))];
+    const run = await R.ensureRun(userId, morning);
+    await getDb().darwinDailyRun.update({ where: { id: run.id }, data: { startedAt: morning } });
+    const r = await R.advanceRun(run.id, { deps: { ...deps(), now: () => afternoon }, budgetMs: 60_000 });
+    expect(r.status).toBe("partial");
+    expect(r.reasons[0]).toMatch(/Reached the 2:00 PM deadline before finding 40/);
+    expect(R.pastDeadline(afternoon)).toBe(true);
+    expect(R.pastDeadline(morning)).toBe(false);
+  }, 60_000);
+
+  it("a search that only started after 2 PM isn't cut off", async () => {
+    const afternoon = new Date("2026-10-09T09:30:00Z"); // 15:00 IST
+    await R.saveConfig(userId, { categories: ["gyms"], target: 2 });
+    pages.gyms = [[95, 96].map((i) => feature(i, "gyms", { name: `Evening${i} Fitness Studio` }))];
+    const run = await R.ensureRun(userId, afternoon);
+    await getDb().darwinDailyRun.update({ where: { id: run.id }, data: { startedAt: afternoon } });
+    const r = await R.advanceRun(run.id, { deps: { ...deps(), now: () => afternoon }, budgetMs: 60_000 });
+    expect(r).toMatchObject({ status: "completed", verified: 2 });
+  }, 60_000);
 });
 
 import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";

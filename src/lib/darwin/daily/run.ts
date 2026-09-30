@@ -1,4 +1,5 @@
 import "server-only";
+import { syncLeadsToSheet, leadSheet } from "@/lib/darwin/daily/sheet";
 import { sendAutoEmails, autoEmailState, type AutoEmailDeps, type AutoEmailResult, type AutoEmailState } from "@/lib/darwin/auto-email";
 import { createHash } from "node:crypto";
 import type { DarwinDailyRun, Prisma } from "@prisma/client";
@@ -34,7 +35,12 @@ export interface DailyConfig {
   strict: boolean;
   /** Email every new lead that has a public address, automatically (once each). */
   autoEmail: boolean;
+  /** How many times today's search has widened itself to reach the target (run config only). */
+  widened?: number;
 }
+
+/** More kinds of business DARWIN adds when the day's area runs out before the target (all precisely searchable). */
+export const EXTRA_CATEGORIES = ["pharmacies", "opticians", "jewellery stores", "furniture stores", "car repair garages", "laundries", "pet shops", "grocery stores", "mobile shops", "electronics stores", "real estate agents", "guest houses", "hotels", "lawyers", "accountants"];
 
 export const DEFAULT_CATEGORIES = ["gyms", "cafes", "restaurants", "salons", "spas", "clinics", "dentists", "coaching centres", "clothing stores", "bakeries", "yoga studios", "physiotherapists"];
 
@@ -95,6 +101,13 @@ export function dailyDue(now = new Date(), earlyMin = 0) {
   return dailyNow(now).minutes >= (Number.isFinite(s) ? s : 360) - earlyMin;
 }
 
+/** Minutes after midnight of the deadline (default 2:00 PM). */
+function deadlineMin() { const d = hm(env.darwinDailyDeadline); return Number.isFinite(d) ? d : 14 * 60; }
+/** Is it past today's deadline (in DARWIN_DAILY_TZ)? */
+export function pastDeadline(now = new Date()) { return dailyNow(now).minutes >= deadlineMin(); }
+/** "2:00 PM" */
+export function deadlineLabel() { const m = deadlineMin(); const h = Math.floor(m / 60); return `${((h + 11) % 12) + 1}:${String(m % 60).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`; }
+
 /** Could a run start with these settings (a location to search and Geoapify)? */
 const canRun = (cfg: DailyConfig) => cfg.locations.length > 0 && !!env.geoapifyApiKey;
 
@@ -122,8 +135,8 @@ export function defaultDeps(): DarwinDeps {
 }
 
 const PAGE = 50;
-const MAX_GEO_REQUESTS = 260;         // per day — well inside Geoapify's free 3,000/day
-const PAID_CALLS_PER_TARGET = 3;      // Google / search lookups allowed per wanted lead
+const MAX_GEO_REQUESTS = 600;         // per day (room to widen the search) — well inside Geoapify's free 3,000/day
+const PAID_CALLS_PER_TARGET = 4;      // Google / search lookups allowed per wanted lead
 const RECHECK_AFTER_DAYS = 21;        // unclear / temporarily-down businesses get another look later
 const BATCH = 4;
 
@@ -244,7 +257,9 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     };
     let stopReason: string | null = null;
 
-    while (c.verified < cfg.target && deps.now().getTime() - t0 < budget - 8_000) {
+    // the deadline binds a search that started before it (one started later just runs to the end)
+    const hasDeadline = !pastDeadline(run.startedAt);
+    while (c.verified < cfg.target && deps.now().getTime() - t0 < budget - 8_000 && !(hasDeadline && pastDeadline(deps.now()))) {
       if (comboIndex >= combos.length) { stopReason = "scope"; break; }
       const combo = combos[comboIndex];
       if (exhausted.has(combo.key)) { comboIndex++; continue; }
@@ -395,8 +410,21 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     const done = c.verified >= cfg.target;
     const outOfScope = stopReason === "scope" || (comboIndex >= combos.length);
     const capped = stopReason === "geo_cap" || stopReason === "paid_cap";
-    if (done || outOfScope || capped) {
-      const reasons = shortfallReasons(c, cfg, { outOfScope, capped, api, google: deps.google, search: deps.search });
+    const late = !done && hasDeadline && pastDeadline(deps.now());
+    // the area ran out before the target and there's still time → widen the search and carry on
+    if (outOfScope && !done && !late && !capped) {
+      const w = widen(cfg);
+      if (w) {
+        cfg.widened = w.step;
+        if (w.clearExhausted) exhausted.clear();
+        comboIndex = 0;
+        say(`${c.verified}/${cfg.target} so far and the search area ran out — widening it to reach ${cfg.target} by ${deadlineLabel()}: ${w.note}.`);
+        await persist({ config: cfg as unknown as Prisma.InputJsonValue });
+        return run;
+      }
+    }
+    if (done || outOfScope || capped || late) {
+      const reasons = shortfallReasons(c, cfg, { outOfScope: outOfScope && !late, capped, late, api, google: deps.google, search: deps.search });
       const status = done ? "completed" : "partial";
       say(done ? `Daily target reached: ${c.verified}/${cfg.target}.` : `Search finished with ${c.verified}/${cfg.target} verified — ${reasons[0] ?? "scope exhausted"}.`, done ? "ok" : "warn");
       await persist({ status, completedAt: deps.now(), reasons, lockedUntil: null });
@@ -417,11 +445,46 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
   }
 }
 
+/** Add the run's new leads to the user's Google Sheet, and say so in the run's log. Never throws. */
+export async function syncRunToSheet(runId: string): Promise<number> {
+  const run = await getDb().darwinDailyRun.findUnique({ where: { id: runId }, select: { id: true, userId: true, verified: true, log: true } }).catch(() => null);
+  if (!run || !run.verified) return 0;
+  const r = await syncLeadsToSheet(run.userId, run.id);
+  if (r.added) {
+    const log = [...(Array.isArray(run.log) ? (run.log as Log) : []), { at: new Date().toISOString(), text: `Added ${r.added} lead${r.added === 1 ? "" : "s"} to your Google Sheet "DARWIN Leads".`, tone: "ok" as const }];
+    await getDb().darwinDailyRun.update({ where: { id: run.id }, data: { log: log.slice(-80) as unknown as Prisma.InputJsonValue } }).catch(() => {});
+  }
+  return r.added;
+}
+
+/**
+ * Widen today's search when its area runs out before the target: first more
+ * kinds of business (only ones DARWIN can search precisely), then further out.
+ * Returns null once there's nothing left to widen.
+ */
+export function widen(cfg: DailyConfig): { step: number; note: string; clearExhausted: boolean } | null {
+  const step = (cfg.widened ?? 0) + 1;
+  if (step === 1) {
+    const have = new Set(cfg.categories.map((c) => c.toLowerCase()));
+    const add = [...DEFAULT_CATEGORIES, ...EXTRA_CATEGORIES].filter((c) => !have.has(c.toLowerCase()));
+    if (add.length) {
+      cfg.categories = [...cfg.categories, ...add];
+      return { step, note: `added ${add.length} more kinds of business (${add.slice(0, 4).join(", ")}${add.length > 4 ? "…" : ""})`, clearExhausted: false };
+    }
+  }
+  if (step <= 2 && cfg.radiusKm < 25) {
+    cfg.radiusKm = Math.min(25, Math.max(cfg.radiusKm * 2, 12));
+    return { step: 2, note: `searching up to ${cfg.radiusKm} km out`, clearExhausted: true };
+  }
+  return null;
+}
+
 /** Why the target wasn't reached — from the counters only. */
-export function shortfallReasons(c: Counters, cfg: DailyConfig, o: { outOfScope: boolean; capped: boolean; api: Api; google: boolean; search: boolean }): string[] {
+export function shortfallReasons(c: Counters, cfg: DailyConfig, o: { outOfScope: boolean; capped: boolean; late?: boolean; api: Api; google: boolean; search: boolean }): string[] {
   if (c.verified >= cfg.target) return [];
   const r: string[] = [];
-  if (o.outOfScope) r.push(`Insufficient businesses found — every location × category in the search area (${cfg.locations.join(", ")}) was searched`);
+  if (o.late) r.push(`Reached the ${deadlineLabel()} deadline before finding ${cfg.target}`);
+  if (o.outOfScope) r.push(`Insufficient businesses found — every location × category in the search area (${cfg.locations.join(", ")}) was searched${cfg.widened ? `, even after widening it to ${cfg.categories.length} kinds of business within ${cfg.radiusKm} km` : ""}`);
   if (o.capped) r.push("API/search limitations — today's request budget was used up");
   if (c.duplicates) r.push(`${c.duplicates} were already in your DARWIN database`);
   if (c.alreadyChecked) r.push(`${c.alreadyChecked} were checked on earlier days (had websites or were unclear)`);
@@ -465,6 +528,9 @@ export interface DarwinDailyView {
   sources: { geoapify: boolean; google: boolean; search: boolean };
   /** Automatic outreach: on/off, Gmail connected, sent in the last 24 h, leads waiting for their email. */
   email: AutoEmailState;
+  /** When the day's leads should be ready ("2:00 PM"), and the Google Sheet they're added to. */
+  deadlineLabel: string;
+  sheetUrl: string | null;
   history: { date: string; verified: number; target: number; status: string }[];
 }
 
@@ -501,6 +567,8 @@ export async function darwinDailyView(userId: string, now = new Date()): Promise
     config: cfg,
     sources: { geoapify: !!env.geoapifyApiKey, google: googleAvailable(), search: searchAvailable() },
     email: await autoEmailState(userId, cfg.autoEmail),
+    deadlineLabel: deadlineLabel(),
+    sheetUrl: (await leadSheet(userId))?.url ?? null,
     history: hist,
   };
 }
@@ -554,6 +622,8 @@ export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDep
       // come back only when this call really moved the search on (never spin on a stuck one)
       if (run.status === "running" && stats.worked && progressOf(run) !== before) more = true;
     }
+    // today's new leads → the user's Google Sheet (when Google is connected)
+    if (run?.verified) await syncRunToSheet(run.id);
     // then email the new leads (and any earlier ones not yet written to) with the time left
     let mail: AutoEmailResult | null = null;
     if ((await loadConfig(userId)).autoEmail) {
