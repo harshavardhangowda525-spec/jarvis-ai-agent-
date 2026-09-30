@@ -150,6 +150,9 @@ say(`  Settings: ${path.basename(envFile)} (same database as your Vercel app)`);
 const IMPORTANT = ["GROQ_API_KEY", "GEMINI_API_KEY", "ELEVENLABS_API_KEY", "GEOAPIFY_API_KEY", "GOOGLE_CLIENT_SECRET", "INSTAGRAM_ACCESS_TOKEN", "MAGIC_HOUR_API_KEY", "OLLAMA_API_KEY"];
 const blank = IMPORTANT.filter((k) => k in appEnv && isPlaceholder(appEnv[k]));
 if (blank.length) say(`  Note: these came through empty (marked Sensitive on Vercel): ${blank.join(", ")}.\n        Copy their values into .env.local if you want those features on this PC.`);
+// Google (Gmail for DARWIN's emails, Calendar, Drive) needs both OAuth values on this PC too
+const googleGone = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"].filter((k) => isPlaceholder(appEnv[k]));
+if (googleGone.length) say(`  Note: ${googleGone.join(" and ")} ${googleGone.length > 1 ? "aren't" : "isn't"} in ${path.basename(envFile)} — Google (Gmail, Calendar, Drive) shows "Not configured" on this PC.\n        Copy the value${googleGone.length > 1 ? "s" : ""} from Google Cloud Console → APIs & Services → Credentials → your OAuth client, then restart.`);
 if (blank.includes("INSTAGRAM_ACCESS_TOKEN")) say("        Instagram: open EV once in your Vercel JARVIS — it saves the connection to your database, and EV on this PC uses it.");
 
 // ---- 2. dependencies ------------------------------------------------------------------

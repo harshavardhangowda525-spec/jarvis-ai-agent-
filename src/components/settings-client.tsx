@@ -28,6 +28,8 @@ interface Integration {
   /** Not configured: env vars that are empty / hold Vercel's "[sensitive]" placeholder. */
   missing?: string[];
   sensitive?: string[];
+  lookalikes?: string[];
+  server?: string;
 }
 interface SessionRow {
   id: string;
@@ -297,9 +299,13 @@ export function SettingsClient() {
               </div>
               {it.kind !== "key" && !it.available && !!it.missing?.length && (
                 <p className="w-full text-[10.5px] leading-snug text-muted-foreground">
+                  {it.server && <>Checked on <span className="text-foreground">{it.server}</span>. </>}
                   {it.sensitive?.length
                     ? <>{it.sensitive.join(" and ")} came from Vercel as a hidden &quot;Sensitive&quot; value. Paste the real value into <code className="text-accent">.env.local</code> on this PC and restart JARVIS.</>
-                    : <>Missing {it.missing.map((m, i) => <span key={m}>{i ? " and " : ""}<code className="text-accent">{m}</code></span>)} on this server. Add {it.missing.length > 1 ? "them" : "it"} ({"Vercel → Settings → Environment Variables, then redeploy — or .env.local on your PC, then restart"}).</>}
+                    : <>Missing {it.missing.map((m, i) => <span key={m}>{i ? " and " : ""}<code className="text-accent">{m}</code></span>)}. {it.server?.startsWith("Vercel")
+                        ? <>Add {it.missing.length > 1 ? "them" : "it"} in Vercel → Settings → Environment Variables with the {it.server.includes("preview") ? <b>Preview</b> : <b>Production</b>} box ticked, then Redeploy.</>
+                        : <>Add {it.missing.length > 1 ? "them" : "it"} to <code className="text-accent">.env.local</code> in the JARVIS folder, then stop and restart <code className="text-accent">npm run local</code>.</>}</>}
+                  {!!it.lookalikes?.length && <> Found {it.lookalikes.map((m, i) => <span key={m}>{i ? ", " : ""}<code className="text-warning">{m}</code></span>)} — check the spelling: the name must be exactly as above.</>}
                 </p>
               )}
             </div>

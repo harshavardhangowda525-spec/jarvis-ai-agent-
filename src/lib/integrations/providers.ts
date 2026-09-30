@@ -44,8 +44,9 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProvider> = {
       "https://www.googleapis.com/auth/spreadsheets",
       "https://www.googleapis.com/auth/contacts.readonly",
     ],
-    clientId: read("GOOGLE_CLIENT_ID"),
-    clientSecret: read("GOOGLE_CLIENT_SECRET"),
+    // GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET; the Auth.js and "OAUTH" spellings work too
+    clientId: read("GOOGLE_CLIENT_ID") || read("AUTH_GOOGLE_ID") || read("GOOGLE_OAUTH_CLIENT_ID"),
+    clientSecret: read("GOOGLE_CLIENT_SECRET") || read("AUTH_GOOGLE_SECRET") || read("GOOGLE_OAUTH_CLIENT_SECRET"),
     extraAuthParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
   },
   github: {
@@ -115,18 +116,25 @@ export function isProviderConfigured(id: string): boolean {
 }
 
 /**
- * Why a provider isn't connectable: which of its env vars are empty, and which
- * hold Vercel's "[sensitive]" placeholder (a Sensitive value that `vercel env
- * pull` won't copy to a PC — it has to be pasted into .env.local by hand).
+ * Why a provider isn't connectable — env var NAMES only, never values: which are
+ * empty, which hold Vercel's "[sensitive]" placeholder (a Sensitive value that
+ * `vercel env pull` won't copy to a PC), look-alike names that were probably meant
+ * (GOOGLE_CLIENTID, "GOOGLE_CLIENT_ID " …), and which server is answering.
  */
-export function missingCredentials(id: string): { missing: string[]; sensitive: string[] } {
-  if (!OAUTH_PROVIDERS[id]) return { missing: [], sensitive: [] };
-  const names = [`${id.toUpperCase()}_CLIENT_ID`, `${id.toUpperCase()}_CLIENT_SECRET`];
+export function missingCredentials(id: string): { missing: string[]; sensitive: string[]; lookalikes: string[]; server: string } {
+  const server = process.env.VERCEL ? `Vercel (${process.env.VERCEL_ENV || "unknown"} deployment)` : "this PC";
+  const p = OAUTH_PROVIDERS[id];
+  if (!p) return { missing: [], sensitive: [], lookalikes: [], server };
+  const U = id.toUpperCase();
+  const names = [`${U}_CLIENT_ID`, `${U}_CLIENT_SECRET`];
   const raw = (n: string) => (process.env[n] ?? "").trim();
-  return {
-    missing: names.filter((n) => !raw(n)),
-    sensitive: names.filter((n) => /^\[sensitive\]$/i.test(raw(n))),
-  };
+  const missing = [...(p.clientId ? [] : [names[0]]), ...(p.clientSecret ? [] : [names[1]])];
+  const lookalikes = Object.keys(process.env).filter((k) => {
+    if (names.includes(k)) return false;
+    const n = k.toUpperCase().replace(/[^A-Z]/g, "");
+    return n.includes(U) && (n.includes("CLIENT") || n.includes("SECRET")) && !!raw(k);
+  }).slice(0, 4);
+  return { missing, sensitive: names.filter((n) => /^\[sensitive\]$/i.test(raw(n))), lookalikes, server };
 }
 
 /**
