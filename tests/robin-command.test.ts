@@ -105,7 +105,8 @@ describe("qualification is transparent", () => {
   it("money and nodes", () => {
     expect(money(110000)).toBe("₹1,10,000");
     expect(money(990000, "INR", true)).toBe("₹9.9L");
-    expect(nodeOf("demo_completed")).toBe("demo");
+    expect(nodeOf("demo_completed")).toBe("follow_up");
+    expect(nodeOf("negotiating")).toBe("proposal");
     expect(nodeOf("not_interested")).toBe("lost");
   });
 });

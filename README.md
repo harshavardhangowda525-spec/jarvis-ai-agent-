@@ -1016,7 +1016,7 @@ ROBIN turns DARWIN's leads into qualified prospects and paying clients. Work
 starts after DARWIN finds a business; ROBIN never searches for leads itself:
 
 ```
-DARWIN → ROBIN → QUALIFY → CONTACT → FOLLOW-UP → DEMO → QUOTATION → NEGOTIATION → WON/LOST → CLIENT
+DARWIN → ROBIN → NEW CONTACT → CONTACTED → QUALIFIED → INTERESTED → FOLLOW-UP (+ DEMO) → PROPOSAL SENT (+ NEGOTIATION) → WON / REJECTED → CLIENT
 ```
 
 **Open it.** Say or type "Robin", "Activate Robin", "Open Robin" or "Start
@@ -1026,30 +1026,57 @@ Robin". ROBIN answers "Robin is online. Ready to manage your sales pipeline."
 JARVIS can also relay questions: "JARVIS, ask Robin how many qualified leads I
 have" gets the answer "Robin reports …".
 
-**The command center** (`/dashboard/robin`). Everything on it is the real CRM,
+**The command center** (`/dashboard/robin`). It is built around one living
+holographic core, not a grid of cards. Everything on it is the real CRM,
 refreshed every 15 seconds:
-- **Holographic core.** It shows what ROBIN is doing: idle, listening,
-  analyzing, qualifying, contacting, following up, preparing a demo or quotation,
-  complete, or error. Data arcs connect it to the pipeline.
-- **CRM pipeline chart.** The stages run NEW → QUALIFIED → CONTACTED →
-  INTERESTED → FOLLOW-UP → DEMO → QUOTATION → NEGOTIATION → WON, with a LOST
-  branch. Each stage shows its lead count and value, plus the leads that need you
-  most.
-  - Drag a lead onto another stage to move it. The card travels there and the
-    database is updated.
-  - Click a stage to expand it; click a lead to open it.
-  - **FUNNEL** shows how far leads got, with conversion between steps.
-  - **REVENUE** shows potential value per stage and actual revenue at WON.
-- **Around the chart:**
-  - Animated counters.
-  - The DARWIN → ROBIN → CRM rail.
-  - ROBIN INTELLIGENCE: current activity, the next action and why, the priority
-    queue, and today's work.
-  - Live activity.
-  - **ASK ROBIN** for voice.
-- **Side panels:** follow-ups (today, overdue, upcoming), demos, quotations,
-  clients (active, completed, maintenance, inactive, with payments), analytics,
-  and settings. You can also add a lead by hand.
+- **ROBIN AI core**, at the centre of the screen. Concentric and rotating
+  rings, a radial scanning beam, orbiting data particles, waveforms either side,
+  a glass highlight and soft bloom. It reacts to what ROBIN is doing:
+  - IDLE: slow rotation, breathing glow.
+  - LISTENING: the rings expand and contract with your voice.
+  - ANALYZING: a radar sweep and fast data particles.
+  - PROCESSING (the AI brain is thinking): high-speed rings, a scan line and
+    streaming data.
+  - FOLLOW-UP: communication waves and notification particles orbiting the core.
+  - COMPLETE: an energy pulse and a brief check mark, then back to idle.
+  - ERROR: a controlled amber warning pulse, only while the error lasts.
+  Click the core (or **COMMAND ROBIN**) to open the command interface, then type
+  or use the mic.
+- **CRM orbit.** The pipeline curves under the core in eight stages: New
+  Contact → Contacted → Qualified → Interested → Follow-Up → Proposal Sent →
+  Won, with a Rejected branch. Follow-Up includes demos; Proposal Sent includes
+  negotiating; Rejected covers lost, not interested and do-not-contact.
+  DARWIN's leads that score well start in Qualified, because Robin qualifies
+  them on arrival. Logging a call then moves them to Contacted.
+  - The line between stages carries flowing data.
+  - On each line sits the lead that needs you most in the next stage. Hover it
+    for its business name, stage and contact status. Drag it onto any stage to
+    move it: it travels along the arc, the counter updates, a surge of light
+    runs into the stage, and the core reacts. "Undo" puts it back.
+  - Click a stage to expand it. You get every lead in it (most in need of you
+    first), with search, filters (high priority, follow-up due, reachable, no
+    follow-up set) and per-lead actions (schedule a follow-up, move, open). You
+    can also drag rows onto the arc.
+- **Floating glass panels**, wired into the core:
+  - Left: Qualified Leads (+ today), Follow-Ups Today (and overdue),
+    Proposals, and Active Conversations (leads you've talked to in the last
+    14 days).
+  - Right: Conversion Rate (won ÷ all leads), Follow-Up Rate (completed ÷ due,
+    last 30 days), Won Leads, and Pending Actions (overdue and today's
+    follow-ups, today's demos, unsent draft quotations).
+  - Click a panel to open what's behind it. "—" means there isn't enough data
+    yet.
+- **Live activity** streams along the bottom as it happens.
+- **Funnel** and **Revenue** (top-right icons) open as floating views: how far
+  leads got, and potential value per stage vs. actual revenue at Won.
+- **Other tools** (top-right icons): follow-ups (today, overdue, upcoming),
+  demos, quotations, clients (with payments), analytics, settings, and adding a
+  lead by hand.
+- **Screen sizes.** Desktops get the full experience. Laptops keep the core as
+  the main visual. On narrower screens the side panels fold into PIPELINE and
+  PERFORMANCE buttons. On phones the core stays centred, the stages scroll
+  sideways beneath it, and an expanded stage opens as a bottom sheet.
+- Motion respects `prefers-reduced-motion`.
 
 **DARWIN → ROBIN.** With auto-import on (the default), DARWIN's leads come over
 on their own. That happens after each daily search tick, after a manual DARWIN

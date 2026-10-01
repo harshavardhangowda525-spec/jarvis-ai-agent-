@@ -32,7 +32,30 @@ export interface Overview {
   recent: { id: string; at: string; type: string; detail: string; leadId: string | null }[];
   notifications: { id: string; kind: string; title: string; body: string | null; at: string; leadId: string | null }[];
   darwin: { total: number; today: number };
+  /** The command center's side panels — every number is counted from the CRM. */
+  dash: {
+    qualifiedToday: number;
+    /** Open leads you've actually talked to / messaged in the last 14 days. */
+    activeConversations: number;
+    /** Leads with a proposal (quotation) out: sent or negotiating. */
+    proposals: number;
+    /** Won ÷ all leads (null with no leads). */
+    conversion: { value: number | null; won: number; total: number };
+    /** Follow-ups due in the last 30 days that were completed (null when none were due). */
+    followUpRate: { value: number | null; done: number; due: number };
+    pending: { total: number; overdue: number; dueToday: number; demosToday: number; drafts: number };
+  };
   generatedAt: string;
+}
+
+/** Open leads with a real conversation (not just a dialer opened) in the last 14 days. */
+export const ACTIVE_DAYS = 14;
+export async function activeConversationIds(userId: string, now = new Date()): Promise<string[]> {
+  const rows = await getDb().robinInteraction.findMany({
+    where: { userId, occurredAt: { gte: new Date(now.getTime() - ACTIVE_DAYS * 86_400_000) }, status: { notIn: ["opened", "failed"] }, lead: { stage: { notIn: [...CLOSED] } } },
+    select: { leadId: true }, distinct: ["leadId"],
+  });
+  return rows.map((r) => r.leadId);
 }
 
 export async function robinOverview(userId: string, now = new Date()): Promise<Overview> {
@@ -49,7 +72,15 @@ export async function robinOverview(userId: string, now = new Date()): Promise<O
     db.robinActivity.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 24, select: { id: true, createdAt: true, type: true, detail: true, leadId: true } }),
     db.robinNotification.findMany({ where: { userId, readAt: null }, orderBy: { createdAt: "desc" }, take: 10 }),
   ]);
-  const changes = await db.robinStageChange.findMany({ where: { userId }, select: { leadId: true, toStage: true } });
+  const monthAgo = new Date(now.getTime() - 30 * 86_400_000);
+  const [changes, activeIds, qualifiedToday, fuWindow, drafts] = await Promise.all([
+    db.robinStageChange.findMany({ where: { userId }, select: { leadId: true, toStage: true } }),
+    activeConversationIds(userId, now),
+    // leads that reached QUALIFIED today (not every lead Robin scored)
+    db.robinStageChange.findMany({ where: { userId, toStage: "qualified", createdAt: { gte: start } }, select: { leadId: true }, distinct: ["leadId"] }).then((r) => r.length),
+    db.robinFollowUp.findMany({ where: { userId, dueAt: { gte: monthAgo, lt: now }, status: { in: ["pending", "completed"] } }, select: { status: true } }),
+    db.robinQuotation.count({ where: { userId, status: "draft" } }),
+  ]);
 
   const demoBy = new Map<string, Date>();
   for (const d of demos) if (!demoBy.has(d.leadId)) demoBy.set(d.leadId, d.scheduledAt);
@@ -126,7 +157,8 @@ export async function robinOverview(userId: string, now = new Date()): Promise<O
   const bump = (id: string, s: string) => { const o = STAGE_ORDER[s as Stage]; if (o != null && o < 10) far.set(id, Math.max(far.get(id) ?? 0, o)); };
   for (const l of leads) bump(l.id, l.stage);
   for (const c of changes) bump(c.leadId, c.toStage);
-  const funnel = NODES.map((n) => {
+  const journey = [...NODES].sort((a, b) => Math.min(...a.stages.map((s) => STAGE_ORDER[s as Stage])) - Math.min(...b.stages.map((s) => STAGE_ORDER[s as Stage])));
+  const funnel = journey.map((n) => {
     if (n.id === "lost") return { id: n.id, label: n.label, count: cards.filter((c) => nodeOf(c.stage) === "lost").length };
     if (n.id === "won") return { id: n.id, label: n.label, count: cards.filter((c) => c.stage === "won").length };
     const min = Math.min(...n.stages.map((s) => STAGE_ORDER[s as Stage]));
@@ -138,6 +170,18 @@ export async function robinOverview(userId: string, now = new Date()): Promise<O
     recent: recent.map((r) => ({ id: r.id, at: r.createdAt.toISOString(), type: r.type, detail: r.detail, leadId: r.leadId })),
     notifications: notes.map((n) => ({ id: n.id, kind: n.kind, title: n.title, body: n.body, at: n.createdAt.toISOString(), leadId: n.leadId })),
     darwin: { total: darwinLeads.length, today: leads.filter((l) => l.source === "darwin" && l.createdAt >= start).length },
+    dash: (() => {
+      const done = fuWindow.filter((f) => f.status === "completed").length;
+      const pending = { overdue: overdue.length, dueToday: dueToday.length, demosToday: today.demos, drafts };
+      return {
+        qualifiedToday,
+        activeConversations: activeIds.length,
+        proposals: cards.filter((c) => nodeOf(c.stage) === "proposal").length,
+        conversion: { value: cards.length ? Math.round((counts.won / cards.length) * 1000) / 10 : null, won: counts.won, total: cards.length },
+        followUpRate: { value: fuWindow.length ? Math.round((done / fuWindow.length) * 100) : null, done, due: fuWindow.length },
+        pending: { ...pending, total: pending.overdue + pending.dueToday + pending.demosToday + pending.drafts },
+      };
+    })(),
     generatedAt: now.toISOString(),
   };
 }

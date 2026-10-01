@@ -63,7 +63,7 @@ const card = (l: { businessName: string; category: string | null; stage: string;
 
 // ---- robin_leads -----------------------------------------------------------
 const leadsSchema = z.object({
-  filter: z.enum(["hottest", "all", "uncontacted", "qualified", "interested", "follow_up", "demo", "quotation", "negotiation", "won", "lost", "high_priority"]).optional().describe("Which leads. hottest = needs your attention most (default)."),
+  filter: z.enum(["hottest", "all", "uncontacted", "new", "contacted", "qualified", "interested", "follow_up", "demo", "proposal", "quotation", "negotiation", "won", "lost", "high_priority"]).optional().describe("Which leads. hottest = needs your attention most (default)."),
   search: z.string().max(80).optional(),
   limit: z.number().int().min(1).max(50).optional(),
 });
@@ -85,8 +85,10 @@ export const robinLeadsTool: ToolDefinition<z.infer<typeof leadsSchema>> = {
     });
     const now = new Date();
     let list = rows;
-    const node = ({ qualified: "qualified", interested: "interested", follow_up: "follow_up", demo: "demo", quotation: "quotation", negotiation: "negotiation", won: "won", lost: "lost" } as Record<string, string>)[f];
-    if (node) list = list.filter((l) => nodeOf(l.stage) === node);
+    // a pipeline stage, or a narrower step inside one (demo / quotation / negotiation)
+    const step = ({ demo: ["demo_scheduled", "demo_completed"], quotation: ["quotation_sent"], negotiation: ["negotiating"] } as Record<string, string[]>)[f];
+    if (step) list = list.filter((l) => step.includes(l.stage));
+    else if ((NODES as readonly { id: string }[]).some((n) => n.id === f)) list = list.filter((l) => nodeOf(l.stage) === f);
     if (f === "hottest") list = list.filter((l) => !["won", "lost", "not_interested", "do_not_contact"].includes(l.stage));
     list.sort((a, b) => attention(b, now) - attention(a, now));
     const out = list.slice(0, input.limit ?? 10).map(card);

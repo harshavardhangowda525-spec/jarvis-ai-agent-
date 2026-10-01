@@ -20,9 +20,9 @@ interface DataLine { x: number; t: number; h: number }
 
 const TAU = Math.PI * 2;
 const SPEED: Record<CoreState, number> = {
-  idle: 1, listening: 1.2, analyzing: 2.6, qualifying: 1.8, contacting: 1.5, following_up: 1.4, demo: 1.2, quotation: 1.3, complete: 1.1, error: 0.6,
+  idle: 1, listening: 1.2, analyzing: 2.6, processing: 4.2, qualifying: 1.8, contacting: 1.5, following_up: 1.4, demo: 1.2, quotation: 1.3, complete: 1.1, error: 0.6,
 };
-const H = { cyan: 190, blue: 214, violet: 262, white: 205, amber: 36, green: 158, gray: 220 };
+const H = { cyan: 190, blue: 214, violet: 262, white: 205, amber: 22, green: 158, gray: 220 };
 
 export class RobinCoreEngine {
   private ctx: CanvasRenderingContext2D;
@@ -33,7 +33,7 @@ export class RobinCoreEngine {
   private ptx = 0; private pty = 0; private px = 0; private py = 0;
   private raf = 0; private last = 0; private time = 0;
   private speed = 1; private targetSpeed = 1;
-  private energy = 0.55; private targetEnergy = 0.55;
+  private energy = 0.75; private targetEnergy = 0.75;
   state: CoreState = "idle";
   private stateAt = 0;
   private voice: VoiceMode = "none"; private level = 0; private sLevel = 0;
@@ -48,6 +48,10 @@ export class RobinCoreEngine {
   private reduced = false; private hidden = false;
   private bootStart = 0; private bootMs = 2600;
   private push = 0; // voice "push forward"
+  private links: Pt[] = []; // side panels wired to the core
+  private beam = 0; // radar beam strength
+  private comets = [0, 2.1, 4.2];
+  private notify = 0; // follow-up notification orbit 0..1
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d", { alpha: true });
@@ -72,13 +76,15 @@ export class RobinCoreEngine {
   }
   setAnchor(x: number, y: number, r: number) { this.ax = x; this.ay = y; this.R = Math.max(40, r); if (!this.cx) { this.cx = x; this.cy = y; } }
   center(): Pt { return { x: this.cx, y: this.cy }; }
+  /** Points (screen coords) that are wired to the core with faint flowing light — the side panels. */
+  setLinks(pts: Pt[]) { this.links = pts; }
   pointer(x: number, y: number) { this.ptx = (x / Math.max(this.w, 1) - 0.5) * 2; this.pty = (y / Math.max(this.h, 1) - 0.5) * 2; }
 
   setState(s: CoreState) {
     if (s === this.state) return;
     this.state = s; this.stateAt = this.time;
     this.targetSpeed = SPEED[s];
-    this.targetEnergy = s === "idle" ? 0.55 : s === "error" ? 0.4 : 0.9;
+    this.targetEnergy = s === "idle" ? 0.75 : s === "error" ? 0.6 : 1;
     if (s === "complete") this.ripple(H.cyan, 2.6);
   }
   setVoice(mode: VoiceMode, level: number) { this.voice = mode; this.level = Math.max(0, Math.min(1, level || 0)); }
@@ -144,7 +150,11 @@ export class RobinCoreEngine {
     this.demoForm += ((this.state === "demo" ? 1 : 0) - this.demoForm) * Math.min(1, dt * 2.2);
     this.quoteForm += ((this.state === "quotation" ? 1 : 0) - this.quoteForm) * Math.min(1, dt * 2.2);
     this.card += ((this.state === "quotation" ? 1 : 0) - this.card) * Math.min(1, dt * 1.6);
-    for (const o of this.orbs) o.a += dt * o.s * s * (this.state === "analyzing" ? 2.4 : 1);
+    for (const o of this.orbs) o.a += dt * o.s * s * (this.state === "analyzing" || this.state === "processing" ? 2.4 : 1);
+    const wantBeam = this.state === "analyzing" ? 1 : this.state === "processing" ? 0.7 : this.state === "qualifying" ? 0.6 : 0.22;
+    this.beam += (wantBeam - this.beam) * Math.min(1, dt * 2);
+    for (let i = 0; i < this.comets.length; i++) this.comets[i] += dt * (0.5 + i * 0.12) * s;
+    this.notify += ((this.state === "following_up" || this.state === "contacting" ? 1 : 0) - this.notify) * Math.min(1, dt * 2.5);
     for (const f of this.flyers) {
       f.t += dt * f.speed;
       const p = this.bez(f, Math.min(1, f.t));
@@ -157,12 +167,20 @@ export class RobinCoreEngine {
     for (const p of this.sparks) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 0.96; p.vy *= 0.96; p.life += dt; }
     this.sparks = this.sparks.filter((p) => p.life < p.max);
     // analyzing: thin vertical data lines flicker around the core
-    if (this.state === "analyzing" && !this.reduced && Math.random() < dt * 14) this.lines.push({ x: (Math.random() - 0.5) * this.R * 3.2, t: 0, h: this.R * (0.4 + Math.random() * 1.2) });
+    if ((this.state === "analyzing" || this.state === "processing") && !this.reduced && Math.random() < dt * (this.state === "processing" ? 22 : 14)) this.lines.push({ x: (Math.random() - 0.5) * this.R * 3.2, t: 0, h: this.R * (0.4 + Math.random() * 1.2) });
     for (const l of this.lines) l.t += dt * 2.2;
     this.lines = this.lines.filter((l) => l.t < 1);
     // following up: communication pulses travel outward
     if (this.state === "following_up" && !this.reduced && Math.random() < dt * 1.3) this.ripple(H.blue, 2.0, 1);
     if (this.state === "contacting" && !this.reduced && Math.random() < dt * 0.9) this.ripple(H.cyan, 1.8, 0.9);
+    // processing: data streams round the core
+    if (this.state === "processing" && !this.reduced && Math.random() < dt * 5 && this.flyers.length < 60) {
+      const a = Math.random() * TAU, b = a + (Math.random() < 0.5 ? 1 : -1) * (1 + Math.random());
+      const r0 = this.R * 1.5;
+      this.emit({ x: this.cx + Math.cos(a) * r0, y: this.cy + Math.sin(a) * r0 }, { x: this.cx + Math.cos(b) * r0, y: this.cy + Math.sin(b) * r0 }, { hue: Math.random() < 0.3 ? H.violet : H.cyan, size: 1.6, speed: 1.6, bend: -this.R * 0.6, fade: true });
+    }
+    // error: a controlled warning pulse
+    if (this.state === "error" && !this.reduced && Math.random() < dt * 1.2) this.ripple(H.amber, 1.7, 1.2);
   }
 
   private bez(f: Flyer, t: number): Pt {
@@ -188,7 +206,8 @@ export class RobinCoreEngine {
     const boot = Math.min(1, (this.time - this.bootStart) / (this.bootMs / 1000));
     const ease = 1 - Math.pow(1 - boot, 3);
     const breathe = 1 + Math.sin(this.time * (this.state === "idle" ? 0.9 : 1.6)) * (this.reduced ? 0.004 : 0.014);
-    const listen = this.voice === "listening" ? 0.04 + this.sLevel * 0.06 : this.voice === "speaking" ? this.sLevel * 0.05 : 0;
+    const listening = this.voice === "listening" || this.state === "listening";
+    const listen = (this.voice === "listening" ? 0.04 + this.sLevel * 0.06 : this.voice === "speaking" ? this.sLevel * 0.05 : 0) + (listening && !this.reduced ? Math.sin(this.time * 3.2) * 0.03 : 0);
     const R = this.R * breathe * (1 + listen + this.push * 0.015) * (0.6 + 0.4 * ease);
     const { cx, cy } = this;
     const E = this.energy * (0.3 + 0.7 * ease);
@@ -199,15 +218,66 @@ export class RobinCoreEngine {
     c.globalCompositeOperation = "lighter";
     // ---- atmosphere
     const atm = c.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 3.2);
-    atm.addColorStop(0, this.col(H.blue, 0.16 * E, 55));
+    atm.addColorStop(0, this.col(H.blue, 0.24 * E, 55));
     atm.addColorStop(0.45, this.col(H.violet, 0.05 * E, 50, 70));
     atm.addColorStop(1, "rgba(0,0,0,0)");
     c.fillStyle = atm; c.beginPath(); c.arc(cx, cy, R * 3.2, 0, TAU); c.fill();
 
+    // ---- light lines from the side panels into the core
+    for (let i = 0; i < this.links.length; i++) {
+      const p = this.links[i];
+      const ang = Math.atan2(p.y - cy, p.x - cx);
+      const ex = cx + Math.cos(ang) * R * 1.8, ey = cy + Math.sin(ang) * R * 1.8;
+      const mx = (p.x + ex) / 2, my = p.y + (ey - p.y) * 0.15;
+      const lg = c.createLinearGradient(p.x, p.y, ex, ey);
+      lg.addColorStop(0, this.col(H.cyan, 0.04 * ease)); lg.addColorStop(1, this.col(H.cyan, 0.2 * E));
+      c.strokeStyle = lg; c.lineWidth = 0.8;
+      c.beginPath(); c.moveTo(p.x, p.y); c.quadraticCurveTo(mx, my, ex, ey); c.stroke();
+      if (!this.reduced) {
+        const t = (this.time * 0.22 + i * 0.37) % 1, u = 1 - t;
+        const qx = u * u * p.x + 2 * u * t * mx + t * t * ex, qy = u * u * p.y + 2 * u * t * my + t * t * ey;
+        this.dot(qx, qy, 1.4, this.col(H.cyan, 0.75 * Math.sin(t * Math.PI) * E, 80));
+      }
+    }
+    // ---- side waveforms (both sides of the core)
+    if (ease > 0.3) {
+      const amp0 = (this.voice !== "none" ? 0.1 + this.sLevel * 0.6 : this.state === "idle" ? 0.05 : 0.12) * R * 0.45;
+      for (const side of [-1, 1]) {
+        for (let k = 0; k < 3; k++) {
+          c.beginPath();
+          for (let i = 0; i <= 70; i++) {
+            const u = i / 70, x = cx + side * (R * 1.85 + u * R * 1.6);
+            const env = Math.sin(u * Math.PI) * (1 - u * 0.55);
+            const y = cy + Math.sin(u * (18 + k * 5) - this.time * (3 + k * 1.4) * side + k) * amp0 * env * (1 - k * 0.28) * (0.6 + 0.4 * Math.sin(this.time * 1.3 + u * 6));
+            i ? c.lineTo(x, y) : c.moveTo(x, y);
+          }
+          c.strokeStyle = this.col(k === 2 ? H.violet : k ? H.blue : H.cyan, (k ? 0.22 : 0.45) * E * ease); c.lineWidth = k ? 0.7 : 1; c.stroke();
+        }
+      }
+    }
+    // ---- radial scanning beam (a radar wedge — strong while analyzing)
+    if (c.createConicGradient && this.beam > 0.03) {
+      const a0 = this.rot.scan * (this.state === "analyzing" ? 0.42 : 0.3) - Math.PI / 2;
+      const bg = c.createConicGradient(a0, cx, cy);
+      bg.addColorStop(0, this.col(H.cyan, 0.32 * this.beam * E));
+      bg.addColorStop(0.09, this.col(H.cyan, 0.0));
+      bg.addColorStop(0.97, this.col(H.cyan, 0.0));
+      bg.addColorStop(1, this.col(H.cyan, 0.32 * this.beam * E));
+      c.fillStyle = bg;
+      c.beginPath(); c.moveTo(cx, cy); c.arc(cx, cy, R * 1.55, a0 - 0.2, a0 + 0.6); c.closePath(); c.fill();
+      // the beam's leading edge
+      c.strokeStyle = this.col(H.cyan, 0.5 * this.beam * E); c.lineWidth = 1;
+      c.beginPath(); c.moveTo(cx + Math.cos(a0) * R * 0.8, cy + Math.sin(a0) * R * 0.8); c.lineTo(cx + Math.cos(a0) * R * 1.55, cy + Math.sin(a0) * R * 1.55); c.stroke();
+    }
+
     // ---- outer orbital ring (thin) with orbiting markers
     c.lineWidth = 1;
-    c.strokeStyle = this.col(baseHue, (0.22 + warn * 0.2) * E);
+    c.strokeStyle = this.col(baseHue, (0.34 + warn * 0.2) * E);
     this.arc(cx, cy, R * 1.72 * (0.85 + 0.15 * ease), this.rot.outer, this.rot.outer + TAU * ease);
+    // a soft bloom ring just inside it
+    c.strokeStyle = this.col(H.blue, 0.08 * E); c.lineWidth = 8;
+    this.arc(cx, cy, R * 1.66, 0, TAU * ease);
+    c.lineWidth = 1;
     for (let i = 0; i < 3; i++) {
       const a = this.rot.outer * 3 + (i * TAU) / 3;
       this.dot(cx + Math.cos(a) * R * 1.72, cy + Math.sin(a) * R * 1.72, 1.8, this.col(H.cyan, 0.8 * E));
@@ -236,6 +306,28 @@ export class RobinCoreEngine {
       const a = -this.rot.seg * 0.5 + (i / 120) * TAU, len = i % 10 === 0 ? 8 : 3;
       c.strokeStyle = this.col(H.white, (i % 10 === 0 ? 0.35 : 0.14) * E, 80, 30);
       c.beginPath(); c.moveTo(cx + Math.cos(a) * R * 1.45, cy + Math.sin(a) * R * 1.45); c.lineTo(cx + Math.cos(a) * (R * 1.45 + len), cy + Math.sin(a) * (R * 1.45 + len)); c.stroke();
+    }
+
+    // ---- data particles travelling round the circumference (with trails)
+    if (!this.reduced) {
+      for (let i = 0; i < this.comets.length; i++) {
+        const rr = R * (i === 1 ? 1.36 : i === 2 ? 1.12 : 1.55), a = this.comets[i] * (i % 2 ? -1 : 1);
+        for (let j = 0; j < 12; j++) {
+          const aa = a - (i % 2 ? -1 : 1) * j * 0.035;
+          this.dot(cx + Math.cos(aa) * rr, cy + Math.sin(aa) * rr, 1.8 * (1 - j / 12), this.col(i === 1 ? H.violet : H.cyan, 0.8 * (1 - j / 12) * E, 80));
+        }
+      }
+    }
+    // ---- follow-up: notification particles orbit the core, pinging
+    if (this.notify > 0.03) {
+      for (let i = 0; i < 6; i++) {
+        const a = this.time * 0.7 + (i * TAU) / 6, rr = R * 1.28;
+        const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr * 0.92;
+        const ph = (this.time * 1.4 + i * 0.37) % 1;
+        this.dot(x, y, 2.4, this.col(H.blue, 0.85 * this.notify, 78));
+        c.strokeStyle = this.col(H.cyan, (1 - ph) * 0.6 * this.notify); c.lineWidth = 1;
+        this.arc(x, y, 3 + ph * 9, 0, TAU);
+      }
     }
 
     // ---- rotating inner ring (two counter-rotating arcs + recalculating segments)
@@ -305,6 +397,35 @@ export class RobinCoreEngine {
     core.addColorStop(0, this.col(H.cyan, 0.1 * E + this.sLevel * 0.15 + (this.state === "complete" ? 0.12 : 0)));
     core.addColorStop(1, "rgba(0,0,0,0)");
     c.fillStyle = core; c.beginPath(); c.arc(cx, cy, sR * 0.9, 0, TAU); c.fill();
+
+    // ---- glass: a soft specular arc and lens ring (refraction)
+    c.strokeStyle = "rgba(255,255,255,0.10)"; c.lineWidth = 2;
+    this.arc(cx, cy, sR * 0.93, Math.PI * 1.08, Math.PI * 1.42);
+    c.strokeStyle = this.col(H.white, 0.05 * E, 90, 20); c.lineWidth = 6;
+    this.arc(cx, cy, sR * 1.02, 0, TAU);
+    // processing: a scan line sweeps the sphere top to bottom
+    if (this.state === "processing" || this.state === "analyzing") {
+      const t = (this.time * (this.state === "processing" ? 1.4 : 0.7)) % 1;
+      const yy = cy - sR + t * 2 * sR, half = Math.sqrt(Math.max(0, sR * sR - (yy - cy) ** 2));
+      c.strokeStyle = this.col(H.cyan, 0.55 * Math.sin(t * Math.PI)); c.lineWidth = 1.2;
+      c.beginPath(); c.moveTo(cx - half, yy); c.lineTo(cx + half, yy); c.stroke();
+    }
+    // complete: a brief confirmation tick, then back to idle
+    if (this.state === "complete") {
+      const t = this.time - this.stateAt;
+      if (t < 1.6) {
+        const draw = Math.min(1, t / 0.45), fade = t > 1.1 ? 1 - (t - 1.1) / 0.5 : 1;
+        // above the ROBIN wordmark
+        const ty = cy - sR * 0.52, k = 0.5;
+        const pts: Pt[] = [{ x: cx - sR * 0.28 * k, y: ty + sR * 0.02 * k }, { x: cx - sR * 0.06 * k, y: ty + sR * 0.24 * k }, { x: cx + sR * 0.32 * k, y: ty - sR * 0.2 * k }];
+        c.strokeStyle = this.col(H.green, 0.9 * fade, 70); c.lineWidth = 2.4; c.lineCap = "round";
+        c.beginPath(); c.moveTo(pts[0].x, pts[0].y);
+        const seg1 = Math.min(1, draw * 2.2);
+        c.lineTo(pts[0].x + (pts[1].x - pts[0].x) * seg1, pts[0].y + (pts[1].y - pts[0].y) * seg1);
+        if (draw > 0.45) { const s2 = (draw - 0.45) / 0.55; c.lineTo(pts[1].x + (pts[2].x - pts[1].x) * s2, pts[1].y + (pts[2].y - pts[1].y) * s2); }
+        c.stroke(); c.lineCap = "butt";
+      }
+    }
 
     // ---- equator waveform (reacts to the voice)
     const amp = (this.voice === "none" ? 0.04 + 0.02 * Math.sin(this.time * 0.7) : 0.08 + this.sLevel * 0.55) * R * 0.5;

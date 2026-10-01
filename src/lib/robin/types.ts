@@ -22,17 +22,20 @@ export const CLOSED: Stage[] = ["won", "lost", "not_interested", "do_not_contact
 export const CONFIRM_STAGES: Stage[] = ["won", "lost", "do_not_contact"];
 
 /** The pipeline chart: one node per step of the journey, LOST as a side branch. */
+/**
+ * The command center's pipeline — eight stages, in the order they sit on the arc.
+ * Demos are part of FOLLOW-UP; a sent quotation and negotiating are PROPOSAL SENT;
+ * lost / not interested / do-not-contact are REJECTED (id "lost").
+ */
 export const NODES = [
-  { id: "new", label: "NEW", stages: ["new"] },
-  { id: "qualified", label: "QUALIFIED", stages: ["qualified"] },
+  { id: "new", label: "NEW CONTACT", stages: ["new"] },
   { id: "contacted", label: "CONTACTED", stages: ["contacted"] },
+  { id: "qualified", label: "QUALIFIED", stages: ["qualified"] },
   { id: "interested", label: "INTERESTED", stages: ["interested"] },
-  { id: "follow_up", label: "FOLLOW-UP", stages: ["follow_up"] },
-  { id: "demo", label: "DEMO", stages: ["demo_scheduled", "demo_completed"] },
-  { id: "quotation", label: "QUOTATION", stages: ["quotation_sent"] },
-  { id: "negotiation", label: "NEGOTIATION", stages: ["negotiating"] },
+  { id: "follow_up", label: "FOLLOW-UP", stages: ["follow_up", "demo_scheduled", "demo_completed"] },
+  { id: "proposal", label: "PROPOSAL SENT", stages: ["quotation_sent", "negotiating"] },
   { id: "won", label: "WON", stages: ["won"] },
-  { id: "lost", label: "LOST", stages: ["lost", "not_interested", "do_not_contact"] },
+  { id: "lost", label: "REJECTED", stages: ["lost", "not_interested", "do_not_contact"] },
 ] as const satisfies readonly { id: string; label: string; stages: readonly Stage[] }[];
 export type NodeId = (typeof NODES)[number]["id"];
 export const nodeOf = (stage: string): NodeId => (NODES.find((n) => (n.stages as readonly string[]).includes(stage))?.id ?? "new") as NodeId;
@@ -97,10 +100,10 @@ export const DEFAULT_SETTINGS: RobinSettings = {
 };
 
 /** Robin's core states (drive the hologram). */
-export const CORE_STATES = ["idle", "listening", "analyzing", "qualifying", "contacting", "following_up", "demo", "quotation", "complete", "error"] as const;
+export const CORE_STATES = ["idle", "listening", "analyzing", "processing", "qualifying", "contacting", "following_up", "demo", "quotation", "complete", "error"] as const;
 export type CoreState = (typeof CORE_STATES)[number];
 export const CORE_LABEL: Record<CoreState, string> = {
-  idle: "IDLE", listening: "LISTENING", analyzing: "ANALYZING", qualifying: "QUALIFYING LEADS", contacting: "CONTACTING",
+  idle: "IDLE", listening: "LISTENING", analyzing: "ANALYZING", processing: "PROCESSING", qualifying: "QUALIFYING LEADS", contacting: "CONTACTING",
   following_up: "FOLLOWING UP", demo: "PREPARING DEMO", quotation: "PREPARING QUOTATION", complete: "COMPLETE", error: "ERROR",
 };
 

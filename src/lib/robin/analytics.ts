@@ -106,8 +106,8 @@ export async function robinAnalytics(userId: string, range: Range, custom?: { fr
 
   // funnel by chart node (how many of the cohort reached each step)
   const nodeOrder = (id: string) => Math.min(...NODES.find((n) => n.id === id)!.stages.map((s) => STAGE_ORDER[s as Stage]));
-  const funnel: { id: string; label: string; count: number }[] = NODES.filter((n) => n.id !== "lost").map((n) => ({ id: n.id, label: n.label, count: n.id === "won" ? wonCohort : reachedOrder(nodeOrder(n.id)) }));
-  funnel.push({ id: "lost", label: "LOST", count: leads.filter((l) => nodeOf(l.stage) === "lost").length });
+  const funnel: { id: string; label: string; count: number }[] = NODES.filter((n) => n.id !== "lost").sort((a, b) => nodeOrder(a.id) - nodeOrder(b.id)).map((n) => ({ id: n.id, label: n.label, count: n.id === "won" ? wonCohort : reachedOrder(nodeOrder(n.id)) }));
+  funnel.push({ id: "lost", label: "REJECTED", count: leads.filter((l) => nodeOf(l.stage) === "lost").length });
 
   return {
     range: { kind: range, from: r.from, to: r.to, weekly },

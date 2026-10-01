@@ -750,8 +750,67 @@ body {
 @keyframes robin-letter { from { opacity: 0; transform: translateY(14px); filter: blur(6px); letter-spacing: .5em; } to { opacity: 1; transform: none; filter: none; } }
 @keyframes robin-typein { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 @keyframes robin-toast { 0% { opacity: 0; transform: translateY(-14px); } 8%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-8px); } }
+/* ---- ROBIN command center: orbit, glass HUD, command pill ---- */
+.robin-noise { opacity: .035; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); mix-blend-mode: overlay; }
+.robin-draw-long { stroke-dasharray: 2400; stroke-dashoffset: 2400; animation: robin-draw 2.2s cubic-bezier(.4,0,.2,1) .2s forwards; }
+.robin-dataflow { animation: robin-dataflow 2.4s linear infinite; }
+.robin-surge { stroke-dasharray: .22 1; stroke-dashoffset: 1.22; animation: robin-surge 1.25s cubic-bezier(.4,0,.2,1) forwards; }
+.robin-orb-hit { animation: robin-node-in .8s cubic-bezier(.2,.8,.2,1) both; }
+.robin-orb {
+  background: radial-gradient(circle at 35% 30%, rgba(165, 243, 252, 0.22), rgba(14, 116, 144, 0.16) 45%, rgba(2, 6, 23, 0.75) 100%);
+  border: 1px solid rgba(103, 232, 249, 0.38);
+  box-shadow: inset 0 0 16px rgba(103, 232, 249, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 0 22px -6px rgba(56, 189, 248, 0.6);
+  backdrop-filter: blur(6px);
+  transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s ease, border-color .35s ease;
+}
+.robin-orb-hit:hover .robin-orb, .robin-orb-hit:focus-visible .robin-orb { border-color: rgba(165, 243, 252, 0.8); box-shadow: inset 0 0 22px rgba(103, 232, 249, 0.25), 0 0 34px -4px rgba(103, 232, 249, 0.75); }
+.robin-orb-lit { border-color: rgba(165, 243, 252, 0.95); box-shadow: inset 0 0 26px rgba(103, 232, 249, 0.3), 0 0 44px -2px rgba(103, 232, 249, 0.85); }
+.robin-orb-open { border-color: rgba(165, 243, 252, 0.95); background: radial-gradient(circle at 35% 30%, rgba(186, 230, 253, 0.4), rgba(14, 116, 144, 0.3) 45%, rgba(2, 6, 23, 0.7) 100%); box-shadow: inset 0 0 26px rgba(103, 232, 249, 0.3), 0 0 40px -2px rgba(56, 189, 248, 0.9); }
+.robin-orb-won { border-color: rgba(110, 231, 183, 0.55); background: radial-gradient(circle at 35% 30%, rgba(167, 243, 208, 0.25), rgba(6, 95, 70, 0.22) 45%, rgba(2, 6, 23, 0.75) 100%); box-shadow: inset 0 0 16px rgba(52, 211, 153, 0.18), 0 0 26px -6px rgba(52, 211, 153, 0.6); }
+.robin-orb-lost { border-color: rgba(251, 113, 133, 0.35); background: radial-gradient(circle at 35% 30%, rgba(254, 205, 211, 0.14), rgba(136, 19, 55, 0.18) 45%, rgba(2, 6, 23, 0.75) 100%); box-shadow: inset 0 0 12px rgba(251, 113, 133, 0.12), 0 0 18px -8px rgba(251, 113, 133, 0.5); }
+.robin-orbit { animation: robin-orbit 7s linear infinite; box-shadow: 0 0 10px -2px rgba(103, 232, 249, 0.6); }
+.robin-bubble { color: #ecfeff; background: radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.55), rgba(30, 64, 175, 0.55) 60%, rgba(15, 23, 42, 0.9)); border: 1px solid rgba(165, 243, 252, 0.45); box-shadow: 0 0 14px -3px rgba(56, 189, 248, 0.7); cursor: grab; transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease; animation: robin-pop .5s cubic-bezier(.2,.8,.2,1) .9s both; }
+.robin-bubble:hover, .robin-bubble:focus-visible { transform: scale(1.22); box-shadow: 0 0 22px rgba(103, 232, 249, 0.9); z-index: 5; outline: none; }
+.robin-bubble:active { cursor: grabbing; }
+.robin-bubble-high { border-color: rgba(165, 243, 252, 0.9); box-shadow: 0 0 0 2px rgba(103, 232, 249, 0.15), 0 0 18px -2px rgba(103, 232, 249, 0.9); }
+.robin-bubble-sel { transform: scale(1.2); border-color: #fff; box-shadow: 0 0 26px rgba(165, 243, 252, 1); }
+.robin-bubble-won { background: radial-gradient(circle at 35% 30%, rgba(167, 243, 208, 0.6), rgba(4, 120, 87, 0.6) 60%, rgba(15, 23, 42, 0.9)); border-color: rgba(110, 231, 183, 0.6); }
+.robin-tip { animation: robin-sheet .2s ease-out both; }
+.robin-expand { animation: robin-expand .38s cubic-bezier(.2,.8,.2,1) both; transform-origin: 50% 100%; }
+.robin-lead-row { transition: background-color .2s ease; animation: robin-row .4s cubic-bezier(.2,.8,.2,1) both; }
+.robin-lead-row:hover { background: rgba(103, 232, 249, 0.06); }
+.robin-stat {
+  --mx: 50%; --my: 50%;
+  background: radial-gradient(160px circle at var(--mx) var(--my), rgba(103, 232, 249, 0.10), transparent 60%), linear-gradient(180deg, rgba(30, 41, 59, 0.42), rgba(2, 6, 23, 0.42));
+  border: 1px solid rgba(148, 197, 255, 0.16);
+  backdrop-filter: blur(16px) saturate(150%); -webkit-backdrop-filter: blur(16px) saturate(150%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 14px 34px -18px rgba(0, 0, 0, 0.8);
+  transition: border-color .3s ease, box-shadow .3s ease, opacity .7s ease, transform .9s cubic-bezier(.2,.8,.2,1), filter .7s ease;
+}
+.robin-stat::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(120deg, rgba(255, 255, 255, 0.07), transparent 40%); pointer-events: none; }
+.robin-stat:hover, .robin-stat:focus-visible { border-color: rgba(103, 232, 249, 0.45); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 26px -8px rgba(56, 189, 248, 0.7); outline: none; }
+.robin-stat-accent { border-color: rgba(103, 232, 249, 0.55); background: radial-gradient(160px circle at var(--mx) var(--my), rgba(103, 232, 249, 0.18), transparent 60%), linear-gradient(180deg, rgba(14, 116, 144, 0.32), rgba(2, 6, 23, 0.45)); box-shadow: inset 0 0 22px rgba(103, 232, 249, 0.12), 0 0 30px -10px rgba(103, 232, 249, 0.8); }
+.robin-stream { mask-image: linear-gradient(90deg, transparent, #000 8%, #000 100%); -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 100%); }
+.robin-chip { background: linear-gradient(180deg, rgba(30, 41, 59, 0.45), rgba(2, 6, 23, 0.4)); border: 1px solid rgba(148, 197, 255, 0.12); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.robin-chip-in { animation: robin-chip-in .7s cubic-bezier(.2,.8,.2,1) both; border-color: rgba(103, 232, 249, 0.4); }
+.robin-cmd { background: linear-gradient(180deg, rgba(8, 47, 73, 0.55), rgba(2, 6, 23, 0.6)); border: 1px solid rgba(103, 232, 249, 0.45); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: inset 0 0 18px rgba(103, 232, 249, 0.12), 0 0 28px -10px rgba(56, 189, 248, 0.9); transition: box-shadow .3s ease, border-color .3s ease, transform .2s ease; }
+.robin-cmd:hover { border-color: rgba(165, 243, 252, 0.8); box-shadow: inset 0 0 22px rgba(103, 232, 249, 0.18), 0 0 36px -8px rgba(56, 189, 248, 1); }
+.robin-cmd-open { animation: robin-cmd-open .35s cubic-bezier(.2,.8,.2,1) both; }
+.robin-caret { animation: robin-caret 1.1s steps(2, start) infinite; }
+.robin-reply { animation: robin-feed .5s cubic-bezier(.2,.8,.2,1) both; }
+.robin-core-hit { cursor: pointer; transition: transform .4s cubic-bezier(.2,.8,.2,1); }
+.robin-core-hit:hover { transform: scale(1.04); }
+.robin-core-hit:focus-visible { outline: 1px solid rgba(165, 243, 252, 0.6); outline-offset: 6px; }
+@keyframes robin-dataflow { to { stroke-dashoffset: -48; } }
+@keyframes robin-surge { 0% { stroke-dashoffset: 1.22; opacity: 1; } 85% { opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
+@keyframes robin-orbit { from { transform: rotate(-12deg); } 50% { transform: rotate(12deg); } to { transform: rotate(-12deg); } }
+@keyframes robin-expand { from { opacity: 0; transform: translateY(14px) scale(.94); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes robin-chip-in { from { opacity: 0; transform: translateX(40px) scale(.94); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes robin-cmd-open { from { opacity: .4; transform: scaleX(.7); } to { opacity: 1; transform: none; } }
+@keyframes robin-caret { to { visibility: hidden; } }
 @media (prefers-reduced-motion: reduce) {
-  .robin-grid, .robin-flow, .robin-wave span, .robin-card-hot::before { animation: none; }
+  .robin-grid, .robin-flow, .robin-wave span, .robin-card-hot::before, .robin-dataflow, .robin-orbit, .robin-caret { animation: none; }
+  .robin-draw-long, .robin-surge, .robin-orb-hit, .robin-bubble, .robin-expand, .robin-lead-row, .robin-chip-in, .robin-cmd-open, .robin-reply, .robin-tip { animation-duration: 1ms; }
   .robin-node, .robin-card, .robin-card-fan, .robin-type, .robin-fan, .robin-draw, .robin-curve, .robin-pop, .robin-morph, .robin-ping, .robin-in, .robin-row, .robin-sheet, .robin-panel, .robin-drawer, .robin-feed-in, .robin-iris, .robin-launch-ring, .robin-letter, .robin-typein { animation-duration: 1ms; }
   .robin-bar { transition: none; }
 }

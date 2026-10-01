@@ -70,6 +70,8 @@ d("ROBIN: Darwin lead → client (integration)", () => {
     const ov = await overview.robinOverview(userId);
     expect(ov.nodes.find((n) => n.id === "qualified")?.leads.map((l) => l.name)).toEqual(["ABC Café"]);
     expect(ov.counts).toMatchObject({ total: 1, qualified: 1 });
+    // the command center's side panels
+    expect(ov.dash).toMatchObject({ qualifiedToday: 1, activeConversations: 0, proposals: 0, conversion: { value: 0, won: 0, total: 1 }, followUpRate: { value: null, done: 0, due: 0 } });
   });
 
   it("6–9 · you call; the call is logged; a follow-up is created and shows on the dashboard", async () => {
@@ -86,6 +88,9 @@ d("ROBIN: Darwin lead → client (integration)", () => {
     await db().robinLead.update({ where: { id: leadId }, data: { nextFollowUpAt: new Date(Date.now() + 60_000) } });
     const ov = await overview.robinOverview(userId);
     expect(ov.today.followUps).toBe(1);
+    // you talked to them → an active conversation; the due follow-up is a pending action
+    expect(ov.dash.activeConversations).toBe(1);
+    expect(ov.dash.pending).toMatchObject({ dueToday: 1, total: 1 });
     expect(ov.nodes.find((n) => n.id === "follow_up")?.leads[0]).toMatchObject({ name: "ABC Café", flag: "today" });
     expect(ov.next).toMatchObject({ name: "ABC Café", text: "Follow up today", why: "it's due today" });
     const q = await engage.followUpQueue(userId);
@@ -156,6 +161,11 @@ d("ROBIN: Darwin lead → client (integration)", () => {
     const ov = await overview.robinOverview(userId);
     expect(ov.counts).toMatchObject({ won: 1, revenueWon: 47200, clients: 1 });
     expect(ov.nodes.find((n) => n.id === "won")?.value).toBe(47200);
+    expect(ov.dash.conversion).toEqual({ value: 100, won: 1, total: 1 });
+    expect(ov.dash.activeConversations).toBe(0); // won — no longer an open conversation
+    // the eight stages, in the order they sit on the arc; the funnel follows the real journey
+    expect(ov.nodes.map((n) => n.label)).toEqual(["NEW CONTACT", "CONTACTED", "QUALIFIED", "INTERESTED", "FOLLOW-UP", "PROPOSAL SENT", "WON", "REJECTED"]);
+    expect(ov.funnel.map((f) => f.id)).toEqual(["new", "qualified", "contacted", "interested", "follow_up", "proposal", "won", "lost"]);
     const b = await briefing.robinBriefing(userId);
     expect(b.newFromDarwin).toBe(1);
     expect(b.text).toMatch(/1 new lead arrived from Darwin\./);

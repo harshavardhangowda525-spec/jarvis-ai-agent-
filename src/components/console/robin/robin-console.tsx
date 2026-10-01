@@ -2,32 +2,52 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Mic, MicOff, Loader2, LogOut, CalendarClock, Presentation, FileText, Crown, BarChart3, Settings2, UserPlus, Send, Bell } from "lucide-react";
+import { Mic, MicOff, Loader2, LogOut, CalendarClock, Presentation, FileText, Crown, BarChart3, Settings2, UserPlus, Send, Filter, TrendingUp, ChevronDown, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logActivity } from "@/lib/activity/client";
 import { useVoice, useResumeVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import type { Overview, LeadCard } from "@/lib/robin/overview";
-import { CORE_LABEL, STAGE_LABEL, nodeStage, money, type CoreState, type NodeId, type Stage } from "@/lib/robin/types";
+import { CORE_LABEL, STAGE_LABEL, nodeOf, nodeStage, money, type CoreState, type NodeId, type Stage } from "@/lib/robin/types";
 import { parseRobinCommand, parseWhen, type View, type LeadFilter } from "@/lib/robin/command";
 import { RobinCoreEngine } from "./core-engine";
-import { PipelineChart, type ChartMode, type PipelineHandle } from "./pipeline-chart";
+import { ARC, OrbitPipeline, arcLayout, type ArcGeo, type OrbitHandle } from "./orbit-pipeline";
+import { StagePanel } from "./stage-panel";
+import { ActivityStream, StatPanel, type FeedItem, type Stat } from "./hud";
+import { InsightsOverlay, type InsightMode } from "./insights";
 import { LeadPanel } from "./lead-panel";
 import { FollowUpsPanel, DemosPanel, QuotationsPanel, ClientsPanel, LeadsPanel, AnalyticsPanel, SettingsPanel, AddLeadPanel } from "./panels";
 import { rapi, when } from "./api";
-import { Count, Money, reducedMotion } from "./anim";
+import { reducedMotion } from "./anim";
 
 /**
- * ROBIN — the sales command center. The holographic core is Robin's brain, the
- * pipeline chart is its sales memory, and the motion between them is what
- * Robin is actually doing. Everything on screen is the real CRM (polled live);
- * with no data it shows elegant empty states, never placeholders.
+ * ROBIN — the sales command center, built around one living holographic core.
+ * The CRM orbits beneath it as an arc of eight stages; small glass panels either
+ * side are wired into the core; live activity streams along the bottom. The
+ * motion is what Robin is actually doing. Everything on screen is the real CRM
+ * (polled live); with no data it shows elegant empty states, never placeholders.
  */
 
 type Panel =
   | { kind: "followups" } | { kind: "demos" } | { kind: "quotations" } | { kind: "clients" } | { kind: "analytics" } | { kind: "settings" } | { kind: "add" }
   | { kind: "leads"; title: string; query: string };
-interface Feed { id: string; at: string; text: string; fresh?: boolean }
+type Mode = "wide" | "mid" | "compact";
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const deg = (d: number) => (d * Math.PI) / 180;
+
+/** Where the core and the arc go for a given stage size (px). */
+function layoutFor(w: number, h: number, mode: Mode): { R: number; core: { x: number; y: number }; geo: ArcGeo } {
+  if (mode === "compact") {
+    // phones: the arc scrolls sideways in its own band under the core
+    return { R: clamp(w * 0.17, 50, 78), core: { x: w / 2, y: 0 }, geo: { w: 760, h: 262, cx: 380, cy: -58, rx: 318, ry: 262, a0: deg(150), a1: deg(30), r: 21 } };
+  }
+  const R = clamp(Math.min(h * 0.14, w * 0.095), 52, 132);
+  const cx = w / 2, cy = Math.max(R * 1.9, h * 0.37);
+  const r = clamp(w * 0.017, 19, 27);
+  const ry = Math.max(R * 2.1, h - r - 50 - cy);
+  const rx = Math.min(w * 0.34, 600);
+  return { R, core: { x: cx, y: cy }, geo: { w, h, cx, cy, rx, ry, a0: deg(150), a1: deg(30), r } };
+}
 
 const POLL_MS = 15_000;
 const BOOT_MS = 2600;
@@ -41,14 +61,24 @@ export function RobinConsole() {
   const router = useRouter();
   const params = useSearchParams();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const anchorRef = useRef<HTMLDivElement>(null);
-  const darwinRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const coreBoxRef = useRef<HTMLDivElement>(null);
+  const statRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const cmdInput = useRef<HTMLInputElement>(null);
   const engine = useRef<RobinCoreEngine | null>(null);
-  const chart = useRef<PipelineHandle>(null);
+  const chart = useRef<OrbitHandle>(null);
+  const [box, setBox] = useState({ w: 1280, h: 640, vw: 1280 });
+  const mode: Mode = box.vw < 768 ? "compact" : box.w >= 1100 ? "wide" : "mid";
+  const lay = useMemo(() => layoutFor(box.w, box.h, mode), [box.w, box.h, mode]);
+  const layRef = useRef(lay); layRef.current = lay;
+  const modeRef = useRef(mode); modeRef.current = mode;
+  const placeRef = useRef<() => void>(() => {});
 
   const [ov, setOv] = useState<Overview | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [mode, setMode] = useState<ChartMode>("pipeline");
+  const [insight, setInsight] = useState<InsightMode | null>(null);
+  const [cmdOpen, setCmdOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState<"left" | "right" | null>(null);
   const [core, setCoreState] = useState<CoreState>("idle");
   const [highlight, setHighlight] = useState<Partial<Record<NodeId, number>>>({});
   const [expanded, setExpanded] = useState<NodeId | null>(null);
@@ -57,7 +87,7 @@ export function RobinConsole() {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [confirm, setConfirm] = useState<{ q: string; run: () => Promise<void> } | null>(null);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
-  const [feed, setFeed] = useState<Feed[]>([]);
+  const [feed, setFeed] = useState<FeedItem[]>([]);
   const [reply, setReply] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [voiceStarted, setVoiceStarted] = useState(false);
@@ -83,7 +113,7 @@ export function RobinConsole() {
   const signaturePulse = useCallback((targets?: NodeId[]) => {
     const e = engine.current, c = chart.current;
     if (!e || !c) return;
-    const ids = targets ?? (["new", "qualified", "contacted", "interested", "follow_up", "demo", "quotation", "negotiation", "won"] as NodeId[]);
+    const ids = targets ?? ARC;
     const pts = ids.map((id) => c.nodeCenter(id)).filter(Boolean) as { x: number; y: number }[];
     setCore("analyzing", 1800);
     e.pulse(pts, (i) => lightUp([ids[i]]));
@@ -98,20 +128,46 @@ export function RobinConsole() {
     engine.current = e;
     const place = () => {
       e.resize();
-      const r = anchorRef.current?.getBoundingClientRect();
-      if (r) e.setAnchor(r.left + r.width / 2, r.top + r.height / 2, Math.min(r.width, r.height) * 0.3);
+      const l = layRef.current;
+      if (modeRef.current === "compact") {
+        const r = coreBoxRef.current?.getBoundingClientRect();
+        if (r) e.setAnchor(r.left + r.width / 2, r.top + r.height / 2, l.R);
+      } else {
+        const r = stageRef.current?.getBoundingClientRect();
+        if (r) e.setAnchor(r.left + l.core.x, r.top + l.core.y, l.R);
+      }
     };
+    placeRef.current = place;
     place();
-    const ro = new ResizeObserver(place);
-    if (anchorRef.current) ro.observe(anchorRef.current);
+    const measure = () => {
+      const el = stageRef.current;
+      if (el) setBox({ w: el.clientWidth, h: el.clientHeight, vw: window.innerWidth });
+    };
+    measure();
+    const ro = new ResizeObserver(() => { measure(); place(); });
+    if (stageRef.current) ro.observe(stageRef.current);
     window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
     const move = (ev: PointerEvent) => e.pointer(ev.clientX, ev.clientY);
     window.addEventListener("pointermove", move);
     e.start();
     e.boot(BOOT_MS);
     const t = setTimeout(() => setBooted(true), reducedMotion() ? 0 : BOOT_MS - 600);
-    return () => { clearTimeout(t); ro.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("pointermove", move); e.stop(); };
+    return () => { clearTimeout(t); ro.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); window.removeEventListener("pointermove", move); e.stop(); };
   }, []);
+  // the core follows the layout; the side panels are wired into it
+  useEffect(() => {
+    placeRef.current();
+    const e = engine.current;
+    if (!e) return;
+    const wire = () => e.setLinks(mode === "wide" ? statRefs.current.filter(Boolean).map((el, i) => {
+      const r = el!.getBoundingClientRect();
+      return { x: i < 4 ? r.right + 2 : r.left - 2, y: r.top + r.height / 2 };
+    }) : []);
+    const t = setTimeout(wire, 60);
+    window.addEventListener("scroll", wire, true);
+    return () => { clearTimeout(t); window.removeEventListener("scroll", wire, true); };
+  }, [lay, mode, booted]);
 
   // ---- voice + brain
   const handleRef = useRef<(t: string) => void>(() => {});
@@ -171,8 +227,8 @@ export function RobinConsole() {
       const moved = o.stageMap.filter(([id, n]) => prev.has(id) && prev.get(id) !== n);
       if (added.length) {
         setCore("qualifying", 3200);
-        const d = darwinRef.current?.getBoundingClientRect();
-        if (d && engine.current) engine.current.intake({ x: d.left + d.width / 2, y: d.top + d.height / 2 }, Math.min(10, 3 + added.length));
+        const d = chart.current?.intakePoint();
+        if (d && engine.current) engine.current.intake(d, Math.min(10, 3 + added.length));
         setTimeout(() => {
           const tgt = chart.current?.nodeCenter("qualified"), e = engine.current;
           if (tgt && e) e.emit(e.center(), tgt, { done: () => lightUp(["qualified", "new"]) });
@@ -230,7 +286,8 @@ export function RobinConsole() {
 
   // ---- views / actions
   const openView = useCallback((v: View, filter?: LeadFilter) => {
-    if (v === "pipeline" || v === "funnel" || v === "revenue") { setMode(v); setPanel(null); return; }
+    if (v === "funnel" || v === "revenue") { setInsight(v); setPanel(null); return; }
+    if (v === "pipeline") { setInsight(null); setPanel(null); return; }
     setPanel({ kind: v } as Panel);
     void filter;
   }, []);
@@ -255,6 +312,7 @@ export function RobinConsole() {
 
   const moveLead = useCallback(async (lead: { id: string; name: string; from: NodeId }, to: NodeId, opts: { confirmed?: boolean; source?: "user" | "voice"; stage?: Stage } = {}) => {
     const stage = opts.stage ?? nodeStage(to);
+    setCmdOpen(false);
     // your command is the approval — it happens straight away ("undo" puts it back)
     // the card travels right away; the database is updated at the same time
     chart.current?.travel(lead.name, lead.from, to);
@@ -287,6 +345,13 @@ export function RobinConsole() {
     if (hits.length > 1) { say(`A few match that — ${hits.slice(0, 4).map((h) => h.businessName).join(", ")}. Which one?`); setPanel({ kind: "leads", title: `MATCHES FOR "${name.toUpperCase()}"`, query: `q=${encodeURIComponent(name)}` }); return null; }
     return hits[0];
   }, [leadId, say]);
+
+  const importDarwin = useCallback(async () => {
+    setCore("qualifying", 3000);
+    const r = await rapi<{ imported: number }>("import", "POST", {});
+    await refresh();
+    say(r.data?.imported ? `${r.data.imported} lead${r.data.imported === 1 ? "" : "s"} received from Darwin.` : "Darwin has no new leads right now.");
+  }, [refresh, say, setCore]);
 
   const deactivate = useCallback(() => {
     setLeaving(true);
@@ -352,11 +417,11 @@ export function RobinConsole() {
         return;
       }
       case "leads": {
-        signaturePulse([cmd.filter as NodeId].filter((x) => ["new", "qualified", "contacted", "interested", "negotiation", "won", "lost"].includes(x)) as NodeId[]);
+        signaturePulse([cmd.filter as NodeId].filter((x) => (ARC as string[]).includes(x) || x === "lost") as NodeId[]);
         // a pipeline stage ("show qualified leads") → that stage opens on the chart with EVERY lead in it
         const node = ov?.nodes.find((n) => n.id === cmd.filter);
         if (node) {
-          setPanel(null); setMode("pipeline"); setExpanded(node.id);
+          setPanel(null); setInsight(null); setExpanded(node.id);
           return say(node.count ? `Here ${node.count === 1 ? "is" : "are"} all ${node.count} ${node.label.toLowerCase()} lead${node.count === 1 ? "" : "s"} — the ones that need you most are first.` : `No ${node.label.toLowerCase()} leads right now.`);
         }
         const f = FILTER_QUERY[cmd.filter] ?? { title: `${cmd.filter.toUpperCase().replace("_", " ")} LEADS`, query: `node=${cmd.filter}` };
@@ -389,8 +454,7 @@ export function RobinConsole() {
         const l = await resolve(cmd.name);
         if (!l) return;
         const from = (prevMap.current?.get(l.id) ?? "new") as NodeId;
-        const nodeOfStage = (s: Stage): NodeId => (({ demo_scheduled: "demo", demo_completed: "demo", quotation_sent: "quotation", negotiating: "negotiation", not_interested: "lost", do_not_contact: "lost" } as Record<string, NodeId>)[s] ?? (s as NodeId));
-        return moveLead({ id: l.id, name: l.businessName, from }, nodeOfStage(cmd.stage), { stage: cmd.stage, source: "voice" });
+        return moveLead({ id: l.id, name: l.businessName, from }, nodeOf(cmd.stage), { stage: cmd.stage, source: "voice" });
       }
       case "followup":
       case "demo": {
@@ -403,8 +467,8 @@ export function RobinConsole() {
           ? await rapi("followups", "POST", { leadId: l.id, dueAt: at.toISOString(), source: "voice" })
           : await rapi("demos", "POST", { leadId: l.id, at: at.toISOString(), source: "voice" });
         if (!r.ok) return say(r.error ?? "Couldn't schedule that.");
-        const tgt = chart.current?.nodeCenter(cmd.kind === "followup" ? "follow_up" : "demo"), e = engine.current;
-        if (tgt && e) e.emit(e.center(), tgt, { hue: 214, done: () => lightUp([cmd.kind === "followup" ? "follow_up" : "demo"]) });
+        const tgt = chart.current?.nodeCenter("follow_up"), e = engine.current;
+        if (tgt && e) e.emit(e.center(), tgt, { hue: 214, done: () => lightUp(["follow_up"]) });
         await refresh();
         return say(`${pick(["Done", "You got it", "All set"])} — ${cmd.kind === "followup" ? "follow-up" : "demo"} with ${l.businessName} on ${when(at, ov.tz)}.`);
       }
@@ -430,171 +494,219 @@ export function RobinConsole() {
   }, [agent, confirm, convertLead, deactivate, leadId, lightUp, moveLead, openView, ov, refresh, resolve, say, setCore, signaturePulse]);
   handleRef.current = (t) => { void handle(t); };
 
-  const topIds = useMemo(() => {
-    if (!ov) return new Set<string>();
-    const all = ov.nodes.filter((n) => n.id !== "won" && n.id !== "lost").flatMap((n) => n.leads);
-    return new Set(all.sort((a, b) => b.attention - a.attention).slice(0, 3).filter((l) => l.attention > 60).map((l) => l.id));
-  }, [ov]);
+  // the core shows what Robin is doing: thinking (processing) → complete → idle; listening while you talk
+  const wasStreaming = useRef(false);
+  useEffect(() => {
+    if (agent.streaming) { wasStreaming.current = true; setCore("processing", 60_000); }
+    else if (wasStreaming.current) { wasStreaming.current = false; setCore("complete", 1400); }
+  }, [agent.streaming, setCore]);
+  useEffect(() => {
+    if (voice.status === "recording") setCore("listening", 15_000);
+    else if (engine.current?.state === "listening") setCore("idle");
+  }, [voice.status, setCore]);
+  // Esc closes whatever is on top
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (insight) setInsight(null); else if (expanded) setExpanded(null); else if (statsOpen) setStatsOpen(null); else if (cmdOpen) setCmdOpen(false);
+    };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [insight, expanded, statsOpen, cmdOpen]);
+
+  const openCommand = useCallback(() => {
+    setCmdOpen(true);
+    engine.current?.ripple(190, 1.6, 1.2);
+    setTimeout(() => cmdInput.current?.focus(), 30);
+  }, []);
+  const focusNode = useMemo<NodeId | null>(() => (ov?.next ? (ov.stageMap.find(([id]) => id === ov.next!.leadId)?.[1] ?? null) : null), [ov]);
   const vState = voice.status === "speaking" ? "ROBIN SPEAKING" : agent.streaming ? "THINKING" : voice.status === "recording" ? "LISTENING" : null;
-  const coreLabel = vState === "LISTENING" ? CORE_LABEL.listening : core === "idle" ? "MONITORING PIPELINE" : CORE_LABEL[core];
-  const show = (d: number, from: "up" | "down" | "left" | "right" = "up"): React.CSSProperties => ({
-    opacity: booted ? 1 : 0, transform: booted ? "none" : { up: "translateY(-18px)", down: "translateY(26px)", left: "translateX(-36px)", right: "translateX(36px)" }[from],
-    filter: booted ? "none" : "blur(6px)", transition: "opacity .7s ease, transform .9s cubic-bezier(.2,.8,.2,1), filter .7s ease", transitionDelay: booted ? `${d}ms` : "0ms",
+  const coreLabel = vState === "LISTENING" ? CORE_LABEL.listening : vState === "THINKING" ? CORE_LABEL.processing : core === "idle" ? (vState ?? "MONITORING PIPELINE") : CORE_LABEL[core];
+  const show = (d: number, from: "up" | "down" | "left" | "right" | "none" = "up"): React.CSSProperties => ({
+    opacity: booted ? 1 : 0, transform: booted || from === "none" ? undefined : { up: "translateY(-18px)", down: "translateY(26px)", left: "translateX(-36px)", right: "translateX(36px)" }[from],
+    filter: booted ? undefined : "blur(6px)", transition: "opacity .7s ease, transform .9s cubic-bezier(.2,.8,.2,1), filter .7s ease", transitionDelay: booted ? `${d}ms` : "0ms",
   });
   const c = ov?.counts;
+  const d = ov?.dash;
+  const expand = (id: NodeId) => { setPanel(null); setInsight(null); setStatsOpen(null); setExpanded(id); const t = chart.current?.nodeCenter(id), e = engine.current; if (t && e) e.emit(e.center(), t, { size: 1.8 }); };
+  const pendingText = d ? [d.pending.overdue && `${d.pending.overdue} overdue`, d.pending.dueToday && `${d.pending.dueToday} due today`, d.pending.demosToday && `${d.pending.demosToday} demo${d.pending.demosToday === 1 ? "" : "s"}`, d.pending.drafts && `${d.pending.drafts} draft quote${d.pending.drafts === 1 ? "" : "s"}`].filter(Boolean).join(" · ") : "";
+  const left: Stat[] = [
+    { key: "qualified", label: "QUALIFIED LEADS", value: c?.qualified ?? null, trend: d?.qualifiedToday ? "up" : undefined, sub: d ? (d.qualifiedToday ? `+${d.qualifiedToday} today` : "none new today") : undefined, title: "Show every qualified lead", onClick: () => expand("qualified") },
+    { key: "fu", label: "FOLLOW-UPS TODAY", value: ov?.today.followUps ?? null, tone: ov?.today.overdue ? "warn" : undefined, sub: ov ? (ov.today.overdue ? `${ov.today.overdue} overdue` : "none overdue") : undefined, title: "Open today's follow-ups", onClick: () => setPanel({ kind: "followups" }) },
+    { key: "proposals", label: "PROPOSALS", value: d?.proposals ?? null, sub: ov ? (c?.quotations ? `${c.quotations} awaiting a reply` : "none awaiting a reply") : undefined, title: "Show leads with a proposal out", onClick: () => expand("proposal") },
+    { key: "active", label: "ACTIVE CONVERSATIONS", value: d?.activeConversations ?? null, sub: "talked to in the last 14 days", title: "Show the leads you're in conversation with", onClick: () => setPanel({ kind: "leads", title: "ACTIVE CONVERSATIONS", query: "active=1" }) },
+  ];
+  const right: Stat[] = [
+    { key: "conv", label: "CONVERSION RATE", value: d?.conversion.value ?? null, suffix: "%", decimals: d?.conversion.value != null && d.conversion.value % 1 ? 1 : 0, sub: d ? `${d.conversion.won} won of ${d.conversion.total} lead${d.conversion.total === 1 ? "" : "s"}` : undefined, title: "Open sales analytics", onClick: () => setPanel({ kind: "analytics" }) },
+    { key: "fur", label: "FOLLOW-UP RATE", value: d?.followUpRate.value ?? null, suffix: "%", sub: d ? (d.followUpRate.due ? `${d.followUpRate.done} of ${d.followUpRate.due} done · 30 days` : "no follow-ups due yet") : undefined, title: "Open follow-ups", onClick: () => setPanel({ kind: "followups" }) },
+    { key: "won", label: "WON LEADS", value: c?.won ?? null, tone: "won", sub: ov ? (c?.revenueWon ? `${money(c.revenueWon, ov.currency, true)} won` : "no revenue recorded yet") : undefined, title: "Show won leads", onClick: () => expand("won") },
+    { key: "pending", label: "PENDING ACTIONS", value: d?.pending.total ?? null, tone: d?.pending.total ? "accent" : undefined, sub: d ? pendingText || "all clear" : undefined, title: "Open what needs doing", onClick: () => setPanel({ kind: d?.pending.overdue || d?.pending.dueToday ? "followups" : d?.pending.demosToday ? "demos" : "quotations" }) },
+  ];
+  const statW = box.w >= 1400 ? 200 : 178;
+  const colTop = (n: number) => Math.max(8, lay.core.y - (n * 74) / 2);
+
+  // ---- the stage panel sits right above its stage (a sheet on phones)
+  const L = useMemo(() => arcLayout(lay.geo), [lay.geo]);
+  const stageNode = expanded && ov ? ov.nodes.find((n) => n.id === expanded) : null;
+  const panelStyle: React.CSSProperties | undefined = stageNode && mode !== "compact" ? (() => {
+    const at = L.pos[stageNode.id];
+    const w = Math.min(380, box.w - 16);
+    return { position: "absolute", width: w, left: clamp(at.x - w / 2, 8, box.w - w - 8), bottom: box.h - (at.y - lay.geo.r - 16), maxHeight: clamp(at.y - lay.geo.r - 28, 200, 440), zIndex: 30 };
+  })() : undefined;
+
+  const orbit = ov && (
+    <OrbitPipeline
+      ref={chart} geo={lay.geo} nodes={ov.nodes} currency={ov.currency} highlight={highlight}
+      expanded={expanded} focus={focusNode} selectedLeadId={leadId}
+      onExpand={(id) => { if (id) expand(id); else setExpanded(null); }}
+      onOpenLead={(id) => setLeadId(id)}
+      onMove={(lead, to) => void moveLead({ id: lead.id, name: lead.name, from: (prevMap.current?.get(lead.id) ?? nodeOf(lead.stage)) as NodeId }, to)}
+    />
+  );
+  const commandBar = (
+    <div className="flex w-full flex-col items-center gap-2">
+      {cmdOpen ? (
+        <form className="robin-cmd robin-cmd-open flex w-full items-center gap-1.5 rounded-xl px-2 py-1.5" onSubmit={(e) => { e.preventDefault(); const t = input; setInput(""); void handle(t); }}>
+          <button type="button" onClick={() => (voiceStarted ? voice.toggleMute() : void enableVoice())} className={cn("robin-btn flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1.5", voiceStarted && !voice.muted ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-50" : "border-white/10 text-slate-300")} aria-label={voiceStarted && !voice.muted ? "Mute Robin's microphone" : "Talk to Robin"}>
+            {voiceStarted && !voice.muted ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
+            {vState === "LISTENING" && <span className="robin-wave flex h-3 items-end gap-[2px]">{[0, 1, 2, 3, 4].map((i) => <span key={i} className="w-[2px] bg-cyan-200" style={{ height: `${30 + ((i * 37) % 70)}%`, animationDelay: `${i * 0.12}s` }} />)}</span>}
+          </button>
+          <input ref={cmdInput} value={input} onChange={(e) => setInput(e.target.value)} placeholder={vState === "LISTENING" ? "Listening…" : "Tell Robin what to do…"} aria-label="Command Robin"
+            className="min-w-0 flex-1 bg-transparent px-1 text-[12.5px] text-slate-50 outline-none placeholder:text-slate-500" />
+          <button type="submit" aria-label="Send" className="shrink-0 rounded-lg p-1.5 text-cyan-200 hover:bg-cyan-300/10 hover:text-white">{agent.streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
+        </form>
+      ) : (
+        <button type="button" onClick={openCommand} className="robin-cmd group flex items-center gap-2 rounded-xl px-4 py-2 text-[11px] tracking-[0.14em] text-cyan-50" aria-label="Open Robin's command interface">
+          <span className="text-cyan-200">COMMAND ROBIN:</span>
+          <span className="text-slate-300">{vState === "LISTENING" ? "[Listening…]" : vState === "THINKING" ? "[Thinking…]" : vState === "ROBIN SPEAKING" ? "[Speaking…]" : "[Awaiting input…]"}</span>
+          <span className="robin-caret h-3 w-[1.5px] bg-cyan-200/80" />
+        </button>
+      )}
+      {(reply || voice.transcript) && (
+        <p className="robin-reply max-w-[560px] text-center text-[11.5px] leading-snug text-slate-300" key={voice.transcript || reply || ""}>
+          {voice.transcript ? <span className="text-cyan-200">“{voice.transcript}”</span> : <><span className="font-semibold tracking-[0.15em] text-cyan-300">ROBIN</span> {reply}</>}
+        </p>
+      )}
+    </div>
+  );
+  const coreText = (size: "lg" | "sm") => (
+    <>
+      <span className={cn("block font-light tracking-[0.22em] text-white", size === "lg" ? "text-[clamp(22px,2.4vw,34px)]" : "text-2xl")} style={{ textShadow: "0 0 26px rgba(103,232,249,0.55)" }}>ROBIN</span>
+      <span className="mt-0.5 block text-[10px] tracking-[0.18em] text-slate-300/80">AI Core</span>
+    </>
+  );
+  const statColumn = (stats: Stat[], side: "left" | "right", offset: number) => stats.map((s, i) => (
+    <StatPanel key={s.key} ref={(el) => { statRefs.current[offset + i] = el; }} stat={s} delay={500 + i * 90} style={{ ...show(500 + i * 90, side) }} />
+  ));
 
   return (
-    <div className={cn("robin-bg relative min-h-[calc(100dvh-4rem)] w-full overflow-hidden text-slate-100 transition-opacity duration-700", leaving && "opacity-0")}>
+    <div className={cn("robin-bg relative flex h-[calc(100dvh-4rem)] w-full flex-col overflow-hidden text-slate-100 transition-opacity duration-700", mode === "compact" && "overflow-y-auto", leaving && "opacity-0")}>
       <div className="robin-grid pointer-events-none absolute inset-0" />
+      <div className="robin-noise pointer-events-none absolute inset-0" />
       <canvas ref={canvasRef} className="pointer-events-none fixed inset-0 z-0" aria-hidden />
 
-      <div className={cn("relative z-10 flex min-h-[calc(100dvh-4rem)] flex-col lg:h-[calc(100dvh-4rem)]", (leadId || panel) && "robin-back", !(leadId || panel) && "robin-front")}>
-        {/* ---- top strip */}
-        <header className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 pt-3 sm:px-6" style={show(0, "up")}>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold tracking-[0.35em] text-white">ROBIN</span>
-            <span className="flex items-center gap-1 text-[10px] tracking-[0.18em] text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300 shadow-[0_0_8px_#6ee7b7]" />{loadErr ? "OFFLINE" : "ONLINE"}</span>
+      <div className={cn("relative z-10 flex min-h-0 flex-1 flex-col", (leadId || panel || insight) && "robin-back", !(leadId || panel || insight) && "robin-front")}>
+        {/* ---- a quiet top line */}
+        <header className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3 sm:px-6" style={show(0, "up")}>
+          <div className="flex items-center gap-2.5">
+            <span className="text-[12px] font-semibold tracking-[0.42em] text-white">ROBIN</span>
+            <span className={cn("flex items-center gap-1 text-[9.5px] tracking-[0.2em]", loadErr ? "text-amber-300" : "text-emerald-300")}><span className={cn("h-1.5 w-1.5 rounded-full", loadErr ? "bg-amber-300" : "bg-emerald-300 shadow-[0_0_8px_#6ee7b7]")} />{loadErr ? "OFFLINE" : "ONLINE"}</span>
+            <span className="hidden text-[9.5px] tracking-[0.2em] text-slate-500 lg:inline">· INFINITY WEB &amp; APPS · SALES</span>
           </div>
-          <nav className="robin-scroll -mx-1 flex flex-1 items-center gap-5 overflow-x-auto px-1 text-[9.5px] tracking-[0.2em] text-slate-400 lg:justify-center">
-            {([["TOTAL LEADS", c?.total], ["QUALIFIED", c?.qualified], ["FOLLOW-UPS", c?.followUpsDue], ["DEMOS", c?.demos], ["QUOTATIONS", c?.quotations], ["WON", c?.won]] as const).map(([k, v]) => (
-              k === "QUALIFIED"
-                ? <button key={k} type="button" title="Show all qualified leads" onClick={() => { setPanel(null); setMode("pipeline"); setExpanded("qualified"); }} className="flex shrink-0 items-baseline gap-1.5 hover:text-cyan-200">{k}<Count value={v ?? 0} className="text-[13px] font-semibold tracking-normal text-slate-100" /></button>
-                : <span key={k} className="flex shrink-0 items-baseline gap-1.5">{k}<Count value={v ?? 0} className="text-[13px] font-semibold tracking-normal text-slate-100" /></span>
+          <div className="robin-scroll flex items-center gap-0.5 overflow-x-auto">
+            {([[CalendarClock, "Follow-ups", "followups"], [Presentation, "Demos", "demos"], [FileText, "Quotations", "quotations"], [Crown, "Clients", "clients"], [BarChart3, "Analytics", "analytics"]] as const).map(([Icon, label, k]) => (
+              <button key={k} type="button" title={label} aria-label={label} onClick={() => setPanel({ kind: k } as Panel)} className="robin-btn shrink-0 rounded-full border border-transparent p-2 text-slate-400 hover:text-white"><Icon className="h-4 w-4" /></button>
             ))}
-            <span className="flex shrink-0 items-baseline gap-1.5">PIPELINE VALUE<Money value={c?.pipelineValue ?? 0} currency={ov?.currency ?? "INR"} className="text-[13px] font-semibold tracking-normal text-cyan-100" /></span>
-          </nav>
-          <div className="flex items-center gap-1">
-            {([[CalendarClock, "Follow-ups", "followups"], [Presentation, "Demos", "demos"], [FileText, "Quotations", "quotations"], [Crown, "Clients", "clients"], [BarChart3, "Analytics", "analytics"], [UserPlus, "Add lead", "add"], [Settings2, "Settings", "settings"]] as const).map(([Icon, label, k]) => (
-              <button key={k} type="button" title={label} aria-label={label} onClick={() => setPanel({ kind: k } as Panel)} className="robin-btn rounded-full border border-transparent p-2 text-slate-300 hover:text-white"><Icon className="h-4 w-4" /></button>
-            ))}
-            <button type="button" title="Close Robin" aria-label="Close Robin" onClick={deactivate} className="robin-btn ml-1 rounded-full border border-white/10 p-2 text-slate-300 hover:text-white"><LogOut className="h-4 w-4" /></button>
+            <button type="button" title="Funnel" aria-label="Funnel" onClick={() => setInsight("funnel")} className="robin-btn shrink-0 rounded-full border border-transparent p-2 text-slate-400 hover:text-white"><Filter className="h-4 w-4" /></button>
+            <button type="button" title="Revenue" aria-label="Revenue" onClick={() => setInsight("revenue")} className="robin-btn shrink-0 rounded-full border border-transparent p-2 text-slate-400 hover:text-white"><TrendingUp className="h-4 w-4" /></button>
+            <button type="button" title="Add lead" aria-label="Add lead" onClick={() => setPanel({ kind: "add" })} className="robin-btn shrink-0 rounded-full border border-transparent p-2 text-slate-400 hover:text-white"><UserPlus className="h-4 w-4" /></button>
+            <button type="button" title="Settings" aria-label="Settings" onClick={() => setPanel({ kind: "settings" })} className="robin-btn shrink-0 rounded-full border border-transparent p-2 text-slate-400 hover:text-white"><Settings2 className="h-4 w-4" /></button>
+            {!!ov?.notifications.length && (
+              <button type="button" title={ov.notifications.map((n) => n.title).join("\n")} aria-label={`${ov.notifications.length} notifications — mark read`} onClick={async () => { await rapi("notifications", "POST", {}); await refresh(); }} className="robin-btn relative shrink-0 rounded-full border border-transparent p-2 text-slate-300 hover:text-white">
+                <Bell className="h-4 w-4" /><span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_6px_#67e8f9]" />
+              </button>
+            )}
+            <button type="button" title="Close Robin" aria-label="Close Robin" onClick={deactivate} className="robin-btn ml-1 shrink-0 rounded-full border border-white/10 p-2 text-slate-300 hover:text-white"><LogOut className="h-4 w-4" /></button>
           </div>
         </header>
 
-        {/* ---- core + side panels */}
-        <div className="relative flex min-h-[230px] flex-1 items-stretch">
-          {/* left: the DARWIN → ROBIN → CRM connection */}
-          <div className="hidden w-32 shrink-0 flex-col justify-center pl-5 md:flex" style={show(500, "left")}>
-            <div className="relative flex h-[min(40vh,300px)] flex-col justify-between">
-              <div className="absolute bottom-2 left-[3px] top-2 w-px bg-gradient-to-b from-slate-400/30 via-cyan-300/50 to-cyan-300/10">
-                {!reducedMotion() && [0, 1, 2].map((i) => <span key={i} className="robin-flow absolute -left-[2px] h-[5px] w-[5px] rounded-full bg-cyan-200 shadow-[0_0_8px_#a5f3fc]" style={{ animationDelay: `${i * 1.05}s` }} />)}
-              </div>
-              {([["DARWIN", "LEAD DISCOVERY", ov ? `${ov.darwin.total} received${ov.darwin.today ? ` · ${ov.darwin.today} today` : ""}` : ""], ["ROBIN", "QUALIFICATION", ov ? `${ov.counts.qualified} qualified` : ""], ["CRM", "SALES PIPELINE", ov ? `${ov.counts.total} in pipeline` : ""]] as const).map(([k, sub2, n], i) => (
-                <div key={k} ref={i === 0 ? darwinRef : undefined} className="relative flex items-start gap-2.5">
-                  <span className={cn("mt-1 h-[7px] w-[7px] shrink-0 rounded-full border", i === 1 ? "border-cyan-200 bg-cyan-300/60 shadow-[0_0_10px_#67e8f9]" : "border-slate-400/60 bg-slate-900")} />
-                  <span className="leading-tight">
-                    <span className={cn("block text-[10px] font-semibold tracking-[0.24em]", i === 1 ? "text-cyan-100" : "text-slate-200")}>{k}</span>
-                    <span className="block text-[8.5px] tracking-[0.18em] text-slate-500">{sub2}</span>
-                    <span className="block text-[9.5px] text-slate-400">{n}</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+        {mode !== "compact" ? (
+          /* ---------- desktop / laptop: one immersive stage ---------- */
+          <main ref={stageRef} className="relative min-h-0 flex-1">
+            {/* the core: state, name, and a click opens the command interface */}
+            <button type="button" onClick={openCommand} aria-label="Open Robin's command interface" className="robin-core-hit absolute rounded-full"
+              style={{ left: lay.core.x - lay.R * 0.8, top: lay.core.y - lay.R * 0.8, width: lay.R * 1.6, height: lay.R * 1.6, ...show(200, "none") }}>
+              <span className="flex h-full flex-col items-center justify-center text-center">{coreText("lg")}</span>
+            </button>
+            <p className="robin-state pointer-events-none absolute -translate-x-1/2 whitespace-nowrap text-[10.5px] tracking-[0.3em] text-cyan-200/90" aria-live="polite"
+              style={{ left: lay.core.x, top: lay.core.y - lay.R * 1.32 - 6, ...show(400, "none") }}>{coreLabel}</p>
+            <div className="absolute -translate-x-1/2" style={{ left: lay.core.x, top: lay.core.y + lay.R * 1.62, width: Math.min(460, box.w - 32), ...show(450, "down") }}>{commandBar}</div>
 
-          {/* center: the holographic core */}
-          <div className="relative flex flex-1 flex-col items-center justify-center">
-            <div ref={anchorRef} className="relative flex h-[min(38vh,330px)] w-full max-w-[520px] flex-col items-center justify-center">
-              <div className="text-center" style={show(200)}>
-                <p className="text-3xl font-light tracking-[0.32em] text-white sm:text-[40px]" style={{ textShadow: "0 0 24px rgba(103,232,249,0.45)" }}>ROBIN</p>
-                <p className="mt-1 text-[10px] tracking-[0.4em] text-slate-300">SALES INTELLIGENCE</p>
-                <p className="mt-1.5 flex items-center justify-center gap-1 text-[10px] tracking-[0.2em] text-emerald-300"><span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />ONLINE</p>
-              </div>
-            </div>
-            <p className="-mt-2 text-[10px] tracking-[0.32em] text-cyan-200/80" style={show(400)} aria-live="polite">{coreLabel}</p>
-          </div>
-
-          {/* right: ROBIN INTELLIGENCE */}
-          <aside className="robin-glass robin-scroll absolute bottom-3 right-3 top-3 hidden w-60 overflow-y-auto rounded-2xl p-3.5 lg:block xl:w-64" style={show(600, "right")}>
-            <p className="text-[10px] tracking-[0.28em] text-slate-200">ROBIN INTELLIGENCE</p>
-            <div className="mt-3 space-y-3 text-[11px]">
-              <div><p className="text-[9px] tracking-[0.22em] text-slate-500">CURRENT ACTIVITY</p><p className="mt-0.5 tracking-[0.06em] text-slate-100">{coreLabel}</p></div>
-              <div>
-                <p className="text-[9px] tracking-[0.22em] text-slate-500">NEXT ACTION</p>
-                {ov?.next ? (
-                  <button type="button" onClick={() => setLeadId(ov.next!.leadId)} className="mt-0.5 text-left hover:text-cyan-100">
-                    <span className="block font-medium text-slate-100">{ov.next.name}</span>
-                    <span className="block text-slate-400">{ov.next.text}</span>
-                    <span className="block text-[10px] text-slate-500">because {ov.next.why}</span>
-                  </button>
-                ) : <p className="mt-0.5 text-slate-500">{ov?.counts.total ? "Nothing pressing." : "Waiting for Darwin's leads."}</p>}
-              </div>
-              <button type="button" onClick={() => setPanel({ kind: "leads", ...FILTER_QUERY.hottest })} className="flex w-full items-center justify-between border-t border-white/[0.06] pt-2.5 text-left">
-                <span><span className="block text-[9px] tracking-[0.22em] text-slate-500">PRIORITY QUEUE</span><span className="text-slate-200">{ov?.attentionCount ?? 0} lead{ov?.attentionCount === 1 ? " requires" : "s require"} attention</span></span>
-                <span className="text-slate-400">›</span>
-              </button>
-              <div className="border-t border-white/[0.06] pt-2.5">
-                <p className="text-[9px] tracking-[0.22em] text-slate-500">TODAY</p>
-                {([["follow-ups", ov?.today.followUps, "followups"], ["overdue", ov?.today.overdue, "followups"], ["demos", ov?.today.demos, "demos"], ["quotations awaiting", ov?.today.quotations, "quotations"], ["high-priority, not contacted", ov?.today.highPriority, null]] as const).map(([k, v, p]) => (
-                  <button key={k} type="button" disabled={!p} onClick={() => p && setPanel({ kind: p } as Panel)} className="flex w-full items-center justify-between py-0.5 text-left text-slate-300 enabled:hover:text-white">
-                    <span className="flex items-center gap-1.5"><span className={cn("h-1 w-1 rounded-full", k === "overdue" && v ? "bg-amber-300" : "bg-cyan-300/70")} />{k}</span>
-                    <span className="rounded-full bg-white/[0.06] px-1.5 text-[10px] text-slate-200">{v ?? 0}</span>
-                  </button>
+            {/* side panels — floating glass wired into the core */}
+            {mode === "wide" ? (
+              <>
+                <div className="absolute left-4 space-y-2.5 sm:left-6" style={{ top: colTop(4), width: statW }}>{statColumn(left, "left", 0)}</div>
+                <div className="absolute right-4 space-y-2.5 sm:right-6" style={{ top: colTop(4), width: statW }}>{statColumn(right, "right", 4)}</div>
+              </>
+            ) : (
+              <>
+                {(["left", "right"] as const).map((side) => (
+                  <div key={side} className={cn("absolute top-2 z-20", side === "left" ? "left-3" : "right-3")} style={{ width: 186, ...show(500, side) }}>
+                    <button type="button" onClick={() => setStatsOpen(statsOpen === side ? null : side)} aria-expanded={statsOpen === side} className="robin-cmd flex w-full items-center justify-between rounded-xl px-3 py-1.5 text-[9.5px] tracking-[0.22em] text-slate-200">
+                      {side === "left" ? "PIPELINE" : "PERFORMANCE"}<ChevronDown className={cn("h-3.5 w-3.5 transition-transform", statsOpen === side && "rotate-180")} />
+                    </button>
+                    {statsOpen === side && <div className="robin-expand mt-2 space-y-2">{(side === "left" ? left : right).map((s) => <StatPanel key={s.key} stat={s} />)}</div>}
+                  </div>
                 ))}
-              </div>
-              {!!ov?.notifications.length && (
-                <div className="border-t border-white/[0.06] pt-2.5">
-                  <p className="flex items-center gap-1 text-[9px] tracking-[0.22em] text-slate-500"><Bell className="h-3 w-3" />NOTIFICATIONS</p>
-                  {ov.notifications.slice(0, 3).map((n) => <p key={n.id} className="mt-1 text-[10.5px] text-slate-300">{n.title}{n.body ? <span className="block truncate text-[10px] text-slate-500">{n.body}</span> : null}</p>)}
-                  <button type="button" className="mt-1 text-[10px] text-slate-500 hover:text-slate-300" onClick={async () => { await rapi("notifications", "POST", {}); await refresh(); }}>Mark read</button>
-                </div>
-              )}
-            </div>
-          </aside>
-        </div>
+              </>
+            )}
 
-        {/* ---- the CRM pipeline chart */}
-        <section className="robin-glass relative z-10 mx-2 rounded-2xl px-2 pb-2 pt-3 sm:mx-4" style={show(300, "down")}>
-          <div className="mb-1 flex flex-wrap items-center justify-between gap-2 px-2">
-            <p className="text-[10px] tracking-[0.28em] text-slate-300">CRM SALES PIPELINE CHART</p>
-            <div className="flex rounded-full border border-white/10 p-0.5 text-[9.5px] tracking-[0.18em]" role="tablist" aria-label="Chart mode">
-              {(["pipeline", "funnel", "revenue"] as const).map((m) => (
-                <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)} className={cn("rounded-full px-3 py-1 transition-colors", mode === m ? "bg-cyan-300/15 text-cyan-100" : "text-slate-400 hover:text-slate-200")}>{m.toUpperCase()}</button>
+            {/* the CRM orbit */}
+            <div className="pointer-events-none absolute inset-0" style={show(300, "none")}>{orbit}</div>
+            {stageNode && ov && (
+              <StagePanel node={stageNode} currency={ov.currency} tz={ov.tz} style={panelStyle}
+                onClose={() => setExpanded(null)} onOpenLead={(id) => setLeadId(id)}
+                onFollowUp={(id) => { setLeadId(id); setLeadSheet({ sheet: "followup", at: Date.now() }); }}
+                onMove={(lead, to) => void moveLead({ id: lead.id, name: lead.name, from: nodeOf(lead.stage) }, to)}
+                beginDrag={(e, lead, from) => chart.current?.beginDrag(e, lead, from)} />
+            )}
+            {!ov && <div className="absolute inset-x-0 bottom-[18%] flex justify-center text-xs text-slate-400">{loadErr ?? <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />}</div>}
+            {ov && c?.total === 0 && <EmptyPipeline onImport={importDarwin} style={{ top: lay.geo.cy + lay.geo.ry * 0.55 }} />}
+          </main>
+        ) : (
+          /* ---------- phones: the core stays centred; the CRM scrolls beneath it ---------- */
+          <main ref={stageRef} className="relative flex flex-1 flex-col">
+            <div ref={coreBoxRef} className="relative mx-auto flex w-full items-center justify-center" style={{ height: clamp(box.w * 0.92, 290, 380) }}>
+              <button type="button" onClick={openCommand} aria-label="Open Robin's command interface" className="robin-core-hit flex flex-col items-center justify-center rounded-full text-center" style={{ width: lay.R * 1.6, height: lay.R * 1.6 }}>{coreText("sm")}</button>
+              <p className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 whitespace-nowrap text-[10px] tracking-[0.3em] text-cyan-200/90" aria-live="polite">{coreLabel}</p>
+              {(["left", "right"] as const).map((side) => (
+                <button key={side} type="button" onClick={() => setStatsOpen(statsOpen === side ? null : side)} aria-expanded={statsOpen === side}
+                  className={cn("robin-cmd absolute bottom-2 flex items-center gap-1 rounded-xl px-2.5 py-1 text-[9px] tracking-[0.2em] text-slate-200", side === "left" ? "left-3" : "right-3")}>
+                  {side === "left" ? "PIPELINE" : "PERFORMANCE"}<ChevronDown className={cn("h-3 w-3 transition-transform", statsOpen === side && "rotate-180")} />
+                </button>
               ))}
             </div>
-          </div>
-          {ov ? (
-            <PipelineChart
-              ref={chart}
-              nodes={ov.nodes} funnel={ov.funnel} revenueWon={ov.counts.revenueWon} currency={ov.currency} mode={mode}
-              highlight={highlight} selectedLeadId={leadId} expanded={expanded} topIds={topIds}
-              onExpand={(id) => { setExpanded(id); if (id) { const t = chart.current?.nodeCenter(id), e = engine.current; if (t && e) e.emit(e.center(), t, { size: 1.8 }); } }}
-              onOpenLead={(id) => setLeadId(id)}
-              onMove={(lead: LeadCard, to) => void moveLead({ id: lead.id, name: lead.name, from: (prevMap.current?.get(lead.id) ?? "new") as NodeId }, to)}
-              empty={ov.counts.total === 0}
-              onImport={async () => { setCore("qualifying", 3000); const r = await rapi<{ imported: number }>("import", "POST", {}); await refresh(); say(r.data?.imported ? `${r.data.imported} lead${r.data.imported === 1 ? "" : "s"} received from Darwin.` : "Darwin has no new leads right now."); }}
-            />
-          ) : (
-            <div className="flex h-[300px] items-center justify-center text-xs text-slate-400">{loadErr ?? <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />}</div>
-          )}
-        </section>
-
-        {/* ---- live activity + ASK ROBIN */}
-        <footer className="relative z-10 grid items-center gap-2 px-4 py-3 sm:px-6 lg:grid-cols-[1fr_auto_1fr]" style={show(700, "down")}>
-          <div className="robin-scroll order-2 flex min-w-0 items-center gap-5 overflow-x-auto text-[10.5px] text-slate-400 lg:order-1" aria-label="Live activity">
-            {feed.length ? feed.slice(-4).map((f) => (
-              <span key={f.id} className={cn("flex shrink-0 items-center gap-2", f.fresh && "robin-feed-in")}>
-                <span className="text-slate-500">{new Date(f.at).toLocaleTimeString("en-IN", { timeZone: ov?.tz, hour: "2-digit", minute: "2-digit", hour12: false })}</span>
-                <span className="h-px w-4 bg-slate-600" />
-                <span className="max-w-[260px] truncate text-slate-300">{f.text}</span>
-              </span>
-            )) : <span className="text-slate-600">Live activity appears here as it happens.</span>}
-          </div>
-          <form className="order-1 flex flex-col items-center gap-1.5 lg:order-2" onSubmit={(e) => { e.preventDefault(); const t = input; setInput(""); void handle(t); }}>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => (voiceStarted ? voice.toggleMute() : void enableVoice())} className={cn("robin-btn flex items-center gap-2 whitespace-nowrap rounded-full border px-5 py-2 text-[11px] tracking-[0.3em]", voiceStarted && !voice.muted ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-50" : "border-white/15 bg-white/[0.03] text-slate-200")} aria-label={voiceStarted && !voice.muted ? "Mute Robin's microphone" : "Ask Robin by voice"}>
-                {voiceStarted && !voice.muted ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
-                {vState === "LISTENING" ? <span className="robin-wave flex h-3 items-end gap-[2px]">{[0, 1, 2, 3, 4].map((i) => <span key={i} className="w-[2px] bg-cyan-200" style={{ height: `${30 + ((i * 37) % 70)}%`, animationDelay: `${i * 0.12}s` }} />)}</span> : null}
-                {vState ?? "ASK ROBIN"}
-              </button>
-              <div className="flex items-center rounded-full border border-white/10 bg-white/[0.03] pl-3 pr-1">
-                <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Type to Robin…" className="w-40 bg-transparent py-1.5 text-xs text-slate-100 outline-none placeholder:text-slate-500 sm:w-56" aria-label="Message Robin" />
-                <button type="submit" aria-label="Send" className="p-1.5 text-cyan-200 hover:text-white">{agent.streaming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}</button>
-              </div>
+            {statsOpen && <div className="robin-expand grid grid-cols-2 gap-2 px-3 pb-2">{(statsOpen === "left" ? left : right).map((s) => <StatPanel key={s.key} stat={s} />)}</div>}
+            <div className="px-3">{commandBar}</div>
+            <div className="robin-scroll relative mt-3 overflow-x-auto overflow-y-hidden" ref={(el) => { if (el && !el.dataset.centered) { el.dataset.centered = "1"; el.scrollLeft = (lay.geo.w - el.clientWidth) / 2; } }}>
+              <div className="relative" style={{ width: lay.geo.w, height: lay.geo.h }}>{orbit}</div>
             </div>
-            {(reply || voice.transcript) && <p className="max-w-[640px] text-center text-[11.5px] leading-snug text-slate-300">{voice.transcript ? <span className="text-cyan-200">“{voice.transcript}”</span> : <><span className="font-semibold tracking-[0.15em] text-cyan-300">ROBIN</span> {reply}</>}</p>}
-          </form>
-          <div className="order-3 hidden lg:block" />
+            {ov && c?.total === 0 && <EmptyPipeline onImport={importDarwin} className="relative mx-auto mt-2" />}
+            {stageNode && ov && (
+              <div className="fixed inset-x-2 bottom-2 z-[60]">
+                <StagePanel node={stageNode} currency={ov.currency} tz={ov.tz} style={{ maxHeight: "68dvh" }}
+                  onClose={() => setExpanded(null)} onOpenLead={(id) => setLeadId(id)}
+                  onFollowUp={(id) => { setLeadId(id); setLeadSheet({ sheet: "followup", at: Date.now() }); }}
+                  onMove={(lead, to) => void moveLead({ id: lead.id, name: lead.name, from: nodeOf(lead.stage) }, to)}
+                  beginDrag={(e, lead, from) => chart.current?.beginDrag(e, lead, from)} />
+              </div>
+            )}
+          </main>
+        )}
+
+        {/* ---- live activity */}
+        <footer className="relative z-10 shrink-0 px-3 pb-3 pt-2 sm:px-6" style={show(700, "down")}>
+          <ActivityStream items={feed.slice(-6)} />
         </footer>
       </div>
 
@@ -606,16 +718,17 @@ export function RobinConsole() {
             <p className="text-sm text-slate-100">{confirm.q}</p>
             <div className="mt-3 flex justify-center gap-2">
               <button type="button" onClick={() => { setConfirm(null); say("No problem."); }} className="robin-btn rounded-full border border-white/10 px-4 py-1 text-[11px] text-slate-300">No</button>
-              <button type="button" onClick={async () => { const c = confirm; setConfirm(null); await c.run(); }} className="robin-btn rounded-full border border-cyan-300/50 bg-cyan-300/15 px-4 py-1 text-[11px] text-cyan-50">Yes</button>
+              <button type="button" onClick={async () => { const cf = confirm; setConfirm(null); await cf.run(); }} className="robin-btn rounded-full border border-cyan-300/50 bg-cyan-300/15 px-4 py-1 text-[11px] text-cyan-50">Yes</button>
             </div>
           </div>
         </div>
       )}
+      {insight && ov && <InsightsOverlay ov={ov} mode={insight} onMode={setInsight} onClose={() => setInsight(null)} />}
       {leadId && ov && (
         <LeadPanel
           leadId={leadId} tz={ov.tz} onClose={() => setLeadId(null)} ask={ask} say={say} externalSheet={leadSheet}
           onChanged={(e) => {
-            if (e?.moved) { chart.current?.travel(e.moved.name, (prevMap.current?.get(leadId) ?? "new") as NodeId, ({ demo_scheduled: "demo", demo_completed: "demo", quotation_sent: "quotation", negotiating: "negotiation", not_interested: "lost", do_not_contact: "lost" } as Record<string, NodeId>)[e.moved.to] ?? (e.moved.to as NodeId)); }
+            if (e?.moved) chart.current?.travel(e.moved.name, (prevMap.current?.get(leadId) ?? "new") as NodeId, nodeOf(e.moved.to));
             if (e?.kind) setCore(e.kind === "followup" ? "following_up" : e.kind === "demo" ? "demo" : e.kind === "quotation" ? "quotation" : e.kind === "won" ? "complete" : "contacting");
             if (e?.kind === "won") engine.current?.ripple(158, 3.4, 2);
             void refresh();
@@ -633,10 +746,20 @@ export function RobinConsole() {
 
       {/* boot titles while the core powers up */}
       {!booted && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-[18vh] z-20 text-center">
-          <p className="robin-typein mx-auto w-max overflow-hidden whitespace-nowrap text-[10px] tracking-[0.5em] text-cyan-200/80">INITIALIZING SALES INTELLIGENCE · CONNECTING CRM</p>
+        <div className="pointer-events-none fixed inset-x-0 bottom-[14vh] z-20 text-center">
+          <p className="robin-typein mx-auto w-max overflow-hidden whitespace-nowrap text-[10px] tracking-[0.5em] text-cyan-200/80">INITIALIZING ROBIN AI CORE · CONNECTING CRM</p>
         </div>
       )}
+    </div>
+  );
+}
+
+function EmptyPipeline({ onImport, style, className }: { onImport: () => void; style?: React.CSSProperties; className?: string }) {
+  return (
+    <div className={cn("robin-glass robin-in absolute inset-x-0 z-20 mx-auto w-[min(92%,400px)] rounded-2xl p-4 text-center", className)} style={style}>
+      <p className="text-sm font-medium text-slate-100">No leads in the pipeline yet</p>
+      <p className="mt-1 text-xs leading-relaxed text-slate-400">When DARWIN finds a cafe, restaurant or gym, it arrives here automatically and Robin qualifies it.</p>
+      <button type="button" onClick={onImport} className="robin-btn mt-3 rounded-full border border-cyan-300/30 px-4 py-1.5 text-[11px] tracking-[0.18em] text-cyan-100">CHECK DARWIN FOR LEADS</button>
     </div>
   );
 }

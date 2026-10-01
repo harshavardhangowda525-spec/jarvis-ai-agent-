@@ -7,12 +7,12 @@ import { createLead, findLeadsByName } from "@/lib/robin/crm";
 import { attention } from "@/lib/robin/qualify";
 import { STAGES, PRIORITIES } from "@/lib/robin/types";
 import { nodeOf, NODES, type NodeId } from "@/lib/robin/types";
-import { nodeCards } from "@/lib/robin/overview";
+import { activeConversationIds, nodeCards } from "@/lib/robin/overview";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Leads, filtered: ?stage= ?node= ?priority= ?q= ?uncontacted=1 */
+/** Leads, filtered: ?stage= ?node= ?priority= ?q= ?uncontacted=1 ?active=1 (in conversation) */
 export async function GET(req: Request) {
   return robinApi(req, "leads", async (user) => {
     const u = new URL(req.url).searchParams;
@@ -27,6 +27,7 @@ export async function GET(req: Request) {
     if (stage && (STAGES as readonly string[]).includes(stage)) where.stage = stage;
     const priority = u.get("priority");
     if (priority && (PRIORITIES as readonly string[]).includes(priority)) where.priority = priority;
+    if (u.get("active") === "1") where.id = { in: await activeConversationIds(user.id) };
     if (u.get("uncontacted") === "1") { where.lastContactAt = null; where.stage = { in: ["new", "qualified"] }; }
     const q = u.get("q")?.trim();
     if (q) where.OR = [{ businessName: { contains: q, mode: "insensitive" } }, { category: { contains: q, mode: "insensitive" } }, { city: { contains: q, mode: "insensitive" } }];
