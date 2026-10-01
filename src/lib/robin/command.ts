@@ -24,6 +24,7 @@ export type RobinCommand =
   | { kind: "complete_followup"; name: string | null }
   | { kind: "convert"; name: string | null }
   | { kind: "undo" }
+  | { kind: "chat"; topic: "hello" | "how_are_you" | "thanks" | "who" | "bye" }
   | { kind: "stat"; stat: "won_month" | "conversion" | "count"; filter?: LeadFilter }
   | { kind: "ask"; text: string };
 
@@ -69,6 +70,13 @@ export function parseRobinCommand(raw: string): RobinCommand {
   if (isRobinDeactivation(raw) || /^(close|exit|deactivate|go back)[.!\s]*$/.test(low)) return { kind: "exit" };
   if (/^(yes|yeah|yep|yup|confirm(ed)?|do it|go ahead|sure|correct|ok(ay)?)( please| do it| confirm)?[.!\s]*$/.test(low)) return { kind: "confirm", yes: true };
   if (/^(no|nope|cancel|don'?t|stop|never ?mind|not now)[.!\s]*$/.test(low)) return { kind: "confirm", yes: false };
+  // small talk — answered on the spot (no AI needed)
+  const bare = low.replace(/[.!?,]/g, " ").replace(/\b(robin|robbin|robyn|buddy|bro|man|dude|mate|there)\b/g, " ").replace(/\s+/g, " ").trim();
+  if (/^(hi+|hey+|hello+|hiya|yo|hola|namaste|good (morning|afternoon|evening)|sup|wassup|what'?s up|hey hi|hi hi)$/.test(bare)) return { kind: "chat", topic: "hello" };
+  if (/^((hi|hey|hello) )?(how are you( doing)?|how'?s it going|how are things|how do you do|you good|all good)$/.test(bare)) return { kind: "chat", topic: "how_are_you" };
+  if (/^(thanks?( a lot| so much)?|thank you( so much)?|thx|cheers|great job|nice|awesome|cool|perfect|good job|well done)$/.test(bare)) return { kind: "chat", topic: "thanks" };
+  if (/^(who are you|what are you|what can you do|what do you do|help)$/.test(bare)) return { kind: "chat", topic: "who" };
+  if (/^(bye|goodbye|see you|see ya|good night|later)$/.test(bare)) return { kind: "chat", topic: "bye" };
   if (/^(undo|undo (that|it|the last (one|move|change))|take (that|it) back|revert( that| it)?|go back one|move it back)[.!\s]*$/.test(low)) return { kind: "undo" };
   if (/\b(what'?s my day|my day|daily briefing|sales briefing|morning (report|briefing)|brief me|today'?s briefing)\b/.test(low)) return { kind: "briefing" };
 

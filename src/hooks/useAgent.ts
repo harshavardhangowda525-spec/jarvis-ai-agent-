@@ -38,6 +38,8 @@ interface UseAgentOptions {
   onPendingMedia?: (p: { kind: "image" | "video"; projectId: string; label: string; fallback?: { prompt: string; seconds?: number; aspect?: "square" | "portrait" | "landscape" } }) => void;
   /** Fired for every tool result (used e.g. to drive EV's operating state). */
   onTool?: (t: { name: string; status: "ok" | "error"; summary: string }) => void;
+  /** The turn failed (no provider answered, rate limit, connection error…) — the message to show/say. */
+  onError?: (message: string) => void;
 }
 
 /** Per-send options. `agent` routes the turn through a specific internal brain. */
@@ -53,7 +55,7 @@ const nextId = () => `m${Date.now()}_${idc++}`;
  * and exposes messages, the live-activity feed, and the currently streaming
  * assistant text. Voice and text share this same flow.
  */
-export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onOpenApp, onPendingMedia, onTool }: UseAgentOptions = {}) {
+export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onOpenApp, onPendingMedia, onTool, onError }: UseAgentOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -140,6 +142,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
             m.map((x) => (x.id === assistantId ? { ...x, content: msg } : x)),
           );
           pushActivity({ label: msg, kind: "error" });
+          onError?.(msg);
           return;
         }
 
@@ -239,6 +242,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
                 break;
               case "error":
                 pushActivity({ label: ev.message, kind: "error" });
+                if (!finalText) onError?.(ev.message);
                 if (!finalText) {
                   setMessages((m) =>
                     m.map((x) => (x.id === assistantId ? { ...x, content: ev.message } : x)),
@@ -264,6 +268,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
             ),
           );
           pushActivity({ label: "Connection error.", kind: "error" });
+          onError?.("Something went wrong reaching the server. Please try again.");
         }
       } finally {
         setStreaming(false);
@@ -271,7 +276,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
         onTurnEnd?.();
       }
     },
-    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onOpenApp, onPendingMedia, onTool, pushActivity, setConversation, streaming],
+    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onOpenApp, onPendingMedia, onTool, onError, pushActivity, setConversation, streaming],
   );
 
   return {

@@ -6,6 +6,7 @@ import { getDb } from "@/lib/db";
 import { ttsSchema } from "@/lib/validation";
 import { env } from "@/lib/env";
 import { fail, handleError, rateLimit } from "@/lib/api";
+import { robinVoiceFor } from "@/lib/robin/voice";
 
 export const runtime = "nodejs";
 
@@ -40,7 +41,8 @@ export async function POST(req: NextRequest) {
       ev: env.evVoiceId,
       darwin: env.darwinVoiceId,
       mike: env.mikeVoiceId,
-      robin: env.robinVoiceId,
+      // Robin speaks with the voice it designed for you (ROBIN_VOICE_ID still wins)
+      robin: agent === "robin" ? await robinVoiceFor(user.id) : env.robinVoiceId,
     };
     const voiceId = agent && agent !== "jarvis"
       ? agentVoiceId[agent]

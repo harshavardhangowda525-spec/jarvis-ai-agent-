@@ -55,6 +55,10 @@ describe("ROBIN voice commands", () => {
     expect(p("cancel")).toEqual({ kind: "confirm", yes: false });
     expect(p("Close Robin")).toEqual({ kind: "exit" });
     expect(p("undo")).toEqual({ kind: "undo" });
+    for (const t of ["hi", "Hi.", "hey Robin", "Hello!", "Robin, hi", "good morning", "what's up"]) expect(p(t), t).toEqual({ kind: "chat", topic: "hello" });
+    expect(p("how are you?")).toEqual({ kind: "chat", topic: "how_are_you" });
+    expect(p("thank you")).toEqual({ kind: "chat", topic: "thanks" });
+    expect(p("who are you")).toEqual({ kind: "chat", topic: "who" });
     expect(p("Robin, undo that.")).toEqual({ kind: "undo" });
     expect(p("take it back")).toEqual({ kind: "undo" });
     expect(p("Make ABC Café a client.")).toEqual({ kind: "convert", name: "ABC Café" });

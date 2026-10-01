@@ -292,6 +292,7 @@ export function SettingsPanel({ onClose, say, onSaved }: { onClose: () => void; 
           <button type="button" onClick={() => setSvc([...svc, { name: "", description: null, price: null, unit: null, active: true }])} className="robin-btn mt-1 inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-0.5 text-[10px] text-slate-200"><Plus className="h-3 w-3" />Service</button>
         </div>
       </div>
+      <VoiceSection say={say} />
       <div className="mt-5 flex justify-end">
         <button type="button" disabled={busy} onClick={async () => {
           setBusy(true);
@@ -302,6 +303,49 @@ export function SettingsPanel({ onClose, say, onSaved }: { onClose: () => void; 
         }} className="robin-btn rounded-full border border-cyan-300/50 bg-cyan-300/15 px-4 py-1 text-[11px] text-cyan-50">{busy ? "Saving…" : "Save settings"}</button>
       </div>
     </Drawer>
+  );
+}
+
+// ---------------------------------------------------------------- Robin's own voice
+interface VoiceStatus { voiceId: string | null; description: string; createdAt: string | null; error: string | null; creating: boolean; using: "env" | "designed" | "default"; elevenLabs: boolean }
+function VoiceSection({ say }: { say: (t: string) => void }) {
+  const [v, setV] = useState<VoiceStatus | null>(null);
+  const [desc, setDesc] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => { const r = await rapi<VoiceStatus>("voice"); if (r.data) { setV(r.data); setDesc((d) => d || r.data!.description); } }, []);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (!v?.creating) return; const t = setInterval(() => void load(), 4000); return () => clearInterval(t); }, [v?.creating, load]);
+  const play = (src: string) => { try { void new Audio(src).play(); } catch { /* ignore */ } };
+  const hear = async () => {
+    const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Hey! It's Robin. Ready when you are — let's turn some leads into clients today.", agent: "robin" }) });
+    if (!r.ok) return say((await r.json().catch(() => ({})))?.error ?? "Couldn't play the voice.");
+    play(URL.createObjectURL(await r.blob()));
+  };
+  if (!v) return null;
+  return (
+    <div className="mt-5 border-t border-white/[0.06] pt-4">
+      <p className="mb-1 text-[10px] tracking-[0.28em] text-cyan-200/70">ROBIN&apos;S VOICE</p>
+      <p className="mb-2 text-[11px] text-slate-400">
+        {v.using === "env" ? "Using the voice set in ROBIN_VOICE_ID." : v.using === "designed" ? `Robin's own voice, designed ${v.createdAt ? new Date(v.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : ""} from the description below.` : v.creating ? "Designing Robin's voice…" : "Using the stock voice (Eric) until Robin's own voice is created."}
+        {!v.elevenLabs && " Needs ELEVENLABS_API_KEY."}
+      </p>
+      {v.error && <p className="mb-2 text-[11px] text-amber-200">Last try: {v.error}</p>}
+      <textarea className={cn(field, "min-h-[60px]")} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Describe the voice — age, accent, tone, energy…" />
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" disabled={busy || v.creating || !v.elevenLabs} onClick={async () => {
+          setBusy(true); setV({ ...v, creating: true });
+          const r = await rapi<VoiceStatus & { preview: string | null }>("voice", "POST", { action: "create", description: desc });
+          setBusy(false); await load();
+          if (!r.ok) return say(r.error ?? "Couldn't create the voice.");
+          if (r.data?.preview) play(`data:audio/mpeg;base64,${r.data.preview}`);
+          say("Here's my new voice — how do I sound?");
+        }} className="robin-btn inline-flex items-center gap-1 rounded-full border border-cyan-300/50 bg-cyan-300/15 px-3 py-1 text-[11px] text-cyan-50 disabled:opacity-40">
+          {(busy || v.creating) && <Loader2 className="h-3 w-3 animate-spin" />}{v.using === "designed" ? "Create a new voice" : "Create Robin's voice"}
+        </button>
+        <button type="button" disabled={!v.elevenLabs} onClick={() => void hear()} className="robin-btn rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-200 disabled:opacity-40">Hear it</button>
+      </div>
+      <p className="mt-1.5 text-[10px] text-slate-500">ElevenLabs designs a brand-new voice from your description and saves it to your ElevenLabs account (it uses one custom-voice slot; the previous Robin voice is removed).</p>
+    </div>
   );
 }
 

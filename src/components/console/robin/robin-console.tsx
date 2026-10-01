@@ -127,6 +127,8 @@ export function RobinConsole() {
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   const agent = useAgent({
     onAssistantComplete: (text) => say(text.replace(/\*\*/g, "")),
+    // never go silent: if the brain couldn't answer, say why
+    onError: (msg) => { setCore("error", 1800); say(`Sorry, my brain didn't answer that one — ${msg.charAt(0).toLowerCase()}${msg.slice(1).replace(/\.$/, "")}. Quick commands like "what's my day?" still work.`); },
     onNavigate: (p) => {
       const m = p.match(/^\/dashboard\/robin\?(.*)$/);
       const sp = m ? new URLSearchParams(m[1]) : null;
@@ -211,6 +213,7 @@ export function RobinConsole() {
     if (!booted || greeted.current || !ov) return;
     greeted.current = true;
     logActivity({ category: "agent", agent: "ROBIN", action: "ROBIN online", importance: 1 });
+    void rapi("voice", "POST", { action: "ensure" }); // Robin designs its own voice once (ElevenLabs)
     say("Hey! Robin's online — ready to manage your sales pipeline. What are we working on?");
     const cmd = params.get("cmd"), lead = params.get("lead"), view = params.get("view");
     if (lead) setLeadId(lead);
@@ -303,6 +306,20 @@ export function RobinConsole() {
     }
     switch (cmd.kind) {
       case "exit": return deactivate();
+      case "chat": {
+        const nudge = !ov ? "" : ov.today.overdue ? ` You've got ${ov.today.overdue} follow-up${ov.today.overdue === 1 ? "" : "s"} overdue — want to knock those out?`
+          : ov.today.followUps ? ` ${ov.today.followUps} follow-up${ov.today.followUps === 1 ? "" : "s"} on today.`
+            : ov.next ? ` Next up, I'd go for ${ov.next.name}.` : " What are we working on?";
+        const lines = {
+          hello: [`Hey!${nudge}`, `Hi there!${nudge}`, `Hey, good to see you!${nudge}`],
+          how_are_you: [`Doing great — ready to close some deals!${nudge}`, `All good here, pipeline's humming.${nudge}`],
+          thanks: ["Anytime!", "Happy to help!", "That's what I'm here for."],
+          who: ["I'm Robin, your sales buddy — I take Darwin's leads and help you turn them into clients. Try \"what's my day?\", \"show my hottest leads\" or \"schedule a follow-up with ABC Café tomorrow at 4\"."],
+          bye: ["Catch you later! I'll keep an eye on the pipeline.", "See you! I'll be here."],
+        }[cmd.topic];
+        setCore(cmd.topic === "thanks" ? "complete" : "listening", 1200);
+        return say(pick(lines));
+      }
       case "undo": {
         const m = lastMove.current;
         if (!m) return say("There's nothing to undo right now.");

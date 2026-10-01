@@ -108,7 +108,7 @@ const BROWSER_VOICE: Record<VoiceProfile, { rate: number; pitch: number; match: 
 const SPEECH_START = 0.05;
 const SPEECH_START_WHILE_SPEAKING = 0.14; // higher bar for barge-in
 const SILENCE_HANG_MS = 850;
-const MIN_UTTERANCE_MS = 350;
+const MIN_UTTERANCE_MS = 260; // a quick "hi" is real speech
 
 export function useVoice({ onTranscript, onError, autoListen = true, voiceProfile = "jarvis" }: UseVoiceOptions) {
   const profileRef = useRef<VoiceProfile>(voiceProfile);
@@ -210,7 +210,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     });
     chunksRef.current = [];
 
-    if (duration < MIN_UTTERANCE_MS || blob.size < 1200) {
+    if (duration < MIN_UTTERANCE_MS || blob.size < 900) {
       // Too short — likely a noise blip. Resume listening.
       if (enabledRef.current && !mutedRef.current) setStatusBoth("listening");
       return;

@@ -1137,7 +1137,13 @@ Every change records who made it: you, voice, ROBIN, DARWIN or a webhook.
 
 Env (all optional):
 - `ROBIN_PROVIDER` (default `groq,gemini`)
-- `ROBIN_VOICE_ID` (ElevenLabs voice; default "Eric", a male voice)
+- `ROBIN_VOICE_ID` (ElevenLabs voice). Leave it unset to let Robin use its own
+  voice. The first time ROBIN opens with `ELEVENLABS_API_KEY` set, it designs a
+  voice with ElevenLabs Voice Design and saves it to your ElevenLabs account. The
+  default description is a warm, friendly young male voice with a light Indian
+  English accent. To change it, describe a different voice in ROBIN → ⚙ Settings →
+  ROBIN'S VOICE and press "Create a new voice". Until the designed voice exists, or
+  if your plan can't design voices, Robin speaks with the stock voice "Eric".
 - `ROBIN_WEBHOOK_SECRET` turns on `POST /api/robin/webhook`, which other systems
   can use to send a new lead or a reply. Requests are signed with
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
