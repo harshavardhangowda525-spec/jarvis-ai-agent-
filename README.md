@@ -1127,7 +1127,7 @@ Every change records who made it: you, voice, ROBIN, DARWIN or a webhook.
 
 Env (all optional):
 - `ROBIN_PROVIDER` (default `groq,gemini`)
-- `ROBIN_VOICE_ID` (ElevenLabs voice)
+- `ROBIN_VOICE_ID` (ElevenLabs voice; default "Eric", a male voice)
 - `ROBIN_WEBHOOK_SECRET` turns on `POST /api/robin/webhook`, which other systems
   can use to send a new lead or a reply. Requests are signed with
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
