@@ -56,17 +56,7 @@ export async function robinOverview(userId: string, now = new Date()): Promise<O
   const quoteBy = new Map<string, { status: string; total: number }>();
   for (const q of quotes) if (!quoteBy.has(q.leadId)) quoteBy.set(q.leadId, { status: q.status, total: q.total });
 
-  const cards: LeadCard[] = leads.map((l) => {
-    const due = l.nextFollowUpAt;
-    const flag = due ? (due < start ? "overdue" : due < end ? "today" : null) : null;
-    const q = quoteBy.get(l.id) ?? null;
-    return {
-      id: l.id, name: l.businessName, category: l.category, score: l.score, priority: l.priority, stage: l.stage,
-      value: l.potentialValue ?? q?.total ?? null, nextFollowUpAt: due?.toISOString() ?? null, flag,
-      attention: attention(l, now), demoAt: demoBy.get(l.id)?.toISOString() ?? null, quote: q,
-      phone: !!l.phone, email: !!l.email, whatsapp: !!l.whatsapp, source: l.source,
-    };
-  });
+  const cards = toCards(leads, demoBy, quoteBy, start, end, now);
 
   const nodes: NodeView[] = NODES.map((n) => {
     const inNode = cards.filter((c) => nodeOf(c.stage) === n.id).sort((a, b) => b.attention - a.attention);
@@ -150,4 +140,42 @@ export async function robinOverview(userId: string, now = new Date()): Promise<O
     darwin: { total: darwinLeads.length, today: leads.filter((l) => l.source === "darwin" && l.createdAt >= start).length },
     generatedAt: now.toISOString(),
   };
+}
+
+type CardSource = { id: string; businessName: string; category: string | null; score: number; priority: string; stage: string; potentialValue: number | null; nextFollowUpAt: Date | null; lastContactAt: Date | null; phone: string | null; email: string | null; whatsapp: string | null; source: string };
+function toCards(leads: CardSource[], demoBy: Map<string, Date>, quoteBy: Map<string, { status: string; total: number }>, start: Date, end: Date, now: Date): LeadCard[] {
+  return leads.map((l) => {
+    const due = l.nextFollowUpAt;
+    const flag = due ? (due < start ? "overdue" : due < end ? "today" : null) : null;
+    const q = quoteBy.get(l.id) ?? null;
+    return {
+      id: l.id, name: l.businessName, category: l.category, score: l.score, priority: l.priority, stage: l.stage,
+      value: l.potentialValue ?? q?.total ?? null, nextFollowUpAt: due?.toISOString() ?? null, flag,
+      attention: attention(l, now), demoAt: demoBy.get(l.id)?.toISOString() ?? null, quote: q,
+      phone: !!l.phone, email: !!l.email, whatsapp: !!l.whatsapp, source: l.source,
+    };
+  });
+}
+
+/** EVERY lead in one stage of the chart (most-needing-you first) — for "show all qualified leads". */
+export async function nodeCards(userId: string, node: NodeId, now = new Date()): Promise<LeadCard[]> {
+  const db = getDb();
+  const stages = [...(NODES.find((n) => n.id === node)?.stages ?? [])] as string[];
+  if (!stages.length) return [];
+  const tz = await userTz(userId);
+  const { start, end } = dayBounds(tz, now);
+  const leads = await db.robinLead.findMany({
+    where: { userId, stage: { in: stages } }, take: 5000,
+    select: { id: true, businessName: true, category: true, score: true, priority: true, stage: true, potentialValue: true, nextFollowUpAt: true, lastContactAt: true, phone: true, email: true, whatsapp: true, source: true },
+  });
+  const ids = leads.map((l) => l.id);
+  const [demos, quotes] = await Promise.all([
+    db.robinDemo.findMany({ where: { userId, leadId: { in: ids }, status: { in: ["scheduled", "rescheduled"] }, scheduledAt: { gte: new Date(now.getTime() - 3 * 3_600_000) } }, select: { leadId: true, scheduledAt: true }, orderBy: { scheduledAt: "asc" } }),
+    db.robinQuotation.findMany({ where: { userId, leadId: { in: ids }, status: { in: ["draft", "sent", "accepted"] } }, select: { leadId: true, status: true, total: true }, orderBy: { createdAt: "desc" } }),
+  ]);
+  const demoBy = new Map<string, Date>();
+  for (const d of demos) if (!demoBy.has(d.leadId)) demoBy.set(d.leadId, d.scheduledAt);
+  const quoteBy = new Map<string, { status: string; total: number }>();
+  for (const q of quotes) if (!quoteBy.has(q.leadId)) quoteBy.set(q.leadId, { status: q.status, total: q.total });
+  return toCards(leads, demoBy, quoteBy, start, end, now).sort((a, b) => b.attention - a.attention);
 }

@@ -353,6 +353,12 @@ export function RobinConsole() {
       }
       case "leads": {
         signaturePulse([cmd.filter as NodeId].filter((x) => ["new", "qualified", "contacted", "interested", "negotiation", "won", "lost"].includes(x)) as NodeId[]);
+        // a pipeline stage ("show qualified leads") → that stage opens on the chart with EVERY lead in it
+        const node = ov?.nodes.find((n) => n.id === cmd.filter);
+        if (node) {
+          setPanel(null); setMode("pipeline"); setExpanded(node.id);
+          return say(node.count ? `Here ${node.count === 1 ? "is" : "are"} all ${node.count} ${node.label.toLowerCase()} lead${node.count === 1 ? "" : "s"} — the ones that need you most are first.` : `No ${node.label.toLowerCase()} leads right now.`);
+        }
         const f = FILTER_QUERY[cmd.filter] ?? { title: `${cmd.filter.toUpperCase().replace("_", " ")} LEADS`, query: `node=${cmd.filter}` };
         setPanel({ kind: "leads", ...f });
         if (cmd.filter === "hottest" && ov?.next) return say(`Here are your highest-priority leads. I'd start with ${ov.next.name} — ${ov.next.why}.`);
@@ -451,7 +457,9 @@ export function RobinConsole() {
           </div>
           <nav className="robin-scroll -mx-1 flex flex-1 items-center gap-5 overflow-x-auto px-1 text-[9.5px] tracking-[0.2em] text-slate-400 lg:justify-center">
             {([["TOTAL LEADS", c?.total], ["QUALIFIED", c?.qualified], ["FOLLOW-UPS", c?.followUpsDue], ["DEMOS", c?.demos], ["QUOTATIONS", c?.quotations], ["WON", c?.won]] as const).map(([k, v]) => (
-              <span key={k} className="flex shrink-0 items-baseline gap-1.5">{k}<Count value={v ?? 0} className="text-[13px] font-semibold tracking-normal text-slate-100" /></span>
+              k === "QUALIFIED"
+                ? <button key={k} type="button" title="Show all qualified leads" onClick={() => { setPanel(null); setMode("pipeline"); setExpanded("qualified"); }} className="flex shrink-0 items-baseline gap-1.5 hover:text-cyan-200">{k}<Count value={v ?? 0} className="text-[13px] font-semibold tracking-normal text-slate-100" /></button>
+                : <span key={k} className="flex shrink-0 items-baseline gap-1.5">{k}<Count value={v ?? 0} className="text-[13px] font-semibold tracking-normal text-slate-100" /></span>
             ))}
             <span className="flex shrink-0 items-baseline gap-1.5">PIPELINE VALUE<Money value={c?.pipelineValue ?? 0} currency={ov?.currency ?? "INR"} className="text-[13px] font-semibold tracking-normal text-cyan-100" /></span>
           </nav>

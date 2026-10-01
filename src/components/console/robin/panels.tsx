@@ -211,7 +211,8 @@ export function LeadsPanel({ title, query, currency, onOpenLead, onClose }: { ti
   return (
     <Drawer title={title} onClose={onClose}>
       <input className={cn(field, "mb-3")} placeholder="Search by name, category or city…" value={q} onChange={(e) => setQ(e.target.value)} />
-      {!rows ? <Spin /> : !rows.length ? <Empty>No leads match.</Empty> : rows.slice(0, 200).map((l, i) => (
+      {rows && rows.length > 0 && <p className="mb-2 text-[10px] tracking-[0.18em] text-slate-500">{rows.length} LEAD{rows.length === 1 ? "" : "S"}</p>}
+      {!rows ? <Spin /> : !rows.length ? <Empty>No leads match.</Empty> : rows.map((l, i) => (
         <button key={l.id} type="button" onClick={() => onOpenLead(l.id)} className="robin-row flex w-full items-center gap-3 border-b border-white/[0.04] py-2 text-left text-xs hover:bg-white/[0.02]" style={{ animationDelay: `${Math.min(i, 20) * 20}ms` }}>
           <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", l.priority === "high" ? "bg-cyan-300 shadow-[0_0_8px_#67e8f9]" : l.priority === "medium" ? "bg-sky-400/70" : "bg-slate-500")} />
           <span className="min-w-0 flex-1"><span className="font-medium text-slate-100">{l.businessName}</span><span className="ml-2 text-slate-500">{[l.category, l.city].filter(Boolean).join(" · ")}</span></span>

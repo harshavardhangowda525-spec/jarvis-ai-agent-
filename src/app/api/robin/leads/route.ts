@@ -6,7 +6,8 @@ import { robinApi } from "@/lib/robin/http";
 import { createLead, findLeadsByName } from "@/lib/robin/crm";
 import { attention } from "@/lib/robin/qualify";
 import { STAGES, PRIORITIES } from "@/lib/robin/types";
-import { nodeOf } from "@/lib/robin/types";
+import { nodeOf, NODES, type NodeId } from "@/lib/robin/types";
+import { nodeCards } from "@/lib/robin/overview";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,6 +17,9 @@ export async function GET(req: Request) {
   return robinApi(req, "leads", async (user) => {
     const u = new URL(req.url).searchParams;
     // voice: "open ABC Cafe" → the closest matches by name (one = that lead; several = ask which)
+    // every lead in one chart stage, as cards ("show all qualified leads")
+    const cardsOf = u.get("cards");
+    if (cardsOf && (NODES as readonly { id: string }[]).some((n) => n.id === cardsOf)) return ok({ cards: await nodeCards(user.id, cardsOf as NodeId) });
     const resolve = u.get("resolve")?.trim();
     if (resolve) return ok({ leads: await findLeadsByName(user.id, resolve) });
     const where: Prisma.RobinLeadWhereInput = { userId: user.id };
@@ -26,7 +30,7 @@ export async function GET(req: Request) {
     if (u.get("uncontacted") === "1") { where.lastContactAt = null; where.stage = { in: ["new", "qualified"] }; }
     const q = u.get("q")?.trim();
     if (q) where.OR = [{ businessName: { contains: q, mode: "insensitive" } }, { category: { contains: q, mode: "insensitive" } }, { city: { contains: q, mode: "insensitive" } }];
-    let leads = await getDb().robinLead.findMany({ where, orderBy: [{ score: "desc" }, { createdAt: "desc" }], take: Math.min(Number(u.get("limit")) || 300, 1000) });
+    let leads = await getDb().robinLead.findMany({ where, orderBy: [{ score: "desc" }, { createdAt: "desc" }], take: Math.min(Number(u.get("limit")) || 2000, 5000) });
     const node = u.get("node");
     if (node) leads = leads.filter((l) => nodeOf(l.stage) === node);
     // "hottest": the open leads that need you most right now (workflow order, not a prediction)

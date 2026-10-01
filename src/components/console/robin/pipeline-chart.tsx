@@ -311,28 +311,44 @@ function StageFan({ node, at, width, currency, cardProps, onClose, selectedLeadI
   node: NodeView; at: { x: number; y: number }; width: number; currency: string; selectedLeadId: string | null;
   cardProps: (lead: LeadCard, from: NodeId) => Record<string, unknown>; onClose: () => void;
 }) {
+  // every lead in the stage, not just the ones on the chart (most-needing-you first)
+  const [all, setAll] = useState<LeadCard[] | null>(null);
+  const [q, setQ] = useState("");
+  const [shown, setShown] = useState(120);
+  useEffect(() => {
+    let live = true;
+    void fetch(`/api/robin/leads?cards=${node.id}`, { cache: "no-store" }).then((r) => r.json()).then((j) => { if (live && Array.isArray(j?.data?.cards)) setAll(j.data.cards); }).catch(() => {});
+    return () => { live = false; };
+  }, [node.id, node.count]);
+  const source = all ?? node.leads;
+  const needle = q.trim().toLowerCase();
+  const list = needle ? source.filter((l) => `${l.name} ${l.category ?? ""}`.toLowerCase().includes(needle)) : source;
   const cw = 150, gap = 8;
-  const n = node.leads.length;
-  const perRow = Math.max(1, Math.min(n, Math.floor((Math.min(width, 980) - 40) / (cw + gap))));
-  const rows = Math.ceil(n / perRow);
-  const panelW = perRow * (cw + gap) + 24;
+  const perRow = Math.max(1, Math.floor((Math.min(width, 1180) - 40) / (cw + gap)));
+  const panelW = Math.min(perRow, Math.max(list.length, 3)) * (cw + gap) + 24;
   const left = Math.max(8, Math.min(width - panelW - 8, at.x - panelW / 2));
   return (
     <div className="robin-fan absolute z-30 rounded-2xl border border-cyan-300/20 bg-slate-950/95 p-3 backdrop-blur-xl" style={{ left, top: 6, width: panelW, transformOrigin: `${at.x - left}px ${at.y}px` }}>
-      <div className="mb-2 flex items-center justify-between px-1">
-        <p className="text-[10px] tracking-[0.25em] text-cyan-200">{node.label} · {node.count} LEAD{node.count === 1 ? "" : "S"}{node.value ? ` · ${money(node.value, currency)}` : ""}</p>
-        <button type="button" onClick={onClose} className="text-[10px] tracking-[0.2em] text-slate-400 hover:text-white">CLOSE</button>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+        <p className="text-[10px] tracking-[0.25em] text-cyan-200">ALL {node.label} · {node.count} LEAD{node.count === 1 ? "" : "S"}{node.value ? ` · ${money(node.value, currency)}` : ""}</p>
+        <div className="flex items-center gap-2">
+          {node.count > 6 && <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" aria-label={`Search ${node.label.toLowerCase()} leads`} className="w-36 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[11px] text-slate-100 outline-none focus:border-cyan-300/50" />}
+          <button type="button" onClick={onClose} className="text-[10px] tracking-[0.2em] text-slate-400 hover:text-white">CLOSE</button>
+        </div>
       </div>
-      {n === 0 ? <p className="px-1 pb-1 text-xs text-slate-400">No leads in this stage.</p> : (
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${perRow}, ${cw}px)`, maxHeight: rows > 2 ? 2 * (CARD_H + gap) + 4 : undefined, overflowY: rows > 2 ? "auto" : undefined }}>
-          {node.leads.map((l, i) => (
-            <div key={l.id} {...cardProps(l, node.id)} className={cn("robin-card robin-card-fan relative cursor-grab touch-none select-none", l.priority === "high" && "robin-card-high", selectedLeadId === l.id && "robin-card-sel")} style={{ height: CARD_H, animationDelay: `${i * 40}ms` }}>
+      {list.length === 0 ? <p className="px-1 pb-1 text-xs text-slate-400">{needle ? "No leads match." : "No leads in this stage."}</p> : (
+        <div className="robin-scroll grid gap-2 overflow-y-auto pr-1" style={{ gridTemplateColumns: `repeat(${Math.min(perRow, list.length)}, ${cw}px)`, maxHeight: 2 * (CARD_H + gap) + 30 }}>
+          {list.slice(0, shown).map((l, i) => (
+            <div key={l.id} {...cardProps(l, node.id)} className={cn("robin-card relative cursor-grab touch-none select-none", i < 24 && "robin-card-fan", l.priority === "high" && "robin-card-high", selectedLeadId === l.id && "robin-card-sel")} style={{ height: CARD_H, animationDelay: i < 24 ? `${i * 30}ms` : undefined }}>
               <LeadCardBody lead={l} currency={currency} />
             </div>
           ))}
+          {list.length > shown && (
+            <button type="button" onClick={() => setShown((n) => n + 300)} className="robin-btn col-span-full rounded-full border border-white/10 py-1 text-[10px] tracking-[0.18em] text-slate-300">SHOW {Math.min(300, list.length - shown)} MORE OF {list.length}</button>
+          )}
         </div>
       )}
-      {node.count > n && <p className="mt-2 px-1 text-[10px] text-slate-500">Showing the {n} that need you most of {node.count}.</p>}
+      <p className="mt-2 px-1 text-[10px] text-slate-500">{all ? `${needle ? `${list.length} of ` : "All "}${all.length} — most in need of you first. Drag one onto a stage to move it.` : "Loading every lead in this stage…"}</p>
     </div>
   );
 }
