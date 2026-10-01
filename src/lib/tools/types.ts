@@ -55,7 +55,7 @@ export interface ToolDefinition<Input = unknown> {
    * DARWIN = lead-gen/CRM). Scoped tools only appear when that agent is active,
    * so they never clutter the base JARVIS toolset. Omitted = available to all.
    */
-  agentScope?: "ev" | "darwin" | "mike";
+  agentScope?: "ev" | "darwin" | "mike" | "robin";
   /** Short label shown in the activity panel while running. */
   activityLabel: string;
   /**

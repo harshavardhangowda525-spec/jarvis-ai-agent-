@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       ev: env.evVoiceId,
       darwin: env.darwinVoiceId,
       mike: env.mikeVoiceId,
+      robin: env.robinVoiceId,
     };
     const voiceId = agent && agent !== "jarvis"
       ? agentVoiceId[agent]
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
       ev: 1.08,      // upbeat, energetic
       darwin: 1.0,   // warm, friendly, natural pace
       mike: 1.0,     // calm, precise analyst
+      robin: 1.04,   // brisk, friendly, organised
     };
     const speakingRate = agent && agent !== "jarvis"
       ? agentRate[agent]

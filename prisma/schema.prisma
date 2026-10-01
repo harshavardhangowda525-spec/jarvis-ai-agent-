@@ -18,70 +18,72 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  profile          Profile?
-  voicePreference  VoicePreference?
-  conversations    Conversation[]
-  messages         Message[]
-  memories         Memory[]
-  tasks            Task[]
-  notes            Note[]
-  toolLogs         ToolLog[]
-  integrations     Integration[]
-  sessions         Session[]
-  evContents       EvContent[]
-  evMedia          EvMedia[]
-  darwinLeads      DarwinLead[]
-  darwinActivities DarwinActivity[]
-  darwinFollowUps  DarwinFollowUp[]
-  darwinMessages   DarwinMessage[]
+  profile             Profile?
+  voicePreference     VoicePreference?
+  conversations       Conversation[]
+  messages            Message[]
+  memories            Memory[]
+  tasks               Task[]
+  notes               Note[]
+  toolLogs            ToolLog[]
+  integrations        Integration[]
+  sessions            Session[]
+  evContents          EvContent[]
+  evMedia             EvMedia[]
+  darwinLeads         DarwinLead[]
+  darwinActivities    DarwinActivity[]
+  darwinFollowUps     DarwinFollowUp[]
+  darwinMessages      DarwinMessage[]
   darwinSearchCursors DarwinSearchCursor[]
-  niosNotices      NiosNotice[]
-  activityEvents   ActivityEvent[]
-  evDaily          EvDaily[]
-  darwinDailyRuns  DarwinDailyRun[]
-  darwinCandidates DarwinCandidate[]
-  dailySummaries   DailySummary[]
-  mikeSignals      MikeSignal[]
-  mikeAlerts       MikeAlert[]
+  niosNotices         NiosNotice[]
+  activityEvents      ActivityEvent[]
+  evDaily             EvDaily[]
+  darwinDailyRuns     DarwinDailyRun[]
+  darwinCandidates    DarwinCandidate[]
+  dailySummaries      DailySummary[]
+  mikeSignals         MikeSignal[]
+  mikeAlerts          MikeAlert[]
+  robinLeads          RobinLead[]
+  robinSettings       RobinSettings?
 
   @@index([email])
 }
 
 model Profile {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  displayName String?
-  assistantName String @default("JARVIS")
-  timezone    String   @default("UTC")
-  language    String   @default("en")
-  theme       String   @default("dark")
-  aiProvider  String?  // preferred primary AI brain (e.g. groq, gemini, cerebras); null = use env default
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VoicePreference {
   id            String   @id @default(cuid())
   userId        String   @unique
-  voiceId       String? // ElevenLabs voice id override (falls back to env)
-  voiceEnabled  Boolean  @default(true)
-  autoListen    Boolean  @default(true)
-  speakingRate  Float    @default(1.0)
+  displayName   String?
+  assistantName String   @default("JARVIS")
+  timezone      String   @default("UTC")
+  language      String   @default("en")
+  theme         String   @default("dark")
+  aiProvider    String? // preferred primary AI brain (e.g. groq, gemini, cerebras); null = use env default
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+model VoicePreference {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  voiceId      String? // ElevenLabs voice id override (falls back to env)
+  voiceEnabled Boolean  @default(true)
+  autoListen   Boolean  @default(true)
+  speakingRate Float    @default(1.0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
 model Session {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  tokenId   String   @unique // jti claim of the issued JWT
+  tokenId   String    @unique // jti claim of the issued JWT
   userAgent String?
   ipAddress String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   expiresAt DateTime
   revokedAt DateTime?
 
@@ -241,48 +243,48 @@ model EvMedia {
 /// `verifiedFields` lists which fields are source-verified facts vs AI analysis.
 /// `fingerprint` (domain / phone / name+location) enforces duplicate protection.
 model DarwinLead {
-  id             String    @id @default(cuid())
-  userId         String
-  businessName   String
-  category       String?
-  location       String?
-  website        String?
-  phone          String?
-  email          String?
-  instagram      String?
+  id              String    @id @default(cuid())
+  userId          String
+  businessName    String
+  category        String?
+  location        String?
+  website         String?
+  phone           String?
+  email           String?
+  instagram       String?
   // Provenance
-  source         String    @default("manual") // google_places | csv | manual | instagram | ...
-  sourceRef      String? // place_id / row id / URL the data came from
-  sourceUrl      String?
-  discoveredAt   DateTime  @default(now())
-  lastVerifiedAt DateTime?
+  source          String    @default("manual") // google_places | csv | manual | instagram | ...
+  sourceRef       String? // place_id / row id / URL the data came from
+  sourceUrl       String?
+  discoveredAt    DateTime  @default(now())
+  lastVerifiedAt  DateTime?
   // Location (real coordinates from the source — never guessed)
-  latitude       Float?
-  longitude      Float?
+  latitude        Float?
+  longitude       Float?
   // Seen again in a later discovery (dedup keeps firstDiscovered = discoveredAt)
-  lastSeenAt     DateTime?
+  lastSeenAt      DateTime?
   // CRM
-  stage          String    @default("new") // new|contacted|follow_up|interested|not_interested|converted (+ legacy: qualified|replied|demo|proposal|negotiation|won|lost)
+  stage           String    @default("new") // new|contacted|follow_up|interested|not_interested|converted (+ legacy: qualified|replied|demo|proposal|negotiation|won|lost)
   lastContactedAt DateTime?
-  salesValue     Float? // expected deal value (user-entered)
+  salesValue      Float? // expected deal value (user-entered)
   serviceInterest String? // e.g. "Website", "Mobile app" (user-entered)
-  assignedTo     String?
+  assignedTo      String?
   opportunityType String? // no_website | outdated_website | no_app | ... (AI analysis)
-  notes          String?   @db.Text
-  nextFollowUpAt DateTime?
+  notes           String?   @db.Text
+  nextFollowUpAt  DateTime?
   // Which fields are source-VERIFIED facts (the rest of the analysis is AI).
-  verifiedFields String[]  @default([])
-  aiAnalysis     String?   @db.Text // clearly-labeled AI opportunity analysis
-  leadScore      Int? // AI analysis, never presented as verified fact
-  fingerprint    String
-  metadata       Json?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  verifiedFields  String[]  @default([])
+  aiAnalysis      String?   @db.Text // clearly-labeled AI opportunity analysis
+  leadScore       Int? // AI analysis, never presented as verified fact
+  fingerprint     String
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  activities  DarwinActivity[]
-  followUps   DarwinFollowUp[]
-  messages    DarwinMessage[]
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activities DarwinActivity[]
+  followUps  DarwinFollowUp[]
+  messages   DarwinMessage[]
 
   @@index([userId, stage, nextFollowUpAt])
   @@index([userId, discoveredAt])
@@ -335,15 +337,15 @@ model DarwinActivity {
 }
 
 model DarwinFollowUp {
-  id        String    @id @default(cuid())
-  userId    String
-  leadId    String
-  dueAt     DateTime
-  reason    String?
-  message   String?   @db.Text
-  priority  String    @default("normal") // low | normal | high
-  status    String    @default("pending") // pending | completed | cancelled
-  createdAt DateTime  @default(now())
+  id          String    @id @default(cuid())
+  userId      String
+  leadId      String
+  dueAt       DateTime
+  reason      String?
+  message     String?   @db.Text
+  priority    String    @default("normal") // low | normal | high
+  status      String    @default("pending") // pending | completed | cancelled
+  createdAt   DateTime  @default(now())
   completedAt DateTime?
 
   user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -422,35 +424,35 @@ model NiosNotice {
 /// once and never changed; only the outcome (resolved from later real candles)
 /// and the self-audit are added when the setup finishes.
 model MikeSignal {
-  id          String    @id @default(cuid())
-  userId      String
-  asset       String // display name, e.g. "BTC/USDT"
-  symbol      String // provider symbol, e.g. "BTCUSDT"
-  provider    String // binance | yahoo
-  assetGroup  String // correlation bucket
-  timeframe   String
-  mode        String    @default("mtf")
-  decision    String // setup | no_trade
-  direction   String? // long | short
-  status      String    @default("open") // open | triggered | won | lost | expired | not_triggered | no_trade
-  entryLow    Float?
-  entryHigh   Float?
-  stop        Float?
-  targets     Json? // [{ price, basis, rr }]
-  riskReward  Float?
-  riskPct     Float? // % of the account at risk (from the risk plan)
-  confidence  Int
-  regime      String?
-  freshness   String // live | delayed | closed | stale
-  source      String
+  id            String    @id @default(cuid())
+  userId        String
+  asset         String // display name, e.g. "BTC/USDT"
+  symbol        String // provider symbol, e.g. "BTCUSDT"
+  provider      String // binance | yahoo
+  assetGroup    String // correlation bucket
+  timeframe     String
+  mode          String    @default("mtf")
+  decision      String // setup | no_trade
+  direction     String? // long | short
+  status        String    @default("open") // open | triggered | won | lost | expired | not_triggered | no_trade
+  entryLow      Float?
+  entryHigh     Float?
+  stop          Float?
+  targets       Json? // [{ price, basis, rr }]
+  riskReward    Float?
+  riskPct       Float? // % of the account at risk (from the risk plan)
+  confidence    Int
+  regime        String?
+  freshness     String // live | delayed | closed | stale
+  source        String
   priceAtSignal Float?
-  reasoning   Json // checks, no-trade reasons, alignment, confidence breakdown
-  indicators  Json? // snapshot at the time
-  outcome     Json? // { result, exitPrice, targetsHit, rMultiple, mfeR, maeR, bars }
-  audit       Json?
-  createdAt   DateTime  @default(now())
-  triggeredAt DateTime?
-  resolvedAt  DateTime?
+  reasoning     Json // checks, no-trade reasons, alignment, confidence breakdown
+  indicators    Json? // snapshot at the time
+  outcome       Json? // { result, exitPrice, targetsHit, rMultiple, mfeR, maeR, bars }
+  audit         Json?
+  createdAt     DateTime  @default(now())
+  triggeredAt   DateTime?
+  resolvedAt    DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -593,40 +595,40 @@ model EvDaily {
 /// resumable position (which location × category, via DarwinSearchCursor), the
 /// true counters, the log and the final report. Survives restarts.
 model DarwinDailyRun {
-  id             String    @id @default(cuid())
-  userId         String
-  date           String // YYYY-MM-DD in DARWIN_DAILY_TZ
-  target         Int       @default(50)
+  id              String    @id @default(cuid())
+  userId          String
+  date            String // YYYY-MM-DD in DARWIN_DAILY_TZ
+  target          Int       @default(50)
   // running | completed | partial | paused | needs_setup | failed
-  status         String    @default("running")
-  config         Json // locations, categories, radius, verification settings used
-  comboIndex     Int       @default(0)
-  exhaustedCombos String[] @default([])
-  verified       Int       @default(0)
-  candidates     Int       @default(0)
-  duplicates     Int       @default(0)
-  alreadyChecked Int       @default(0)
-  websiteRejected Int      @default(0)
-  unclear        Int       @default(0)
-  tempUnavailable Int      @default(0)
-  closed         Int       @default(0)
-  missingPhone   Int       @default(0)
+  status          String    @default("running")
+  config          Json // locations, categories, radius, verification settings used
+  comboIndex      Int       @default(0)
+  exhaustedCombos String[]  @default([])
+  verified        Int       @default(0)
+  candidates      Int       @default(0)
+  duplicates      Int       @default(0)
+  alreadyChecked  Int       @default(0)
+  websiteRejected Int       @default(0)
+  unclear         Int       @default(0)
+  tempUnavailable Int       @default(0)
+  closed          Int       @default(0)
+  missingPhone    Int       @default(0)
   /// email outreach goal for the day (no-website businesses WITH a public email, each emailed by the deadline)
-  emailTarget    Int       @default(0)
+  emailTarget     Int       @default(0)
   /// verified no-website businesses skipped for the email goal because no public email could be found
-  missingEmail   Int       @default(0)
-  outOfArea      Int       @default(0)
-  errors         Int       @default(0)
-  apiRequests    Json? // { geoapify, google, search }
-  reasons        String[]  @default([])
-  log            Json?
-  report         Json?
-  lastError      String?   @db.Text
-  lockedUntil    DateTime?
-  startedAt      DateTime  @default(now())
-  completedAt    DateTime?
-  reportedAt     DateTime?
-  updatedAt      DateTime  @updatedAt
+  missingEmail    Int       @default(0)
+  outOfArea       Int       @default(0)
+  errors          Int       @default(0)
+  apiRequests     Json? // { geoapify, google, search }
+  reasons         String[]  @default([])
+  log             Json?
+  report          Json?
+  lastError       String?   @db.Text
+  lockedUntil     DateTime?
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+  reportedAt      DateTime?
+  updatedAt       DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -655,4 +657,318 @@ model DarwinCandidate {
 
   @@unique([userId, fingerprint])
   @@index([userId, placeId])
+}
+
+// ============================================================================
+// ROBIN — Sales & CRM. Robin's work starts after DARWIN finds a business:
+// qualify → contact → follow up → demo → quotation → negotiate → won/lost → client.
+// Every row is a real record (nothing is simulated). Robin's own copy of a lead
+// survives even if the DARWIN lead is deleted, so the sales history is never lost.
+// ============================================================================
+
+/// A prospect Robin manages (usually handed over by DARWIN).
+model RobinLead {
+  id               String    @id @default(cuid())
+  userId           String
+  darwinLeadId     String? // the DARWIN lead it came from (no FK: CRM history outlives it)
+  darwinAliases    String[]  @default([]) // other DARWIN records found to be this same business
+  businessName     String
+  category         String?
+  phone            String?
+  whatsapp         String?
+  email            String?
+  website          String?
+  instagram        String?
+  address          String?
+  city             String?
+  mapsUrl          String?
+  websiteStatus    String? // no_website | has_website | outdated | poor | unknown
+  websiteQuality   String?
+  opportunityType  String?
+  darwinScore      Int? // DARWIN's own lead score (a prioritisation hint, never a prediction)
+  rating           Float?
+  reviews          Int?
+  source           String    @default("darwin") // darwin | manual | webhook
+  discoveredAt     DateTime?
+  fingerprint      String // normalised name + city, for duplicate detection
+  phoneKey         String? // last 10 digits, for duplicate detection
+  // Qualification — an internal prioritisation tool, NOT a prediction of a sale
+  priority         String    @default("needs_review") // high | medium | low | needs_review
+  priorityOverride String? // set by the user; wins over the computed one
+  score            Int       @default(0)
+  reasons          Json? // [{ label, points }]
+  qualifiedAt      DateTime?
+  // Sales
+  stage            String    @default("new")
+  stageChangedAt   DateTime  @default(now())
+  potentialValue   Float? // user-entered, or the latest quotation's total
+  serviceInterest  String?
+  assignedTo       String?
+  lastContactAt    DateTime?
+  nextFollowUpAt   DateTime?
+  notes            String?   @db.Text
+  lostReason       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scores       RobinLeadScore[]
+  stageChanges RobinStageChange[]
+  activities   RobinActivity[]
+  interactions RobinInteraction[]
+  followUps    RobinFollowUp[]
+  demos        RobinDemo[]
+  quotations   RobinQuotation[]
+  client       RobinClient?
+
+  @@unique([userId, darwinLeadId])
+  @@index([userId, stage])
+  @@index([userId, fingerprint])
+  @@index([userId, phoneKey])
+  @@index([userId, email])
+}
+
+/// Every qualification Robin ran (score history with its reasons).
+model RobinLeadScore {
+  id        String   @id @default(cuid())
+  userId    String
+  leadId    String
+  score     Int
+  priority  String
+  reasons   Json
+  createdAt DateTime @default(now())
+
+  lead RobinLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([leadId, createdAt])
+}
+
+/// Complete history of every stage change.
+model RobinStageChange {
+  id        String   @id @default(cuid())
+  userId    String
+  leadId    String
+  fromStage String?
+  toStage   String
+  source    String // user | voice | robin | darwin | system
+  note      String?
+  createdAt DateTime @default(now())
+
+  lead RobinLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([leadId, createdAt])
+}
+
+/// Robin's timeline / live activity feed — only things that really happened.
+model RobinActivity {
+  id        String   @id @default(cuid())
+  userId    String
+  leadId    String?
+  type      String // imported | qualified | stage | call | whatsapp | instagram | email | reply | followup_* | demo_* | quotation_* | client_* | payment | note
+  detail    String   @db.Text
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  lead RobinLead? @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([leadId, createdAt])
+}
+
+/// Calls and messages (phone, WhatsApp, Instagram, email). `status` is the
+/// TRUE state: "opened" = the app/dialer was opened (nothing confirmed),
+/// "logged" = you recorded it, "sent"/"delivered" only when an API confirmed it.
+model RobinInteraction {
+  id         String   @id @default(cuid())
+  userId     String
+  leadId     String
+  channel    String // call | whatsapp | instagram | email
+  direction  String   @default("outbound") // outbound | inbound
+  outcome    String? // call: no_answer | busy | wrong_number | spoke | interested | not_interested | call_later | wants_demo | wants_quotation; message: replied | no_reply | …
+  status     String   @default("logged") // opened | logged | sent | delivered | failed | received
+  subject    String?
+  notes      String?  @db.Text
+  externalId String?
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  lead RobinLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId, occurredAt])
+  @@index([leadId, occurredAt])
+}
+
+/// Follow-up queue (Robin never contacts anyone by itself — these are YOUR tasks).
+model RobinFollowUp {
+  id          String    @id @default(cuid())
+  userId      String
+  leadId      String
+  action      String    @default("call") // call | whatsapp | email | instagram | meeting | task
+  dueAt       DateTime
+  priority    String    @default("medium") // high | medium | low
+  notes       String?   @db.Text
+  status      String    @default("pending") // pending | completed | cancelled
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  lead RobinLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, dueAt])
+  @@index([leadId])
+}
+
+model RobinDemo {
+  id          String    @id @default(cuid())
+  userId      String
+  leadId      String
+  scheduledAt DateTime
+  demoType    String    @default("online") // online | in_person | phone
+  notes       String?   @db.Text
+  status      String    @default("scheduled") // scheduled | completed | cancelled | rescheduled
+  remindedAt  DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  lead RobinLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, scheduledAt])
+}
+
+model RobinQuotation {
+  id           String    @id @default(cuid())
+  userId       String
+  leadId       String
+  number       String
+  clientName   String?
+  status       String    @default("draft") // draft | sent | accepted | rejected | expired
+  currency     String    @default("INR")
+  subtotal     Float
+  discount     Float     @default(0)
+  taxPct       Float     @default(0)
+  taxAmount    Float     @default(0)
+  total        Float
+  validUntil   DateTime?
+  paymentTerms String?   @db.Text
+  notes        String?   @db.Text
+  sentAt       DateTime?
+  acceptedAt   DateTime?
+  rejectedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  lead  RobinLead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  items RobinQuotationItem[]
+
+  @@unique([userId, number])
+  @@index([userId, status])
+  @@index([leadId])
+}
+
+model RobinQuotationItem {
+  id          String  @id @default(cuid())
+  quotationId String
+  service     String
+  description String?
+  quantity    Float   @default(1)
+  unitPrice   Float
+  amount      Float
+  position    Int     @default(0)
+
+  quotation RobinQuotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+}
+
+/// A converted lead. The lead (with its whole history) stays linked.
+model RobinClient {
+  id            String    @id @default(cuid())
+  userId        String
+  leadId        String    @unique
+  quotationId   String?
+  businessName  String
+  contactName   String?
+  phone         String?
+  email         String?
+  project       String?
+  service       String?
+  amount        Float     @default(0)
+  currency      String    @default("INR")
+  paymentStatus String    @default("unpaid") // unpaid | partial | paid
+  status        String    @default("active") // active | completed | maintenance | inactive
+  startDate     DateTime?
+  deliveryDate  DateTime?
+  notes         String?   @db.Text
+  convertedAt   DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  lead     RobinLead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  payments RobinPayment[]
+
+  @@index([userId, status])
+}
+
+model RobinPayment {
+  id        String   @id @default(cuid())
+  userId    String
+  clientId  String
+  amount    Float
+  paidAt    DateTime @default(now())
+  method    String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  client RobinClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([userId, paidAt])
+}
+
+/// Services you sell — names and prices are yours to set (no hard-coded prices).
+model RobinService {
+  id          String  @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  price       Float? // null until you set it
+  unit        String? // e.g. "one-time", "per month", "per year"
+  active      Boolean @default(true)
+  position    Int     @default(0)
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model RobinSettings {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  data      Json
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RobinNotification {
+  id        String    @id @default(cuid())
+  userId    String
+  kind      String // darwin_import | followup_due | demo_soon | quotation_expiring | info
+  title     String
+  body      String?
+  leadId    String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
+
+/// Who changed what in the CRM (user, voice, Robin, DARWIN import, webhook).
+model RobinAudit {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  entity    String
+  entityId  String?
+  source    String
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

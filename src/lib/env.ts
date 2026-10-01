@@ -91,6 +91,8 @@ export const env = {
   darwinProvider: read("DARWIN_PROVIDER").toLowerCase() || "groq,gemini",
   // MIKE (market analysis) thinks with Groq first, Gemini as the backup.
   mikeProvider: read("MIKE_PROVIDER").toLowerCase() || "groq,gemini",
+  // ROBIN (sales & CRM) uses JARVIS's AI infrastructure: Groq first, Gemini as backup.
+  robinProvider: read("ROBIN_PROVIDER").toLowerCase() || "groq,gemini",
   // Reasoning models (gpt-oss) think before answering; "low" keeps replies quick.
   reasoningEffort: read("AI_REASONING_EFFORT").toLowerCase() || "low",
 
@@ -118,6 +120,10 @@ export const env = {
   darwinVoiceId: read("DARWIN_VOICE_ID") || "IKne3meq5aSn9XLyUdCD",
   // MIKE voice — calm, precise market analyst. Defaults to "Brian". Override with MIKE_VOICE_ID.
   mikeVoiceId: read("MIKE_VOICE_ID") || "nPczCjzI2devNBz1zQrb",
+  // ROBIN voice — calm, friendly, professional sales assistant. Defaults to "Matilda". Override with ROBIN_VOICE_ID.
+  robinVoiceId: read("ROBIN_VOICE_ID") || "XrExE9yKIg1WjnnlVkGX",
+  // Signs inbound ROBIN webhooks (HMAC-SHA256). Unset = the webhook is off.
+  robinWebhookSecret: read("ROBIN_WEBHOOK_SECRET"),
   elevenLabsModelId: read("ELEVENLABS_MODEL_ID") || "eleven_turbo_v2_5",
   elevenLabsSttModelId: read("ELEVENLABS_STT_MODEL_ID") || "scribe_v1",
 

@@ -21,7 +21,7 @@ import {
   MousePointerClick,
   Code2,
   Radar,
-  CandlestickChart,
+  CandlestickChart, Handshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ReactorLogo, RobotFace, Chevrons, Waveform } from "@/components/hud/visuals";
@@ -39,6 +39,7 @@ const NAV = [
   { href: "/dashboard/ultron", label: "ULTRON", icon: Code2 },
   { href: "/dashboard/darwin", label: "DARWIN", icon: Radar },
   { href: "/dashboard/mike", label: "MIKE", icon: CandlestickChart },
+  { href: "/dashboard/robin", label: "ROBIN", icon: Handshake },
   { href: "/dashboard/memory", label: "AI Agents", icon: Bot },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },
   { href: "/dashboard/settings", label: "Systems", icon: Server },
@@ -77,7 +78,7 @@ export function AppShell({
   // JARVIS, DARWIN and ULTRON are full-immersion screens — the nav rails fold
   // away so the cinematic interface owns the whole viewport (JARVIS has its own
   // systems menu).
-  const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/darwin") || pathname.startsWith("/dashboard/ultron") || pathname.startsWith("/dashboard/mike");
+  const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/darwin") || pathname.startsWith("/dashboard/ultron") || pathname.startsWith("/dashboard/mike") || pathname.startsWith("/dashboard/robin");
 
   const name = user.displayName || user.email.split("@")[0];
 

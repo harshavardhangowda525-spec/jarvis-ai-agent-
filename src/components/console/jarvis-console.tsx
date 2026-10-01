@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MikeLaunchOverlay } from "@/components/console/mike/launch-overlay";
 import { isMikeActivation } from "@/lib/mike/wake";
+import { RobinLaunchOverlay } from "@/components/console/robin/launch-overlay";
+import { isRobinActivation, robinCommand } from "@/lib/robin/wake";
 import { BriefingPopup } from "@/components/console/briefing-popup";
 import type { Briefing } from "@/lib/briefing/build";
 import { briefingRequest } from "@/lib/briefing/intent";
@@ -201,6 +203,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (!path.startsWith("/dashboard") || path === "/dashboard") return;
     // MIKE (e.g. "show me the Tesla chart") opens through its launch iris
     if (path.startsWith("/dashboard/mike")) { setMikeLaunch(true); setTimeout(() => router.push(path), 1050); return; }
+    // ROBIN (e.g. "open ABC Café in Robin") opens through its own launch
+    if (path.startsWith("/dashboard/robin")) { setRobinLaunch(true); setTimeout(() => router.push(path), 1000); return; }
     router.push(path);
   }, [router]);
 
@@ -427,6 +431,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Activating MIKE.");
     setTimeout(() => router.push("/dashboard/mike"), 1050);
   }, [router, voice, voiceStarted]);
+  const [robinLaunch, setRobinLaunch] = useState(false);
+  const launchRobin = useCallback((cmd?: string) => {
+    // ROBIN takes over the sales command center; Robin greets you once it's online.
+    // "Robin, show today's follow-ups" opens Robin and runs the command there.
+    logActivity({ category: "agent", agent: "ROBIN", action: "Activated ROBIN", importance: 1 });
+    setRobinLaunch(true);
+    setTimeout(() => router.push(`/dashboard/robin${cmd ? `?cmd=${encodeURIComponent(cmd)}` : ""}`), 1000);
+  }, [router]);
   const openHumanoid = useCallback(() => {
     logActivity({ category: "agent", agent: "HUMANOID", action: "Opened Humanoid View", importance: 1 });
     setHumanoidPhase("in");
@@ -698,6 +710,17 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           .catch(() => { agent.appendLocalExchange(t, "I couldn't reach the server."); say("I couldn't reach the server."); });
         return;
       }
+      // "Robin", "Activate Robin", "Open Robin", "Start Robin" → ROBIN takes over (sales & CRM);
+      // "Robin, show me today's follow-ups" → Robin opens and does it. ("Ask Robin …" stays with JARVIS.)
+      if (isRobinActivation(t)) {
+        launchRobin();
+        return;
+      }
+      const forRobin = robinCommand(t);
+      if (forRobin) {
+        launchRobin(forRobin);
+        return;
+      }
       // "Activate Mike", "open MIKE", "Mike online" → MIKE takes over (trading intelligence).
       // (speech recognition often hears "Mike" as "mic" / "Mick" — those count too)
       if (isMikeActivation(low)) {
@@ -762,7 +785,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchUltron, launchDarwin, launchMike, openHumanoid, closeHumanoid, openEv, closeEv, evPhase, evToday, flashEv, voice, voiceStarted]);
+  }, [agent, sleep, launchUltron, launchDarwin, launchMike, launchRobin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase, evToday, flashEv, voice, voiceStarted]);
 
   // Voice was on in the agent you just left → switch it back on here.
   const resumingVoice = useResumeVoice(enableVoice);
@@ -1167,6 +1190,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       )}
       {emails.current && <EmailComposePopup key={emails.current.id} email={emails.current} waiting={emails.waiting} onClose={emails.close} />}
       {mikeLaunch && <MikeLaunchOverlay />}
+      {robinLaunch && <RobinLaunchOverlay />}
 
       {/* the living environment */}
       <JarvisMotion ref={motion} className="absolute inset-0" cssTarget={stageRef}

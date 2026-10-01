@@ -16,6 +16,9 @@ const nextConfig = {
     outputFileTracingIncludes: {
       "/api/ev/daily": ["./node_modules/ffmpeg-static/ffmpeg", "./assets/fonts/**"],
       "/api/cron/ev-daily": ["./node_modules/ffmpeg-static/ffmpeg", "./assets/fonts/**"],
+      // ROBIN draws quotation PDFs with the same font (it has the ₹ sign)
+      "/api/robin/quotations/[id]": ["./assets/fonts/**"],
+      "/api/robin/quotations/[id]/pdf": ["./assets/fonts/**"],
     },
   },
   async headers() {

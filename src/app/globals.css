@@ -646,3 +646,112 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .mike-letter, .mike-typein, .mike-iris, .mike-shock, .mike-streak { animation-duration: 1ms; }
 }
+
+/* ============================================================================
+   ROBIN — sales command center. Deep black / graphite, glass, electric blue,
+   cyan, a touch of violet. Motion is calm and purposeful; reduced-motion users
+   get the same information without the movement.
+   ========================================================================== */
+.robin-bg { background: radial-gradient(1200px 700px at 50% 18%, rgba(30, 58, 95, 0.35), transparent 60%), radial-gradient(900px 600px at 80% 90%, rgba(76, 29, 149, 0.10), transparent 60%), #05070b; }
+.robin-grid {
+  background-image: linear-gradient(rgba(148, 163, 184, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 163, 184, 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 50% 40%, black 30%, transparent 80%);
+  animation: robin-grid 60s linear infinite;
+}
+.robin-glass { background: linear-gradient(180deg, rgba(15, 23, 42, 0.62), rgba(2, 6, 23, 0.55)); border: 1px solid rgba(103, 232, 249, 0.12); backdrop-filter: blur(18px) saturate(140%); -webkit-backdrop-filter: blur(18px) saturate(140%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 20px 50px -20px rgba(0, 0, 0, 0.7); }
+.robin-btn { position: relative; overflow: hidden; transition: transform .16s ease, box-shadow .25s ease, background-color .25s ease, border-color .25s ease; }
+.robin-btn::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(165, 243, 252, 0.18) 50%, transparent 70%); transform: translateX(-120%); transition: transform .6s ease; pointer-events: none; }
+.robin-btn:hover:not(:disabled) { box-shadow: 0 0 16px -3px rgba(103, 232, 249, 0.5); border-color: rgba(103, 232, 249, 0.5); }
+.robin-btn:hover:not(:disabled)::after { transform: translateX(120%); }
+.robin-btn:active:not(:disabled) { transform: scale(0.96); }
+
+/* pipeline nodes */
+.robin-node {
+  background: radial-gradient(circle at 35% 30%, rgba(148, 163, 184, 0.16), rgba(15, 23, 42, 0.75) 60%);
+  border: 1px solid rgba(103, 232, 249, 0.28);
+  box-shadow: inset 0 0 18px rgba(103, 232, 249, 0.08), 0 0 22px -6px rgba(56, 189, 248, 0.35);
+  backdrop-filter: blur(10px);
+  transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s ease, border-color .35s ease;
+  animation: robin-node-in .7s cubic-bezier(.2,.8,.2,1) both;
+}
+.robin-node:hover { transform: scale(1.06) translateY(-2px); box-shadow: inset 0 0 22px rgba(103, 232, 249, 0.14), 0 10px 30px -8px rgba(56, 189, 248, 0.55); }
+.robin-node-lit { border-color: rgba(165, 243, 252, 0.85); box-shadow: inset 0 0 26px rgba(103, 232, 249, 0.25), 0 0 34px -2px rgba(103, 232, 249, 0.75); }
+.robin-node-open { outline: 1px solid rgba(165, 243, 252, 0.6); outline-offset: 5px; }
+.robin-node-won { border-color: rgba(110, 231, 183, 0.4); box-shadow: inset 0 0 18px rgba(52, 211, 153, 0.1), 0 0 24px -6px rgba(52, 211, 153, 0.45); }
+.robin-node-lost { border-color: rgba(148, 163, 184, 0.25); background: rgba(15, 23, 42, 0.6); box-shadow: none; }
+/* lead cards */
+.robin-card {
+  border-radius: 12px; background: linear-gradient(180deg, rgba(30, 41, 59, 0.55), rgba(2, 6, 23, 0.7));
+  border: 1px solid rgba(148, 163, 184, 0.16); backdrop-filter: blur(12px);
+  box-shadow: 0 10px 24px -14px rgba(0, 0, 0, 0.8);
+  transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease, border-color .25s ease, opacity .25s;
+  animation: robin-materialize .8s cubic-bezier(.2,.8,.2,1) both;
+}
+.robin-card:hover { transform: translateY(-3px); border-color: rgba(103, 232, 249, 0.45); box-shadow: 0 16px 30px -14px rgba(8, 145, 178, 0.6); }
+.robin-card-high { border-color: rgba(103, 232, 249, 0.38); box-shadow: 0 0 18px -6px rgba(103, 232, 249, 0.55); }
+.robin-card-hot::before { content: ""; position: absolute; inset: -1px; border-radius: 12px; border: 1px solid rgba(165, 243, 252, 0.6); animation: robin-hot 2.6s ease-in-out infinite; pointer-events: none; }
+.robin-card-sel { transform: scale(1.05); border-color: rgba(165, 243, 252, 0.9); background: linear-gradient(180deg, rgba(8, 145, 178, 0.22), rgba(2, 6, 23, 0.55)); }
+.robin-card-sel::after { content: ""; position: absolute; inset: 0; border-radius: 12px; background: linear-gradient(180deg, transparent, rgba(165, 243, 252, 0.25), transparent); animation: robin-cardscan 1.4s ease-out 1; pointer-events: none; }
+.robin-card-drag { transform: rotate(-2deg) scale(1.06); border-color: rgba(165, 243, 252, 0.9); box-shadow: 0 0 40px rgba(103, 232, 249, 0.5); animation: none; }
+.robin-card-fan { animation: robin-fan-card .5s cubic-bezier(.2,.8,.2,1) both; }
+.robin-type { animation: robin-type .9s steps(18, end) both; }
+.robin-fan { animation: robin-fan .45s cubic-bezier(.2,.8,.2,1) both; }
+.robin-draw { stroke-dasharray: 400; stroke-dashoffset: 400; animation: robin-draw 1s ease-out both; }
+.robin-curve { stroke-dasharray: 1; stroke-dashoffset: 1; animation: robin-curve 1.4s cubic-bezier(.4,0,.2,1) .3s both; }
+.robin-pop { animation: robin-pop .4s cubic-bezier(.2,.8,.2,1) both; }
+.robin-bar { background: linear-gradient(90deg, rgba(59, 130, 246, 0.25), rgba(103, 232, 249, 0.75), rgba(59, 130, 246, 0.25)); box-shadow: 0 0 16px -4px rgba(103, 232, 249, 0.5); transition: width .9s cubic-bezier(.2,.8,.2,1); }
+.robin-morph { animation: robin-morph .6s cubic-bezier(.2,.8,.2,1) both; }
+.robin-ping { animation: robin-ping 1.4s ease-out both; }
+.robin-in { animation: robin-in .55s cubic-bezier(.2,.8,.2,1) both; }
+.robin-row { animation: robin-row .45s cubic-bezier(.2,.8,.2,1) both; }
+.robin-sheet { animation: robin-sheet .35s cubic-bezier(.2,.8,.2,1) both; }
+.robin-panel { animation: robin-panel .5s cubic-bezier(.2,.8,.2,1) both; }
+.robin-drawer { animation: robin-drawer .4s cubic-bezier(.2,.8,.2,1) both; }
+.robin-scan { background: linear-gradient(180deg, rgba(103, 232, 249, 0.12), transparent); animation: robin-scanpanel 1.2s ease-out both; }
+.robin-feed-in { animation: robin-feed .6s cubic-bezier(.2,.8,.2,1) both; }
+.robin-flow { animation: robin-flow 3.2s linear infinite; }
+.robin-wave span { animation: robin-wave 1s ease-in-out infinite; transform-origin: bottom; }
+.robin-back { transform: scale(0.975); filter: blur(1.5px) brightness(.7); transition: transform .5s ease, filter .5s ease; }
+.robin-front { transform: none; filter: none; transition: transform .5s ease, filter .5s ease; }
+.robin-scroll { scrollbar-width: thin; scrollbar-color: rgba(103, 232, 249, 0.25) transparent; }
+.robin-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+.robin-scroll::-webkit-scrollbar-thumb { background: rgba(103, 232, 249, 0.25); border-radius: 4px; }
+.robin-iris { animation: robin-iris .9s cubic-bezier(.3,.6,.2,1) both; }
+.robin-launch-ring { animation: robin-launch-ring 1s cubic-bezier(.2,.8,.2,1) both; }
+.robin-letter { animation: robin-letter .6s cubic-bezier(.2,.8,.2,1) both; }
+.robin-typein { animation: robin-typein .7s steps(18, end) both; }
+.robin-toast { animation: robin-toast 5.5s cubic-bezier(.2,.8,.2,1) both; }
+
+@keyframes robin-grid { from { background-position: 0 0; } to { background-position: 56px 56px; } }
+@keyframes robin-node-in { from { opacity: 0; transform: scale(.6); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes robin-materialize { 0% { opacity: 0; transform: scale(.2); filter: blur(6px) brightness(3); } 60% { opacity: 1; filter: blur(0) brightness(1.4); } 100% { opacity: 1; transform: none; filter: none; } }
+@keyframes robin-hot { 0%, 100% { opacity: .15; } 50% { opacity: .9; } }
+@keyframes robin-cardscan { from { transform: translateY(-100%); opacity: 1; } to { transform: translateY(100%); opacity: 0; } }
+@keyframes robin-fan-card { from { opacity: 0; transform: translateY(18px) scale(.85); } to { opacity: 1; transform: none; } }
+@keyframes robin-type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes robin-fan { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
+@keyframes robin-draw { to { stroke-dashoffset: 0; } }
+@keyframes robin-curve { to { stroke-dashoffset: 0; } }
+@keyframes robin-pop { from { transform: scale(0); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes robin-morph { from { opacity: 0; transform: scale(.96); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes robin-ping { from { transform: scale(1); opacity: .9; } to { transform: scale(1.9); opacity: 0; } }
+@keyframes robin-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes robin-row { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+@keyframes robin-sheet { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes robin-panel { from { opacity: 0; transform: translateX(40px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes robin-drawer { from { opacity: 0; transform: translateY(24px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes robin-scanpanel { from { transform: translateY(-100%); opacity: 1; } to { transform: translateY(400%); opacity: 0; } }
+@keyframes robin-feed { from { opacity: 0; transform: translateY(14px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes robin-flow { from { top: 0%; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } to { top: 100%; opacity: 0; } }
+@keyframes robin-wave { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+@keyframes robin-iris { from { clip-path: circle(2% at 50% 50%); } to { clip-path: circle(150% at 50% 50%); } }
+@keyframes robin-launch-ring { from { transform: scale(.2); opacity: 0; } 50% { opacity: 1; } to { transform: scale(1.4); opacity: 0; } }
+@keyframes robin-letter { from { opacity: 0; transform: translateY(14px); filter: blur(6px); letter-spacing: .5em; } to { opacity: 1; transform: none; filter: none; } }
+@keyframes robin-typein { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes robin-toast { 0% { opacity: 0; transform: translateY(-14px); } 8%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-8px); } }
+@media (prefers-reduced-motion: reduce) {
+  .robin-grid, .robin-flow, .robin-wave span, .robin-card-hot::before { animation: none; }
+  .robin-node, .robin-card, .robin-card-fan, .robin-type, .robin-fan, .robin-draw, .robin-curve, .robin-pop, .robin-morph, .robin-ping, .robin-in, .robin-row, .robin-sheet, .robin-panel, .robin-drawer, .robin-feed-in, .robin-iris, .robin-launch-ring, .robin-letter, .robin-typein { animation-duration: 1ms; }
+  .robin-bar { transition: none; }
+}

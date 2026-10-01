@@ -1,5 +1,6 @@
 import "server-only";
 import { syncLeadsToSheet, leadSheet } from "@/lib/darwin/daily/sheet";
+import { syncFromDarwin } from "@/lib/robin/darwin-sync";
 import { sendAutoEmails, autoEmailState, usableEmail, type AutoEmailDeps, type AutoEmailResult, type AutoEmailState } from "@/lib/darwin/auto-email";
 import { createHash } from "node:crypto";
 import type { DarwinDailyRun, Prisma } from "@prisma/client";
@@ -314,11 +315,14 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     const hasDeadline = !pastDeadline(run.startedAt);
     const hasEmailDeadline = !pastEmailSearch(run.startedAt, emailTarget);
     const leadsCount = () => (cfg.requirePhone ? phoneLeads : c.verified);
+    // one clock reading per step: every "still open?" check in that step sees the same time
+    let tick = deps.now();
+    const readClock = () => (tick = deps.now());
     /** Still looking for the day's leads (default: with a phone, by 2 PM)? */
-    const leadsOpen = () => leadsCount() < cfg.target && !(hasDeadline && pastDeadline(deps.now()));
+    const leadsOpen = () => leadsCount() < cfg.target && !(hasDeadline && pastDeadline(tick));
     /** Still looking for businesses with an email (in time to email them all by 6 PM)? */
-    const emailOpen = () => emailTarget > 0 && emailLeads < emailTarget && !(hasEmailDeadline && pastEmailSearch(deps.now(), emailTarget));
-    while ((leadsOpen() || emailOpen()) && deps.now().getTime() - t0 < budget - 8_000) {
+    const emailOpen = () => emailTarget > 0 && emailLeads < emailTarget && !(hasEmailDeadline && pastEmailSearch(tick, emailTarget));
+    while ((readClock(), leadsOpen() || emailOpen()) && tick.getTime() - t0 < budget - 8_000) {
       if (comboIndex >= combos.length) { stopReason = "scope"; break; }
       const combo = combos[comboIndex];
       if (exhausted.has(combo.key)) { comboIndex++; continue; }
@@ -409,7 +413,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
       // ---- verify, a few at a time
       let processed = 0;
       for (let i = 0; i < fresh.length && (leadsOpen() || emailOpen()); i += BATCH) {
-        if (deps.now().getTime() - t0 > budget - 8_000) break;
+        if (readClock().getTime() - t0 > budget - 8_000) break;
         const useGoogle = deps.google && api.google < paidCap;
         const useSearch = deps.search && api.search < paidCap;
         if ((deps.google && !useGoogle) || (deps.search && !useSearch)) { stopReason = "paid_cap"; break; }
@@ -506,6 +510,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     }
 
     // ---- finish, or stay running for the next tick
+    readClock();
     const leadsDone = leadsCount() >= cfg.target;
     const emailDone = !emailTarget || emailLeads >= emailTarget;
     const done = leadsDone && emailDone;
@@ -750,6 +755,8 @@ export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDep
     }
     // today's new leads → the user's Google Sheet (when Google is connected)
     if (run?.verified) await syncRunToSheet(run.id);
+    // …and to ROBIN, who takes them from here (when its auto-import is on)
+    if (run?.verified) await syncFromDarwin(userId).catch((e) => console.error("[darwin→robin]", (e as Error).message));
     // then email the new leads (and any earlier ones not yet written to) with the time left
     let mail: AutoEmailResult | null = null;
     if (ucfg.autoEmail) {

@@ -903,6 +903,7 @@ Google shows a warning for the Drive permission until the app is verified.
 | EV     | `EV_PROVIDER`       | `groq,gemini` | Groq, Gemini as backup              |
 | DARWIN | `DARWIN_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
 | MIKE   | `MIKE_PROVIDER`     | `groq,gemini` | Groq, Gemini as backup              |
+| ROBIN  | `ROBIN_PROVIDER`    | `groq,gemini` | Groq, Gemini as backup              |
 | ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `openrouter,ollama` | OpenRouter (`OPENROUTER_API_KEY`, model `OPENROUTER_MODEL`), with this PC's Ollama as the backup (model: `ULTRON_OLLAMA_MODEL`, else `OLLAMA_MODEL`, else `qwen2.5:3b`) |
 
 `JARVIS_PROVIDER=ollama` puts JARVIS back on your PC brain (then `npm run local`
@@ -1006,3 +1007,128 @@ Env (all optional): `MIKE_PROVIDER` (default `groq,gemini` — Groq, Gemini as b
 `SEARCH_API_KEY` for news. The new `MikeSignal` / `MikeAlert` tables come with
 migration `0011_mike`: your next Vercel deploy applies it (the PC uses the same
 database). With a separate local database, run `npm run db:migrate`.
+
+
+## ROBIN — sales & CRM
+
+ROBIN turns DARWIN's leads into qualified prospects and paying clients. Work
+starts after DARWIN finds a business; ROBIN never searches for leads itself:
+
+```
+DARWIN → ROBIN → QUALIFY → CONTACT → FOLLOW-UP → DEMO → QUOTATION → NEGOTIATION → WON/LOST → CLIENT
+```
+
+**Open it.** Say or type "Robin", "Activate Robin", "Open Robin" or "Start
+Robin". ROBIN answers "Robin is online. Ready to manage your sales pipeline."
+"Robin, show me today's follow-ups" opens ROBIN and runs the command there.
+"Close Robin", "Deactivate Robin" or "Get me back to JARVIS" returns to JARVIS.
+JARVIS can also relay questions: "JARVIS, ask Robin how many qualified leads I
+have" gets the answer "Robin reports …".
+
+**The command center** (`/dashboard/robin`). Everything on it is the real CRM,
+refreshed every 15 seconds:
+- **Holographic core.** It shows what ROBIN is doing: idle, listening,
+  analyzing, qualifying, contacting, following up, preparing a demo or quotation,
+  complete, or error. Data arcs connect it to the pipeline.
+- **CRM pipeline chart.** The stages run NEW → QUALIFIED → CONTACTED →
+  INTERESTED → FOLLOW-UP → DEMO → QUOTATION → NEGOTIATION → WON, with a LOST
+  branch. Each stage shows its lead count and value, plus the leads that need you
+  most.
+  - Drag a lead onto another stage to move it. The card travels there and the
+    database is updated.
+  - Click a stage to expand it; click a lead to open it.
+  - **FUNNEL** shows how far leads got, with conversion between steps.
+  - **REVENUE** shows potential value per stage and actual revenue at WON.
+- **Around the chart:**
+  - Animated counters.
+  - The DARWIN → ROBIN → CRM rail.
+  - ROBIN INTELLIGENCE: current activity, the next action and why, the priority
+    queue, and today's work.
+  - Live activity.
+  - **ASK ROBIN** for voice.
+- **Side panels:** follow-ups (today, overdue, upcoming), demos, quotations,
+  clients (active, completed, maintenance, inactive, with payments), analytics,
+  and settings. You can also add a lead by hand.
+
+**DARWIN → ROBIN.** With auto-import on (the default), DARWIN's leads come over
+on their own. That happens after each daily search tick, after a manual DARWIN
+search, and whenever ROBIN is open. You get a note such as "12 new leads
+received from Darwin".
+- Duplicates are merged into the existing record rather than added again. A
+  match on DARWIN record, phone, email, or name plus area counts as a duplicate.
+- Emails DARWIN really sent are carried into the lead's contact history.
+- Turn auto-import off in ROBIN's settings. "Check DARWIN for leads" then imports
+  on demand.
+
+**Qualification.** Each lead is ranked High, Medium, Low or Needs Review from
+the facts on record. These include website status, which contact channels it has
+(phone, WhatsApp, email, Instagram), Google reviews, category fit and location.
+- Every point comes with its reason, for example "High Priority because: • No
+  website • Phone available …".
+- The ranking only organises your work. It is never a prediction that someone
+  will buy.
+- You can override any priority.
+
+**Contact tracking.** ROBIN never contacts anyone.
+- CALL opens your phone's dialer. Afterwards ROBIN asks "How did the call go?":
+  No answer, Busy, Wrong number, Spoke with owner, Interested, Not interested,
+  Call later, Wants demo, or Wants quotation. You can add notes and a next
+  follow-up.
+- WhatsApp, Instagram and email open the app. You then record what happened.
+- A message you log is "logged", never "delivered". Only an API confirmation
+  (Gmail) counts as sent.
+
+**Decisions need your yes.** These all ask first: WON, LOST, DO NOT CONTACT,
+accepting a quotation, converting to a client, and emailing a quotation. That
+applies on screen, by voice ("Mark ABC Café as won?" → "yes"), and in the AI
+brain. The server also refuses them without confirmation.
+
+**Quotations.** Set your services and prices under ROBIN → Settings. Prices start
+empty; ROBIN never invents or changes a price. A quotation includes discount,
+tax (GST %), validity and payment terms, and it is a professional A4 PDF. Send
+it yourself ("I sent it") or email the PDF from your Gmail after confirming.
+When it is accepted, ROBIN asks "Convert this lead into a client?". The client
+keeps the lead's whole history.
+
+**Voice commands** (handled instantly; anything else goes to ROBIN's AI brain on
+JARVIS's AI router):
+- "show me today's follow-ups"
+- "show my highest-priority leads"
+- "show qualified leads"
+- "show leads that haven't been contacted"
+- "show all quotations"
+- "show my CRM" / "show the sales pipeline" / "show my potential revenue"
+- "show won clients"
+- "mark ABC Café as interested"
+- "move ABC Café to quotation sent"
+- "mark this lead as not interested"
+- "schedule a follow-up with ABC Café tomorrow at 4 PM"
+- "book a demo with Prime Clinic on Friday at 11"
+- "open ABC Café"
+- "how many clients did I win this month?"
+- "show me my conversion rate"
+- "what's my day?"
+
+If a name matches several leads, ROBIN asks which one. A morning sales
+briefing plays the first time ROBIN opens each day; it can be turned off in
+Settings. Demo reminders arrive 30 minutes before, in ROBIN, and as a browser
+notification if you've allowed those.
+
+**Data.** Everything lives in Postgres (migration `0013_robin`). Your next Vercel
+deploy applies it; with a separate local database, run `npm run db:migrate`. The
+tables:
+- leads, score history, stage history
+- activities, calls and messages, follow-ups, demos
+- quotations and their items
+- clients, payments
+- services, settings, notifications, audit log
+
+Every change records who made it: you, voice, ROBIN, DARWIN or a webhook.
+
+Env (all optional):
+- `ROBIN_PROVIDER` (default `groq,gemini`)
+- `ROBIN_VOICE_ID` (ElevenLabs voice)
+- `ROBIN_WEBHOOK_SECRET` turns on `POST /api/robin/webhook`, which other systems
+  can use to send a new lead or a reply. Requests are signed with
+  HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
+  `x-robin-timestamp`, and must be no more than 5 minutes old.

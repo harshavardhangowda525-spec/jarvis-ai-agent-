@@ -5,6 +5,7 @@ import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { findNewLeads } from "@/lib/darwin/discovery";
 import { GeoapifyError, geoapifyHttpStatus } from "@/lib/darwin/geoapify";
 import { LEAD_FILTER_IDS } from "@/lib/darwin/types";
+import { syncFromDarwin } from "@/lib/robin/darwin-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,7 +31,10 @@ export async function POST(req: NextRequest) {
     if (!rl.allowed) return fail(`Too many searches — try again in ${rl.retryAfter}s.`, 429);
     const body = schema.parse(await req.json());
     try {
-      return ok(await findNewLeads({ userId: user.id, ...body }));
+      const found = await findNewLeads({ userId: user.id, ...body });
+      // the new leads go straight on to ROBIN (when its auto-import is on)
+      await syncFromDarwin(user.id).catch(() => {});
+      return ok(found);
     } catch (err) {
       if (err instanceof GeoapifyError) return fail(err.message, geoapifyHttpStatus(err.kind), { kind: err.kind });
       throw err;

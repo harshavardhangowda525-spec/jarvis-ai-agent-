@@ -1,0 +1,297 @@
+import "server-only";
+import { z } from "zod";
+import type { ToolDefinition, ToolContext } from "./types";
+import { ToolError } from "./types";
+import { getDb } from "@/lib/db";
+import { RobinError, moveStage, resolveLead, setPriority } from "@/lib/robin/crm";
+import { completeFollowUp, followUpQueue, logInteraction, scheduleDemo, scheduleFollowUp, fmtWhen } from "@/lib/robin/engage";
+import { createQuotation } from "@/lib/robin/quotes";
+import { robinOverview } from "@/lib/robin/overview";
+import { robinAnalytics } from "@/lib/robin/analytics";
+import { robinBriefing } from "@/lib/robin/briefing";
+import { leadWorkspace } from "@/lib/robin/workspace";
+import { attention } from "@/lib/robin/qualify";
+import { CALL_OUTCOMES, CHANNELS, FOLLOWUP_ACTIONS, DEMO_TYPES, NODES, PRIORITIES, RANGES, STAGES, STAGE_LABEL, money, nodeOf, type Range } from "@/lib/robin/types";
+
+/**
+ * ROBIN's tools. They read and write the real CRM. Nothing here contacts a
+ * business: Robin records what YOU did, schedules YOUR follow-ups, prepares
+ * quotations from YOUR prices. Decisions (won/lost/do-not-contact) need the
+ * user's explicit yes — the server refuses them otherwise.
+ */
+
+/** JSON schema for the model, from the same zod schema the tool validates with (no drift). */
+function json(schema: z.ZodTypeAny): Record<string, unknown> {
+  const d = (schema as any)._def;
+  const desc = schema.description ? { description: schema.description } : {};
+  switch (d.typeName) {
+    case "ZodOptional": case "ZodNullable": case "ZodDefault": return { ...json(d.innerType), ...desc };
+    case "ZodEffects": return { ...json(d.schema), ...desc };
+    case "ZodString": return { type: "string", ...desc };
+    case "ZodNumber": return { type: (d.checks ?? []).some((c: any) => c.kind === "int") ? "integer" : "number", ...desc };
+    case "ZodBoolean": return { type: "boolean", ...desc };
+    case "ZodEnum": return { type: "string", enum: [...d.values], ...desc };
+    case "ZodUnion": return { type: "string", enum: d.options.flatMap((o: any) => o._def.values ?? []), ...desc };
+    case "ZodArray": return { type: "array", items: json(d.type), ...desc };
+    case "ZodObject": {
+      const shape = d.shape();
+      const required = Object.entries(shape).filter(([, v]) => !(v as z.ZodTypeAny).isOptional()).map(([k]) => k);
+      return { type: "object", properties: Object.fromEntries(Object.entries(shape).map(([k, v]) => [k, json(v as z.ZodTypeAny)])), ...(required.length ? { required } : {}), ...desc };
+    }
+    default: return { ...desc };
+  }
+}
+
+/** Robin's errors become plain answers for the model ("which one?", "needs confirmation"). */
+async function run<T>(fn: () => Promise<T>): Promise<T> {
+  try { return await fn(); } catch (e) {
+    if (e instanceof RobinError) throw new ToolError(e.code === "needs_confirmation" ? `NEEDS CONFIRMATION: ${e.message} Ask the user; call again with confirmed: true only after they say yes.` : e.message);
+    throw e;
+  }
+}
+const lead = (ctx: ToolContext, name: string) => run(() => resolveLead(ctx.userId, name));
+const when = (s: string) => {
+  const d = new Date(s);
+  if (Number.isNaN(+d)) throw new ToolError(`"${s}" isn't a date/time I can use — give an ISO date-time with timezone offset.`);
+  return d;
+};
+const card = (l: { businessName: string; category: string | null; stage: string; priority: string; score: number; potentialValue: number | null; nextFollowUpAt: Date | null; phone: string | null; email: string | null }) => ({
+  name: l.businessName, category: l.category, stage: STAGE_LABEL[l.stage as keyof typeof STAGE_LABEL] ?? l.stage, priority: l.priority, score: l.score,
+  value: l.potentialValue, nextFollowUp: l.nextFollowUpAt?.toISOString() ?? null, hasPhone: !!l.phone, hasEmail: !!l.email,
+});
+
+// ---- robin_leads -----------------------------------------------------------
+const leadsSchema = z.object({
+  filter: z.enum(["hottest", "all", "uncontacted", "qualified", "interested", "follow_up", "demo", "quotation", "negotiation", "won", "lost", "high_priority"]).optional().describe("Which leads. hottest = needs your attention most (default)."),
+  search: z.string().max(80).optional(),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+export const robinLeadsTool: ToolDefinition<z.infer<typeof leadsSchema>> = {
+  name: "robin_leads",
+  description: "List CRM leads from the real database: hottest (prioritised by Robin's workflow ranking), uncontacted, by pipeline stage, high priority, won/lost, or a name search. Returns name, category, stage, priority, score (workflow ranking, NOT a buying prediction), value, next follow-up.",
+  schema: leadsSchema, inputSchema: json(leadsSchema), agentScope: "robin", activityLabel: "Reading the CRM",
+  async execute(input, ctx) {
+    const db = getDb();
+    const f = input.filter ?? "hottest";
+    const rows = await db.robinLead.findMany({
+      where: {
+        userId: ctx.userId,
+        ...(input.search ? { businessName: { contains: input.search, mode: "insensitive" as const } } : {}),
+        ...(f === "uncontacted" ? { lastContactAt: null, stage: { in: ["new", "qualified"] } } : {}),
+        ...(f === "high_priority" ? { priority: "high", stage: { notIn: ["won", "lost", "not_interested", "do_not_contact"] } } : {}),
+      },
+      take: 1000,
+    });
+    const now = new Date();
+    let list = rows;
+    const node = ({ qualified: "qualified", interested: "interested", follow_up: "follow_up", demo: "demo", quotation: "quotation", negotiation: "negotiation", won: "won", lost: "lost" } as Record<string, string>)[f];
+    if (node) list = list.filter((l) => nodeOf(l.stage) === node);
+    if (f === "hottest") list = list.filter((l) => !["won", "lost", "not_interested", "do_not_contact"].includes(l.stage));
+    list.sort((a, b) => attention(b, now) - attention(a, now));
+    const out = list.slice(0, input.limit ?? 10).map(card);
+    return { data: { filter: f, total: list.length, leads: out }, summary: `${list.length} lead${list.length === 1 ? "" : "s"} (${f.replace("_", " ")})` };
+  },
+};
+
+// ---- robin_lead ------------------------------------------------------------
+const leadSchema = z.object({ lead: z.string().min(1).max(120).describe("Business name as the user said it") });
+export const robinLeadTool: ToolDefinition<z.infer<typeof leadSchema>> = {
+  name: "robin_lead",
+  description: "Open one lead: contact details, qualification with its reasons, stage, last contact, next follow-up, demos, quotations, recent timeline.",
+  schema: leadSchema, inputSchema: json(leadSchema), agentScope: "robin", activityLabel: "Opening the lead",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const w = await leadWorkspace(ctx.userId, l.id);
+    return {
+      data: {
+        ...card(l), id: l.id, phone: l.phone, whatsapp: l.whatsapp, email: l.email, website: l.website, instagram: l.instagram, city: l.city,
+        qualification: w.qualification.explanation, lastContact: l.lastContactAt?.toISOString() ?? null,
+        demos: w.demos.slice(0, 3).map((d) => ({ at: d.scheduledAt.toISOString(), status: d.status })),
+        quotations: w.quotations.slice(0, 3).map((q) => ({ number: q.number, total: q.total, status: q.status })),
+        timeline: w.activities.slice(0, 8).map((a) => `${a.createdAt.toISOString().slice(0, 16)} ${a.detail}`),
+        navigate: `/dashboard/robin?lead=${l.id}`,
+      },
+      summary: `Opened ${l.businessName}`,
+    };
+  },
+};
+
+// ---- robin_update_stage ------------------------------------------------------
+const stageSchema = z.object({
+  lead: z.string().min(1).max(120),
+  stage: z.enum(STAGES),
+  note: z.string().max(300).optional(),
+  confirmed: z.boolean().optional().describe("true ONLY after the user explicitly said yes to this exact change (required for won, lost, do_not_contact)."),
+});
+export const robinUpdateStageTool: ToolDefinition<z.infer<typeof stageSchema>> = {
+  name: "robin_update_stage",
+  description: "Move a lead to a pipeline stage (new, qualified, contacted, interested, follow_up, demo_scheduled, demo_completed, quotation_sent, negotiating, won, lost, not_interested, do_not_contact). Won / lost / do-not-contact need the user's explicit confirmation first. Records the stage history.",
+  schema: stageSchema, inputSchema: json(stageSchema), agentScope: "robin", activityLabel: "Updating the pipeline",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const r = await run(() => moveStage(ctx.userId, l.id, input.stage, { source: "voice", note: input.note, confirm: input.confirmed }));
+    return { data: { lead: l.businessName, from: r.from, to: input.stage, changed: r.changed }, summary: r.changed ? `${l.businessName} → ${STAGE_LABEL[input.stage]}` : `${l.businessName} is already ${STAGE_LABEL[input.stage]}` };
+  },
+};
+
+// ---- robin_set_priority ------------------------------------------------------
+const prioSchema = z.object({ lead: z.string().min(1).max(120), priority: z.enum(PRIORITIES).nullable().describe("null = back to Robin's own ranking") });
+export const robinSetPriorityTool: ToolDefinition<z.infer<typeof prioSchema>> = {
+  name: "robin_set_priority",
+  description: "Manually override a lead's priority (high, medium, low, needs_review), or null to return to Robin's ranking.",
+  schema: prioSchema, inputSchema: json(prioSchema), agentScope: "robin", activityLabel: "Setting priority",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    await run(() => setPriority(ctx.userId, l.id, input.priority, "voice"));
+    return { data: { lead: l.businessName, priority: input.priority ?? "robin's ranking" }, summary: `${l.businessName}: ${input.priority ?? "Robin's ranking"}` };
+  },
+};
+
+// ---- follow-ups --------------------------------------------------------------
+const fuSchema = z.object({
+  lead: z.string().min(1).max(120),
+  when: z.string().describe("ISO 8601 date-time WITH the user's timezone offset, e.g. 2026-10-02T16:00:00+05:30"),
+  action: z.enum(FOLLOWUP_ACTIONS).optional(),
+  notes: z.string().max(500).optional(),
+});
+export const robinScheduleFollowUpTool: ToolDefinition<z.infer<typeof fuSchema>> = {
+  name: "robin_schedule_followup",
+  description: "Schedule a follow-up task for the user with a lead (call, WhatsApp, email, Instagram, meeting). It's a reminder for the user — Robin does not contact anyone.",
+  schema: fuSchema, inputSchema: json(fuSchema), agentScope: "robin", activityLabel: "Scheduling a follow-up",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const at = when(input.when);
+    const f = await run(() => scheduleFollowUp(ctx.userId, l.id, { dueAt: at, action: input.action, notes: input.notes }, "voice"));
+    return { data: { lead: l.businessName, followUpId: f.id, due: fmtWhen(at, ctx.timezone), action: f.action }, summary: `Follow-up with ${l.businessName} — ${fmtWhen(at, ctx.timezone)}` };
+  },
+};
+
+export const robinFollowUpsTool: ToolDefinition<Record<string, never>> = {
+  name: "robin_followups",
+  description: "The follow-up queue: overdue, today, upcoming (lead, action, time, priority).",
+  schema: z.object({}) as never, inputSchema: { type: "object", properties: {} }, agentScope: "robin", activityLabel: "Checking follow-ups",
+  async execute(_input, ctx) {
+    const q = await followUpQueue(ctx.userId);
+    const row = (f: (typeof q.today)[number]) => ({ id: f.id, lead: f.lead.businessName, action: f.action, due: fmtWhen(f.dueAt, q.tz), priority: f.priority, interested: ["interested", "negotiating", "quotation_sent", "demo_completed"].includes(f.lead.stage) });
+    return { data: { overdue: q.overdue.map(row), today: q.today.map(row), upcoming: q.upcoming.slice(0, 10).map(row), navigate: "/dashboard/robin?view=followups" }, summary: `${q.today.length} today · ${q.overdue.length} overdue` };
+  },
+};
+
+const fuDoneSchema = z.object({ lead: z.string().min(1).max(120), notes: z.string().max(500).optional() });
+export const robinCompleteFollowUpTool: ToolDefinition<z.infer<typeof fuDoneSchema>> = {
+  name: "robin_complete_followup",
+  description: "Mark the lead's next pending follow-up as done. Afterwards, ask whether to schedule the next one.",
+  schema: fuDoneSchema, inputSchema: json(fuDoneSchema), agentScope: "robin", activityLabel: "Completing the follow-up",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const f = await getDb().robinFollowUp.findFirst({ where: { userId: ctx.userId, leadId: l.id, status: "pending" }, orderBy: { dueAt: "asc" } });
+    if (!f) throw new ToolError(`${l.businessName} has no pending follow-up.`);
+    await run(() => completeFollowUp(ctx.userId, f.id, { notes: input.notes }, "voice"));
+    return { data: { lead: l.businessName, completed: true, askNext: "Follow-up completed. Would you like to schedule the next one?" }, summary: `Follow-up with ${l.businessName} completed` };
+  },
+};
+
+// ---- interactions --------------------------------------------------------------
+const logSchema = z.object({
+  lead: z.string().min(1).max(120),
+  channel: z.enum(CHANNELS),
+  outcome: z.union([z.enum(CALL_OUTCOMES), z.enum(["replied", "no_reply", "sent"])]).optional(),
+  direction: z.enum(["outbound", "inbound"]).optional().describe("inbound = they replied / called you"),
+  notes: z.string().max(1000).optional(),
+});
+export const robinLogInteractionTool: ToolDefinition<z.infer<typeof logSchema>> = {
+  name: "robin_log_interaction",
+  description: "Record a call/WhatsApp/Instagram/email the USER says already happened, with its outcome. Never use it for something that didn't happen. Updates stage (contacted/interested/not interested).",
+  schema: logSchema, inputSchema: json(logSchema), agentScope: "robin", activityLabel: "Logging the interaction",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const r = await run(() => logInteraction(ctx.userId, l.id, { channel: input.channel, outcome: input.outcome ?? null, direction: input.direction, notes: input.notes, status: input.direction === "inbound" ? "received" : "logged" }, "voice"));
+    return { data: { lead: l.businessName, logged: true, stage: STAGE_LABEL[r.lead.stage as keyof typeof STAGE_LABEL] }, summary: `${input.channel} with ${l.businessName} logged` };
+  },
+};
+
+// ---- demos ---------------------------------------------------------------------
+const demoSchema = z.object({ lead: z.string().min(1).max(120), when: z.string().describe("ISO 8601 with timezone offset"), demoType: z.enum(DEMO_TYPES).optional(), notes: z.string().max(500).optional() });
+export const robinScheduleDemoTool: ToolDefinition<z.infer<typeof demoSchema>> = {
+  name: "robin_schedule_demo",
+  description: "Schedule a demo with a lead (online, in person, phone).",
+  schema: demoSchema, inputSchema: json(demoSchema), agentScope: "robin", activityLabel: "Scheduling the demo",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const at = when(input.when);
+    await run(() => scheduleDemo(ctx.userId, l.id, { at, demoType: input.demoType, notes: input.notes }, "voice"));
+    return { data: { lead: l.businessName, at: fmtWhen(at, ctx.timezone) }, summary: `Demo with ${l.businessName} — ${fmtWhen(at, ctx.timezone)}` };
+  },
+};
+
+// ---- quotations ------------------------------------------------------------------
+const quoteSchema = z.object({
+  lead: z.string().min(1).max(120),
+  items: z.array(z.object({ service: z.string().min(1).max(120), price: z.number().min(0).optional().describe("ONLY if the user said a price; otherwise omit and the price from Settings is used"), quantity: z.number().min(1).optional(), description: z.string().max(300).optional() })).min(1).max(10),
+  discount: z.number().min(0).optional(),
+});
+export const robinQuotationTool: ToolDefinition<z.infer<typeof quoteSchema>> = {
+  name: "robin_prepare_quotation",
+  description: "Prepare a DRAFT quotation for a lead from the user's services. Prices come from the user's Settings unless the user states one — never invent a price. It is not sent; the user reviews it and sends it from Robin.",
+  schema: quoteSchema, inputSchema: json(quoteSchema), agentScope: "robin", activityLabel: "Preparing the quotation",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const q = await run(() => createQuotation(ctx.userId, l.id, { items: input.items.map((i) => ({ service: i.service, unitPrice: i.price ?? null, quantity: i.quantity, description: i.description })), discount: input.discount }, "voice"));
+    return { data: { lead: l.businessName, number: q.number, total: money(q.total, q.currency), status: "draft — not sent", items: q.items.map((i) => `${i.service} ${money(i.amount, q.currency)}`), navigate: `/dashboard/robin?lead=${l.id}` }, summary: `Draft ${q.number} for ${l.businessName}: ${money(q.total, q.currency)}` };
+  },
+};
+
+// ---- analytics / briefing ----------------------------------------------------------
+const anSchema = z.object({ range: z.enum(RANGES).optional(), from: z.string().optional(), to: z.string().optional() });
+export const robinAnalyticsTool: ToolDefinition<z.infer<typeof anSchema>> = {
+  name: "robin_analytics",
+  description: "Sales analytics for a period (today, 7d, 30d, 90d, custom from/to YYYY-MM-DD): leads, qualified, contact/response/interested/demo/quotation/conversion rates (with counts), won, lost, revenue, received, average deal, follow-up completion.",
+  schema: anSchema, inputSchema: json(anSchema), agentScope: "robin", activityLabel: "Calculating analytics",
+  async execute(input, ctx) {
+    const a = await robinAnalytics(ctx.userId, (input.range ?? "30d") as Range, { from: input.from, to: input.to });
+    return { data: { range: a.range, totals: { ...a.totals, revenue: money(a.totals.revenue, a.currency), received: money(a.totals.received, a.currency) }, rates: a.rates, funnel: a.funnel, followUps: a.followUps }, summary: `Analytics ${a.range.from} → ${a.range.to}` };
+  },
+};
+
+export const robinBriefingTool: ToolDefinition<Record<string, never>> = {
+  name: "robin_briefing",
+  description: "Today's sales briefing from the CRM: new Darwin leads, high-priority leads, calls, follow-ups, demos, quotations awaiting response, the next action, yesterday's activity.",
+  schema: z.object({}) as never, inputSchema: { type: "object", properties: {} }, agentScope: "robin", activityLabel: "Preparing your briefing",
+  async execute(_i, ctx) {
+    const b = await robinBriefing(ctx.userId);
+    return { data: b, summary: "Sales briefing" };
+  },
+};
+
+// ---- for JARVIS: "ask Robin …" / "open Robin" --------------------------------------
+const reportSchema = z.object({ about: z.string().max(200).optional().describe("What the user asked Robin, e.g. 'qualified leads', 'won this month'") });
+export const robinReportTool: ToolDefinition<z.infer<typeof reportSchema>> = {
+  name: "robin_report",
+  description: "Ask ROBIN (the sales & CRM agent) about the sales pipeline: lead counts per stage, follow-ups due, demos, quotations, won clients, revenue, conversion (this month). Answer as 'Robin reports …'.",
+  schema: reportSchema, inputSchema: json(reportSchema), activityLabel: "Asking Robin",
+  async execute(_i, ctx) {
+    const [ov, month] = await Promise.all([robinOverview(ctx.userId), robinAnalytics(ctx.userId, "30d")]);
+    return {
+      data: {
+        perStage: Object.fromEntries(ov.nodes.map((n) => [n.label, { leads: n.count, value: money(n.value, ov.currency) }])),
+        counts: { ...ov.counts, pipelineValue: money(ov.counts.pipelineValue, ov.currency), revenueWon: money(ov.counts.revenueWon, ov.currency) },
+        today: ov.today, next: ov.next,
+        last30Days: { won: month.totals.won, revenue: money(month.totals.revenue, month.currency), conversionRate: month.rates.conversion },
+        stages: NODES.map((n) => n.label),
+      },
+      summary: "Robin's pipeline report",
+    };
+  },
+};
+
+const openSchema = z.object({ lead: z.string().max(120).optional(), view: z.enum(["pipeline", "funnel", "revenue", "followups", "quotations", "clients", "analytics"]).optional() });
+export const robinOpenTool: ToolDefinition<z.infer<typeof openSchema>> = {
+  name: "robin_open",
+  description: "Open ROBIN's sales command center (optionally a lead or a view: pipeline, funnel, revenue, followups, quotations, clients, analytics).",
+  schema: openSchema, inputSchema: json(openSchema), activityLabel: "Opening Robin",
+  async execute(input, ctx) {
+    let q = input.view ? `?view=${input.view}` : "";
+    if (input.lead) { const l = await lead(ctx, input.lead); q = `?lead=${l.id}`; }
+    return { data: { navigate: `/dashboard/robin${q}` }, summary: "Opening Robin" };
+  },
+};

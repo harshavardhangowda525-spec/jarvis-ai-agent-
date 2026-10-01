@@ -42,6 +42,10 @@ import { darwinMapTool } from "./darwin/map";
 import { niosTool } from "./nios";
 import { mikeAnalyzeTool, mikeScanTool, mikeBacktestTool, mikeJournalTool, mikeAlertTool, mikeMarketSummaryTool, mikeChartTool } from "./mike";
 import { activityTool } from "./activity";
+import {
+  robinLeadsTool, robinLeadTool, robinUpdateStageTool, robinSetPriorityTool, robinScheduleFollowUpTool, robinFollowUpsTool, robinCompleteFollowUpTool,
+  robinLogInteractionTool, robinScheduleDemoTool, robinQuotationTool, robinAnalyticsTool, robinBriefingTool, robinReportTool, robinOpenTool,
+} from "./robin";
 
 const ALL_TOOLS: ToolDefinition[] = [
   calculatorTool as ToolDefinition,
@@ -87,6 +91,9 @@ const ALL_TOOLS: ToolDefinition[] = [
   mikeAlertTool as ToolDefinition,
   mikeMarketSummaryTool as ToolDefinition,
   mikeChartTool as ToolDefinition,
+  // ROBIN (sales & CRM): its own tools only while Robin is active; JARVIS can ask Robin / open Robin
+  ...[robinLeadsTool, robinLeadTool, robinUpdateStageTool, robinSetPriorityTool, robinScheduleFollowUpTool, robinFollowUpsTool, robinCompleteFollowUpTool,
+    robinLogInteractionTool, robinScheduleDemoTool, robinQuotationTool, robinAnalyticsTool, robinBriefingTool, robinReportTool, robinOpenTool] as unknown as ToolDefinition[],
 ];
 
 /**
@@ -94,7 +101,7 @@ const ALL_TOOLS: ToolDefinition[] = [
  * the active agent. EV's marketing tools only appear when `agent` is "ev"; the
  * base JARVIS toolset never includes them (and never excludes anything it had).
  */
-export function availableTools(agent?: "ev" | "darwin" | "mike"): ToolDefinition[] {
+export function availableTools(agent?: "ev" | "darwin" | "mike" | "robin"): ToolDefinition[] {
   const googleReady = isProviderConfigured("google");
   return ALL_TOOLS.filter((t) => {
     // Agent-scoped tools (EV's) only surface for their agent.

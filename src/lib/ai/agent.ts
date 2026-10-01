@@ -23,6 +23,10 @@ import { capabilities } from "@/lib/env";
 import { buildDarwinSystemPrompt } from "@/lib/darwin/prompt";
 import { buildMikeSystemPrompt } from "@/lib/mike/prompt";
 import { loadSettings as loadMikeSettings } from "@/lib/mike/analyze";
+import { buildRobinSystemPrompt } from "@/lib/robin/prompt";
+import { robinOverview } from "@/lib/robin/overview";
+import { listServices as listRobinServices } from "@/lib/robin/crm";
+import { money as robinMoney } from "@/lib/robin/types";
 import { emailChannelReady } from "@/lib/darwin/email";
 
 export type AgentEvent =
@@ -65,7 +69,7 @@ export interface AgentInput {
   /** Per-user preferred primary AI provider (from Settings); overrides env default. */
   preferredProvider?: string | null;
   /** Which internal agent is driving: "ev" (marketing) or "darwin" (lead-gen/CRM). */
-  agent?: "ev" | "darwin" | "mike";
+  agent?: "ev" | "darwin" | "mike" | "robin";
 }
 
 const MAX_STEPS = 8;
@@ -87,6 +91,7 @@ export async function* runAgent(
   const isEv = input.agent === "ev";
   const isDarwin = input.agent === "darwin";
   const isMike = input.agent === "mike";
+  const isRobin = input.agent === "robin";
 
   // "Remember that …" / "From now on …" is saved straight away, so it's kept
   // even if the model (especially a small local one) forgets to call the tool.
@@ -155,6 +160,20 @@ export async function* runAgent(
       settingsSummary: `Risk settings: ${settings.accountSize ? `account ${settings.accountSize} ${settings.currency}, ` : "account size not set, "}${settings.riskPct}% per trade, ${settings.maxDailyRiskPct}% max per day, minimum confidence ${settings.minConfidence}, minimum R:R 1:${settings.minRiskReward}. Default timeframe ${settings.defaultTimeframe}. Watchlist: ${settings.watchlist.join(", ")}.`,
       journalSummary: `Journal: ${(c.open ?? 0) + (c.triggered ?? 0)} open setup(s), ${c.won ?? 0} won, ${c.lost ?? 0} lost, ${c.expired ?? 0} expired, ${c.no_trade ?? 0} no-trade decisions.`,
     });
+  } else if (isRobin) {
+    // ROBIN's sales brain — the live CRM snapshot, nothing else from other agents.
+    const [ov, services] = await Promise.all([robinOverview(input.userId), listRobinServices(input.userId)]);
+    const c = ov.counts;
+    const m = (v: number) => robinMoney(v, ov.currency);
+    system = buildRobinSystemPrompt({
+      userDisplayName: input.displayName,
+      timezone: input.timezone,
+      nowLocal: new Date().toLocaleString("en-IN", { timeZone: input.timezone, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" }),
+      crmSummary: c.total
+        ? `${c.total} leads. By stage: ${ov.nodes.filter((n) => n.count).map((n) => `${n.label} ${n.count}${n.value ? ` (${m(n.value)})` : ""}`).join(", ")}. Pipeline value ${m(c.pipelineValue)}; revenue won ${m(c.revenueWon)} from ${c.clients} client(s). Today: ${ov.today.followUps} follow-up(s), ${ov.today.overdue} overdue, ${ov.today.demos} demo(s), ${ov.today.quotations} quotation(s) awaiting a response, ${ov.today.highPriority} high-priority lead(s) not contacted.${ov.overdueAdvice ? ` ${ov.overdueAdvice}` : ov.next ? ` Next: ${ov.next.name} — ${ov.next.text} (${ov.next.why}).` : ""}`
+        : "The CRM is empty — no leads yet. DARWIN's leads arrive automatically once it finds businesses.",
+      servicesSummary: services.filter((s) => s.active).map((s) => `${s.name}: ${s.price != null ? `${m(s.price)}${s.unit ? ` ${s.unit}` : ""}` : "price not set"}`).join("; ") || "none",
+    });
   } else {
     system = buildSystemPrompt({
       assistantName: input.assistantName,
@@ -163,7 +182,7 @@ export async function* runAgent(
       memories: await memoriesLookup,
     });
   }
-  if (isEv || isDarwin || isMike) {
+  if (isEv || isDarwin || isMike || isRobin) {
     // EV, DARWIN and MIKE share JARVIS's memory of the user (preferences, business…).
     system += memoryPromptBlock(await memoriesLookup,
       `# What you know about ${input.displayName || "the user"} (shared memory with JARVIS — use it to personalise; never contradict it)`);
@@ -171,13 +190,13 @@ export async function* runAgent(
   system += memoryNote;
 
   const brain = await brainLookup;
-  const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : "jarvis", brain, input.preferredProvider);
+  const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : "jarvis", brain, input.preferredProvider);
   if (!brainPick.configs.length) {
     yield { type: "error", message: brainPick.missing ?? "No AI provider is configured." };
     return;
   }
   const configs = brainPick.configs;
-  const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : undefined);
+  const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {
     userId: input.userId,
@@ -261,7 +280,7 @@ export async function* runAgent(
   }
 }
 
-const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE" } as const;
+const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE", robin: "ROBIN" } as const;
 
 const PROVIDER_NAMES: Record<string, string> = { groq: "Groq", gemini: "Gemini", ollama: "your PC brain (Ollama)", cerebras: "Cerebras", openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude" };
 const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.groq.com)", gemini: "GEMINI_API_KEY (free at aistudio.google.com/apikey)" };
@@ -272,6 +291,7 @@ const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.
  *   EV     → EV_PROVIDER,     default "groq,gemini" = Groq, Gemini as backup
  *   DARWIN → DARWIN_PROVIDER, default "groq,gemini" = Groq, Gemini as backup
  *   MIKE   → MIKE_PROVIDER,   default "groq,gemini" = Groq, Gemini as backup
+ *   ROBIN  → ROBIN_PROVIDER,  default "groq,gemini" = Groq, Gemini as backup
  * A provider id (or a comma list) means those providers in that order and
  * nothing else. "auto" = every configured provider, fastest first (JARVIS also
  * honours the per-user Settings pick). If none of them is set up, `missing`
@@ -282,7 +302,7 @@ export function agentConfigs(
   brain: BrainEndpoint | null,
   preferred?: string | null,
 ): { configs: AiConfig[]; missing?: string } {
-  const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : agent === "mike" ? env.mikeProvider : env.jarvisProvider;
+  const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : agent === "mike" ? env.mikeProvider : agent === "robin" ? env.robinProvider : env.jarvisProvider;
   const picks = pick.split(/[\s,>]+/).filter(Boolean);
   if (picks.includes("auto")) {
     try { return { configs: getAiConfigs((agent === "jarvis" && preferred) || undefined, brain) }; }
@@ -664,7 +684,7 @@ function aiErrorMessage(err: unknown): string {
 
 /** Remember meaningful tool actions (and every failure) in the activity history. */
 async function recordToolActivity(userId: string, tool: { name: string; agentScope?: string }, input: unknown, ok: boolean, summary: string | null, error: string | null) {
-  const agent = tool.agentScope === "ev" ? "EV" : tool.agentScope === "darwin" ? "DARWIN" : tool.agentScope === "mike" ? "MIKE" : "JARVIS";
+  const agent = tool.agentScope === "ev" ? "EV" : tool.agentScope === "darwin" ? "DARWIN" : tool.agentScope === "mike" ? "MIKE" : tool.agentScope === "robin" ? "ROBIN" : "JARVIS";
   const ev = describeToolEvent(tool.name, (input ?? {}) as Record<string, unknown>, agent, ok, summary, error);
   if (ev) await recordActivity(userId, { ...ev, agent, source: "tool", metadata: { tool: tool.name } });
 }
