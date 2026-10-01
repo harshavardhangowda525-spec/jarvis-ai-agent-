@@ -136,15 +136,16 @@ export const robinUpdateStageTool: ToolDefinition<z.infer<typeof stageSchema>> =
 };
 
 // ---- robin_set_priority ------------------------------------------------------
-const prioSchema = z.object({ lead: z.string().min(1).max(120), priority: z.enum(PRIORITIES).nullable().describe("null = back to Robin's own ranking") });
+const prioSchema = z.object({ lead: z.string().min(1).max(120), priority: z.enum([...PRIORITIES, "auto"]).describe("auto = back to Robin's own ranking") });
 export const robinSetPriorityTool: ToolDefinition<z.infer<typeof prioSchema>> = {
   name: "robin_set_priority",
   description: "Manually override a lead's priority (high, medium, low, needs_review), or null to return to Robin's ranking.",
   schema: prioSchema, inputSchema: json(prioSchema), agentScope: "robin", activityLabel: "Setting priority",
   async execute(input, ctx) {
     const l = await lead(ctx, input.lead);
-    await run(() => setPriority(ctx.userId, l.id, input.priority, "voice"));
-    return { data: { lead: l.businessName, priority: input.priority ?? "robin's ranking" }, summary: `${l.businessName}: ${input.priority ?? "Robin's ranking"}` };
+    const p = input.priority === "auto" ? null : input.priority;
+    await run(() => setPriority(ctx.userId, l.id, p, "voice"));
+    return { data: { lead: l.businessName, priority: p ?? "robin's ranking" }, summary: `${l.businessName}: ${p ?? "Robin's ranking"}` };
   },
 };
 
@@ -167,10 +168,11 @@ export const robinScheduleFollowUpTool: ToolDefinition<z.infer<typeof fuSchema>>
   },
 };
 
-export const robinFollowUpsTool: ToolDefinition<Record<string, never>> = {
+const fuListSchema = z.object({ which: z.enum(["all", "today", "overdue", "upcoming"]).optional().describe("Which part of the queue (default: all)") });
+export const robinFollowUpsTool: ToolDefinition<z.infer<typeof fuListSchema>> = {
   name: "robin_followups",
   description: "The follow-up queue: overdue, today, upcoming (lead, action, time, priority).",
-  schema: z.object({}) as never, inputSchema: { type: "object", properties: {} }, agentScope: "robin", activityLabel: "Checking follow-ups",
+  schema: fuListSchema, inputSchema: json(fuListSchema), agentScope: "robin", activityLabel: "Checking follow-ups",
   async execute(_input, ctx) {
     const q = await followUpQueue(ctx.userId);
     const row = (f: (typeof q.today)[number]) => ({ id: f.id, lead: f.lead.businessName, action: f.action, due: fmtWhen(f.dueAt, q.tz), priority: f.priority, interested: ["interested", "negotiating", "quotation_sent", "demo_completed"].includes(f.lead.stage) });
@@ -280,10 +282,11 @@ export const robinAnalyticsTool: ToolDefinition<z.infer<typeof anSchema>> = {
   },
 };
 
-export const robinBriefingTool: ToolDefinition<Record<string, never>> = {
+const briefSchema = z.object({ detail: z.enum(["short", "full"]).optional().describe("short (default) or full") });
+export const robinBriefingTool: ToolDefinition<z.infer<typeof briefSchema>> = {
   name: "robin_briefing",
   description: "Today's sales briefing from the CRM: new Darwin leads, high-priority leads, calls, follow-ups, demos, quotations awaiting response, the next action, yesterday's activity.",
-  schema: z.object({}) as never, inputSchema: { type: "object", properties: {} }, agentScope: "robin", activityLabel: "Preparing your briefing",
+  schema: briefSchema, inputSchema: json(briefSchema), agentScope: "robin", activityLabel: "Preparing your briefing",
   async execute(_i, ctx) {
     const b = await robinBriefing(ctx.userId);
     return { data: b, summary: "Sales briefing" };

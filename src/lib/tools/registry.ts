@@ -103,11 +103,15 @@ const ALL_TOOLS: ToolDefinition[] = [
  * the active agent. EV's marketing tools only appear when `agent` is "ev"; the
  * base JARVIS toolset never includes them (and never excludes anything it had).
  */
+const ROBIN_BASICS = new Set(["calculator", "get_time", "memory", "tasks", "notes", "web_search"]);
+
 export function availableTools(agent?: "ev" | "darwin" | "mike" | "robin"): ToolDefinition[] {
   const googleReady = isProviderConfigured("google");
   return ALL_TOOLS.filter((t) => {
     // Agent-scoped tools (EV's) only surface for their agent.
     if (t.agentScope) return t.agentScope === agent;
+    // ROBIN stays on sales: its own tools plus a few basics (smaller requests, isolated context)
+    if (agent === "robin" && !ROBIN_BASICS.has(t.name)) return false;
     if (t.requiresCapability === "search") return capabilities.search;
     if (t.requiresCapability === "weather") return capabilities.weather;
     if (t.requiresCapability === "websiteData") return capabilities.websiteData;
