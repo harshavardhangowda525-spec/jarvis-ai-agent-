@@ -86,7 +86,7 @@ export function SettingsClient() {
 
   async function saveProfile() {
     if (!profile) return;
-    await fetch("/api/profile", {
+    const res = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -95,6 +95,9 @@ export function SettingsClient() {
         timezone: profile.timezone,
       }),
     });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) { setNotice({ ok: false, text: j.error || "Couldn't save your profile." }); return; }
+    if (j.data?.profile) setProfile(j.data.profile); // e.g. "IST" saved as "Asia/Kolkata"
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   }
@@ -154,8 +157,12 @@ export function SettingsClient() {
               <Input
                 value={profile.timezone}
                 onChange={(e) => setProfile({ ...profile, timezone: e.target.value })}
-                placeholder="e.g. America/New_York"
+                placeholder="e.g. Asia/Kolkata"
+                list="jarvis-timezones"
               />
+              <datalist id="jarvis-timezones">
+                {(() => { try { return (Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf("timeZone"); } catch { return ["Asia/Kolkata", "UTC"]; } })().map((z) => <option key={z} value={z} />)}
+              </datalist>
             </Field>
             <div className="flex items-end">
               <Button onClick={saveProfile}>

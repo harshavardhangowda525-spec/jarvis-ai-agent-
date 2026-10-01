@@ -22,6 +22,25 @@ function parts(ts: number, tz: string) {
   return { y: o.year, m: o.month, d: o.day, h: o.hour === 24 ? 0 : o.hour, min: o.minute, s: o.second };
 }
 
+const TZ_ALIASES: Record<string, string> = {
+  ist: "Asia/Kolkata", "india standard time": "Asia/Kolkata", india: "Asia/Kolkata", "asia/calcutta": "Asia/Kolkata", kolkata: "Asia/Kolkata", "gmt+5:30": "Asia/Kolkata", "utc+5:30": "Asia/Kolkata", "utc+05:30": "Asia/Kolkata", "gmt+05:30": "Asia/Kolkata",
+  gmt: "UTC", utc: "UTC", "coordinated universal time": "UTC",
+};
+/**
+ * A timezone as typed ("IST", "India Standard Time", "asia/kolkata") → its IANA
+ * name ("Asia/Kolkata"), or null when it isn't a timezone at all.
+ */
+export function normalizeTz(raw: string | null | undefined): string | null {
+  const t = (raw ?? "").trim();
+  if (!t) return null;
+  const alias = TZ_ALIASES[t.toLowerCase()];
+  if (alias) return alias;
+  try {
+    const z = new Intl.DateTimeFormat("en-US", { timeZone: t }).resolvedOptions().timeZone;
+    return z === "Asia/Calcutta" ? "Asia/Kolkata" : z; // same zone; keep the modern name
+  } catch { return null; }
+}
+
 /** "YYYY-MM-DD" of an instant in a timezone. */
 export function localDate(ts: number | Date, tz: string): string {
   const p = parts(+ts, tz);

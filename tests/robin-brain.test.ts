@@ -49,6 +49,18 @@ d("ROBIN's brain answers (integration, stand-in providers)", () => {
     for await (const ev of runAgent({ userId, timezone: "Asia/Kolkata", assistantName: "JARVIS", displayName: "Harsha", history: [], message: "what's on my follow-up list?", agent: "robin" })) events.push(ev);
     return events;
   };
+  it("a blank or Windows-style timezone in the profile doesn't break Robin's brain", async () => {
+    const u = await getDb().user.create({ data: { email: `robin-tz-${Date.now()}@example.com`, passwordHash: "x" } });
+    try {
+      for (const tz of ["", "India Standard Time", "GMT+5:30"]) {
+        const events: any[] = [];
+        for await (const ev of runAgent({ userId: u.id, timezone: tz, assistantName: "JARVIS", displayName: null, history: [], message: "what's on my follow-up list?", agent: "robin" })) events.push(ev);
+        expect(events.filter((e) => e.type === "error"), tz).toEqual([]);
+        expect(events.at(-1)?.type, tz).toBe("done");
+      }
+    } finally { await getDb().user.delete({ where: { id: u.id } }).catch(() => {}); }
+  });
+
   it("Groq answers; and when Groq is limited, Gemini takes over without rejecting the tools", async () => {
     const u = await getDb().user.create({ data: { email: `robin-brain-${Date.now()}@example.com`, passwordHash: "x" } });
     try {

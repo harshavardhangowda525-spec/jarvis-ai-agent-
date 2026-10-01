@@ -114,7 +114,8 @@ export async function POST(req: NextRequest) {
           }
         } catch (err) {
           console.error("[agent route] stream error:", err);
-          turnError = "The assistant encountered an error.";
+          const why = String((err as Error)?.message ?? err).replace(/\s+/g, " ").replace(/(key|token|secret|password)=\S+/gi, "$1=…").slice(0, 160);
+          turnError = `The assistant hit an error (${why || "unknown"}).`;
           send({ type: "error", message: turnError });
         }
 

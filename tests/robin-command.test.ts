@@ -109,3 +109,16 @@ describe("qualification is transparent", () => {
     expect(nodeOf("not_interested")).toBe("lost");
   });
 });
+
+import { normalizeTz } from "@/lib/activity/dates";
+describe("timezone setting", () => {
+  it("common names become real zones; junk is refused", () => {
+    expect(normalizeTz("IST")).toBe("Asia/Kolkata");
+    expect(normalizeTz("India Standard Time")).toBe("Asia/Kolkata");
+    expect(normalizeTz(" asia/kolkata ")).toBe("Asia/Kolkata");
+    expect(normalizeTz("Asia/Calcutta")).toBe("Asia/Kolkata");
+    expect(normalizeTz("America/New_York")).toBe("America/New_York");
+    expect(normalizeTz("")).toBeNull();
+    expect(normalizeTz("my place")).toBeNull();
+  });
+});

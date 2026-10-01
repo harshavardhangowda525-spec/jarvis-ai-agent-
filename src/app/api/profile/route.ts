@@ -2,7 +2,8 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { ok, handleError } from "@/lib/api";
+import { ok, fail, handleError } from "@/lib/api";
+import { normalizeTz } from "@/lib/activity/dates";
 import { forgetTz } from "@/lib/activity/record";
 
 export const runtime = "nodejs";
@@ -30,6 +31,12 @@ export async function PATCH(req: NextRequest) {
   try {
     const user = await requireUser();
     const body = patchSchema.parse(await req.json());
+    if (body.timezone !== undefined) {
+      // "IST" / "India Standard Time" → "Asia/Kolkata"; anything that isn't a timezone is refused
+      const tz = normalizeTz(body.timezone);
+      if (!tz) return fail(`"${body.timezone}" isn't a timezone JARVIS knows — use a name like Asia/Kolkata.`, 422);
+      body.timezone = tz;
+    }
     const profile = await getDb().profile.update({
       where: { userId: user.id },
       data: body,

@@ -24,6 +24,7 @@ import { buildDarwinSystemPrompt } from "@/lib/darwin/prompt";
 import { buildMikeSystemPrompt } from "@/lib/mike/prompt";
 import { loadSettings as loadMikeSettings } from "@/lib/mike/analyze";
 import { buildRobinSystemPrompt } from "@/lib/robin/prompt";
+import { validTz } from "@/lib/activity/dates";
 import { robinOverview } from "@/lib/robin/overview";
 import { listServices as listRobinServices } from "@/lib/robin/crm";
 import { money as robinMoney } from "@/lib/robin/types";
@@ -162,18 +163,23 @@ export async function* runAgent(
     });
   } else if (isRobin) {
     // ROBIN's sales brain — the live CRM snapshot, nothing else from other agents.
-    const [ov, services] = await Promise.all([robinOverview(input.userId), listRobinServices(input.userId)]);
-    const c = ov.counts;
-    const m = (v: number) => robinMoney(v, ov.currency);
-    system = buildRobinSystemPrompt({
-      userDisplayName: input.displayName,
-      timezone: input.timezone,
-      nowLocal: new Date().toLocaleString("en-IN", { timeZone: input.timezone, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" }),
-      crmSummary: c.total
+    // The snapshot is a bonus: if it can't be built, Robin still answers (its tools read the CRM).
+    const tz = validTz(input.timezone);
+    const nowLocal = new Date().toLocaleString("en-IN", { timeZone: tz, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
+    let crmSummary = "CRM snapshot unavailable right now — use the robin_* tools to read the CRM.";
+    let servicesSummary = "unknown — ask before quoting";
+    try {
+      const [ov, services] = await Promise.all([robinOverview(input.userId), listRobinServices(input.userId)]);
+      const c = ov.counts;
+      const m = (v: number) => robinMoney(v, ov.currency);
+      crmSummary = c.total
         ? `${c.total} leads. By stage: ${ov.nodes.filter((n) => n.count).map((n) => `${n.label} ${n.count}${n.value ? ` (${m(n.value)})` : ""}`).join(", ")}. Pipeline value ${m(c.pipelineValue)}; revenue won ${m(c.revenueWon)} from ${c.clients} client(s). Today: ${ov.today.followUps} follow-up(s), ${ov.today.overdue} overdue, ${ov.today.demos} demo(s), ${ov.today.quotations} quotation(s) awaiting a response, ${ov.today.highPriority} high-priority lead(s) not contacted.${ov.overdueAdvice ? ` ${ov.overdueAdvice}` : ov.next ? ` Next: ${ov.next.name} — ${ov.next.text} (${ov.next.why}).` : ""}`
-        : "The CRM is empty — no leads yet. DARWIN's leads arrive automatically once it finds businesses.",
-      servicesSummary: services.filter((s) => s.active).map((s) => `${s.name}: ${s.price != null ? `${m(s.price)}${s.unit ? ` ${s.unit}` : ""}` : "price not set"}`).join("; ") || "none",
-    });
+        : "The CRM is empty — no leads yet. DARWIN's leads arrive automatically once it finds businesses.";
+      servicesSummary = services.filter((s) => s.active).map((s) => `${s.name}: ${s.price != null ? `${m(s.price)}${s.unit ? ` ${s.unit}` : ""}` : "price not set"}`).join("; ") || "none";
+    } catch (e) {
+      console.error("[agent] robin CRM snapshot failed:", e);
+    }
+    system = buildRobinSystemPrompt({ userDisplayName: input.displayName, timezone: tz, nowLocal, crmSummary, servicesSummary });
   } else {
     system = buildSystemPrompt({
       assistantName: input.assistantName,
@@ -200,7 +206,7 @@ export async function* runAgent(
   const activityQueue: string[] = [];
   const ctx: ToolContext = {
     userId: input.userId,
-    timezone: input.timezone,
+    timezone: validTz(input.timezone), // a blank / Windows-style zone ("India Standard Time") would break date formatting in tools
     activity: (label) => activityQueue.push(label),
   };
 
