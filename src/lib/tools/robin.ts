@@ -5,7 +5,8 @@ import { ToolError } from "./types";
 import { getDb } from "@/lib/db";
 import { RobinError, moveStage, resolveLead, setPriority } from "@/lib/robin/crm";
 import { completeFollowUp, followUpQueue, logInteraction, scheduleDemo, scheduleFollowUp, fmtWhen } from "@/lib/robin/engage";
-import { createQuotation } from "@/lib/robin/quotes";
+import { createQuotation, decideQuotation } from "@/lib/robin/quotes";
+import { convertToClient } from "@/lib/robin/clients";
 import { robinOverview } from "@/lib/robin/overview";
 import { robinAnalytics } from "@/lib/robin/analytics";
 import { robinBriefing } from "@/lib/robin/briefing";
@@ -45,7 +46,7 @@ function json(schema: z.ZodTypeAny): Record<string, unknown> {
 /** Robin's errors become plain answers for the model ("which one?", "needs confirmation"). */
 async function run<T>(fn: () => Promise<T>): Promise<T> {
   try { return await fn(); } catch (e) {
-    if (e instanceof RobinError) throw new ToolError(e.code === "needs_confirmation" ? `NEEDS CONFIRMATION: ${e.message} Ask the user; call again with confirmed: true only after they say yes.` : e.message);
+    if (e instanceof RobinError) throw new ToolError(e.code === "needs_confirmation" ? `${e.message} If the user asked for this, call again with confirmed: true (their instruction is the approval).` : e.message);
     throw e;
   }
 }
@@ -121,11 +122,11 @@ const stageSchema = z.object({
   lead: z.string().min(1).max(120),
   stage: z.enum(STAGES),
   note: z.string().max(300).optional(),
-  confirmed: z.boolean().optional().describe("true ONLY after the user explicitly said yes to this exact change (required for won, lost, do_not_contact)."),
+  confirmed: z.boolean().optional().describe("true when the USER asked for this change (their instruction is the approval). Required for won, lost, do_not_contact. Never true for a change you decided on yourself."),
 });
 export const robinUpdateStageTool: ToolDefinition<z.infer<typeof stageSchema>> = {
   name: "robin_update_stage",
-  description: "Move a lead to a pipeline stage (new, qualified, contacted, interested, follow_up, demo_scheduled, demo_completed, quotation_sent, negotiating, won, lost, not_interested, do_not_contact). Won / lost / do-not-contact need the user's explicit confirmation first. Records the stage history.",
+  description: "Move a lead to a pipeline stage (new, qualified, contacted, interested, follow_up, demo_scheduled, demo_completed, quotation_sent, negotiating, won, lost, not_interested, do_not_contact) when the user tells you to. Pass confirmed: true for won / lost / do-not-contact the user asked for. Records the stage history.",
   schema: stageSchema, inputSchema: json(stageSchema), agentScope: "robin", activityLabel: "Updating the pipeline",
   async execute(input, ctx) {
     const l = await lead(ctx, input.lead);
@@ -238,6 +239,32 @@ export const robinQuotationTool: ToolDefinition<z.infer<typeof quoteSchema>> = {
     const l = await lead(ctx, input.lead);
     const q = await run(() => createQuotation(ctx.userId, l.id, { items: input.items.map((i) => ({ service: i.service, unitPrice: i.price ?? null, quantity: i.quantity, description: i.description })), discount: input.discount }, "voice"));
     return { data: { lead: l.businessName, number: q.number, total: money(q.total, q.currency), status: "draft — not sent", items: q.items.map((i) => `${i.service} ${money(i.amount, q.currency)}`), navigate: `/dashboard/robin?lead=${l.id}` }, summary: `Draft ${q.number} for ${l.businessName}: ${money(q.total, q.currency)}` };
+  },
+};
+
+// ---- the user's decisions on a deal (their instruction is the approval)
+const decideSchema = z.object({ lead: z.string().min(1).max(120), decision: z.enum(["accepted", "rejected"]), note: z.string().max(300).optional() });
+export const robinQuotationDecisionTool: ToolDefinition<z.infer<typeof decideSchema>> = {
+  name: "robin_quotation_decision",
+  description: "Record that the lead ACCEPTED or REJECTED its latest quotation — only when the user tells you so. After an acceptance, offer to make them a client.",
+  schema: decideSchema, inputSchema: json(decideSchema), agentScope: "robin", activityLabel: "Updating the quotation",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const q = await getDb().robinQuotation.findFirst({ where: { userId: ctx.userId, leadId: l.id, status: { in: ["draft", "sent", "expired", "accepted", "rejected"] } }, orderBy: { createdAt: "desc" } });
+    if (!q) throw new ToolError(`${l.businessName} has no quotation yet.`);
+    await run(() => decideQuotation(ctx.userId, q.id, input.decision, { confirm: true, note: input.note }, "voice"));
+    return { data: { lead: l.businessName, quotation: q.number, status: input.decision, total: money(q.total, q.currency) }, summary: `${q.number} ${input.decision}` };
+  },
+};
+const convertSchema = z.object({ lead: z.string().min(1).max(120), amount: z.number().min(0).optional().describe("Only if the user states the deal amount; otherwise the accepted quotation's total is used") });
+export const robinConvertClientTool: ToolDefinition<z.infer<typeof convertSchema>> = {
+  name: "robin_convert_client",
+  description: "Make a lead a client (marks it won) when the user tells you to. Uses the accepted quotation's total as the amount unless the user gives one. Keeps the lead's whole history.",
+  schema: convertSchema, inputSchema: json(convertSchema), agentScope: "robin", activityLabel: "Converting to a client",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const r = await run(() => convertToClient(ctx.userId, l.id, { confirm: true, amount: input.amount ?? null }, "voice"));
+    return { data: { lead: l.businessName, client: true, amount: money(r.client.amount, r.client.currency), alreadyClient: !r.created }, summary: `${l.businessName} is a client` };
   },
 };
 

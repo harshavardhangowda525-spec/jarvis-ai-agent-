@@ -54,6 +54,12 @@ describe("ROBIN voice commands", () => {
     expect(p("no, cancel")).toEqual({ kind: "ask", text: "no, cancel" });
     expect(p("cancel")).toEqual({ kind: "confirm", yes: false });
     expect(p("Close Robin")).toEqual({ kind: "exit" });
+    expect(p("undo")).toEqual({ kind: "undo" });
+    expect(p("Robin, undo that.")).toEqual({ kind: "undo" });
+    expect(p("take it back")).toEqual({ kind: "undo" });
+    expect(p("Make ABC Café a client.")).toEqual({ kind: "convert", name: "ABC Café" });
+    expect(p("convert this lead to a client")).toEqual({ kind: "convert", name: null });
+    expect(p("show me my conversion rate").kind).toBe("stat");
     expect(p("What should I say to a gym owner who thinks websites are expensive?").kind).toBe("ask");
   });
   it("stage words", () => {

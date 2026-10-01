@@ -43,7 +43,8 @@ export function LeadPanel({ leadId, tz, onClose, onChanged, ask, say, externalSh
   useEffect(() => { setW(null); void load(); }, [load]);
   useEffect(() => { if (externalSheet) setSheet(externalSheet.sheet); }, [externalSheet]);
 
-  const patch = useCallback(async (body: Record<string, unknown>, confirm = false): Promise<boolean> => {
+  // your click IS the approval: decisions (won, lost, do-not-contact…) happen straight away
+  const patch = useCallback(async (body: Record<string, unknown>, confirm = true): Promise<boolean> => {
     setBusy(true);
     const r = await rapi<W & { moved: { changed: boolean; from: string } | null }>(`leads/${leadId}`, "PATCH", { ...body, ...(confirm ? { confirm: true } : {}) });
     setBusy(false);
@@ -160,25 +161,17 @@ export function LeadPanel({ leadId, tz, onClose, onChanged, ask, say, externalSh
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[10px] text-slate-500">Won, Lost and Do Not Contact ask for your confirmation.</p>
+              <p className="mt-2 text-[10px] text-slate-500">Changed your mind? Just move it back — the full history is kept.</p>
             </div>
           )}
-          {sheet === "convert" && (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm text-slate-100">Convert this lead into a client?</p>
-              <div className="flex gap-2">
-                <button type="button" className="robin-btn rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-300" onClick={() => setSheet(null)}>Not now</button>
-                <button type="button" disabled={busy} className="robin-btn rounded-full border border-emerald-300/50 bg-emerald-300/15 px-3 py-1 text-[11px] text-emerald-100" onClick={async () => {
-                  setBusy(true);
-                  const r = await rapi("clients", "POST", { leadId: l.id, confirm: true });
-                  setBusy(false);
-                  if (!r.ok) return say(r.error ?? "Couldn't convert it.");
-                  setSheet(null); await load(); onChanged({ kind: "won", moved: l.stage !== "won" ? { name: l.businessName, from: l.stage, to: "won" } : undefined });
-                  say(`${l.businessName} is now a client.`);
-                }}>Yes, convert</button>
-              </div>
-            </div>
-          )}
+          {sheet === "convert" && <ConvertSheet name={l.businessName} currency={w.currency} preset={w.quotations.find((x) => x.status === "accepted")?.total ?? l.potentialValue ?? null} busy={busy} onCancel={() => setSheet(null)} onSave={async (amount) => {
+            setBusy(true);
+            const r = await rapi("clients", "POST", { leadId: l.id, confirm: true, ...(amount != null ? { amount } : {}) });
+            setBusy(false);
+            if (!r.ok) return say(r.error ?? "Couldn't convert it.");
+            setSheet(null); await load(); onChanged({ kind: "won", moved: l.stage !== "won" ? { name: l.businessName, from: l.stage, to: "won" } : undefined });
+            say(`Done — ${l.businessName} is officially a client. Nice work!`);
+          }} />}
           {sheet === "next" && (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm text-slate-100">Follow-up completed. Schedule the next one?</p>
@@ -259,7 +252,7 @@ export function LeadPanel({ leadId, tz, onClose, onChanged, ask, say, externalSh
                 {["scheduled", "rescheduled"].includes(d.status) && (
                   <span className="flex gap-1">
                     <button type="button" className="robin-btn rounded-full border border-emerald-300/30 px-2 py-0.5 text-[10px] text-emerald-100" onClick={async () => { const r = await rapi(`demos/${d.id}`, "PATCH", { status: "completed" }); if (!r.ok) return say(r.error ?? ""); await load(); onChanged({ kind: "demo" }); say("Demo marked completed."); }}>Completed</button>
-                    <button type="button" className="robin-btn rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-slate-300" onClick={() => ask("Cancel this demo?", async () => { await rapi(`demos/${d.id}`, "PATCH", { status: "cancelled" }); await load(); onChanged(); })}>Cancel</button>
+                    <button type="button" className="robin-btn rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-slate-300" onClick={async () => { await rapi(`demos/${d.id}`, "PATCH", { status: "cancelled" }); await load(); onChanged(); say("Demo cancelled."); }}>Cancel</button>
                   </span>
                 )}
               </div>
@@ -341,6 +334,19 @@ function Btns({ busy, onCancel, label = "Save", disabled }: { busy: boolean; onC
   );
 }
 const tomorrowAt = (h: number) => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(h, 0, 0, 0); return d; };
+
+function ConvertSheet({ name, currency, preset, busy, onCancel, onSave }: { name: string; currency: string; preset: number | null; busy: boolean; onCancel: () => void; onSave: (amount: number | null) => void }) {
+  const [amount, setAmount] = useState(preset != null ? String(preset) : "");
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); onSave(amount ? Number(amount) : null); }}>
+      <p className="text-sm text-slate-100">Make {name} a client?</p>
+      <label className="mt-2 flex items-center gap-2 text-xs text-slate-400">Deal amount ({currency})
+        <input autoFocus={preset == null} required className={cn(field, "w-32 py-1")} inputMode="decimal" placeholder="e.g. 40000" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))} />
+      </label>
+      <Btns busy={busy} onCancel={onCancel} label="Yes, make them a client" disabled={!amount} />
+    </form>
+  );
+}
 
 function CallSheet({ name, busy, onCancel, onSave }: { name: string; tz: string; busy: boolean; onCancel: () => void; onSave: (b: { outcome: (typeof CALL_OUTCOMES)[number]; notes: string; followUp?: { dueAt: string; action: string } }) => void }) {
   const [outcome, setOutcome] = useState<(typeof CALL_OUTCOMES)[number] | null>(null);
@@ -466,10 +472,10 @@ function QuoteSheet({ leadId, currency, busy, setBusy, onCancel, onDone, say }: 
 
 function QuoteRow({ q, email, ask, say, onChanged }: { q: LeadWorkspace["quotations"][number]; email: string | null; ask: Props["ask"]; say: Props["say"]; onChanged: (accepted?: boolean) => void }) {
   const act = async (body: Record<string, unknown>) => {
-    const r = await rapi(`quotations/${q.id}`, "PATCH", body);
+    const r = await rapi(`quotations/${q.id}`, "PATCH", { ...body, confirm: true });
     if (r.code === "needs_confirmation") return ask(r.error ?? "Sure?", async () => { await act({ ...body, confirm: true }); });
     if (!r.ok) return say(r.error ?? "That didn't work.");
-    say(body.action === "accept" ? "Quotation accepted. Convert this lead into a client?" : body.action === "send" ? (body.via === "gmail" ? "Emailed — Gmail confirmed it." : "Marked as sent.") : "Updated.");
+    say(body.action === "accept" ? "They said yes! Want me to make them a client?" : body.action === "send" ? (body.via === "gmail" ? "Sent — Gmail confirmed it." : "Marked as sent.") : "Updated.");
     onChanged(body.action === "accept");
   };
   const statusTone = useMemo(() => ({ draft: "text-slate-300", sent: "text-sky-300", accepted: "text-emerald-300", rejected: "text-rose-300", expired: "text-amber-300" } as Record<string, string>)[q.status], [q.status]);

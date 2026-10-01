@@ -1078,17 +1078,25 @@ the facts on record. These include website status, which contact channels it has
 - A message you log is "logged", never "delivered". Only an API confirmation
   (Gmail) counts as sent.
 
-**Decisions need your yes.** These all ask first: WON, LOST, DO NOT CONTACT,
-accepting a quotation, converting to a client, and emailing a quotation. That
-applies on screen, by voice ("Mark ABC Café as won?" → "yes"), and in the AI
-brain. The server also refuses them without confirmation.
+**Your commands come first.** ROBIN talks like a friend and does what you tell
+it straight away, with no "are you sure?". Your command is the approval, whether
+you give it by voice, by click or by dragging a card. That includes WON, LOST,
+DO NOT CONTACT, accepting a quotation, converting to a client and emailing a
+quotation.
+- Say **"undo"** to put the last stage move back. The full history is always kept.
+- ROBIN never makes those decisions on its own: DARWIN imports, qualification and
+  logged calls never mark a lead won or lost.
+- ROBIN asks a question only when it can't tell what you mean: which lead when
+  several match, or a missing time or price.
+- It still never invents numbers or prices and never claims a message was
+  delivered.
 
 **Quotations.** Set your services and prices under ROBIN → Settings. Prices start
 empty; ROBIN never invents or changes a price. A quotation includes discount,
 tax (GST %), validity and payment terms, and it is a professional A4 PDF. Send
 it yourself ("I sent it") or email the PDF from your Gmail after confirming.
-When it is accepted, ROBIN asks "Convert this lead into a client?". The client
-keeps the lead's whole history.
+When it is accepted, ROBIN offers to make them a client ("make ABC Café a
+client" also works). The client keeps the lead's whole history.
 
 **Voice commands** (handled instantly; anything else goes to ROBIN's AI brain on
 JARVIS's AI router):
@@ -1108,6 +1116,8 @@ JARVIS's AI router):
 - "how many clients did I win this month?"
 - "show me my conversion rate"
 - "what's my day?"
+- "make ABC Café a client"
+- "undo"
 
 If a name matches several leads, ROBIN asks which one. A morning sales
 briefing plays the first time ROBIN opens each day; it can be turned off in

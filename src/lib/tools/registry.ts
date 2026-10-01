@@ -45,6 +45,7 @@ import { activityTool } from "./activity";
 import {
   robinLeadsTool, robinLeadTool, robinUpdateStageTool, robinSetPriorityTool, robinScheduleFollowUpTool, robinFollowUpsTool, robinCompleteFollowUpTool,
   robinLogInteractionTool, robinScheduleDemoTool, robinQuotationTool, robinAnalyticsTool, robinBriefingTool, robinReportTool, robinOpenTool,
+  robinQuotationDecisionTool, robinConvertClientTool,
 } from "./robin";
 
 const ALL_TOOLS: ToolDefinition[] = [
@@ -93,7 +94,8 @@ const ALL_TOOLS: ToolDefinition[] = [
   mikeChartTool as ToolDefinition,
   // ROBIN (sales & CRM): its own tools only while Robin is active; JARVIS can ask Robin / open Robin
   ...[robinLeadsTool, robinLeadTool, robinUpdateStageTool, robinSetPriorityTool, robinScheduleFollowUpTool, robinFollowUpsTool, robinCompleteFollowUpTool,
-    robinLogInteractionTool, robinScheduleDemoTool, robinQuotationTool, robinAnalyticsTool, robinBriefingTool, robinReportTool, robinOpenTool] as unknown as ToolDefinition[],
+    robinLogInteractionTool, robinScheduleDemoTool, robinQuotationTool, robinAnalyticsTool, robinBriefingTool, robinReportTool, robinOpenTool,
+    robinQuotationDecisionTool, robinConvertClientTool] as unknown as ToolDefinition[],
 ];
 
 /**

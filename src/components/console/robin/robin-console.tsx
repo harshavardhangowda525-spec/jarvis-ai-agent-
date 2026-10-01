@@ -8,7 +8,7 @@ import { logActivity } from "@/lib/activity/client";
 import { useVoice, useResumeVoice } from "@/hooks/useVoice";
 import { useAgent } from "@/hooks/useAgent";
 import type { Overview, LeadCard } from "@/lib/robin/overview";
-import { CORE_LABEL, CONFIRM_STAGES, STAGE_LABEL, nodeStage, money, type CoreState, type NodeId, type Stage } from "@/lib/robin/types";
+import { CORE_LABEL, STAGE_LABEL, nodeStage, money, type CoreState, type NodeId, type Stage } from "@/lib/robin/types";
 import { parseRobinCommand, parseWhen, type View, type LeadFilter } from "@/lib/robin/command";
 import { RobinCoreEngine } from "./core-engine";
 import { PipelineChart, type ChartMode, type PipelineHandle } from "./pipeline-chart";
@@ -53,7 +53,7 @@ export function RobinConsole() {
   const [highlight, setHighlight] = useState<Partial<Record<NodeId, number>>>({});
   const [expanded, setExpanded] = useState<NodeId | null>(null);
   const [leadId, setLeadId] = useState<string | null>(null);
-  const [leadSheet, setLeadSheet] = useState<{ sheet: "followup" | "demo" | "quote" | "next" | null; at: number } | null>(null);
+  const [leadSheet, setLeadSheet] = useState<{ sheet: "followup" | "demo" | "quote" | "next" | "convert" | null; at: number } | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [confirm, setConfirm] = useState<{ q: string; run: () => Promise<void> } | null>(null);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
@@ -211,7 +211,7 @@ export function RobinConsole() {
     if (!booted || greeted.current || !ov) return;
     greeted.current = true;
     logActivity({ category: "agent", agent: "ROBIN", action: "ROBIN online", importance: 1 });
-    say("Robin is online. Ready to manage your sales pipeline.");
+    say("Hey! Robin's online — ready to manage your sales pipeline. What are we working on?");
     const cmd = params.get("cmd"), lead = params.get("lead"), view = params.get("view");
     if (lead) setLeadId(lead);
     else if (view) openView(view as View);
@@ -231,45 +231,63 @@ export function RobinConsole() {
     setPanel({ kind: v } as Panel);
     void filter;
   }, []);
-  const ask = useCallback((q: string, run: () => Promise<void>) => { setConfirm({ q, run }); say(`${q} Say yes to confirm.`); }, [say]);
+  const ask = useCallback((q: string, run: () => Promise<void>) => { setConfirm({ q, run }); say(q); }, [say]);
+  /** The last stage move, so "undo" can put it back. */
+  const lastMove = useRef<{ id: string; name: string; fromStage: string; fromNode: NodeId; toNode: NodeId } | null>(null);
+  const pick = (xs: string[]) => xs[Math.floor(Math.random() * xs.length)];
+
+  /** Lead → client. With no accepted quotation or value yet, it opens the lead and asks for the deal amount. */
+  const convertLead = useCallback(async (id: string, name: string) => {
+    setCore("complete", 2200);
+    const r = await rapi("clients", "POST", { leadId: id, confirm: true });
+    await refresh();
+    if (r.ok) { engine.current?.ripple(158, 3.4, 2); say(`Done — ${name} is officially a client. Nice work!`); return; }
+    if (/amount/i.test(r.error ?? "")) {
+      setLeadId(id); setLeadSheet({ sheet: "convert", at: Date.now() });
+      say(`Sure — what's the deal with ${name} worth? Pop the amount in and I'll make them a client.`);
+      return;
+    }
+    say(r.error ?? "Couldn't convert them.");
+  }, [refresh, say, setCore]);
 
   const moveLead = useCallback(async (lead: { id: string; name: string; from: NodeId }, to: NodeId, opts: { confirmed?: boolean; source?: "user" | "voice"; stage?: Stage } = {}) => {
     const stage = opts.stage ?? nodeStage(to);
-    if (CONFIRM_STAGES.includes(stage) && !opts.confirmed) {
-      ask(`Move ${lead.name} to ${STAGE_LABEL[stage]}?`, async () => { await moveLead(lead, to, { ...opts, confirmed: true }); });
-      return;
-    }
+    // your command is the approval — it happens straight away ("undo" puts it back)
     // the card travels right away; the database is updated at the same time
     chart.current?.travel(lead.name, lead.from, to);
     prevMap.current?.set(lead.id, to);
     setCore(to === "won" ? "complete" : to === "lost" ? "idle" : "contacting", 1800);
-    const r = await rapi(`leads/${lead.id}`, "PATCH", { stage, confirm: !!opts.confirmed, source: opts.source ?? "user" });
-    if (!r.ok) { say(r.error ?? "That move didn't save."); prevMap.current?.set(lead.id, lead.from); setCore("error", 1500); }
+    const r = await rapi<{ moved: { changed: boolean; from: string } | null }>(`leads/${lead.id}`, "PATCH", { stage, confirm: true, source: opts.source ?? "user" });
+    if (!r.ok) { say(r.error ?? "Hmm, that move didn't save — try again?"); prevMap.current?.set(lead.id, lead.from); setCore("error", 1500); }
     else {
       lightUp([to]);
-      if (to === "won") { engine.current?.ripple(158, 3.4, 2); say(`${lead.name} is won. Convert it into a client?`); setLeadId(lead.id); setLeadSheet({ sheet: null, at: Date.now() }); }
-      else say(`${lead.name} moved to ${STAGE_LABEL[stage]}.`);
+      if (r.data?.moved?.changed) lastMove.current = { id: lead.id, name: lead.name, fromStage: r.data.moved.from, fromNode: lead.from, toNode: to };
+      if (to === "won") {
+        engine.current?.ripple(158, 3.4, 2);
+        ask(`Nice one — ${lead.name} is won! Want me to make them a client?`, () => convertLead(lead.id, lead.name));
+      } else if (to === "lost") say(`${pick(["Done", "Okay"])} — ${lead.name} moved to ${STAGE_LABEL[stage]}. Can't win them all. Say "undo" if that was a mistake.`);
+      else say(`${pick(["Done", "Got it", "Sorted"])} — ${lead.name} is now ${STAGE_LABEL[stage]}.`);
     }
     await refresh();
-  }, [ask, lightUp, refresh, say, setCore]);
+  }, [ask, convertLead, lightUp, refresh, say, setCore]);
 
   /** Find the lead a command is about: "this lead" = the open one; a name must match exactly one. */
   const resolve = useCallback(async (name: string | null): Promise<{ id: string; businessName: string; stage: string } | null> => {
     if (!name) {
-      if (!leadId) { say("Which lead? Open one first, or say its name."); return null; }
+      if (!leadId) { say("Which lead do you mean? Open one, or just tell me its name."); return null; }
       const r = await rapi<{ lead: { id: string; businessName: string; stage: string } }>(`leads/${leadId}`);
       return r.data?.lead ?? null;
     }
     const r = await rapi<{ leads: { id: string; businessName: string; stage: string }[] }>(`leads?resolve=${encodeURIComponent(name)}`);
     const hits = r.data?.leads ?? [];
-    if (!hits.length) { say(`I couldn't find "${name}" in your CRM.`); return null; }
-    if (hits.length > 1) { say(`I found ${hits.length} matches: ${hits.slice(0, 4).map((h) => h.businessName).join(", ")}. Which one?`); setPanel({ kind: "leads", title: `MATCHES FOR "${name.toUpperCase()}"`, query: `q=${encodeURIComponent(name)}` }); return null; }
+    if (!hits.length) { say(`Hmm, I can't find "${name}" in your CRM.`); return null; }
+    if (hits.length > 1) { say(`A few match that — ${hits.slice(0, 4).map((h) => h.businessName).join(", ")}. Which one?`); setPanel({ kind: "leads", title: `MATCHES FOR "${name.toUpperCase()}"`, query: `q=${encodeURIComponent(name)}` }); return null; }
     return hits[0];
   }, [leadId, say]);
 
   const deactivate = useCallback(() => {
     setLeaving(true);
-    say("Back to JARVIS.");
+    say("Catch you later — back to JARVIS.");
     logActivity({ category: "agent", agent: "ROBIN", action: "Closed ROBIN", importance: 1 });
     setTimeout(() => router.push("/dashboard"), 900);
   }, [router, say]);
@@ -280,11 +298,26 @@ export function RobinConsole() {
     setReply(null);
     const cmd = parseRobinCommand(text);
     if (cmd.kind === "confirm") {
-      if (confirm) { const c = confirm; setConfirm(null); if (cmd.yes) await c.run(); else say("Okay — nothing changed."); return; }
+      if (confirm) { const c = confirm; setConfirm(null); if (cmd.yes) await c.run(); else say("No problem."); return; }
       if (!cmd.yes) { say("Okay."); return; }
     }
     switch (cmd.kind) {
       case "exit": return deactivate();
+      case "undo": {
+        const m = lastMove.current;
+        if (!m) return say("There's nothing to undo right now.");
+        lastMove.current = null;
+        chart.current?.travel(m.name, m.toNode, m.fromNode);
+        prevMap.current?.set(m.id, m.fromNode);
+        const r = await rapi(`leads/${m.id}`, "PATCH", { stage: m.fromStage, confirm: true, source: "voice", note: "Undo" });
+        await refresh();
+        return say(r.ok ? `No worries — ${m.name} is back in ${STAGE_LABEL[m.fromStage as Stage] ?? m.fromStage}.` : r.error ?? "Couldn't undo that.");
+      }
+      case "convert": {
+        const l = await resolve(cmd.name);
+        if (!l) return;
+        return convertLead(l.id, l.businessName);
+      }
       case "briefing": {
         setCore("analyzing", 2200);
         signaturePulse();
@@ -326,7 +359,7 @@ export function RobinConsole() {
       }
       case "open": {
         const l = await resolve(cmd.name);
-        if (l) { setLeadId(l.id); say(`Opening ${l.businessName}.`); }
+        if (l) { setLeadId(l.id); say(`Here's ${l.businessName}.`); }
         return;
       }
       case "move": {
@@ -350,7 +383,7 @@ export function RobinConsole() {
         const tgt = chart.current?.nodeCenter(cmd.kind === "followup" ? "follow_up" : "demo"), e = engine.current;
         if (tgt && e) e.emit(e.center(), tgt, { hue: 214, done: () => lightUp([cmd.kind === "followup" ? "follow_up" : "demo"]) });
         await refresh();
-        return say(`${cmd.kind === "followup" ? "Follow-up" : "Demo"} with ${l.businessName} scheduled for ${when(at, ov.tz)}.`);
+        return say(`${pick(["Done", "You got it", "All set"])} — ${cmd.kind === "followup" ? "follow-up" : "demo"} with ${l.businessName} on ${when(at, ov.tz)}.`);
       }
       case "complete_followup": {
         const l = await resolve(cmd.name);
@@ -362,7 +395,7 @@ export function RobinConsole() {
         if (!r.ok) return say(r.error ?? "Couldn't complete it.");
         await refresh();
         setConfirm({ q: "Schedule the next follow-up?", run: async () => { setLeadId(l.id); setLeadSheet({ sheet: "followup", at: Date.now() }); } });
-        return say("Follow-up completed. Would you like to schedule the next one?");
+        return say("Nice, that's done. Want me to set up the next one?");
       }
       default: {
         // Robin's AI brain (JARVIS's AI router) with what's on screen as context
@@ -371,7 +404,7 @@ export function RobinConsole() {
         void agent.send((text + ctx).slice(0, 7800), { agent: "robin" });
       }
     }
-  }, [agent, confirm, deactivate, leadId, lightUp, moveLead, openView, ov, refresh, resolve, say, setCore, signaturePulse]);
+  }, [agent, confirm, convertLead, deactivate, leadId, lightUp, moveLead, openView, ov, refresh, resolve, say, setCore, signaturePulse]);
   handleRef.current = (t) => { void handle(t); };
 
   const topIds = useMemo(() => {
@@ -547,8 +580,8 @@ export function RobinConsole() {
           <div className="robin-glass rounded-2xl p-4 text-center">
             <p className="text-sm text-slate-100">{confirm.q}</p>
             <div className="mt-3 flex justify-center gap-2">
-              <button type="button" onClick={() => { setConfirm(null); say("Okay — nothing changed."); }} className="robin-btn rounded-full border border-white/10 px-4 py-1 text-[11px] text-slate-300">No</button>
-              <button type="button" onClick={async () => { const c = confirm; setConfirm(null); await c.run(); }} className="robin-btn rounded-full border border-cyan-300/50 bg-cyan-300/15 px-4 py-1 text-[11px] text-cyan-50">Yes, confirm</button>
+              <button type="button" onClick={() => { setConfirm(null); say("No problem."); }} className="robin-btn rounded-full border border-white/10 px-4 py-1 text-[11px] text-slate-300">No</button>
+              <button type="button" onClick={async () => { const c = confirm; setConfirm(null); await c.run(); }} className="robin-btn rounded-full border border-cyan-300/50 bg-cyan-300/15 px-4 py-1 text-[11px] text-cyan-50">Yes</button>
             </div>
           </div>
         </div>

@@ -22,6 +22,8 @@ export type RobinCommand =
   | { kind: "followup"; name: string | null; when: string }
   | { kind: "demo"; name: string | null; when: string }
   | { kind: "complete_followup"; name: string | null }
+  | { kind: "convert"; name: string | null }
+  | { kind: "undo" }
   | { kind: "stat"; stat: "won_month" | "conversion" | "count"; filter?: LeadFilter }
   | { kind: "ask"; text: string };
 
@@ -67,6 +69,7 @@ export function parseRobinCommand(raw: string): RobinCommand {
   if (isRobinDeactivation(raw) || /^(close|exit|deactivate|go back)[.!\s]*$/.test(low)) return { kind: "exit" };
   if (/^(yes|yeah|yep|yup|confirm(ed)?|do it|go ahead|sure|correct|ok(ay)?)( please| do it| confirm)?[.!\s]*$/.test(low)) return { kind: "confirm", yes: true };
   if (/^(no|nope|cancel|don'?t|stop|never ?mind|not now)[.!\s]*$/.test(low)) return { kind: "confirm", yes: false };
+  if (/^(undo|undo (that|it|the last (one|move|change))|take (that|it) back|revert( that| it)?|go back one|move it back)[.!\s]*$/.test(low)) return { kind: "undo" };
   if (/\b(what'?s my day|my day|daily briefing|sales briefing|morning (report|briefing)|brief me|today'?s briefing)\b/.test(low)) return { kind: "briefing" };
 
   // ---- actions on a lead
@@ -77,6 +80,8 @@ export function parseRobinCommand(raw: string): RobinCommand {
   if (m) return { kind: "demo", name: nameOrThis(origCase(text, m[1])), when: m[2] };
   m = low.match(/^(?:mark|complete|finish|close)\s+(?:the\s+)?follow[- ]?up\s+(?:with|for)\s+(.+?)\s*(?:as\s+)?(?:done|complete|completed)?$/) ?? low.match(/^follow[- ]?up\s+with\s+(.+?)\s+(?:is\s+)?(?:done|complete|completed)$/);
   if (m) return { kind: "complete_followup", name: nameOrThis(origCase(text, m[1])) };
+  m = low.match(/^(?:make|convert|turn)\s+(.+?)\s+(?:a|into a|to a|as a)\s+(?:client|customer)[.!?]*$/) ?? low.match(/^(?:convert)\s+(.+?)(?:\s+to\s+(?:a\s+)?client)?[.!?]*$/);
+  if (m) return { kind: "convert", name: nameOrThis(origCase(text, m[1])) };
   m = low.match(/^(?:mark|set|move|put|change|update|shift)\s+(.+?)\s+(?:as|to|into|in|at)\s+(.+)$/);
   if (m) {
     const stage = stageFromWords(m[2]);
