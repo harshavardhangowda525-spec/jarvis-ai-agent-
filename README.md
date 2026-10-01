@@ -837,6 +837,7 @@ Settings (optional):
 - `DARWIN_DAILY_REQUIRE_PHONE` (`on`)
 - `DARWIN_DAILY_TARGET` (`50`)
 - `DARWIN_DAILY_LOCATIONS` and `DARWIN_DAILY_CATEGORIES` (comma- or line-separated; also editable in DARWIN)
+- DARWIN only generates leads from **cafes, restaurants and gyms** — the daily search, its auto-widening, manual searches and the AI tool all refuse other kinds of business. `DARWIN_ONLY_CATEGORIES` changes the list (`all` lifts the limit). Leads already saved in other categories are left as they are.
 - `DARWIN_DAILY_STRICT` (`on`)
 - `DARWIN_EMAIL_TARGET` (`25`) and `DARWIN_EMAIL_DEADLINE` (`18:00`)
 

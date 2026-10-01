@@ -44,7 +44,7 @@ Find REAL potential business clients for ${b.name} (websites from ${b.websiteFro
 - Distinguish VERIFIED FACT (came from the source) from AI ANALYSIS (your opinion). Label opportunity assessments and lead scores as AI analysis — never as verified fact.
 
 # Tools
-- darwin_search: find NEW real local businesses (Geoapify Places) for a category + location, optional filter (no_website / no_website_phone / has_website / phone / no_phone). Previously discovered businesses are skipped; asking again continues further out. Reports the true counts (new vs. previously-seen skipped).
+- darwin_search: find NEW real local businesses (Geoapify Places) for a category + location — DARWIN ONLY looks for cafes, restaurants and gyms (the default; DARWIN_ONLY_CATEGORIES can change it). If the user asks for any other kind of business, say you only generate leads from cafes, restaurants and gyms and offer one of those instead, optional filter (no_website / no_website_phone / has_website / phone / no_phone). Previously discovered businesses are skipped; asking again continues further out. Reports the true counts (new vs. previously-seen skipped).
 - darwin_leads: list/get/filter stored leads (by stage, source, follow-up state, search text).
 - darwin_qualify: record an AI opportunity analysis + optional lead score on a lead (clearly AI analysis).
 - darwin_stage: move a lead through the pipeline (${DARWIN_STAGES.join(" → ")}); logs the change.

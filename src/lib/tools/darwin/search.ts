@@ -13,7 +13,7 @@ import { LEAD_FILTER_IDS } from "@/lib/darwin/types";
  * pads with fabricated leads or invents phone numbers.
  */
 const schema = z.object({
-  category: z.string().min(2).max(80).describe("Business type, e.g. 'gyms', 'cafes', 'dentists', 'salons'."),
+  category: z.string().min(2).max(80).describe("Business type — DARWIN only looks for 'cafes', 'restaurants' or 'gyms'."),
   location: z.string().min(2).max(120).describe("City, area, neighbourhood, postcode or 'lat,lon', e.g. 'Indiranagar, Bangalore'."),
   limit: z.number().int().min(1).max(50).optional().describe("How many NEW leads to find (default 20)."),
   filter: z.enum(LEAD_FILTER_IDS).optional()
@@ -26,6 +26,7 @@ export const darwinSearchTool: ToolDefinition<Input> = {
   name: "darwin_search",
   description:
     "Find NEW real local businesses (Geoapify Places) for a category + location and save them to the CRM. " +
+    "DARWIN only looks for cafes, restaurants and gyms — other kinds of business are refused. " +
     "Previously discovered businesses are skipped automatically, and repeating the same search continues further out. " +
     "Returns the real number found — never fabricates leads or phone numbers.",
   schema,
@@ -54,7 +55,7 @@ export const darwinSearchTool: ToolDefinition<Input> = {
   inputSchema: {
     type: "object",
     properties: {
-      category: { type: "string" },
+      category: { type: "string", description: "cafes, restaurants or gyms (DARWIN only looks for these)" },
       location: { type: "string" },
       limit: { type: "number" },
       filter: { type: "string", enum: [...LEAD_FILTER_IDS] },

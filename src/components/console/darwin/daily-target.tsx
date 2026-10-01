@@ -206,6 +206,9 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
   const v = daily.view!;
   const [locations, setLocations] = useState(v.config.locations.join("\n"));
   const [categories, setCategories] = useState(v.config.categories.join(", "));
+  const allowed = v.allowedCategories;
+  const picked = categories.split(/,|\n/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+  const toggle = (c: string) => setCategories((picked.includes(c) ? picked.filter((x) => x !== c) : [...picked, c]).join(", "));
   const [target, setTarget] = useState(v.config.target);
   const [radiusKm, setRadiusKm] = useState(v.config.radiusKm);
   const [requirePhone, setRequirePhone] = useState(v.config.requirePhone);
@@ -233,8 +236,22 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
           className="dw-bare mt-1 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white outline-none focus:border-cyan-200/40" />
         {v.config.source === "recent searches" && <p className="mt-1 text-[10px] text-white/40">Using the places you searched recently — save to make them yours.</p>}
         <label className="mt-3 block text-[10px] tracking-[0.2em] text-white/50">BUSINESS CATEGORIES</label>
-        <textarea value={categories} onChange={(e) => setCategories(e.target.value)} rows={3}
-          className="dw-bare mt-1 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white outline-none focus:border-cyan-200/40" />
+        {allowed ? (
+          <>
+            <div className="mt-1 flex flex-wrap gap-1.5" data-darwin-categories>
+              {allowed.map((c) => (
+                <button key={c} type="button" onClick={() => toggle(c)} aria-pressed={picked.includes(c)}
+                  className={cn("rounded-full border px-3 py-1 text-[11px] capitalize transition", picked.includes(c) ? "border-cyan-200/50 bg-cyan-300/15 text-white" : "border-white/10 bg-black/30 text-white/45 hover:text-white/75")}>
+                  {c}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[10px] text-white/40">DARWIN only looks for {allowed.join(", ")}. Leave none picked to search them all.</p>
+          </>
+        ) : (
+          <textarea value={categories} onChange={(e) => setCategories(e.target.value)} rows={3}
+            className="dw-bare mt-1 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white outline-none focus:border-cyan-200/40" />
+        )}
         <div className="mt-3 grid grid-cols-2 gap-3">
           <label className="text-[10px] tracking-[0.2em] text-white/50">DAILY TARGET
             <input type="number" min={1} max={200} value={target} onChange={(e) => setTarget(Math.min(Math.max(+e.target.value || 1, 1), 200))}

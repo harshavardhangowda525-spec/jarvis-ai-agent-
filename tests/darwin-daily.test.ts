@@ -277,16 +277,37 @@ d("DARWIN daily run (integration)", () => {
     const at = new Date("2026-10-07T02:00:00Z"); // 07:30 IST
     await R.saveConfig(userId, { categories: ["gyms"], target: 3, radiusKm: 6 });
     pages.gyms = [[]];                                            // nothing new nearby
-    pages.pharmacies = [[80, 81, 82].map((i) => feature(i, "pharmacies", { name: `Pharma${i} Wellness Store` }))];
+    pages.cafes = [[80, 81, 82].map((i) => feature(i, "cafes", { name: `Brew${i} Coffee House` }))];
     const run = await R.ensureRun(userId, at);
     await getDb().darwinDailyRun.update({ where: { id: run.id }, data: { startedAt: at } });
     let r = await R.advanceRun(run.id, { deps: { ...deps(), now: () => at }, budgetMs: 60_000 });
     expect(r.status).toBe("running"); // not "partial" — it widened instead
     expect((r.config as { widened?: number; categories: string[] }).widened).toBe(1);
-    expect((r.config as { categories: string[] }).categories).toContain("pharmacies");
+    // only the kinds DARWIN is allowed to look for — never pharmacies, salons…
+    expect((r.config as { categories: string[] }).categories).toEqual(["gyms", "cafes", "restaurants"]);
     expect(JSON.stringify(r.log)).toMatch(/widening it: added \d+ more kinds of business/);
     r = await R.advanceRun(run.id, { deps: { ...deps(), now: () => at }, budgetMs: 60_000 });
     expect(r).toMatchObject({ status: "completed", verified: 3 });
+  }, 60_000);
+
+  it("DARWIN only looks for cafes, restaurants and gyms — settings, widening and an older run", async () => {
+    const saved = await R.saveConfig(userId, { categories: ["salons", "dentists", "coffee shops", "fitness centre"], target: 3 });
+    expect(saved.categories).toEqual(["cafes", "gyms"]);
+    expect((await R.saveConfig(userId, { categories: ["pharmacies"] })).categories).toEqual(["cafes", "restaurants", "gyms"]);
+    // with all three already searched, widening goes straight to the radius
+    const all = { locations: ["X"], categories: ["cafes", "restaurants", "gyms"], target: 50, radiusKm: 6, requirePhone: false, strict: true, autoEmail: false } as import("@/lib/darwin/daily/run").DailyConfig;
+    expect(R.widen(all)).toMatchObject({ step: 2, note: "searching up to 12 km out" });
+    expect(all.categories).toEqual(["cafes", "restaurants", "gyms"]);
+    // a run that started with other kinds drops them and starts over on the allowed ones
+    const at = new Date("2026-10-21T02:00:00Z");
+    await R.saveConfig(userId, { categories: ["gyms"], target: 1 });
+    const run = await R.ensureRun(userId, at);
+    await getDb().darwinDailyRun.update({ where: { id: run.id }, data: { startedAt: at, comboIndex: 1, config: { ...(run.config as object), categories: ["salons", "gyms"] } } });
+    pages.gyms = [[90].map((i) => feature(i, "gyms", { name: `Iron${i} Fitness` }))];
+    const r = await R.advanceRun(run.id, { deps: { ...deps(), now: () => at }, budgetMs: 60_000 });
+    expect((r.config as { categories: string[] }).categories).not.toContain("salons");
+    expect(JSON.stringify(r.log)).toMatch(/Only searching cafes, restaurants and gyms now/);
+    expect(r).toMatchObject({ status: "completed", verified: 1 });
   }, 60_000);
 
   it("widening: categories first, then the radius, then it stops", () => {

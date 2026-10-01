@@ -1,6 +1,7 @@
 import "server-only";
 import { syncLeadsToSheet, leadSheet } from "@/lib/darwin/daily/sheet";
 import { syncFromDarwin } from "@/lib/robin/darwin-sync";
+import { allowedCategory, allowedLabel, allowedList, onlyAllowed } from "@/lib/darwin/categories";
 import { sendAutoEmails, autoEmailState, usableEmail, type AutoEmailDeps, type AutoEmailResult, type AutoEmailState } from "@/lib/darwin/auto-email";
 import { createHash } from "node:crypto";
 import type { DarwinDailyRun, Prisma } from "@prisma/client";
@@ -48,6 +49,8 @@ export interface DailyConfig {
 export const EXTRA_CATEGORIES = ["pharmacies", "opticians", "jewellery stores", "furniture stores", "car repair garages", "laundries", "pet shops", "grocery stores", "mobile shops", "electronics stores", "real estate agents", "guest houses", "hotels", "lawyers", "accountants"];
 
 export const DEFAULT_CATEGORIES = ["gyms", "cafes", "restaurants", "salons", "spas", "clinics", "dentists", "coaching centres", "clothing stores", "bakeries", "yoga studios", "physiotherapists"];
+/** The kinds of business DARWIN is allowed to look for (cafes, restaurants, gyms by default). */
+export const darwinAllowed = () => allowedList(env.darwinOnlyCategories);
 
 const list = (s: string) => s.split(/[;|\n]|,(?![^(]*\))/).map((x) => x.trim()).filter(Boolean);
 
@@ -63,7 +66,9 @@ export async function loadConfig(userId: string): Promise<DailyConfig & { source
     locations = [...new Set(recent.map((r) => r.location.trim()).filter(Boolean))].slice(0, 3);
     if (locations.length) source = "recent searches";
   }
-  const categories = saved.categories?.length ? saved.categories : list(env.darwinDailyCategories).length ? list(env.darwinDailyCategories) : DEFAULT_CATEGORIES;
+  const allowed = darwinAllowed();
+  const wanted = saved.categories?.length ? saved.categories : list(env.darwinDailyCategories).length ? list(env.darwinDailyCategories) : allowed ?? DEFAULT_CATEGORIES;
+  const categories = onlyAllowed(wanted, allowed);
   return {
     locations: locations.slice(0, 12),
     categories: categories.slice(0, 24),
@@ -83,7 +88,7 @@ export async function saveConfig(userId: string, c: Partial<DailyConfig>) {
   const cur = await loadConfig(userId);
   const next: DailyConfig = {
     locations: (c.locations ?? cur.locations).map((x) => x.trim()).filter(Boolean).slice(0, 12),
-    categories: (c.categories ?? cur.categories).map((x) => x.trim()).filter(Boolean).slice(0, 24),
+    categories: onlyAllowed((c.categories ?? cur.categories).map((x) => x.trim()).filter(Boolean), darwinAllowed()).slice(0, 24),
     target: Math.min(Math.max(Math.round(c.target ?? cur.target), 1), 200),
     radiusKm: Math.min(Math.max(c.radiusKm ?? cur.radiusKm, 1), 25),
     requirePhone: c.requirePhone ?? cur.requirePhone,
@@ -288,7 +293,13 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
   try {
     let run = await db.darwinDailyRun.findUniqueOrThrow({ where: { id: runId } });
     if (run.status !== "running") return run;
-    const cfg = run.config as unknown as DailyConfig;
+    let cfg = run.config as unknown as DailyConfig;
+    // a run started before the kinds of business were limited drops the others and starts over on the allowed ones
+    const kinds = onlyAllowed(cfg.categories, darwinAllowed());
+    if (kinds.join("|") !== cfg.categories.join("|")) {
+      cfg = { ...cfg, categories: kinds };
+      run = await db.darwinDailyRun.update({ where: { id: run.id }, data: { config: cfg as unknown as Prisma.InputJsonValue, comboIndex: 0, log: [...logOf(run), { at: deps.now().toISOString(), text: `Only searching ${allowedLabel(darwinAllowed())} now.` }].slice(-80) as unknown as Prisma.InputJsonValue } });
+    }
     const combos = combosOf(cfg);
     const k = await knowledge(run.userId, deps.now(), run);
     const c: Counters = { ...run };
@@ -575,7 +586,10 @@ export function widen(cfg: DailyConfig): { step: number; note: string; clearExha
   const step = (cfg.widened ?? 0) + 1;
   if (step === 1) {
     const have = new Set(cfg.categories.map((c) => c.toLowerCase()));
-    const add = [...DEFAULT_CATEGORIES, ...EXTRA_CATEGORIES].filter((c) => !have.has(c.toLowerCase()));
+    const allowed = darwinAllowed();
+    // only kinds DARWIN is allowed to look for (cafes, restaurants, gyms by default) — then it widens the radius instead
+    const pool = allowed ? allowed.filter((a) => !cfg.categories.some((c) => allowedCategory(c, allowed) === a)) : [...DEFAULT_CATEGORIES, ...EXTRA_CATEGORIES];
+    const add = pool.filter((c) => !have.has(c.toLowerCase()));
     if (add.length) {
       cfg.categories = [...cfg.categories, ...add];
       return { step, note: `added ${add.length} more kinds of business (${add.slice(0, 4).join(", ")}${add.length > 4 ? "…" : ""})`, clearExhausted: false };
@@ -646,6 +660,8 @@ export interface DarwinDailyView {
   report: DailyReport | null;
   spoken: string | null;
   config: DailyConfig & { source: string };
+  /** The only kinds of business DARWIN looks for (null = any). */
+  allowedCategories: string[] | null;
   sources: { geoapify: boolean; google: boolean; search: boolean };
   /** Automatic outreach: on/off, Gmail connected, sent in the last 24 h, leads waiting for their email. */
   email: AutoEmailState;
@@ -671,6 +687,7 @@ export async function darwinDailyView(userId: string, now = new Date()): Promise
   const [h, m] = s.split(":").map(Number);
   return {
     enabled: env.darwinDaily,
+    allowedCategories: darwinAllowed(),
     timezone: env.darwinDailyTz,
     today: clock.date,
     startLabel: `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`,

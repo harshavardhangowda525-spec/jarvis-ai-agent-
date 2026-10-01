@@ -313,6 +313,14 @@ d("findNewLeads (integration)", () => {
     await expect(findNewLeads({ userId, category: "gyms", location: "Nowhereville 000", limit: 5, filter: "all" }))
       .rejects.toBeInstanceOf(GeoapifyError);
   });
+
+  it("only looks for cafes, restaurants and gyms — anything else is refused before any search", async () => {
+    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    await expect(findNewLeads({ userId, category: "dentists", location: "Bangalore", limit: 5, filter: "all" }))
+      .rejects.toMatchObject({ kind: "bad_request", message: expect.stringMatching(/only looks for cafes, restaurants and gyms/) });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 // ---------------------------------------------------------------------------

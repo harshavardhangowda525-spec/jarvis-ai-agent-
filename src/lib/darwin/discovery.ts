@@ -6,6 +6,7 @@ import {
   GeoapifyError, categoryPlan, discoveryFingerprint, geocode, mapFeature, matchesPlan, searchPlaces, mapLinks,
   type GeoCenter, type GeoLead,
 } from "./geoapify";
+import { allowedCategory, allowedLabel, allowedList } from "@/lib/darwin/categories";
 import { leadFingerprint } from "./dedup";
 import { logActivity } from "./store";
 import { LEAD_SELECT, toLeadDTO } from "./lead-dto";
@@ -77,6 +78,11 @@ export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
   const db = getDb();
   const limit = Math.min(Math.max(Math.round(p.limit) || 20, 1), 50);
   const baseRadiusM = Math.min(Math.max(Math.round((p.radiusKm ?? 5) * 1000), 500), MAX_RADIUS_M);
+  // DARWIN only looks for the allowed kinds of business (cafes, restaurants, gyms by default)
+  const allowed = allowedList(env.darwinOnlyCategories);
+  const kind = allowedCategory(p.category, allowed);
+  if (!kind) throw new GeoapifyError(`DARWIN only looks for ${allowedLabel(allowed)} — "${p.category.trim()}" isn't one of them.`, "bad_request");
+  p = { ...p, category: kind };
   const plan = categoryPlan(p.category);
   const queryKey = createHash("sha256")
     .update(`${norm(p.category)}|${norm(p.location)}|${p.filter}|${baseRadiusM}`).digest("hex").slice(0, 40);

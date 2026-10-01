@@ -377,7 +377,7 @@ export function DarwinConsole() {
               className="dw-glass flex w-full max-w-2xl items-center gap-1 rounded-full py-1 pl-4 pr-1">
               <Radar className="h-3.5 w-3.5 shrink-0 text-cyan-200/60" />
               <input ref={categoryRef} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} maxLength={80}
-                placeholder="gyms, cafes, dentists…" className="dw-bare min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[13px] text-white outline-none placeholder:text-white/30" />
+                placeholder="cafes, restaurants or gyms" className="dw-bare min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[13px] text-white outline-none placeholder:text-white/30" />
               <span className="h-4 w-px bg-white/10" />
               <input ref={locationRef} value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} maxLength={120}
                 placeholder="Bengaluru · Indiranagar · 560038" className="dw-bare min-w-0 flex-1 bg-transparent px-2 py-1.5 text-[13px] text-white outline-none placeholder:text-white/30" />
