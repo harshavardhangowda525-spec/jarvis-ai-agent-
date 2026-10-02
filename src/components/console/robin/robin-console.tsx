@@ -10,6 +10,7 @@ import { useAgent } from "@/hooks/useAgent";
 import type { Overview, LeadCard } from "@/lib/robin/overview";
 import { CORE_LABEL, STAGE_LABEL, nodeOf, nodeStage, money, type CoreState, type NodeId, type Stage } from "@/lib/robin/types";
 import { parseRobinCommand, parseWhen, type View, type LeadFilter } from "@/lib/robin/command";
+import { followUpBreakdown, spokenLead, type FollowUpQueueLike } from "@/lib/robin/numbers";
 import { RobinCoreEngine } from "./core-engine";
 import { ARC, OrbitPipeline, arcLayout, type ArcGeo, type OrbitHandle } from "./orbit-pipeline";
 import { StagePanel } from "./stage-panel";
@@ -333,18 +334,33 @@ export function RobinConsole() {
   }, [ask, convertLead, lightUp, refresh, say, setCore]);
 
   /** Find the lead a command is about: "this lead" = the open one; a name must match exactly one. */
-  const resolve = useCallback(async (name: string | null): Promise<{ id: string; businessName: string; stage: string } | null> => {
+  /** The lead you talked about last ("note: …" with no lead named goes on it). */
+  const lastLead = useRef<{ id: string; number: number | null; businessName: string; stage: string } | null>(null);
+  const resolve = useCallback(async (name: string | null, o: { orLast?: boolean } = {}): Promise<{ id: string; number: number | null; businessName: string; stage: string } | null> => {
+    type L = { id: string; number: number | null; businessName: string; stage: string };
     if (!name) {
-      if (!leadId) { say("Which lead do you mean? Open one, or just tell me its name."); return null; }
-      const r = await rapi<{ lead: { id: string; businessName: string; stage: string } }>(`leads/${leadId}`);
+      if (!leadId) {
+        if (o.orLast && lastLead.current) return lastLead.current;
+        say("Which lead do you mean? Tell me its number or name — like \"lead 7\"."); return null;
+      }
+      const r = await rapi<{ lead: L }>(`leads/${leadId}`);
+      if (r.data?.lead) lastLead.current = r.data.lead;
       return r.data?.lead ?? null;
     }
-    const r = await rapi<{ leads: { id: string; businessName: string; stage: string }[] }>(`leads?resolve=${encodeURIComponent(name)}`);
+    const r = await rapi<{ leads: L[] }>(`leads?resolve=${encodeURIComponent(name)}`);
     const hits = r.data?.leads ?? [];
-    if (!hits.length) { say(`Hmm, I can't find "${name}" in your CRM.`); return null; }
-    if (hits.length > 1) { say(`A few match that — ${hits.slice(0, 4).map((h) => h.businessName).join(", ")}. Which one?`); setPanel({ kind: "leads", title: `MATCHES FOR "${name.toUpperCase()}"`, query: `q=${encodeURIComponent(name)}` }); return null; }
+    if (!hits.length) { say(/^\D*\d+\s*$/.test(name) ? `There's no ${name.replace(/^#/, "lead ")} in your CRM.` : `Hmm, I can't find "${name}" in your CRM.`); return null; }
+    if (hits.length > 1) { say(`A few match that — ${hits.slice(0, 4).map((h) => spokenLead(h)).join("; ")}. Which one? You can just say the number.`); setPanel({ kind: "leads", title: `MATCHES FOR "${name.toUpperCase()}"`, query: `q=${encodeURIComponent(name)}` }); return null; }
+    lastLead.current = hits[0];
     return hits[0];
   }, [leadId, say]);
+
+  /** Robin asked for a note ("any notes for it?") — the next thing you say that isn't a command is the note. */
+  const pendingNote = useRef<{ followUpId: string; label: string; until: number; then?: () => void } | null>(null);
+  const askNote = useCallback((followUpId: string, label: string, question: string, then?: () => void) => {
+    pendingNote.current = { followUpId, label, until: Date.now() + 3 * 60_000, then };
+    say(question);
+  }, [say]);
 
   const importDarwin = useCallback(async () => {
     setCore("qualifying", 3000);
@@ -365,6 +381,21 @@ export function RobinConsole() {
     if (!text) return;
     setReply(null);
     const cmd = parseRobinCommand(text);
+    // the note Robin just asked for
+    const pn = pendingNote.current;
+    if (pn && Date.now() < pn.until && (cmd.kind === "ask" || cmd.kind === "confirm" || (cmd.kind === "note" && !cmd.name))) {
+      if (cmd.kind === "confirm" && !cmd.yes) { pendingNote.current = null; say("Okay, no note."); pn.then?.(); return; }
+      if (cmd.kind === "confirm") { say("Go ahead — what's the note?"); return; }
+      pendingNote.current = null;
+      const note = cmd.kind === "note" ? cmd.text : text.replace(/^(?:note|notes)\s*[:,-]\s*/i, "");
+      const r = await rapi(`followups/${pn.followUpId}`, "PATCH", { action: "note", notes: note, source: "voice" });
+      if (!r.ok) return say(r.error ?? "I couldn't save that note.");
+      void refresh();
+      say(`Noted for ${pn.label}: ${note.replace(/[.!\s]+$/, "")}.`);
+      pn.then?.();
+      return;
+    }
+    if (pn) pendingNote.current = null; // you moved on to something else
     if (cmd.kind === "confirm") {
       if (confirm) { const c = confirm; setConfirm(null); if (cmd.yes) await c.run(); else say("No problem."); return; }
       if (!cmd.yes) { say("Okay."); return; }
@@ -447,8 +478,26 @@ export function RobinConsole() {
       }
       case "open": {
         const l = await resolve(cmd.name);
-        if (l) { setLeadId(l.id); say(`Here's ${l.businessName}.`); }
+        if (l) { setLeadId(l.id); say(`Here's ${spokenLead(l)}.`); }
         return;
+      }
+      case "followups": {
+        // "how many follow-ups do we have?" → every one, with the note you told me
+        setCore("following_up", 2400);
+        const r = await rapi<FollowUpQueueLike>("followups");
+        if (!r.ok || !r.data) return say(r.error ?? "I couldn't read the follow-ups.");
+        setPanel({ kind: "followups" });
+        return say(followUpBreakdown(r.data, { which: cmd.which }));
+      }
+      case "note": {
+        const l = await resolve(cmd.name, { orLast: true });
+        if (!l) return;
+        const r = await rapi<{ on: "followup" | "lead"; followUp: { dueAt: string } | null }>(`leads/${l.id}/notes`, "POST", { text: cmd.text, source: "voice" });
+        if (!r.ok || !r.data) return say(r.error ?? "I couldn't save that note.");
+        void refresh();
+        return say(r.data.on === "followup" && r.data.followUp && ov
+          ? `Noted on the follow-up with ${spokenLead(l)} (${when(r.data.followUp.dueAt, ov.tz)}): ${cmd.text}.`
+          : `Noted on ${spokenLead(l)}: ${cmd.text}. There's no follow-up scheduled for them yet.`);
       }
       case "move": {
         const l = await resolve(cmd.name);
@@ -463,26 +512,39 @@ export function RobinConsole() {
         const at = parseWhen(cmd.when, ov.tz);
         if (!at) return say(`When should I schedule it? For example, "tomorrow at 4 PM".`);
         setCore(cmd.kind === "followup" ? "following_up" : "demo", 2600);
+        const note = cmd.kind === "followup" ? cmd.note : undefined;
         const r = cmd.kind === "followup"
-          ? await rapi("followups", "POST", { leadId: l.id, dueAt: at.toISOString(), source: "voice" })
-          : await rapi("demos", "POST", { leadId: l.id, at: at.toISOString(), source: "voice" });
+          ? await rapi<{ id: string }>("followups", "POST", { leadId: l.id, dueAt: at.toISOString(), source: "voice", ...(note ? { notes: note } : {}) })
+          : await rapi<{ id: string }>("demos", "POST", { leadId: l.id, at: at.toISOString(), source: "voice" });
         if (!r.ok) return say(r.error ?? "Couldn't schedule that.");
         const tgt = chart.current?.nodeCenter("follow_up"), e = engine.current;
         if (tgt && e) e.emit(e.center(), tgt, { hue: 214, done: () => lightUp(["follow_up"]) });
         await refresh();
-        return say(`${pick(["Done", "You got it", "All set"])} — ${cmd.kind === "followup" ? "follow-up" : "demo"} with ${l.businessName} on ${when(at, ov.tz)}.`);
+        const done = `${pick(["Done", "You got it", "All set"])} — ${cmd.kind === "followup" ? "follow-up" : "demo"} with ${spokenLead(l)} on ${when(at, ov.tz)}.`;
+        if (cmd.kind !== "followup") return say(done);
+        if (note) return say(`${done} Noted: ${note}.`);
+        // every follow-up gets its note — ask for it
+        if (r.data?.id) return askNote(r.data.id, spokenLead(l), `${done} Any notes for it?`);
+        return say(done);
       }
       case "complete_followup": {
         const l = await resolve(cmd.name);
         if (!l) return;
         const fu = await rapi<{ overdue: { id: string; lead: { id: string } }[]; today: { id: string; lead: { id: string } }[]; upcoming: { id: string; lead: { id: string } }[] }>("followups");
         const f = [...(fu.data?.overdue ?? []), ...(fu.data?.today ?? []), ...(fu.data?.upcoming ?? [])].find((x) => x.lead.id === l.id);
-        if (!f) return say(`${l.businessName} has no pending follow-up.`);
-        const r = await rapi(`followups/${f.id}`, "PATCH", { action: "complete", source: "voice" });
+        if (!f) {
+          // nothing scheduled — the note still goes on the lead
+          if (!cmd.note) return say(`${spokenLead(l)} has no pending follow-up.`);
+          const n = await rapi(`leads/${l.id}/notes`, "POST", { text: cmd.note, source: "voice" });
+          return say(n.ok ? `${spokenLead(l)} had no follow-up scheduled, so I noted it on the lead: ${cmd.note}.` : n.error ?? "I couldn't save that note.");
+        }
+        const r = await rapi(`followups/${f.id}`, "PATCH", { action: "complete", source: "voice", ...(cmd.note ? { notes: cmd.note } : {}) });
         if (!r.ok) return say(r.error ?? "Couldn't complete it.");
         await refresh();
-        setConfirm({ q: "Schedule the next follow-up?", run: async () => { setLeadId(l.id); setLeadSheet({ sheet: "followup", at: Date.now() }); } });
-        return say("Nice, that's done. Want me to set up the next one?");
+        const next = () => setConfirm({ q: "Schedule the next follow-up?", run: async () => { setLeadId(l.id); setLeadSheet({ sheet: "followup", at: Date.now() }); } });
+        if (cmd.note) { next(); return say(`Nice, that's done — noted: ${cmd.note}. Want me to set up the next one?`); }
+        // how did it go? → noted on this follow-up, then offer the next one
+        return askNote(f.id, spokenLead(l), `Nice, follow-up with ${spokenLead(l)} done. How did it go — anything to note?`, () => { next(); setTimeout(() => say("Want me to set up the next follow-up?"), 50); });
       }
       default: {
         // Robin's AI brain (JARVIS's AI router) with what's on screen as context
@@ -491,7 +553,7 @@ export function RobinConsole() {
         void agent.send((text + ctx).slice(0, 7800), { agent: "robin" });
       }
     }
-  }, [agent, confirm, convertLead, deactivate, leadId, lightUp, moveLead, openView, ov, refresh, resolve, say, setCore, signaturePulse]);
+  }, [agent, askNote, confirm, convertLead, deactivate, leadId, lightUp, moveLead, openView, ov, refresh, resolve, say, setCore, signaturePulse]);
   handleRef.current = (t) => { void handle(t); };
 
   // the core shows what Robin is doing: thinking (processing) → complete → idle; listening while you talk

@@ -87,11 +87,39 @@ export async function completeFollowUp(userId: string, id: string, o: { notes?: 
   const f = await db.robinFollowUp.findFirst({ where: { id, userId }, include: { lead: { select: { businessName: true } } } });
   if (!f) throw new RobinError("That follow-up doesn't exist.", 404, "not_found");
   if (f.status !== "pending") return f;
-  const row = await db.robinFollowUp.update({ where: { id }, data: { status: "completed", completedAt: new Date(), ...(o.notes ? { notes: [f.notes, o.notes].filter(Boolean).join("\n") } : {}) } });
+  const done = o.notes?.trim() ? `Done: ${o.notes.trim().slice(0, 1000)}` : null;
+  const row = await db.robinFollowUp.update({ where: { id }, data: { status: "completed", completedAt: new Date(), ...(done ? { notes: [f.notes, done].filter(Boolean).join("\n") } : {}) } });
   await syncNextFollowUp(f.leadId);
-  await logRobin(userId, f.leadId, "followup_completed", `Follow-up with ${f.lead.businessName} completed`, { followUpId: id });
+  await logRobin(userId, f.leadId, "followup_completed", `Follow-up with ${f.lead.businessName} completed${done ? ` — ${o.notes!.trim().slice(0, 300)}` : ""}`, { followUpId: id });
   await audit(userId, "followup_completed", "followup", id, source);
   return row;
+}
+
+/**
+ * Take down a note you told Robin. It goes on the follow-up it's about (`followUpId`),
+ * else the lead's next pending follow-up, else the lead's own notes — so "how many
+ * follow-ups do we have?" can read it back with the follow-up.
+ */
+export async function addFollowUpNote(userId: string, p: { leadId?: string; followUpId?: string; text: string }, source: Source = "user") {
+  const db = getDb();
+  const text = p.text.trim().replace(/\s+/g, " ").slice(0, 1000);
+  if (!text) throw new RobinError("The note is empty.", 422, "invalid");
+  const f = p.followUpId
+    ? await db.robinFollowUp.findFirst({ where: { id: p.followUpId, userId }, include: { lead: { select: { id: true, number: true, businessName: true } } } })
+    : p.leadId ? await db.robinFollowUp.findFirst({ where: { userId, leadId: p.leadId, status: "pending" }, orderBy: { dueAt: "asc" }, include: { lead: { select: { id: true, number: true, businessName: true } } } }) : null;
+  if (p.followUpId && !f) throw new RobinError("That follow-up doesn't exist.", 404, "not_found");
+  if (f) {
+    const row = await db.robinFollowUp.update({ where: { id: f.id }, data: { notes: [f.notes, text].filter(Boolean).join("\n").slice(-2000) } });
+    await logRobin(userId, f.leadId, "note", `Note on the follow-up with ${f.lead.businessName}: ${text}`, { followUpId: f.id }, 1);
+    await audit(userId, "followup_note", "followup", f.id, source);
+    return { on: "followup" as const, followUp: row, lead: f.lead };
+  }
+  const lead = await mustLead(userId, p.leadId!);
+  const stamp = new Date().toISOString().slice(0, 10);
+  await db.robinLead.update({ where: { id: lead.id }, data: { notes: [lead.notes, `${stamp}: ${text}`].filter(Boolean).join("\n").slice(-8000) } });
+  await logRobin(userId, lead.id, "note", `Note on ${lead.businessName}: ${text}`, {}, 1);
+  await audit(userId, "lead_note", "lead", lead.id, source);
+  return { on: "lead" as const, followUp: null, lead: { id: lead.id, number: lead.number, businessName: lead.businessName } };
 }
 
 export async function cancelFollowUp(userId: string, id: string, source: Source = "user") {
@@ -110,7 +138,7 @@ export async function followUpQueue(userId: string, now = new Date()) {
   const { start, end } = dayBounds(tz, now);
   const rows = await getDb().robinFollowUp.findMany({
     where: { userId, status: "pending" }, orderBy: { dueAt: "asc" }, take: 300,
-    include: { lead: { select: { id: true, businessName: true, category: true, stage: true, priority: true, phone: true } } },
+    include: { lead: { select: { id: true, number: true, businessName: true, category: true, stage: true, priority: true, phone: true } } },
   });
   return {
     overdue: rows.filter((r) => r.dueAt < start),

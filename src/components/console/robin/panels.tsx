@@ -33,7 +33,8 @@ const Empty = ({ children }: { children: React.ReactNode }) => <p className="py-
 const field = "w-full rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-slate-100 outline-none focus:border-cyan-300/50";
 
 // ---------------------------------------------------------------- follow-ups
-interface FU { id: string; action: string; dueAt: string; priority: string; notes: string | null; lead: { id: string; businessName: string; stage: string; priority: string } }
+interface FU { id: string; action: string; dueAt: string; priority: string; notes: string | null; lead: { id: string; number?: number | null; businessName: string; stage: string; priority: string } }
+const Num = ({ n }: { n?: number | null }) => (n != null ? <span className="mr-1.5 rounded bg-cyan-300/10 px-1 text-[10.5px] font-semibold text-cyan-200">#{n}</span> : null);
 export function FollowUpsPanel({ tz, onOpenLead, onChanged, say, onClose }: { tz: string; onOpenLead: (id: string) => void; onChanged: () => void; say: (t: string) => void; onClose: () => void }) {
   const [q, setQ] = useState<{ overdue: FU[]; today: FU[]; upcoming: FU[] } | null>(null);
   const [asked, setAsked] = useState<FU | null>(null);
@@ -51,9 +52,9 @@ export function FollowUpsPanel({ tz, onOpenLead, onChanged, say, onClose }: { tz
       {rows.map((f, i) => (
         <div key={f.id} className="robin-row flex items-center gap-3 border-b border-white/[0.04] py-2 text-xs" style={{ animationDelay: `${i * 30}ms` }}>
           <button type="button" onClick={() => onOpenLead(f.lead.id)} className="min-w-0 flex-1 text-left">
-            <span className="font-medium text-slate-100 hover:text-cyan-200">{f.lead.businessName}</span>
+            <Num n={f.lead.number} /><span className="font-medium text-slate-100 hover:text-cyan-200">{f.lead.businessName}</span>
             <span className="ml-2 text-slate-400">{f.action} · {when(f.dueAt, tz)}</span>
-            {f.notes && <span className="block truncate text-[11px] text-slate-500">{f.notes}</span>}
+            {f.notes ? <span className="mt-0.5 block whitespace-pre-line text-[11px] leading-snug text-slate-300/80">📝 {f.notes}</span> : <span className="block text-[10.5px] italic text-slate-600">No note — say &quot;note for {f.lead.number ?? f.lead.businessName}: …&quot;</span>}
           </button>
           <span className={cn("rounded-full border px-2 py-0.5 text-[9px] tracking-[0.12em]", f.priority === "high" ? "border-cyan-300/40 text-cyan-200" : "border-white/10 text-slate-400")}>{f.priority.toUpperCase()}</span>
           <span className="text-[10px] text-slate-500">{STAGE_LABEL[f.lead.stage as Stage]}</span>
@@ -203,7 +204,7 @@ export function ClientsPanel({ onOpenLead, onClose, say }: { onOpenLead: (id: st
 }
 
 // ---------------------------------------------------------------- leads list (filters, voice results)
-interface LeadRow { id: string; businessName: string; category: string | null; stage: string; priority: string; score: number; potentialValue: number | null; city: string | null; lastContactAt: string | null }
+interface LeadRow { id: string; number?: number | null; businessName: string; category: string | null; stage: string; priority: string; score: number; potentialValue: number | null; city: string | null; lastContactAt: string | null }
 export function LeadsPanel({ title, query, currency, onOpenLead, onClose }: { title: string; query: string; currency: string; onOpenLead: (id: string) => void; onClose: () => void }) {
   const [rows, setRows] = useState<LeadRow[] | null>(null);
   const [q, setQ] = useState("");
@@ -215,7 +216,7 @@ export function LeadsPanel({ title, query, currency, onOpenLead, onClose }: { ti
       {!rows ? <Spin /> : !rows.length ? <Empty>No leads match.</Empty> : rows.map((l, i) => (
         <button key={l.id} type="button" onClick={() => onOpenLead(l.id)} className="robin-row flex w-full items-center gap-3 border-b border-white/[0.04] py-2 text-left text-xs hover:bg-white/[0.02]" style={{ animationDelay: `${Math.min(i, 20) * 20}ms` }}>
           <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", l.priority === "high" ? "bg-cyan-300 shadow-[0_0_8px_#67e8f9]" : l.priority === "medium" ? "bg-sky-400/70" : "bg-slate-500")} />
-          <span className="min-w-0 flex-1"><span className="font-medium text-slate-100">{l.businessName}</span><span className="ml-2 text-slate-500">{[l.category, l.city].filter(Boolean).join(" · ")}</span></span>
+          <span className="min-w-0 flex-1"><Num n={l.number} /><span className="font-medium text-slate-100">{l.businessName}</span><span className="ml-2 text-slate-500">{[l.category, l.city].filter(Boolean).join(" · ")}</span></span>
           <span className="text-slate-400">{STAGE_LABEL[l.stage as Stage]}</span>
           <span className="w-8 text-right font-semibold text-cyan-200">{l.score}</span>
           <span className="w-20 text-right text-emerald-300">{l.potentialValue != null ? money(l.potentialValue, currency, true) : "—"}</span>

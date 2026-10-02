@@ -1129,6 +1129,28 @@ the facts on record. These include website status, which contact channels it has
 - A message you log is "logged", never "delivered". Only an API confirmation
   (Gmail) counts as sent.
 
+**Lead numbers.** Every lead has its own short number: #1, #2, #3 … in the order
+leads arrived, and new leads take the next one.
+- The number shows on the orbit bubbles, the stage lists, the lead panel and the
+  follow-ups.
+- Use it anywhere you'd use the name: "open lead 7", "follow up with 7 tomorrow
+  at 4", "move number 12 to interested", "make 5 a client". "lead seven" works
+  by voice too.
+
+**Follow-up notes.** Every follow-up keeps your notes.
+- "Follow up with 7 tomorrow at 4, note: wants an online menu" (or "… about the
+  menu") saves the note with it.
+- Without a note, Robin asks "Any notes for it?", and whatever you say next is
+  saved.
+- "Done with 7, he wants a quote next week" completes the follow-up with that
+  note. A plain "mark the follow-up with 7 done" makes Robin ask how it went.
+- "Note for 7: call after 6 pm" adds a note to lead 7's next follow-up, or to the
+  lead itself when none is scheduled.
+- **"How many follow-ups do we have?"** gives the breakdown: overdue, today and
+  coming up. Each follow-up is read out with its lead number, the time and the
+  note you gave, and the list opens on screen. "Which follow-ups are overdue?"
+  and "today's follow-ups" narrow it down.
+
 **Your commands come first.** ROBIN talks like a friend and does what you tell
 it straight away, with no "are you sure?". Your command is the approval, whether
 you give it by voice, by click or by dragging a card. That includes WON, LOST,

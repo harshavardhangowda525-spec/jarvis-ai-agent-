@@ -1,6 +1,7 @@
 import { startOfDay, addDays, todayIn } from "@/lib/activity/dates";
 import { isRobinDeactivation, stripRobinWake } from "./wake";
 import type { NodeId, Stage } from "./types";
+import { leadNumberOf } from "./numbers";
 
 /**
  * What a spoken/typed ROBIN command means. Fast local routing for the commands
@@ -19,9 +20,11 @@ export type RobinCommand =
   | { kind: "leads"; filter: LeadFilter }
   | { kind: "open"; name: string }
   | { kind: "move"; name: string | null; stage: Stage }
-  | { kind: "followup"; name: string | null; when: string }
+  | { kind: "followup"; name: string | null; when: string; note?: string }
   | { kind: "demo"; name: string | null; when: string }
-  | { kind: "complete_followup"; name: string | null }
+  | { kind: "complete_followup"; name: string | null; note?: string }
+  | { kind: "note"; name: string | null; text: string }
+  | { kind: "followups"; which: "all" | "today" | "overdue" | "upcoming" }
   | { kind: "convert"; name: string | null }
   | { kind: "undo" }
   | { kind: "chat"; topic: "hello" | "how_are_you" | "thanks" | "who" | "bye" }
@@ -81,14 +84,43 @@ export function parseRobinCommand(raw: string): RobinCommand {
   if (/^(undo|undo (that|it|the last (one|move|change))|take (that|it) back|revert( that| it)?|go back one|move it back)[.!\s]*$/.test(low)) return { kind: "undo" };
   if (/\b(what'?s my day|my day|daily briefing|sales briefing|morning (report|briefing)|brief me|today'?s briefing)\b/.test(low)) return { kind: "briefing" };
 
+  // ---- notes: "note for 7: wants an online menu", "add a note to ABC Café that he's travelling"
+  let m = low.match(/^(?:please\s+)?(?:(?:add|make|take(?:\s+down)?|put|write(?:\s+down)?|save|jot(?:\s+down)?)\s+(?:a\s+)?)?notes?\s+(?:for|on|to|about|against)\s+(.+?)\s*(?:[:;–—-]\s*|,\s*|\s+(?:that|saying)\s+)(.+)$/)
+    ?? low.match(/^(?:please\s+)?(?:(?:add|make|take(?:\s+down)?|put|write(?:\s+down)?|save)\s+(?:a\s+)?)?notes?\s+(?:for|on|to)\s+((?:lead\s+|client\s+|number\s+|no\.?\s*|#)?\d{1,6})\s+(.+)$/);
+  if (m) return { kind: "note", name: nameOrThis(origCase(text, m[1])), text: cleanNote(origCase(text, m[2])) };
+  m = low.match(/^(?:please\s+)?(?:(?:add|make|take(?:\s+down)?|write(?:\s+down)?|save)\s+(?:a\s+)?)?notes?\s*[:,–—-]\s*(.+)$/);
+  if (m) return { kind: "note", name: null, text: cleanNote(origCase(text, m[1])) };
+
+  // ---- follow-ups done (a note can follow): "done with 7, he wants a quote", "followed up with ABC Café — call back Monday"
+  m = low.match(/^(?:i'?m\s+|i\s+(?:have\s+|just\s+)?|we\s+)?(?:done with|followed up with|finished (?:the\s+)?follow[- ]?up with|completed (?:the\s+)?follow[- ]?up with)\s+(.+?)(?:\s*[,:;–—-]\s*(.+))?$/)
+    ?? low.match(/^follow[- ]?up\s+with\s+(.+?)\s+(?:is\s+)?(?:done|complete|completed)(?:\s*[,:;–—-]\s*(.+))?$/);
+  if (m) return { kind: "complete_followup", name: nameOrThis(origCase(text, m[1])), ...(m[2] ? { note: cleanNote(origCase(text, m[2])) } : {}) };
+
+  // ---- the follow-up list, read out with your notes: "how many follow-ups do we have?"
+  if (/\bfollow[- ]?ups?\b/.test(low) && !/^(?:please\s+)?(?:schedule|set up|book|add|create|plan|mark|complete|finish|close|cancel)\b/.test(low)
+    && /\b(how many|what|which|list|tell me|give me|read|breakdown|break down|show|do (?:we|i) have|have we got|got|pending|my|our|today'?s?|overdue|missed|upcoming|coming up|due|waiting|all|open|status)\b/.test(low)) {
+    const which = /\b(overdue|missed|late)\b/.test(low) ? "overdue" : /\btoday'?s?\b/.test(low) ? "today" : /\b(upcoming|coming up|this week|tomorrow|later)\b/.test(low) ? "upcoming" : "all";
+    return { kind: "followups", which };
+  }
+
   // ---- actions on a lead
-  let m = low.match(/^(?:please )?(?:schedule|set up|book|add|create|plan)\s+(?:a |another |the next )?follow[- ]?up\s+(?:call\s+)?(?:with|for)\s+(.+?)\s+((?:today|tonight|tomorrow|day after tomorrow|on|next|this|in|at|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b.*)$/);
+  m = low.match(/^(?:please )?(?:schedule|set up|book|add|create|plan)\s+(?:a |another |the next )?follow[- ]?up\s+(?:call\s+)?(?:with|for)\s+(.+?)\s+((?:today|tonight|tomorrow|day after tomorrow|on|next|this|in|at|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b.*)$/);
   if (!m) m = low.match(/^(?:please )?follow[- ]?up\s+with\s+(.+?)\s+((?:today|tonight|tomorrow|day after tomorrow|on|next|this|in|at|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b.*)$/);
-  if (m) return { kind: "followup", name: nameOrThis(origCase(text, m[1])), when: m[2] };
+  if (m) {
+    // "… tomorrow at 4, note: wants an online menu" / "… about the menu" — the note rides along
+    const [name, n1] = splitNote(m[1]);
+    const [when, n2] = splitNote(m[2]);
+    const note = [n1, n2].filter(Boolean).map((n) => cleanNote(origCase(text, n!))).join(" ");
+    return { kind: "followup", name: nameOrThis(origCase(text, name)), when, ...(note ? { note } : {}) };
+  }
   m = low.match(/^(?:please )?(?:schedule|set up|book|arrange|plan)\s+(?:a |the )?demo\s+(?:with|for)\s+(.+?)\s+((?:today|tonight|tomorrow|day after tomorrow|on|next|this|in|at|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b.*)$/);
   if (m) return { kind: "demo", name: nameOrThis(origCase(text, m[1])), when: m[2] };
-  m = low.match(/^(?:mark|complete|finish|close)\s+(?:the\s+)?follow[- ]?up\s+(?:with|for)\s+(.+?)\s*(?:as\s+)?(?:done|complete|completed)?$/) ?? low.match(/^follow[- ]?up\s+with\s+(.+?)\s+(?:is\s+)?(?:done|complete|completed)$/);
-  if (m) return { kind: "complete_followup", name: nameOrThis(origCase(text, m[1])) };
+  m = low.match(/^(?:mark|complete|finish|close)\s+(?:the\s+)?follow[- ]?up\s+(?:with|for)\s+(.+?)\s*(?:as\s+)?(?:done|complete|completed)?(?:\s*[,:;–—-]\s*(.+))?$/);
+  if (m) {
+    const [name, n1] = splitNote(m[1]);
+    const note = [n1, m[2]].filter(Boolean).map((n) => cleanNote(origCase(text, n!))).join(" ");
+    return { kind: "complete_followup", name: nameOrThis(origCase(text, name.replace(/\s+(?:as\s+)?(?:done|complete|completed)$/, ""))), ...(note ? { note } : {}) };
+  }
   m = low.match(/^(?:make|convert|turn)\s+(.+?)\s+(?:a|into a|to a|as a)\s+(?:client|customer)[.!?]*$/) ?? low.match(/^(?:convert)\s+(.+?)(?:\s+to\s+(?:a\s+)?client)?[.!?]*$/);
   if (m) return { kind: "convert", name: nameOrThis(origCase(text, m[1])) };
   m = low.match(/^(?:mark|set|move|put|change|update|shift)\s+(.+?)\s+(?:as|to|into|in|at)\s+(.+)$/);
@@ -110,7 +142,6 @@ export function parseRobinCommand(raw: string): RobinCommand {
   // ---- views
   if (/\b(funnel)\b/.test(low)) return { kind: "view", view: "funnel" };
   if (/\b(potential revenue|pipeline value|revenue pipeline|revenue)\b/.test(low) && /\b(show|what|my|open|display|view)\b/.test(low)) return { kind: "view", view: "revenue" };
-  if (/\b(follow[- ]?ups?)\b/.test(low) && /\b(show|today|my|open|list|waiting|due|overdue|what)\b/.test(low)) return { kind: "view", view: "followups" };
   if (/\b(quotations?|quotes)\b/.test(low) && /\b(show|all|my|open|list)\b/.test(low)) return { kind: "view", view: "quotations" };
   if (/\bdemos?\b/.test(low) && /\b(show|all|my|open|list|upcoming)\b/.test(low)) return { kind: "view", view: "demos" };
   if (/\b(won clients?|clients?|customers?)\b/.test(low) && /\b(show|all|my|open|list)\b/.test(low)) return { kind: "view", view: "clients" };
@@ -120,9 +151,28 @@ export function parseRobinCommand(raw: string): RobinCommand {
     const f = FILTER_WORDS.find(([re]) => re.test(low))?.[1];
     if (f) return { kind: "leads", filter: f };
   }
+  // "open lead 7", "show me number 12", "open #3", "open 7"
+  m = text.match(/^(?:open|show(?: me)?|pull up|bring up|go to|display)\s+(?:the\s+)?((?:lead|client|customer|number|no\.?)\s*(?:number\s+)?#?\s*\d{1,6}|#?\d{1,6}|(?:lead|client|number)\s+[a-z]+(?:[\s-][a-z]+)?)[.!?]*$/i);
+  if (m && (/\d/.test(m[1]) || leadNumberOf(m[1]))) return { kind: "open", name: m[1].trim() };
   m = text.match(/^(?:open|show(?: me)?|pull up|bring up|go to|display)\s+(?:the\s+)?(?:lead\s+(?:for\s+)?)?(.{2,80}?)(?:'s\s+(?:lead|profile|details))?[.!?]*$/i);
   if (m && !/\b(leads?|pipeline|crm|funnel|revenue|follow[- ]?ups?|quotations?|demos?|clients?|analytics|robin|jarvis|today|my day)\b/i.test(m[1])) return { kind: "open", name: m[1].trim() };
   return { kind: "ask", text: raw.trim() };
+}
+
+/**
+ * Split "<main part> <note>" at a note marker: "…, note: X", "… and note that X",
+ * "… saying X", "… about X" (not "about 4"), "… regarding X", "… to discuss X".
+ */
+const NOTE_MARK = /\s*(?:[,;:–—-]\s*)?(?:\b(?:and\s+)?(?:(?:add|make|take|put|with)\s+(?:down\s+)?(?:a\s+)?)?notes?(?:\s+that|\s+saying)?\s*[:,–—-]?\s+|\b(?:saying|regarding|re:|to discuss|to talk about)\s+|\babout\s+(?!\d|noon|midday))/;
+export function splitNote(s: string): [string, string | undefined] {
+  const m = s.match(NOTE_MARK);
+  if (!m || m.index === undefined || m.index === 0) return [s, undefined];
+  const note = s.slice(m.index + m[0].length).trim();
+  return note ? [s.slice(0, m.index).trim(), note] : [s, undefined];
+}
+/** "note: wants an online menu." → "wants an online menu" */
+export function cleanNote(s: string): string {
+  return s.trim().replace(/^(?:note|notes)\s*[:,–—-]\s*/i, "").replace(/^(?:that|saying)\s+/i, "").replace(/[.!\s]+$/, "").slice(0, 1000);
 }
 
 /** Keep the user's own spelling/case of a captured name. */

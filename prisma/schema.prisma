@@ -672,6 +672,7 @@ model RobinLead {
   userId           String
   darwinLeadId     String? // the DARWIN lead it came from (no FK: CRM history outlives it)
   darwinAliases    String[]  @default([]) // other DARWIN records found to be this same business
+  number           Int? // the lead's short number for this user (1, 2, 3 …) — "follow up with 7"
   businessName     String
   category         String?
   phone            String?
@@ -726,6 +727,8 @@ model RobinLead {
   @@index([userId, fingerprint])
   @@index([userId, phoneKey])
   @@index([userId, email])
+
+  @@unique([userId, number])
 }
 
 /// Every qualification Robin ran (score history with its reasons).

@@ -11,7 +11,7 @@ import { NODES, nodeOf, CLOSED, STAGE_ORDER, type NodeId, type Stage } from "./t
  */
 
 export interface LeadCard {
-  id: string; name: string; category: string | null; score: number; priority: string; stage: string;
+  id: string; number: number | null; name: string; category: string | null; score: number; priority: string; stage: string;
   value: number | null; nextFollowUpAt: string | null; flag: "overdue" | "today" | null; attention: number;
   demoAt: string | null; quote: { status: string; total: number } | null; phone: boolean; email: boolean; whatsapp: boolean; source: string;
 }
@@ -64,7 +64,7 @@ export async function robinOverview(userId: string, now = new Date()): Promise<O
   const { start, end } = dayBounds(tz, now);
   const [settings, leads, followUps, demos, quotes, clients, recent, notes] = await Promise.all([
     loadSettings(userId),
-    db.robinLead.findMany({ where: { userId }, select: { id: true, businessName: true, category: true, score: true, priority: true, stage: true, potentialValue: true, nextFollowUpAt: true, lastContactAt: true, phone: true, email: true, whatsapp: true, source: true, createdAt: true } }),
+    db.robinLead.findMany({ where: { userId }, select: { id: true, number: true, businessName: true, category: true, score: true, priority: true, stage: true, potentialValue: true, nextFollowUpAt: true, lastContactAt: true, phone: true, email: true, whatsapp: true, source: true, createdAt: true } }),
     db.robinFollowUp.findMany({ where: { userId, status: "pending" }, select: { id: true, leadId: true, dueAt: true, action: true, priority: true } }),
     db.robinDemo.findMany({ where: { userId, status: { in: ["scheduled", "rescheduled"] }, scheduledAt: { gte: new Date(now.getTime() - 3 * 3_600_000) } }, select: { leadId: true, scheduledAt: true }, orderBy: { scheduledAt: "asc" } }),
     db.robinQuotation.findMany({ where: { userId, status: { in: ["draft", "sent", "accepted"] } }, select: { leadId: true, status: true, total: true, createdAt: true }, orderBy: { createdAt: "desc" } }),
@@ -186,14 +186,14 @@ export async function robinOverview(userId: string, now = new Date()): Promise<O
   };
 }
 
-type CardSource = { id: string; businessName: string; category: string | null; score: number; priority: string; stage: string; potentialValue: number | null; nextFollowUpAt: Date | null; lastContactAt: Date | null; phone: string | null; email: string | null; whatsapp: string | null; source: string };
+type CardSource = { id: string; number: number | null; businessName: string; category: string | null; score: number; priority: string; stage: string; potentialValue: number | null; nextFollowUpAt: Date | null; lastContactAt: Date | null; phone: string | null; email: string | null; whatsapp: string | null; source: string };
 function toCards(leads: CardSource[], demoBy: Map<string, Date>, quoteBy: Map<string, { status: string; total: number }>, start: Date, end: Date, now: Date): LeadCard[] {
   return leads.map((l) => {
     const due = l.nextFollowUpAt;
     const flag = due ? (due < start ? "overdue" : due < end ? "today" : null) : null;
     const q = quoteBy.get(l.id) ?? null;
     return {
-      id: l.id, name: l.businessName, category: l.category, score: l.score, priority: l.priority, stage: l.stage,
+      id: l.id, number: l.number, name: l.businessName, category: l.category, score: l.score, priority: l.priority, stage: l.stage,
       value: l.potentialValue ?? q?.total ?? null, nextFollowUpAt: due?.toISOString() ?? null, flag,
       attention: attention(l, now), demoAt: demoBy.get(l.id)?.toISOString() ?? null, quote: q,
       phone: !!l.phone, email: !!l.email, whatsapp: !!l.whatsapp, source: l.source,
@@ -210,7 +210,7 @@ export async function nodeCards(userId: string, node: NodeId, now = new Date()):
   const { start, end } = dayBounds(tz, now);
   const leads = await db.robinLead.findMany({
     where: { userId, stage: { in: stages } }, take: 5000,
-    select: { id: true, businessName: true, category: true, score: true, priority: true, stage: true, potentialValue: true, nextFollowUpAt: true, lastContactAt: true, phone: true, email: true, whatsapp: true, source: true },
+    select: { id: true, number: true, businessName: true, category: true, score: true, priority: true, stage: true, potentialValue: true, nextFollowUpAt: true, lastContactAt: true, phone: true, email: true, whatsapp: true, source: true },
   });
   const ids = leads.map((l) => l.id);
   const [demos, quotes] = await Promise.all([

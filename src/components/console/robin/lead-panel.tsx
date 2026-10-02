@@ -82,7 +82,7 @@ export function LeadPanel({ leadId, tz, onClose, onChanged, ask, say, externalSh
       <div className="border-b border-white/[0.06] px-5 pb-4 pt-5">
         <div className="flex items-start justify-between gap-3 pr-8">
           <div className="min-w-0">
-            <h2 className="robin-type truncate text-lg font-semibold tracking-wide text-white">{l.businessName}</h2>
+            <h2 className="robin-type truncate text-lg font-semibold tracking-wide text-white">{l.number != null && <span className="mr-2 rounded-md border border-cyan-300/30 bg-cyan-300/10 px-1.5 text-base text-cyan-100" title={`Lead number — say "lead ${l.number}"`}>#{l.number}</span>}{l.businessName}</h2>
             <p className="text-xs text-slate-400">{[l.category, l.city].filter(Boolean).join(" · ") || "—"}</p>
           </div>
           <div className="text-right">

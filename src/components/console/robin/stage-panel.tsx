@@ -43,7 +43,7 @@ export function StagePanel({ node, currency, tz, style, className, onClose, onOp
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase();
     const f = FILTERS.find((x) => x.id === filter)!;
-    return source.filter((l) => f.test(l) && (!needle || `${l.name} ${l.category ?? ""}`.toLowerCase().includes(needle)));
+    return source.filter((l) => f.test(l) && (!needle || `#${l.number ?? ""} ${l.number ?? ""} ${l.name} ${l.category ?? ""}`.toLowerCase().includes(needle.replace(/^#?(\d+)$/, "#$1 "))));
   }, [source, q, filter]);
 
   return (
@@ -71,9 +71,9 @@ export function StagePanel({ node, currency, tz, style, className, onClose, onOp
               onPointerDown={(e) => beginDrag(e, l, node.id)}
               className={cn("robin-bubble flex h-7 w-7 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-full text-[9px] font-semibold active:cursor-grabbing", l.priority === "high" && "robin-bubble-high")}
               title="Drag onto a stage to move it" aria-hidden
-            >{initials(l.name)}</span>
+            >{l.number ?? initials(l.name)}</span>
             <button type="button" onClick={() => onOpenLead(l.id)} className="min-w-0 flex-1 text-left">
-              <span className="block truncate text-[11.5px] font-medium text-slate-100 group-hover:text-white">{l.name}</span>
+              <span className="block truncate text-[11.5px] font-medium text-slate-100 group-hover:text-white">{l.number != null && <span className="mr-1.5 text-cyan-200/90">#{l.number}</span>}{l.name}</span>
               <span className={cn("block truncate text-[10px]", l.flag === "overdue" ? "text-amber-300/90" : "text-slate-400")}>{leadStatus(l, tz)} · {contactStatus(l).replace("Reachable by ", "")}</span>
             </button>
             {l.value != null && <span className="hidden shrink-0 text-[10.5px] text-emerald-300/90 sm:block">{money(l.value, currency, true)}</span>}

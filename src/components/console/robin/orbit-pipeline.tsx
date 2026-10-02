@@ -245,9 +245,9 @@ export const OrbitPipeline = forwardRef<OrbitHandle, Props>(function OrbitPipeli
             onPointerLeave={() => setHover((h) => (h?.lead.id === lead.id ? null : h))}
             onFocus={() => setHover({ lead, at: b })} onBlur={() => setHover(null)}
             onKeyDown={(e) => { if (e.key === "Enter") p.onOpenLead(lead.id); }}
-            aria-label={`${lead.name} — ${STAGE_LABEL[lead.stage as Stage] ?? lead.stage}. ${contactStatus(lead)}. Drag onto a stage to move it.`}
+            aria-label={`${lead.number ? `Lead ${lead.number}, ` : ""}${lead.name} — ${STAGE_LABEL[lead.stage as Stage] ?? lead.stage}. ${contactStatus(lead)}. Drag onto a stage to move it.`}
           >
-            {initials(lead.name)}
+            {lead.number ?? initials(lead.name)}
           </button>
         );
       })}
@@ -256,7 +256,7 @@ export const OrbitPipeline = forwardRef<OrbitHandle, Props>(function OrbitPipeli
       {hover && !drag && (
         <div className="robin-tip pointer-events-none absolute z-40 w-max max-w-[240px] rounded-lg border border-cyan-300/20 bg-slate-950/85 px-2.5 py-1.5 text-[10.5px] leading-snug shadow-[0_10px_30px_-10px_rgba(8,145,178,0.6)] backdrop-blur-xl"
           style={{ left: Math.max(6, Math.min(g.w - 246, hover.at.x - 40)), top: hover.at.y - 86 }}>
-          <p><span className="text-slate-500">Lead:</span> <span className="font-semibold text-slate-50">{hover.lead.name}</span></p>
+          <p><span className="text-slate-500">Lead:</span> {hover.lead.number != null && <span className="mr-1 rounded bg-cyan-300/15 px-1 font-semibold text-cyan-100">#{hover.lead.number}</span>}<span className="font-semibold text-slate-50">{hover.lead.name}</span></p>
           <p className="text-slate-300"><span className="text-slate-500">Contact:</span> {contactStatus(hover.lead)}</p>
           <p className="text-cyan-100"><span className="text-slate-500">Status:</span> {leadStatus(hover.lead)}</p>
           {hover.lead.value != null && <p className="text-emerald-300/90"><span className="text-slate-500">Opportunity:</span> {money(hover.lead.value, p.currency)}</p>}
@@ -269,7 +269,7 @@ export const OrbitPipeline = forwardRef<OrbitHandle, Props>(function OrbitPipeli
       {/* the lead being dragged follows the pointer */}
       {drag && (
         <div className="pointer-events-none fixed z-[80] flex items-center gap-2" style={{ left: drag.x - 15, top: drag.y - 15 }}>
-          <span className="robin-bubble robin-bubble-sel flex h-[30px] w-[30px] items-center justify-center rounded-full text-[10px] font-semibold">{initials(drag.lead.name)}</span>
+          <span className="robin-bubble robin-bubble-sel flex h-[30px] w-[30px] items-center justify-center rounded-full text-[10px] font-semibold">{drag.lead.number ?? initials(drag.lead.name)}</span>
           <span className="rounded-full border border-cyan-300/30 bg-slate-950/85 px-2 py-0.5 text-[10px] text-cyan-50 backdrop-blur">
             {drag.over && drag.over !== drag.from ? `→ ${byId[drag.over]?.label ?? drag.over}` : drag.lead.name}
           </span>

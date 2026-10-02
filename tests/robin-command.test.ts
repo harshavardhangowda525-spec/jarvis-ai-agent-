@@ -21,8 +21,8 @@ describe("ROBIN wake words", () => {
 describe("ROBIN voice commands", () => {
   const p = parseRobinCommand;
   it("views and filters", () => {
-    expect(p("Robin, show me today's follow-ups.")).toEqual({ kind: "view", view: "followups" });
-    expect(p("Show leads waiting for follow-up")).toEqual({ kind: "view", view: "followups" });
+    expect(p("Robin, show me today's follow-ups.")).toEqual({ kind: "followups", which: "today" });
+    expect(p("Show leads waiting for follow-up")).toEqual({ kind: "followups", which: "all" });
     expect(p("Robin, show me my highest-priority leads.")).toEqual({ kind: "leads", filter: "hottest" });
     expect(p("show me the hottest leads")).toEqual({ kind: "leads", filter: "hottest" });
     expect(p("Robin, show me all qualified leads.")).toEqual({ kind: "leads", filter: "qualified" });

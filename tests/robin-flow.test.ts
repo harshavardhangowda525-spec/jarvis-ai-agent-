@@ -177,4 +177,40 @@ d("ROBIN: Darwin lead → client (integration)", () => {
     await crm.createLead(userId, { businessName: "ABC Bakery", phone: "+91 90000 12345", city: "Mysuru", websiteStatus: "no_website" }, "user");
     await expect(crm.resolveLead(userId, "ABC")).rejects.toThrow(/I found 2 matches for "ABC"/);
   });
+
+  it("every lead has its own number; you can name it by number, and follow-up notes are kept", async () => {
+    // numbers follow on in order — also when several leads arrive at the same moment
+    const first = (await db().robinLead.findMany({ where: { userId }, orderBy: { number: "asc" }, select: { number: true } })).map((l) => l.number);
+    expect(first).toEqual(first.map((_, i) => i + 1));
+    const made = await Promise.all(["Brew House", "Iron Den Gym", "Dosa Corner", "Kettle Cafe", "Pulse Fitness"].map((n, i) => crm.createLead(userId, { businessName: n, phone: `+91 98450 7${String(1000 + i).padStart(4, "0")}`, city: "Bengaluru" }, "user")));
+    const nums = made.map((m) => m.lead.number!).sort((a, b) => a - b);
+    expect(nums).toEqual(nums.map((_, i) => first.length + 1 + i));
+    // name it by number
+    const brew = made[0].lead;
+    expect((await crm.resolveLead(userId, String(brew.number))).id).toBe(brew.id);
+    expect((await crm.resolveLead(userId, `lead ${brew.number}`)).businessName).toBe("Brew House");
+    expect((await crm.resolveLead(userId, `#${brew.number}`)).id).toBe(brew.id);
+    await expect(crm.resolveLead(userId, "lead 999")).rejects.toThrow(/There's no lead number 999/);
+    // a follow-up with its note; a later note joins it; done with a note
+    const due = new Date(Date.now() + 2 * 3_600_000);
+    const fu = await engage.scheduleFollowUp(userId, brew.id, { dueAt: due, notes: "wants an online menu" }, "voice");
+    const added = await engage.addFollowUpNote(userId, { leadId: brew.id, text: "owner prefers WhatsApp" }, "voice");
+    expect(added).toMatchObject({ on: "followup", lead: { number: brew.number, businessName: "Brew House" } });
+    const q = await engage.followUpQueue(userId);
+    const row = [...q.today, ...q.upcoming].find((f) => f.id === fu.id)!;
+    expect(row.lead.number).toBe(brew.number);
+    expect(row.notes).toBe("wants an online menu\nowner prefers WhatsApp");
+    const { followUpBreakdown } = await import("@/lib/robin/numbers");
+    expect(followUpBreakdown(q)).toContain(`lead ${brew.number}, Brew House — call,`);
+    expect(followUpBreakdown(q)).toContain("Note: wants an online menu; owner prefers WhatsApp.");
+    await engage.completeFollowUp(userId, fu.id, { notes: "sent the price list" }, "voice");
+    expect((await db().robinFollowUp.findUnique({ where: { id: fu.id } }))?.notes).toBe("wants an online menu\nowner prefers WhatsApp\nDone: sent the price list");
+    // no follow-up scheduled → the note goes on the lead itself
+    const onLead = await engage.addFollowUpNote(userId, { leadId: brew.id, text: "call after 6 pm" }, "voice");
+    expect(onLead.on).toBe("lead");
+    expect((await db().robinLead.findUnique({ where: { id: brew.id } }))?.notes).toMatch(/\d{4}-\d{2}-\d{2}: call after 6 pm$/);
+    // cards on the chart carry the number
+    const ov = await overview.robinOverview(userId);
+    expect(ov.nodes.flatMap((n) => n.leads).find((l) => l.id === brew.id)?.number).toBe(brew.number);
+  });
 });

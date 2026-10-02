@@ -1,4 +1,5 @@
 import "server-only";
+import { leadNumberOf } from "./numbers";
 import type { Prisma, RobinLead } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { env } from "@/lib/env";
@@ -133,9 +134,19 @@ export async function createLead(userId: string, input: LeadInput, source: Sourc
   const q = qualify({ ...input, businessName: name });
   const stage: Stage = q.priority === "high" || q.priority === "medium" ? "qualified" : "new";
   const now = new Date();
-  const lead = await db.robinLead.create({
+  // the lead's short number (1, 2, 3 …); two leads arriving at once → the second takes the next one
+  let lead: RobinLead | null = null;
+  for (let attempt = 0; !lead; attempt++) {
+    const number = await nextLeadNumber(userId);
+    try {
+      lead = await createRow(number);
+    } catch (e) {
+      if ((e as { code?: string }).code !== "P2002" || attempt >= 6 || !String((e as { meta?: { target?: unknown } }).meta?.target ?? "number").includes("number")) throw e;
+    }
+  }
+  async function createRow(number: number) { return db.robinLead.create({
     data: {
-      userId, businessName: name, darwinLeadId: input.darwinLeadId ?? null, category: input.category ?? null,
+      userId, number, businessName: name, darwinLeadId: input.darwinLeadId ?? null, category: input.category ?? null,
       phone: input.phone ?? null, whatsapp: input.whatsapp ?? null, email: input.email?.trim() || null, website: input.website ?? null,
       instagram: input.instagram ?? null, address: input.address ?? null, city: input.city ?? null, mapsUrl: input.mapsUrl ?? null,
       websiteStatus: input.websiteStatus ?? (input.website ? "has_website" : "unknown"), websiteQuality: input.websiteQuality ?? null,
@@ -147,7 +158,7 @@ export async function createLead(userId: string, input: LeadInput, source: Sourc
       scores: { create: { userId, score: q.score, priority: q.priority, reasons: q.reasons as unknown as Prisma.InputJsonValue } },
       stageChanges: { create: [{ userId, fromStage: null, toStage: "new", source, note: source === "darwin" ? "Received from DARWIN" : "Created" }, ...(stage !== "new" ? [{ userId, fromStage: "new", toStage: stage, source: "robin" as const, note: `Qualified as ${q.priority} priority` }] : [])] },
     },
-  });
+  }); }
   await logRobin(userId, lead.id, "imported", source === "darwin" ? `DARWIN handed over ${name}` : `${name} added to the CRM`, { source });
   await logRobin(userId, lead.id, "qualified", `${name} qualified as ${q.priority === "needs_review" ? "Needs Review" : `${q.priority[0].toUpperCase()}${q.priority.slice(1)} Priority`}`, { score: q.score, reasons: q.reasons }, 1);
   await audit(userId, "lead_created", "lead", lead.id, source, { name, priority: q.priority, score: q.score });
@@ -236,7 +247,24 @@ export async function updateLead(userId: string, leadId: string, patch: LeadPatc
  * Exact → starts with → contains → shared words. Returns every close match so
  * Robin can ask "which one?" instead of guessing.
  */
+/** The next free lead number for this user. */
+export async function nextLeadNumber(userId: string): Promise<number> {
+  const top = await getDb().robinLead.aggregate({ where: { userId }, _max: { number: true } });
+  return (top._max.number ?? 0) + 1;
+}
+
+/** The lead with this number ("7", "#7", "lead seven"), or null. */
+export async function leadByNumber(userId: string, number: number): Promise<RobinLead | null> {
+  return getDb().robinLead.findUnique({ where: { userId_number: { userId, number } } });
+}
+
+/** By number ("7", "lead 7", "#7") or by name. */
 export async function findLeadsByName(userId: string, query: string, take = 5): Promise<RobinLead[]> {
+  const n = leadNumberOf(query);
+  if (n) {
+    const l = await leadByNumber(userId, n);
+    return l ? [l] : [];
+  }
   const q = normName(query);
   if (!q) return [];
   const words = q.split(" ").filter((w) => w.length >= 2 && !["cafe", "the", "and", "shop", "store"].includes(w) || q.split(" ").length === 1);
@@ -264,7 +292,7 @@ export async function findLeadsByName(userId: string, query: string, take = 5): 
 /** One lead from a name, or a RobinError that says why not (none / which one?). */
 export async function resolveLead(userId: string, query: string): Promise<RobinLead> {
   const hits = await findLeadsByName(userId, query);
-  if (!hits.length) throw new RobinError(`I couldn't find "${query}" in your CRM.`, 404, "not_found");
+  if (!hits.length) throw new RobinError(leadNumberOf(query) ? `There's no lead number ${leadNumberOf(query)} in your CRM.` : `I couldn't find "${query}" in your CRM.`, 404, "not_found");
   if (hits.length > 1) throw new RobinError(`I found ${hits.length} matches for "${query}": ${hits.map((h) => h.businessName).join(", ")}. Which one?`, 409, "ambiguous");
   return hits[0];
 }

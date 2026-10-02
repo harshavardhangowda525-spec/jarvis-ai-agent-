@@ -4,7 +4,8 @@ import type { ToolDefinition, ToolContext } from "./types";
 import { ToolError } from "./types";
 import { getDb } from "@/lib/db";
 import { RobinError, moveStage, resolveLead, setPriority } from "@/lib/robin/crm";
-import { completeFollowUp, followUpQueue, logInteraction, scheduleDemo, scheduleFollowUp, fmtWhen } from "@/lib/robin/engage";
+import { addFollowUpNote, completeFollowUp, followUpQueue, logInteraction, scheduleDemo, scheduleFollowUp, fmtWhen } from "@/lib/robin/engage";
+import { followUpBreakdown } from "@/lib/robin/numbers";
 import { createQuotation, decideQuotation } from "@/lib/robin/quotes";
 import { convertToClient } from "@/lib/robin/clients";
 import { robinOverview } from "@/lib/robin/overview";
@@ -56,8 +57,8 @@ const when = (s: string) => {
   if (Number.isNaN(+d)) throw new ToolError(`"${s}" isn't a date/time I can use — give an ISO date-time with timezone offset.`);
   return d;
 };
-const card = (l: { businessName: string; category: string | null; stage: string; priority: string; score: number; potentialValue: number | null; nextFollowUpAt: Date | null; phone: string | null; email: string | null }) => ({
-  name: l.businessName, category: l.category, stage: STAGE_LABEL[l.stage as keyof typeof STAGE_LABEL] ?? l.stage, priority: l.priority, score: l.score,
+const card = (l: { number?: number | null; businessName: string; category: string | null; stage: string; priority: string; score: number; potentialValue: number | null; nextFollowUpAt: Date | null; phone: string | null; email: string | null }) => ({
+  number: l.number ?? null, name: l.businessName, category: l.category, stage: STAGE_LABEL[l.stage as keyof typeof STAGE_LABEL] ?? l.stage, priority: l.priority, score: l.score,
   value: l.potentialValue, nextFollowUp: l.nextFollowUpAt?.toISOString() ?? null, hasPhone: !!l.phone, hasEmail: !!l.email,
 });
 
@@ -97,7 +98,7 @@ export const robinLeadsTool: ToolDefinition<z.infer<typeof leadsSchema>> = {
 };
 
 // ---- robin_lead ------------------------------------------------------------
-const leadSchema = z.object({ lead: z.string().min(1).max(120).describe("Business name as the user said it") });
+const leadSchema = z.object({ lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it") });
 export const robinLeadTool: ToolDefinition<z.infer<typeof leadSchema>> = {
   name: "robin_lead",
   description: "Open one lead: contact details, qualification with its reasons, stage, last contact, next follow-up, demos, quotations, recent timeline.",
@@ -121,7 +122,7 @@ export const robinLeadTool: ToolDefinition<z.infer<typeof leadSchema>> = {
 
 // ---- robin_update_stage ------------------------------------------------------
 const stageSchema = z.object({
-  lead: z.string().min(1).max(120),
+  lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it"),
   stage: z.enum(STAGES),
   note: z.string().max(300).optional(),
   confirmed: z.boolean().optional().describe("true when the USER asked for this change (their instruction is the approval). Required for won, lost, do_not_contact. Never true for a change you decided on yourself."),
@@ -138,7 +139,7 @@ export const robinUpdateStageTool: ToolDefinition<z.infer<typeof stageSchema>> =
 };
 
 // ---- robin_set_priority ------------------------------------------------------
-const prioSchema = z.object({ lead: z.string().min(1).max(120), priority: z.enum([...PRIORITIES, "auto"]).describe("auto = back to Robin's own ranking") });
+const prioSchema = z.object({ lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it"), priority: z.enum([...PRIORITIES, "auto"]).describe("auto = back to Robin's own ranking") });
 export const robinSetPriorityTool: ToolDefinition<z.infer<typeof prioSchema>> = {
   name: "robin_set_priority",
   description: "Manually override a lead's priority (high, medium, low, needs_review), or null to return to Robin's ranking.",
@@ -153,10 +154,10 @@ export const robinSetPriorityTool: ToolDefinition<z.infer<typeof prioSchema>> = 
 
 // ---- follow-ups --------------------------------------------------------------
 const fuSchema = z.object({
-  lead: z.string().min(1).max(120),
+  lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it"),
   when: z.string().describe("ISO 8601 date-time WITH the user's timezone offset, e.g. 2026-10-02T16:00:00+05:30"),
   action: z.enum(FOLLOWUP_ACTIONS).optional(),
-  notes: z.string().max(500).optional(),
+  notes: z.string().max(500).optional().describe("The note the user gave for this follow-up (what it's about) — pass it whenever they said one"),
 });
 export const robinScheduleFollowUpTool: ToolDefinition<z.infer<typeof fuSchema>> = {
   name: "robin_schedule_followup",
@@ -166,23 +167,24 @@ export const robinScheduleFollowUpTool: ToolDefinition<z.infer<typeof fuSchema>>
     const l = await lead(ctx, input.lead);
     const at = when(input.when);
     const f = await run(() => scheduleFollowUp(ctx.userId, l.id, { dueAt: at, action: input.action, notes: input.notes }, "voice"));
-    return { data: { lead: l.businessName, followUpId: f.id, due: fmtWhen(at, ctx.timezone), action: f.action }, summary: `Follow-up with ${l.businessName} — ${fmtWhen(at, ctx.timezone)}` };
+    return { data: { leadNumber: l.number, lead: l.businessName, followUpId: f.id, due: fmtWhen(at, ctx.timezone), action: f.action, note: f.notes, askForNote: !f.notes }, summary: `Follow-up with ${l.businessName} — ${fmtWhen(at, ctx.timezone)}` };
   },
 };
 
 const fuListSchema = z.object({ which: z.enum(["all", "today", "overdue", "upcoming"]).optional().describe("Which part of the queue (default: all)") });
 export const robinFollowUpsTool: ToolDefinition<z.infer<typeof fuListSchema>> = {
   name: "robin_followups",
-  description: "The follow-up queue: overdue, today, upcoming (lead, action, time, priority).",
+  description: "The follow-up queue: overdue, today, upcoming — each with the lead's number, name, action, time and the NOTE the user gave. `breakdown` is the ready-to-say summary: read it out (it lists every follow-up with its note).",
   schema: fuListSchema, inputSchema: json(fuListSchema), agentScope: "robin", activityLabel: "Checking follow-ups",
-  async execute(_input, ctx) {
+  async execute(input, ctx) {
     const q = await followUpQueue(ctx.userId);
-    const row = (f: (typeof q.today)[number]) => ({ id: f.id, lead: f.lead.businessName, action: f.action, due: fmtWhen(f.dueAt, q.tz), priority: f.priority, interested: ["interested", "negotiating", "quotation_sent", "demo_completed"].includes(f.lead.stage) });
-    return { data: { overdue: q.overdue.map(row), today: q.today.map(row), upcoming: q.upcoming.slice(0, 10).map(row), navigate: "/dashboard/robin?view=followups" }, summary: `${q.today.length} today · ${q.overdue.length} overdue` };
+    const row = (f: (typeof q.today)[number]) => ({ id: f.id, leadNumber: f.lead.number, lead: f.lead.businessName, action: f.action, due: fmtWhen(f.dueAt, q.tz), priority: f.priority, note: f.notes, interested: ["interested", "negotiating", "quotation_sent", "demo_completed"].includes(f.lead.stage) });
+    const breakdown = followUpBreakdown(q, { which: input.which ?? "all" });
+    return { data: { breakdown, overdue: q.overdue.map(row), today: q.today.map(row), upcoming: q.upcoming.slice(0, 10).map(row), navigate: "/dashboard/robin?view=followups" }, summary: `${q.today.length} today · ${q.overdue.length} overdue` };
   },
 };
 
-const fuDoneSchema = z.object({ lead: z.string().min(1).max(120), notes: z.string().max(500).optional() });
+const fuDoneSchema = z.object({ lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it"), notes: z.string().max(500).optional() });
 export const robinCompleteFollowUpTool: ToolDefinition<z.infer<typeof fuDoneSchema>> = {
   name: "robin_complete_followup",
   description: "Mark the lead's next pending follow-up as done. Afterwards, ask whether to schedule the next one.",
@@ -196,9 +198,22 @@ export const robinCompleteFollowUpTool: ToolDefinition<z.infer<typeof fuDoneSche
   },
 };
 
+// ---- notes ---------------------------------------------------------------------
+const noteSchema = z.object({ lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name"), text: z.string().min(1).max(1000).describe("The note, in the user's words") });
+export const robinNoteTool: ToolDefinition<z.infer<typeof noteSchema>> = {
+  name: "robin_note",
+  description: "Take down a note the user tells you about a lead. It's saved on the lead's next follow-up (so it's read back with the follow-ups), or on the lead when none is scheduled.",
+  schema: noteSchema, inputSchema: json(noteSchema), agentScope: "robin", activityLabel: "Taking a note",
+  async execute(input, ctx) {
+    const l = await lead(ctx, input.lead);
+    const r = await run(() => addFollowUpNote(ctx.userId, { leadId: l.id, text: input.text }, "voice"));
+    return { data: { leadNumber: l.number, lead: l.businessName, savedOn: r.on, followUpDue: r.followUp ? fmtWhen(r.followUp.dueAt, ctx.timezone) : null }, summary: `Note on ${l.businessName}` };
+  },
+};
+
 // ---- interactions --------------------------------------------------------------
 const logSchema = z.object({
-  lead: z.string().min(1).max(120),
+  lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it"),
   channel: z.enum(CHANNELS),
   outcome: z.union([z.enum(CALL_OUTCOMES), z.enum(["replied", "no_reply", "sent"])]).optional(),
   direction: z.enum(["outbound", "inbound"]).optional().describe("inbound = they replied / called you"),
@@ -216,7 +231,7 @@ export const robinLogInteractionTool: ToolDefinition<z.infer<typeof logSchema>> 
 };
 
 // ---- demos ---------------------------------------------------------------------
-const demoSchema = z.object({ lead: z.string().min(1).max(120), when: z.string().describe("ISO 8601 with timezone offset"), demoType: z.enum(DEMO_TYPES).optional(), notes: z.string().max(500).optional() });
+const demoSchema = z.object({ lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it"), when: z.string().describe("ISO 8601 with timezone offset"), demoType: z.enum(DEMO_TYPES).optional(), notes: z.string().max(500).optional() });
 export const robinScheduleDemoTool: ToolDefinition<z.infer<typeof demoSchema>> = {
   name: "robin_schedule_demo",
   description: "Schedule a demo with a lead (online, in person, phone).",
@@ -231,7 +246,7 @@ export const robinScheduleDemoTool: ToolDefinition<z.infer<typeof demoSchema>> =
 
 // ---- quotations ------------------------------------------------------------------
 const quoteSchema = z.object({
-  lead: z.string().min(1).max(120),
+  lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it"),
   items: z.array(z.object({ service: z.string().min(1).max(120), price: z.number().min(0).optional().describe("ONLY if the user said a price; otherwise omit and the price from Settings is used"), quantity: z.number().min(1).optional(), description: z.string().max(300).optional() })).min(1).max(10),
   discount: z.number().min(0).optional(),
 });
@@ -247,7 +262,7 @@ export const robinQuotationTool: ToolDefinition<z.infer<typeof quoteSchema>> = {
 };
 
 // ---- the user's decisions on a deal (their instruction is the approval)
-const decideSchema = z.object({ lead: z.string().min(1).max(120), decision: z.enum(["accepted", "rejected"]), note: z.string().max(300).optional() });
+const decideSchema = z.object({ lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it"), decision: z.enum(["accepted", "rejected"]), note: z.string().max(300).optional() });
 export const robinQuotationDecisionTool: ToolDefinition<z.infer<typeof decideSchema>> = {
   name: "robin_quotation_decision",
   description: "Record that the lead ACCEPTED or REJECTED its latest quotation — only when the user tells you so. After an acceptance, offer to make them a client.",
@@ -260,7 +275,7 @@ export const robinQuotationDecisionTool: ToolDefinition<z.infer<typeof decideSch
     return { data: { lead: l.businessName, quotation: q.number, status: input.decision, total: money(q.total, q.currency) }, summary: `${q.number} ${input.decision}` };
   },
 };
-const convertSchema = z.object({ lead: z.string().min(1).max(120), amount: z.number().min(0).optional().describe("Only if the user states the deal amount; otherwise the accepted quotation's total is used") });
+const convertSchema = z.object({ lead: z.string().min(1).max(120).describe("The lead's number (e.g. \"7\") or business name, as the user said it"), amount: z.number().min(0).optional().describe("Only if the user states the deal amount; otherwise the accepted quotation's total is used") });
 export const robinConvertClientTool: ToolDefinition<z.infer<typeof convertSchema>> = {
   name: "robin_convert_client",
   description: "Make a lead a client (marks it won) when the user tells you to. Uses the accepted quotation's total as the amount unless the user gives one. Keeps the lead's whole history.",
