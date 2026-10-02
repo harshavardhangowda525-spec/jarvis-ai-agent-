@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { takeSentences } from "@/lib/voice/sentences";
 import { ULTRON_FX, buildUltronFx, type UltronFxChain } from "@/lib/voice/ultron-fx";
+import { claimRecognizer, onRecognizerFree, recognizerFreeFor, recognizerHolder, releaseRecognizer, type Holder } from "@/lib/voice/mic-lock";
 
 /** ULTRON's voice effect is on unless turned off in this browser (localStorage "jarvis.ultron.voicefx" = "off"). */
 function ultronFxOn(): boolean {
@@ -109,6 +110,13 @@ const SPEECH_START = 0.05;
 const SPEECH_START_WHILE_SPEAKING = 0.14; // higher bar for barge-in
 const SILENCE_HANG_MS = 850;
 const MIN_UTTERANCE_MS = 260; // a quick "hi" is real speech
+// Never stay deaf: a reply that isn't actually playing, or a transcription that
+// never comes back, hands the mic back after this long.
+const STUCK_SPEAKING_MS = 15_000;
+const STUCK_PROCESSING_MS = 35_000;
+const TTS_TIMEOUT_MS = 20_000;
+const STT_TIMEOUT_MS = 30_000;
+const timeout = (ms: number): AbortSignal | undefined => (typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(ms) : undefined);
 
 export function useVoice({ onTranscript, onError, autoListen = true, voiceProfile = "jarvis" }: UseVoiceOptions) {
   const profileRef = useRef<VoiceProfile>(voiceProfile);
@@ -148,7 +156,16 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   const browserSTTRef = useRef(false); // true = transcribe with the browser
   const wantRecogRef = useRef(false); // whether recognition should be running
   const recogActiveRef = useRef(false);
-  const startRecognitionRef = useRef<() => void>(() => {}); // latest startRecognition
+  const startRecognitionRef = useRef<(force?: boolean) => void>(() => {}); // latest startRecognition
+  // This screen has closed: nothing it left running (a reply finishing, a timer,
+  // a slow microphone request) may start the mic again — the new screen owns it.
+  const disposedRef = useRef(false);
+  // Who this engine is to the one-recognizer-at-a-time referee (see mic-lock).
+  const ownerRef = useRef<Holder | null>(null);
+  const recogErrorsRef = useRef(0);
+  const statusSinceRef = useRef(0);
+  const lastAudibleRef = useRef(0);
+  const initRef = useRef<Promise<boolean> | null>(null);
   const recognitionSupported =
     typeof window !== "undefined" &&
     !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
@@ -163,6 +180,9 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     typeof MediaRecorder !== "undefined";
 
   const setStatusBoth = useCallback((s: VoiceStatus) => {
+    if (disposedRef.current) return;
+    if (statusRef.current !== s) statusSinceRef.current = Date.now();
+    if (s === "speaking") lastAudibleRef.current = Date.now();
     statusRef.current = s;
     setStatus(s);
   }, []);
@@ -220,7 +240,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     try {
       const form = new FormData();
       form.append("audio", blob, "speech.webm");
-      const res = await fetch("/api/voice/stt", { method: "POST", body: form });
+      const res = await fetch("/api/voice/stt", { method: "POST", body: form, signal: timeout(STT_TIMEOUT_MS) });
       const json = await res.json();
       if (!res.ok) {
         const msg: string = json.error || "Transcription failed.";
@@ -235,7 +255,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
           audioCtxRef.current = null;
           analyserRef.current = null;
           setError(null);
-          if (enabledRef.current && !mutedRef.current) startRecognitionRef.current();
+          if (enabledRef.current && !mutedRef.current) startRecognitionRef.current(true);
           return;
         }
         fail(msg, "error");
@@ -271,9 +291,32 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   }, []);
 
   // --- Free browser speech recognition (STT) -----------------------------
-  const startRecognition = useCallback(() => {
-    if (!recognitionSupported) return;
+  /** This engine's identity for the one-recognizer referee: standing down stops our recognizer without restarting it. */
+  const owner = (): Holder => {
+    if (!ownerRef.current) {
+      ownerRef.current = {
+        id: Symbol(profileRef.current),
+        name: profileRef.current,
+        standDown: () => {
+          const r = recognitionRef.current;
+          if (r && recogActiveRef.current) { try { r.abort(); } catch { /* ignore */ } }
+          recogActiveRef.current = false;
+        },
+      };
+    }
+    return ownerRef.current;
+  };
+  const mine = () => recognizerHolder() === owner().id;
+
+  /**
+   * Start (or keep) the free browser recognizer. `force` = the user turned voice
+   * on here: take the recognizer from whoever has it. Without it (restarts after
+   * speaking, Chrome ending a session) it never steals — it waits until it's free.
+   */
+  const startRecognition = useCallback((force = false) => {
+    if (!recognitionSupported || disposedRef.current) return;
     wantRecogRef.current = true;
+    if (!claimRecognizer(owner(), force)) return; // someone else is listening — we'll take over when they're done
     if (recogActiveRef.current) return;
     let r = recognitionRef.current;
     if (!r) {
@@ -283,10 +326,16 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       r.continuous = true;
       r.interimResults = true; // live words for the caption
       r.maxAlternatives = 1;
-      r.onstart = () => { recogActiveRef.current = true; if (statusRef.current !== "speaking") setStatusBoth("listening"); };
-      r.onaudiostart = () => { if (statusRef.current === "listening") setStatusBoth("recording"); };
-      r.onspeechstart = () => { if (statusRef.current === "listening") setStatusBoth("recording"); };
+      r.onstart = () => {
+        if (disposedRef.current) { try { r.abort(); } catch { /* ignore */ } return; }
+        recogActiveRef.current = true; recogErrorsRef.current = 0;
+        if (statusRef.current !== "speaking") setStatusBoth("listening");
+      };
+      r.onaudiostart = () => { if (statusRef.current === "listening" && mine()) setStatusBoth("recording"); };
+      r.onspeechstart = () => { if (statusRef.current === "listening" && mine()) setStatusBoth("recording"); };
       r.onresult = (ev: any) => {
+        // a closed screen, or one that was stood down, never acts on what it heard
+        if (disposedRef.current || !mine()) return;
         // Build the full live text (interim + final) so the caption always shows
         // what's being heard, and detect when a segment is finalized.
         let live = "", hasFinal = false;
@@ -310,14 +359,18 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       };
       r.onerror = (e: any) => {
         const err = e?.error;
+        if (err !== "no-speech" && err !== "aborted") recogErrorsRef.current++;
         if (err === "not-allowed" || err === "service-not-allowed") {
           wantRecogRef.current = false;
           rememberVoiceOn(false);
+          releaseRecognizer(owner().id);
           fail("Microphone permission denied for speech recognition.", "denied");
         } else if (err === "network") {
           // Chrome's recognizer needs internet; surface it briefly.
           setTranscript("");
           setError("Speech recognition needs an internet connection.");
+        } else if (err === "audio-capture") {
+          setError("The microphone is busy or unplugged — retrying…");
         } else if (err === "language-not-supported") {
           setError("This browser can't recognize the selected language.");
         }
@@ -326,21 +379,31 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       r.onend = () => {
         recogActiveRef.current = false;
         // Restart automatically (browser ends recognition after each utterance /
-        // silence even in continuous mode) so we keep hearing every command.
-        if (wantRecogRef.current && enabledRef.current && !mutedRef.current && statusRef.current !== "speaking") {
-          try { r.start(); } catch { /* already starting */ }
-        }
+        // silence even in continuous mode) so we keep hearing every command —
+        // only while this screen is open and still holds the recognizer. Repeated
+        // errors back off a little instead of spinning.
+        const again = () => !disposedRef.current && wantRecogRef.current && enabledRef.current && !mutedRef.current && statusRef.current !== "speaking" && mine() && !recogActiveRef.current;
+        if (!again()) return;
+        const wait = recogErrorsRef.current ? Math.min(4000, 300 * 2 ** Math.min(recogErrorsRef.current, 4)) : 120;
+        setTimeout(() => { if (again()) { try { r.start(); } catch { /* already starting */ } } }, wait);
       };
       recognitionRef.current = r;
     }
     try { r.start(); } catch { /* start throws if already running */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recognitionSupported, onTranscript, setStatusBoth, fail]);
 
-  const stopRecognition = useCallback(() => {
+  /** Pause the recognizer while we speak — but keep holding it, so no other screen grabs the mic mid-reply. */
+  const pauseRecognition = useCallback(() => {
     wantRecogRef.current = false;
     const r = recognitionRef.current;
     if (r && recogActiveRef.current) { try { r.abort(); } catch { /* ignore */ } }
   }, []);
+  /** Stop listening and give the recognizer back (mute, stop, voice off). */
+  const stopRecognition = useCallback(() => {
+    pauseRecognition();
+    if (ownerRef.current) releaseRecognizer(ownerRef.current.id);
+  }, [pauseRecognition]);
   // Keep a ref so callbacks defined earlier (finalizeCapture) can trigger it.
   startRecognitionRef.current = startRecognition;
 
@@ -387,7 +450,18 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   }, [startCapture, stopCapture, startRecognition]);
 
   // --- Public: initialize (must be called from a user gesture) -----------
-  const init = useCallback(async () => {
+  const init = useCallback(async (): Promise<boolean> => {
+    // turning voice on twice at once (a click while it's resuming) shares one start
+    if (initRef.current) return initRef.current;
+    const p = initOnceRef.current().finally(() => { initRef.current = null; });
+    initRef.current = p;
+    return p;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoListen, fail, setStatusBoth, supported, recognitionSupported]);
+
+  const initOnceRef = useRef<() => Promise<boolean>>(async () => false);
+  initOnceRef.current = async (): Promise<boolean> => {
+    if (disposedRef.current) return false;
     if (!supported && !recognitionSupported) {
       fail("Your browser doesn't support the microphone API.", "unconfigured");
       return false;
@@ -404,7 +478,8 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
 
     // Decide STT engine: use the free browser recognizer when server STT
     // (ElevenLabs) isn't configured — so voice input works with no key.
-    const cfg = await fetch("/api/voice/config").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const cfg = await fetch("/api/voice/config", { signal: timeout(8000) }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    if (disposedRef.current) return false; // the screen closed while we asked
     const serverStt = !!cfg?.data?.configured;
     browserSTTRef.current = !serverStt && recognitionSupported;
 
@@ -416,8 +491,17 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       enabledRef.current = true;
       setEnabledState(true);
       rememberVoiceOn(true);
+      mutedRef.current = false; setMuted(false);
       setStatusBoth(autoListen ? "listening" : "idle");
-      if (autoListen) startRecognition();
+      if (autoListen) startRecognition(true); // the user is talking to THIS screen now
+      return true;
+    }
+
+    // Already listening (voice turned on twice) → keep the open microphone.
+    if (streamRef.current?.getAudioTracks().some((t) => t.readyState === "live")) {
+      enabledRef.current = true; setEnabledState(true); rememberVoiceOn(true);
+      if (statusRef.current === "uninitialized" || statusRef.current === "requesting" || statusRef.current === "error") setStatusBoth(autoListen ? "listening" : "idle");
+      if (rafRef.current == null) rafRef.current = requestAnimationFrame(loop);
       return true;
     }
 
@@ -430,6 +514,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
           autoGainControl: true,
         },
       });
+      if (disposedRef.current) { stream.getTracks().forEach((t) => t.stop()); return false; } // closed meanwhile — let the mic go
       streamRef.current = stream;
 
       const AC = window.AudioContext || (window as any).webkitAudioContext;
@@ -471,7 +556,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       }
       return false;
     }
-  }, [autoListen, fail, loop, setStatusBoth, supported, recognitionSupported, startRecognition]);
+  };
 
   // --- Public: speak (streaming TTS) -------------------------------------
   const stopSpeaking = useCallback(() => {
@@ -553,16 +638,41 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   // handoff; this re-arms it. (It never blocks listening — only revives it.)
   useEffect(() => {
     const id = setInterval(() => {
-      if (!browserSTTRef.current) return;
+      if (disposedRef.current) return;
       const s = statusRef.current;
-      // We should be listening: engine on, not muted, not currently speaking.
-      const shouldListen = enabledRef.current && !mutedRef.current && wantRecogRef.current && s !== "speaking";
-      if (!shouldListen) return;
-      // Recognition silently died → restart it.
-      if (!recogActiveRef.current) startRecognitionRef.current();
+      const on = enabledRef.current && !mutedRef.current && s !== "uninitialized" && s !== "denied" && s !== "unconfigured";
+      const now = Date.now();
+      // 1) "speaking" but nothing is actually playing (a reply that never arrived,
+      //    audio that got stuck) → hand the mic back instead of staying deaf
+      if (s === "speaking") {
+        const el = audioElRef.current;
+        const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
+        const audible = (!!el && !el.paused && !el.ended && !!el.src) || !!synth?.speaking || !!synth?.pending;
+        if (audible) lastAudibleRef.current = now;
+        else if (now - lastAudibleRef.current > STUCK_SPEAKING_MS) {
+          stopSpeaking();
+          setStatusBoth(on ? "listening" : "idle");
+          if (on && browserSTTRef.current) startRecognitionRef.current();
+        }
+        return;
+      }
+      // 2) a transcription that never came back
+      if (s === "processing" && now - statusSinceRef.current > STUCK_PROCESSING_MS) {
+        setTranscript("");
+        if (on) setStatusBoth("listening");
+      }
+      // 3) the free recognizer silently died → restart it (when nobody else is using it)
+      if (!browserSTTRef.current || !on) return;
+      if (!wantRecogRef.current && !recogActiveRef.current && s !== "processing") wantRecogRef.current = true;
+      if (wantRecogRef.current && !recogActiveRef.current && recognizerFreeFor(ownerRef.current?.id ?? Symbol())) startRecognitionRef.current();
     }, 1400);
-    return () => clearInterval(id);
-  }, []);
+    // the moment another screen gives the recognizer back, take it again (if we want it)
+    const off = onRecognizerFree(() => {
+      if (disposedRef.current || !browserSTTRef.current) return;
+      if (wantRecogRef.current && enabledRef.current && !mutedRef.current && statusRef.current !== "speaking") setTimeout(() => startRecognitionRef.current(), 200);
+    });
+    return () => { clearInterval(id); off(); };
+  }, [setStatusBoth, stopSpeaking]);
 
   // Each speak() takes a number; only the LATEST one may hand the mic back
   // when it finishes — otherwise an earlier reply ending would re-open the mic
@@ -644,13 +754,14 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       const latest = () => seq === speakSeqRef.current;
       // Pause the recognizer while JARVIS speaks so it doesn't hear its own voice.
       setTranscript("");
-      if (browserSTTRef.current) stopRecognition();
+      if (browserSTTRef.current) pauseRecognition();
       try {
         setStatusBoth("speaking");
         const res = await fetch("/api/voice/tts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text, agent: profileRef.current }),
+          signal: timeout(TTS_TIMEOUT_MS),
         }).catch(() => null);
         // No server voice configured (or the request failed) → speak with the
         // free built-in browser voice instead of going silent.
@@ -690,7 +801,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         }
       }
     },
-    [fail, setStatusBoth, stopSpeaking, speakBrowser, stopRecognition, startRecognition, trackEnvelope, prepareOutput],
+    [fail, setStatusBoth, stopSpeaking, speakBrowser, pauseRecognition, startRecognition, trackEnvelope, prepareOutput],
   );
 
   /**
@@ -735,7 +846,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       if (!started) {
         started = true;
         setTranscript("");
-        if (browserSTTRef.current) stopRecognition(); // don't hear our own voice
+        if (browserSTTRef.current) pauseRecognition(); // don't hear our own voice
         setStatusBoth("speaking");
       }
       // Start fetching this sentence's audio now, in parallel with playback.
@@ -744,6 +855,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ text, agent: profileRef.current }),
+            signal: timeout(TTS_TIMEOUT_MS),
           }).then((r) => (r.ok ? r.blob() : null)).catch(() => null)
         : Promise.resolve(null);
       chain = chain.then(async () => {
@@ -776,7 +888,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         });
       },
     };
-  }, [setStatusBoth, speakBrowser, startRecognition, stopRecognition, stopSpeaking, trackEnvelope, prepareOutput]);
+  }, [setStatusBoth, speakBrowser, startRecognition, pauseRecognition, stopSpeaking, trackEnvelope, prepareOutput]);
 
   const toggleMute = useCallback(() => {
     setMuted((m) => {
@@ -788,9 +900,9 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         stopCapture();
         if (browserSTTRef.current) stopRecognition();
         if (statusRef.current === "listening") setStatusBoth("idle");
-      } else if (enabledRef.current && statusRef.current === "idle") {
-        setStatusBoth("listening");
-        if (browserSTTRef.current) startRecognition();
+      } else if (enabledRef.current) {
+        if (statusRef.current === "idle") setStatusBoth("listening");
+        if (browserSTTRef.current) startRecognition(true);
       }
       return next;
     });
@@ -805,9 +917,9 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         stopRecognition();
         stopSpeaking();
         setStatusBoth("idle");
-      } else if (streamRef.current) {
+      } else if (streamRef.current || browserSTTRef.current) {
         setStatusBoth("listening");
-        if (browserSTTRef.current) startRecognition();
+        if (browserSTTRef.current) startRecognition(true);
       }
     },
     [setStatusBoth, stopCapture, stopSpeaking, startRecognition, stopRecognition],
@@ -834,13 +946,26 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
 
   // Cleanup on unmount — stop the recognizer/mic so the next console starts clean.
   useEffect(() => {
+    disposedRef.current = false; // (React dev re-mounts effects once)
     return () => {
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      // this screen is closing: nothing it started may keep — or later grab — the mic
+      disposedRef.current = true;
+      if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
       recorderRef.current?.state !== "inactive" && recorderRef.current?.stop();
       wantRecogRef.current = false;
-      try { recognitionRef.current?.abort(); } catch { /* ignore */ }
+      const r = recognitionRef.current;
+      if (r) {
+        r.onresult = null; r.onend = null; r.onstart = null; r.onerror = null;
+        try { r.abort(); } catch { /* ignore */ }
+      }
+      recognitionRef.current = null;
+      recogActiveRef.current = false;
+      if (ownerRef.current) releaseRecognizer(ownerRef.current.id);
       streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
       audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
+      analyserRef.current = null;
       stopSpeaking();
     };
   }, [stopSpeaking]);

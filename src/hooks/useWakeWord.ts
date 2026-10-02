@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { claimRecognizer, releaseRecognizer, type Holder } from "@/lib/voice/mic-lock";
 
 /**
  * Wake-word + double-clap detector. While JARVIS is "asleep" (voice engine not
@@ -88,9 +89,25 @@ export function useWakeWord({ enabled, onWake }: Options): WakeState {
     let rec: any = null;
     let stopped = false;
 
+    // The "hey JARVIS" listener is the lowest priority user of the microphone: the
+    // moment a voice engine takes the recognizer, it lets go of everything at once
+    // (an open clap-detector mic would stop the real recognizer from hearing).
+    const teardown = () => {
+      stopped = true;
+      setArmed(false);
+      cancelAnimationFrame(raf);
+      if (rec) { try { rec.onend = null; rec.onresult = null; rec.abort(); } catch { /* noop */ } rec = null; }
+      if (audioCtx) { try { void audioCtx.close(); } catch { /* noop */ } audioCtx = null; }
+      if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
+    };
+    const holder: Holder = { id: Symbol("wake"), name: "wake", standDown: teardown };
+
     const wake = (via: WakeVia) => {
       if (firedRef.current || stopped) return;
       firedRef.current = true;
+      // let go of the mic BEFORE the voice engine starts, so it hears from the first word
+      teardown();
+      releaseRecognizer(holder.id);
       onWakeRef.current(via);
     };
 
@@ -139,7 +156,8 @@ export function useWakeWord({ enabled, onWake }: Options): WakeState {
 
     // --- Wake phrase (browser SpeechRecognition) ---
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SR) {
+    // only when no voice engine is listening (never take the recognizer from one)
+    if (SR && claimRecognizer(holder)) {
       try {
         rec = new SR();
         rec.continuous = true;
@@ -154,7 +172,7 @@ export function useWakeWord({ enabled, onWake }: Options): WakeState {
           }
         };
         rec.onerror = () => {};
-        rec.onend = () => { if (!stopped && !firedRef.current) { try { rec.start(); } catch { /* already started */ } } };
+        rec.onend = () => { if (!stopped && !firedRef.current && rec) { setTimeout(() => { if (!stopped && !firedRef.current && rec) { try { rec.start(); } catch { /* already started */ } } }, 150); } };
         rec.start();
       } catch {
         rec = null;
@@ -162,12 +180,8 @@ export function useWakeWord({ enabled, onWake }: Options): WakeState {
     }
 
     return () => {
-      stopped = true;
-      setArmed(false);
-      cancelAnimationFrame(raf);
-      if (rec) { try { rec.onend = null; rec.stop(); } catch { /* noop */ } }
-      if (audioCtx) { try { audioCtx.close(); } catch { /* noop */ } }
-      if (stream) stream.getTracks().forEach((t) => t.stop());
+      teardown();
+      releaseRecognizer(holder.id);
     };
   }, [enabled, micGranted]);
 
