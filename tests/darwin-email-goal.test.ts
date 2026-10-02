@@ -90,7 +90,7 @@ d("DARWIN email goal (integration)", () => {
       feature(4, "Plain4 Fitness Studio"), feature(5, "Mailable5 Fitness Studio"),
       feature(6, "Plain6 Fitness Studio"), feature(7, "Mailable7 Fitness Studio"), feature(8, "Mailable8 Fitness Studio"),
     ]];
-    await R.saveConfig(userId, { locations: ["Indiranagar"], categories: ["gyms"], target: 1, strict: true });
+    await R.saveConfig(userId, { locations: ["Indiranagar"], categories: ["gyms"], target: 1, strict: true, allBangalore: false, keepGoing: false });
     expect((await R.loadConfig(userId)).emailTarget).toBe(3); // DARWIN_EMAIL_TARGET
     const run = await R.ensureRun(userId, at);
     expect(run.emailTarget).toBe(3);

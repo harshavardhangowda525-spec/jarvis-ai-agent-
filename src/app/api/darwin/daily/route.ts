@@ -39,6 +39,8 @@ const schema = z.discriminatedUnion("action", [
     strict: z.boolean().optional(),
     autoEmail: z.boolean().optional(),
     emailTarget: z.number().int().min(0).max(40).optional(),
+    allBangalore: z.boolean().optional(),
+    keepGoing: z.boolean().optional(),
   }),
 ]);
 

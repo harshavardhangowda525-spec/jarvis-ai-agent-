@@ -204,7 +204,9 @@ function Btn({ children, onClick, icon }: { children: React.ReactNode; onClick: 
 /** Where and what DARWIN searches every day. */
 function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinDaily>; onClose: () => void }) {
   const v = daily.view!;
-  const [locations, setLocations] = useState(v.config.locations.join("\n"));
+  const [allBangalore, setAllBangalore] = useState(!!v.config.allBangalore);
+  const [keepGoing, setKeepGoing] = useState(v.config.keepGoing !== false);
+  const [locations, setLocations] = useState((v.config.allBangalore ? v.config.ownLocations ?? [] : v.config.locations).join("\n"));
   const [categories, setCategories] = useState(v.config.categories.join(", "));
   const allowed = v.allowedCategories;
   const picked = categories.split(/,|\n/).map((x) => x.trim().toLowerCase()).filter(Boolean);
@@ -218,8 +220,8 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
   const [err, setErr] = useState<string | null>(null);
   const save = async () => {
     const e = await daily.act({
-      action: "settings", target, radiusKm, requirePhone, strict, autoEmail, emailTarget,
-      locations: locations.split(/\n|;/).map((x) => x.trim()).filter((x) => x.length >= 2),
+      action: "settings", target, radiusKm, requirePhone, strict, autoEmail, emailTarget, allBangalore, keepGoing,
+      locations: locations.split(/\n|;/).map((x) => x.trim()).filter((x) => x.length >= 2).slice(0, 12),
       categories: categories.split(/,|\n/).map((x) => x.trim()).filter((x) => x.length >= 2),
     });
     if (e) setErr(e); else onClose();
@@ -231,10 +233,18 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
           <span className="text-[10px] tracking-[0.34em] text-white/65">DAILY SEARCH</span>
           <button onClick={onClose} aria-label="Close" className="flex h-7 w-7 items-center justify-center rounded-full text-white/50 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
         </div>
-        <label className="mt-3 block text-[10px] tracking-[0.2em] text-white/50">TARGET LOCATIONS <span className="normal-case tracking-normal text-white/30">(one per line)</span></label>
-        <textarea value={locations} onChange={(e) => setLocations(e.target.value)} rows={3} placeholder={"Indiranagar, Bengaluru\nKoramangala, Bengaluru"}
-          className="dw-bare mt-1 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white outline-none focus:border-cyan-200/40" />
-        {v.config.source === "recent searches" && <p className="mt-1 text-[10px] text-white/40">Using the places you searched recently — save to make them yours.</p>}
+        <label className="mt-3 flex items-start gap-2 text-[12px] text-white/80" data-darwin-all-bangalore>
+          <input type="checkbox" checked={allBangalore} onChange={(e) => { setAllBangalore(e.target.checked); setRadiusKm(e.target.checked ? 3 : 6); }} className="mt-0.5 accent-cyan-300" />
+          <span>Search every area of Bangalore <span className="text-white/40">— {v.bangaloreAreas} areas, from the centre out to Yelahanka, Whitefield, Electronic City and Kengeri. Each day carries on from where the last one stopped, so every area gets its turn.</span></span>
+        </label>
+        {!allBangalore && (
+          <>
+            <label className="mt-3 block text-[10px] tracking-[0.2em] text-white/50">TARGET LOCATIONS <span className="normal-case tracking-normal text-white/30">(one per line)</span></label>
+            <textarea value={locations} onChange={(e) => setLocations(e.target.value)} rows={3} placeholder={"Indiranagar, Bengaluru\nKoramangala, Bengaluru"}
+              className="dw-bare mt-1 w-full resize-none rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-[12px] text-white outline-none focus:border-cyan-200/40" />
+            {v.config.source === "recent searches" && <p className="mt-1 text-[10px] text-white/40">Using the places you searched recently — save to make them yours.</p>}
+          </>
+        )}
         <label className="mt-3 block text-[10px] tracking-[0.2em] text-white/50">BUSINESS CATEGORIES</label>
         {allowed ? (
           <>
@@ -266,7 +276,11 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
           <input type="number" min={0} max={40} value={emailTarget} onChange={(e) => setEmailTarget(Math.min(Math.max(Math.round(+e.target.value || 0), 0), 40))}
             className="dw-bare mt-1 w-28 rounded-lg border border-white/10 bg-black/30 px-2 py-1.5 text-[12px] text-white outline-none" />
         </label>
-        <label className="mt-3 flex items-center gap-2 text-[12px] text-white/80"><input type="checkbox" checked={requirePhone} onChange={(e) => setRequirePhone(e.target.checked)} className="accent-cyan-300" /> Only count businesses with a public phone number</label>
+        <label className="mt-3 flex items-start gap-2 text-[12px] text-white/80" data-darwin-keep-going>
+          <input type="checkbox" checked={keepGoing} onChange={(e) => setKeepGoing(e.target.checked)} className="mt-0.5 accent-cyan-300" />
+          <span>Keep going until the target is reached <span className="text-white/40">— if the leads aren&apos;t all found by {v.deadlineLabel}, DARWIN keeps searching for the rest of the day</span></span>
+        </label>
+        <label className="mt-1.5 flex items-center gap-2 text-[12px] text-white/80"><input type="checkbox" checked={requirePhone} onChange={(e) => setRequirePhone(e.target.checked)} className="accent-cyan-300" /> Only count businesses with a public phone number</label>
         <label className="mt-1.5 flex items-center gap-2 text-[12px] text-white/80"><input type="checkbox" checked={strict} onChange={(e) => setStrict(e.target.checked)} className="accent-cyan-300" /> Strict: confirm “no website” with Google or web search</label>
         <label className="mt-1.5 flex items-start gap-2 text-[12px] text-white/80" data-darwin-auto-email-setting>
           <input type="checkbox" checked={autoEmail} onChange={(e) => setAutoEmail(e.target.checked)} className="mt-0.5 accent-cyan-300" />

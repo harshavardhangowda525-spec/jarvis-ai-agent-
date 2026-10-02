@@ -837,6 +837,23 @@ Settings (optional):
 - `DARWIN_DAILY_REQUIRE_PHONE` (`on`)
 - `DARWIN_DAILY_TARGET` (`50`)
 - `DARWIN_DAILY_LOCATIONS` and `DARWIN_DAILY_CATEGORIES` (comma- or line-separated; also editable in DARWIN)
+- **Every area of Bangalore.** By default the daily search covers 75 areas: the
+  centre and out to Yelahanka, Whitefield, Electronic City, Sarjapur and Kengeri.
+  - Each area has a fixed centre, so no location lookup can fail.
+  - Each area is searched within 3 km by default (then double that).
+  - Each day starts just after the last area the previous day reached, so the
+    whole city gets covered in turn.
+  - Turn it off in DARWIN's daily settings (or `DARWIN_ALL_BANGALORE=false`) to
+    search only your own locations.
+- **Keeps going until the target.** If the day's leads aren't all found by
+  2 PM, the search logs it and keeps going for the rest of the day, through more
+  areas and then a wider radius. A search still short at midnight is closed with
+  what it found, and the next day carries on. `DARWIN_KEEP_GOING=false` restores
+  the hard 2 PM stop.
+  - Extra catch-up runs happen at 12 PM, 4 PM and 8 PM IST on Vercel, on top of
+    6 AM and 9 AM. `npm run local` checks every 5 minutes.
+  - DARWIN still never invents leads. If Geoapify's daily limit or the
+    verification budget runs out, the day ends short and the report says why.
 - DARWIN only generates leads from **cafes, restaurants and gyms** — the daily search, its auto-widening, manual searches and the AI tool all refuse other kinds of business. `DARWIN_ONLY_CATEGORIES` changes the list (`all` lifts the limit). Leads already saved in other categories are left as they are.
 - `DARWIN_DAILY_STRICT` (`on`)
 - `DARWIN_EMAIL_TARGET` (`25`) and `DARWIN_EMAIL_DEADLINE` (`18:00`)

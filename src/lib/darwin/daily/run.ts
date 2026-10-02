@@ -2,6 +2,7 @@ import "server-only";
 import { syncLeadsToSheet, leadSheet } from "@/lib/darwin/daily/sheet";
 import { syncFromDarwin } from "@/lib/robin/darwin-sync";
 import { allowedCategory, allowedLabel, allowedList, onlyAllowed } from "@/lib/darwin/categories";
+import { BANGALORE_AREAS, areaCenter, bangaloreLocations, nextOffset, rotateAreas } from "@/lib/darwin/bangalore";
 import { sendAutoEmails, autoEmailState, usableEmail, type AutoEmailDeps, type AutoEmailResult, type AutoEmailState } from "@/lib/darwin/auto-email";
 import { createHash } from "node:crypto";
 import type { DarwinDailyRun, Prisma } from "@prisma/client";
@@ -43,6 +44,15 @@ export interface DailyConfig {
   emailTarget: number;
   /** How many times today's search has widened itself to reach the target (run config only). */
   widened?: number;
+  /** Search every area of Bangalore (a few more each day) instead of your own locations. */
+  allBangalore?: boolean;
+  /** Keep searching after the deadline until the target is reached (until the day ends). */
+  keepGoing?: boolean;
+  /** Run config only: where in the Bangalore list today's search started, and how many areas it reached. */
+  areaOffset?: number;
+  areasSearched?: number;
+  /** Run config only: the "still searching past the deadline" note was logged. */
+  deadlineNoted?: boolean;
 }
 
 /** More kinds of business DARWIN adds when the day's area runs out before the target (all precisely searchable). */
@@ -55,12 +65,13 @@ export const darwinAllowed = () => allowedList(env.darwinOnlyCategories);
 const list = (s: string) => s.split(/[;|\n]|,(?![^(]*\))/).map((x) => x.trim()).filter(Boolean);
 
 /** Settings: what you saved in DARWIN → env → the places you've searched before. */
-export async function loadConfig(userId: string): Promise<DailyConfig & { source: string }> {
+export async function loadConfig(userId: string): Promise<DailyConfig & { source: string; ownLocations?: string[] }> {
   const db = getDb();
   const row = await db.integration.findUnique({ where: { userId_provider: { userId, provider: "darwin_daily" } } }).catch(() => null);
   const saved = (row?.metadata ?? {}) as Partial<DailyConfig>;
-  let locations = saved.locations?.length ? saved.locations : list(env.darwinDailyLocations);
-  let source = saved.locations?.length ? "saved" : locations.length ? "env" : "none";
+  const allBangalore = saved.allBangalore ?? env.darwinAllBangalore;
+  let locations = allBangalore ? bangaloreLocations() : saved.locations?.length ? saved.locations : list(env.darwinDailyLocations);
+  let source = allBangalore ? "all of Bangalore" : saved.locations?.length ? "saved" : locations.length ? "env" : "none";
   if (!locations.length) {
     const recent = await db.darwinSearchCursor.findMany({ where: { userId, NOT: { queryKey: { startsWith: "daily:" } } }, orderBy: { updatedAt: "desc" }, take: 20, select: { location: true } });
     locations = [...new Set(recent.map((r) => r.location.trim()).filter(Boolean))].slice(0, 3);
@@ -70,10 +81,15 @@ export async function loadConfig(userId: string): Promise<DailyConfig & { source
   const wanted = saved.categories?.length ? saved.categories : list(env.darwinDailyCategories).length ? list(env.darwinDailyCategories) : allowed ?? DEFAULT_CATEGORIES;
   const categories = onlyAllowed(wanted, allowed);
   return {
-    locations: locations.slice(0, 12),
+    locations: allBangalore ? locations : locations.slice(0, 12),
     categories: categories.slice(0, 24),
     target: Math.min(Math.max(saved.target ?? env.darwinDailyTarget, 1), 200),
-    radiusKm: Math.min(Math.max(saved.radiusKm ?? 6, 1), 25),
+    // across all of Bangalore each area is a small circle (3 km, then 6 km), so together they cover the city
+    radiusKm: Math.min(Math.max(saved.radiusKm ?? (allBangalore ? 3 : 6), 1), 25),
+    allBangalore,
+    keepGoing: saved.keepGoing ?? env.darwinKeepGoing,
+    // your own locations, kept for when "all of Bangalore" is off
+    ...(allBangalore ? { ownLocations: (saved.locations ?? []).slice(0, 12) } : {}),
     // your own choice in DARWIN's settings; otherwise the default (phone required)
     requirePhone: saved.requirePhoneChosen ? !!saved.requirePhone : env.darwinDailyRequirePhone,
     ...(saved.requirePhoneChosen ? { requirePhoneChosen: true } : {}),
@@ -86,8 +102,11 @@ export async function loadConfig(userId: string): Promise<DailyConfig & { source
 
 export async function saveConfig(userId: string, c: Partial<DailyConfig>) {
   const cur = await loadConfig(userId);
+  const raw = ((await getDb().integration.findUnique({ where: { userId_provider: { userId, provider: "darwin_daily" } } }).catch(() => null))?.metadata ?? {}) as Partial<DailyConfig>;
+  // your own locations are kept for when "all of Bangalore" is off (never replaced by the city list)
+  const own = c.locations ?? raw.locations ?? (cur.allBangalore ? [] : cur.locations);
   const next: DailyConfig = {
-    locations: (c.locations ?? cur.locations).map((x) => x.trim()).filter(Boolean).slice(0, 12),
+    locations: own.map((x) => x.trim()).filter(Boolean).slice(0, 12),
     categories: onlyAllowed((c.categories ?? cur.categories).map((x) => x.trim()).filter(Boolean), darwinAllowed()).slice(0, 24),
     target: Math.min(Math.max(Math.round(c.target ?? cur.target), 1), 200),
     radiusKm: Math.min(Math.max(c.radiusKm ?? cur.radiusKm, 1), 25),
@@ -96,7 +115,11 @@ export async function saveConfig(userId: string, c: Partial<DailyConfig>) {
     strict: c.strict ?? cur.strict,
     autoEmail: c.autoEmail ?? cur.autoEmail,
     emailTarget: Math.min(Math.max(Math.round(c.emailTarget ?? cur.emailTarget), 0), 40),
+    allBangalore: c.allBangalore ?? cur.allBangalore,
+    keepGoing: c.keepGoing ?? cur.keepGoing,
   };
+  // switching "all of Bangalore" on/off without choosing a radius → that mode's default
+  if (c.radiusKm === undefined && c.allBangalore !== undefined && c.allBangalore !== cur.allBangalore && raw.radiusKm === undefined) next.radiusKm = c.allBangalore ? 3 : 6;
   await getDb().integration.upsert({
     where: { userId_provider: { userId, provider: "darwin_daily" } },
     create: { userId, provider: "darwin_daily", status: "connected", metadata: next as unknown as Prisma.InputJsonValue },
@@ -165,6 +188,7 @@ export function defaultDeps(): DarwinDeps {
 
 const PAGE = 50;
 const MAX_GEO_REQUESTS = 600;         // per day (room to widen the search) — well inside Geoapify's free 3,000/day
+const MAX_GEO_REQUESTS_CITY = 900;    // all of Bangalore: more areas to get through (no geocoding needed)
 const PAID_CALLS_PER_TARGET = 4;      // Google / search lookups allowed per wanted lead
 const PAID_CALLS_PER_EMAIL = 8;       // …and per wanted email lead (most small businesses list no email, so more are checked)
 const RECHECK_AFTER_DAYS = 21;        // unclear / temporarily-down / phoneless businesses get another look later
@@ -183,7 +207,19 @@ export async function ensureRun(userId: string, now = new Date()): Promise<Darwi
   const date = dailyNow(now).date;
   const existing = await getDb().darwinDailyRun.findUnique({ where: { userId_date: { userId, date } } });
   if (existing) return existing;
-  const cfg = await loadConfig(userId);
+  const { ownLocations: _own, ...cfg }: DailyConfig & { source: string; ownLocations?: string[] } = await loadConfig(userId);
+  void _own;
+  let areaNote = "";
+  if (cfg.allBangalore) {
+    // today starts just after the last area yesterday's search reached — every area gets its turn
+    const prev = await getDb().darwinDailyRun.findFirst({ where: { userId, date: { lt: date } }, orderBy: { date: "desc" }, select: { config: true } });
+    const p = (prev?.config ?? {}) as Partial<DailyConfig>;
+    const offset = p.allBangalore && Number.isFinite(p.areaOffset) ? nextOffset(p.areaOffset!, p.areasSearched ?? 0) : 0;
+    cfg.locations = rotateAreas(offset);
+    cfg.areaOffset = offset;
+    cfg.areasSearched = 0;
+    areaNote = ` across all of Bangalore (${BANGALORE_AREAS.length} areas — starting today at ${cfg.locations[0].replace(/, Bengaluru$/, "")})`;
+  }
   const needsSetup = !cfg.locations.length || !env.geoapifyApiKey;
   // earlier days' search positions are no longer needed
   const weekAgo = localClock(new Date(now.getTime() - 7 * 86_400_000), env.darwinDailyTz).date;
@@ -194,7 +230,7 @@ export async function ensureRun(userId: string, now = new Date()): Promise<Darwi
         userId, date, target: cfg.target, emailTarget: cfg.emailTarget, config: cfg as unknown as Prisma.InputJsonValue,
         status: needsSetup ? "needs_setup" : "running",
         lastError: !env.geoapifyApiKey ? "Geoapify isn't configured (GEOAPIFY_API_KEY), so DARWIN can't search." : !cfg.locations.length ? "No target locations yet — add them in DARWIN's daily search settings." : null,
-        log: [{ at: now.toISOString(), text: needsSetup ? "Daily search needs setup." : `Daily search started — target ${cfg.target} verified no-website leads${cfg.emailTarget ? ` and ${cfg.emailTarget} with an email address (each emailed by ${emailDeadlineLabel()})` : ""} across ${cfg.locations.length} location${cfg.locations.length === 1 ? "" : "s"} × ${cfg.categories.length} categories.` }] as unknown as Prisma.InputJsonValue,
+        log: [{ at: now.toISOString(), text: needsSetup ? "Daily search needs setup." : `Daily search started — target ${cfg.target} verified no-website leads${cfg.emailTarget ? ` and ${cfg.emailTarget} with an email address (each emailed by ${emailDeadlineLabel()})` : ""} ${areaNote || ` across ${cfg.locations.length} location${cfg.locations.length === 1 ? "" : "s"}`} × ${cfg.categories.length} categories.` }] as unknown as Prisma.InputJsonValue,
       },
     });
   } catch (e) {
@@ -315,15 +351,19 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     const paidCap = cfg.target * PAID_CALLS_PER_TARGET + (cfg.emailTarget ?? 0) * PAID_CALLS_PER_EMAIL;
     const say = (text: string, tone?: "ok" | "warn") => log.push({ at: deps.now().toISOString(), text: text.slice(0, 300), ...(tone ? { tone } : {}) });
     const persist = async (extra: Prisma.DarwinDailyRunUpdateInput = {}) => {
+      // how far through the city today's search got (tomorrow carries on from there)
+      if (cfg.allBangalore) cfg.areasSearched = Math.min(cfg.locations.length, Math.max(cfg.areasSearched ?? 0, Math.floor(comboIndex / Math.max(1, cfg.categories.length)) + 1));
       run = await db.darwinDailyRun.update({
         where: { id: run.id },
-        data: { ...c, comboIndex, exhaustedCombos: [...exhausted], apiRequests: api as unknown as Prisma.InputJsonValue, log: log.slice(-80) as unknown as Prisma.InputJsonValue, ...extra },
+        data: { ...c, comboIndex, exhaustedCombos: [...exhausted], apiRequests: api as unknown as Prisma.InputJsonValue, log: log.slice(-80) as unknown as Prisma.InputJsonValue, config: cfg as unknown as Prisma.InputJsonValue, ...extra },
       });
     };
+    const geoCap = cfg.allBangalore ? MAX_GEO_REQUESTS_CITY : MAX_GEO_REQUESTS;
     let stopReason: string | null = null;
 
     // each deadline binds a search that started before it (one started later just runs to the end)
-    const hasDeadline = !pastDeadline(run.startedAt);
+    // "keep going": the deadline is when the leads should be ready, not when the search gives up
+    const hasDeadline = !pastDeadline(run.startedAt) && !cfg.keepGoing;
     const hasEmailDeadline = !pastEmailSearch(run.startedAt, emailTarget);
     const leadsCount = () => (cfg.requirePhone ? phoneLeads : c.verified);
     // one clock reading per step: every "still open?" check in that step sees the same time
@@ -337,7 +377,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
       if (comboIndex >= combos.length) { stopReason = "scope"; break; }
       const combo = combos[comboIndex];
       if (exhausted.has(combo.key)) { comboIndex++; continue; }
-      if (api.geoapify >= MAX_GEO_REQUESTS) { stopReason = "geo_cap"; break; }
+      if (api.geoapify >= geoCap) { stopReason = "geo_cap"; break; }
 
       // ---- the saved position for this location × category
       // position is per day: each day re-reads the area from the start (new listings appear);
@@ -346,7 +386,9 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
       let cur = await db.darwinSearchCursor.findUnique({ where: { userId_queryKey: { userId: run.userId, queryKey } } });
       if (!cur) {
         let center: GeoCenter;
-        try { center = await deps.geocode(combo.loc); api.geoapify++; }
+        const known = cfg.allBangalore ? areaCenter(combo.loc) : null; // Bangalore areas have fixed centres
+        if (known) center = known;
+        else try { center = await deps.geocode(combo.loc); api.geoapify++; }
         catch (e) {
           if (e instanceof GeoapifyError && e.kind === "rate_limit") { stopReason = "rate_limit"; say(`Geoapify rate limit — pausing until the next run. (${e.message})`, "warn"); break; }
           say(`Couldn't find the location "${combo.loc}": ${(e as Error).message}`, "warn");
@@ -522,6 +564,10 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
 
     // ---- finish, or stay running for the next tick
     readClock();
+    if (cfg.keepGoing && !cfg.deadlineNoted && !pastDeadline(run.startedAt) && pastDeadline(tick) && leadsCount() < cfg.target) {
+      cfg.deadlineNoted = true;
+      say(`It's ${deadlineLabel()}: ${leadsCount()}/${cfg.target} so far — still searching${cfg.allBangalore ? " more of Bangalore" : ""} until the target is reached.`, "warn");
+    }
     const leadsDone = leadsCount() >= cfg.target;
     const emailDone = !emailTarget || emailLeads >= emailTarget;
     const done = leadsDone && emailDone;
@@ -563,6 +609,25 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
   } finally {
     await db.darwinDailyRun.update({ where: { id: runId }, data: { lockedUntil: null } }).catch(() => {});
   }
+}
+
+/**
+ * A search still running when its day ended (it kept going past the deadline and
+ * didn't reach the target) is closed with what it found; today's search carries on
+ * from the next areas.
+ */
+export async function closeStaleRuns(userId: string, now = new Date()) {
+  const db = getDb();
+  const stale = await db.darwinDailyRun.findMany({ where: { userId, status: "running", date: { lt: dailyNow(now).date } } });
+  for (const r of stale) {
+    const cfg = r.config as unknown as DailyConfig;
+    const reasons = [`The day ended with ${r.verified}/${r.target} verified — the next day's search carried on${cfg.allBangalore ? " in the next areas of Bangalore" : ""}`];
+    const log = [...logOf(r), { at: now.toISOString(), text: `Day over: ${r.verified}/${r.target} verified.`, tone: "warn" as const }];
+    const closed = await db.darwinDailyRun.update({ where: { id: r.id }, data: { status: "partial", completedAt: now, reasons, lockedUntil: null, log: log.slice(-80) as unknown as Prisma.InputJsonValue } });
+    const report = await buildReport(closed);
+    await db.darwinDailyRun.update({ where: { id: r.id }, data: { report: report as unknown as Prisma.InputJsonValue } });
+  }
+  return stale.length;
 }
 
 /** Add the run's new leads to the user's Google Sheet, and say so in the run's log. Never throws. */
@@ -659,9 +724,11 @@ export interface DarwinDailyView {
   };
   report: DailyReport | null;
   spoken: string | null;
-  config: DailyConfig & { source: string };
+  config: DailyConfig & { source: string; ownLocations?: string[] };
   /** The only kinds of business DARWIN looks for (null = any). */
   allowedCategories: string[] | null;
+  /** How many Bangalore areas "search every area of Bangalore" covers. */
+  bangaloreAreas: number;
   sources: { geoapify: boolean; google: boolean; search: boolean };
   /** Automatic outreach: on/off, Gmail connected, sent in the last 24 h, leads waiting for their email. */
   email: AutoEmailState;
@@ -688,6 +755,7 @@ export async function darwinDailyView(userId: string, now = new Date()): Promise
   return {
     enabled: env.darwinDaily,
     allowedCategories: darwinAllowed(),
+    bangaloreAreas: BANGALORE_AREAS.length,
     timezone: env.darwinDailyTz,
     today: clock.date,
     startLabel: `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`,
@@ -752,6 +820,7 @@ export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDep
   const clock = opts.emailDeps?.now ?? (() => new Date());
   for (const userId of users) {
     const userStart = clock().getTime();
+    await closeStaleRuns(userId, now);
     let run = await todayRun(userId, now);
     // set up since the run was created (locations saved, Geoapify key added) → start it properly
     if (run?.status === "needs_setup" && canRun(await loadConfig(userId))) {

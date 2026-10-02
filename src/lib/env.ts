@@ -228,6 +228,10 @@ export const env = {
   darwinDailyCategories: read("DARWIN_DAILY_CATEGORIES"),
   // DARWIN only looks for these kinds of business (default: cafes, restaurants, gyms; "all" = no limit)
   darwinOnlyCategories: read("DARWIN_ONLY_CATEGORIES"),
+  // the daily search covers every area of Bangalore, a few more each day (off = your own locations)
+  darwinAllBangalore: !/^(0|off|false|no)$/i.test(read("DARWIN_ALL_BANGALORE")),
+  // keep searching past the deadline until the day's target is reached (off = stop at the deadline)
+  darwinKeepGoing: !/^(0|off|false|no)$/i.test(read("DARWIN_KEEP_GOING")),
   // strict (default): "no website" needs an independent confirmation (Google profile or web search).
   darwinDailyStrict: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY_STRICT")),
   // only count leads with a public phone number (on by default — they're the ones you can call)

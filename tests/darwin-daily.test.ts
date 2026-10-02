@@ -148,7 +148,7 @@ d("DARWIN daily run (integration)", () => {
     pages.gyms = [gyms];
     pages.cafes = [[20, 21, 22].map((i) => feature(i, "cafes"))];
     await getDb().darwinLead.create({ data: { userId, businessName: "Known Gym Studio", sourceRef: "pid-gyms-5", fingerprint: "known-fp", latitude: 12.975, longitude: 77.595 } });
-    await R.saveConfig(userId, { locations: ["Indiranagar"], categories: ["gyms", "cafes"], target: 5, strict: true });
+    await R.saveConfig(userId, { locations: ["Indiranagar"], categories: ["gyms", "cafes"], target: 5, strict: true, allBangalore: false, keepGoing: false });
   });
   afterAll(async () => { await getDb().user.deleteMany({ where: { id: userId } }).catch(() => {}); });
 
@@ -397,6 +397,63 @@ d("DARWIN daily run (integration)", () => {
     const r = await R.advanceRun(run.id, { deps: { ...deps(), now: () => afternoon }, budgetMs: 60_000 });
     expect(r).toMatchObject({ status: "completed", verified: 2 });
   }, 60_000);
+  it("every area of Bangalore: fixed centres, a few areas a day, the next day carries on, it keeps going past 2 PM, and the day's end closes it", async () => {
+    const { BANGALORE_AREAS } = await import("@/lib/darwin/bangalore");
+    const N = BANGALORE_AREAS.length;
+    await R.saveConfig(userId, { allBangalore: true, keepGoing: true, categories: ["gyms"], target: 3, requirePhone: false, radiusKm: 3 });
+    const cfg0 = await R.loadConfig(userId);
+    expect(cfg0).toMatchObject({ allBangalore: true, keepGoing: true, radiusKm: 3, source: "all of Bangalore" });
+    expect(cfg0.locations).toHaveLength(N);
+    expect(cfg0.ownLocations).toEqual(["Indiranagar"]); // your own list is kept for later
+    // one new gym in every area (the fake listing answers per area centre)
+    let geocoded = 0, empty = false;
+    const idx = (c: { lat: number; lon: number }) => BANGALORE_AREAS.findIndex((a) => a.lat === c.lat && a.lon === c.lon);
+    const cityDeps = (at: Date): DarwinDeps => ({
+      ...deps(), now: () => at,
+      geocode: async () => { geocoded++; throw new Error("Bangalore areas have fixed centres"); },
+      page: async ({ center, offset, radiusM }) => {
+        if (empty || offset > 0 || radiusM > 3000) return [];
+        const k = idx(center);
+        return [{ geometry: { coordinates: [center.lon, center.lat] }, properties: { place_id: `pid-blr-${k}`, name: `Area${k} Power Fitness`, lat: center.lat, lon: center.lon, formatted: `${k} Main Road, Bengaluru`, categories: ["sport.fitness"], distance: 300, contact: { phone: `+91 98${String(31000000 + k * 101).slice(-8)}` } } }];
+      },
+    });
+    // day 1 starts at the first area and finds one lead per area → 3 areas
+    const day1 = new Date("2026-10-24T02:00:00Z");
+    const run1 = await R.ensureRun(userId, day1);
+    expect(run1.config).toMatchObject({ areaOffset: 0, locations: expect.arrayContaining([`${BANGALORE_AREAS[0].name}, Bengaluru`]) });
+    expect((run1.config as { locations: string[] }).locations[0]).toBe(`${BANGALORE_AREAS[0].name}, Bengaluru`);
+    expect(JSON.stringify(run1.log)).toMatch(new RegExp(`across all of Bangalore \\(${N} areas`));
+    await getDb().darwinDailyRun.update({ where: { id: run1.id }, data: { startedAt: day1 } });
+    const r1 = await R.advanceRun(run1.id, { deps: cityDeps(day1), budgetMs: 60_000 });
+    expect(r1).toMatchObject({ status: "completed", verified: 3 });
+    expect((r1.config as { areasSearched: number }).areasSearched).toBe(3);
+    expect(geocoded).toBe(0);
+    // day 2 carries on from the 4th area; it's already past 2 PM and the search still runs to the target
+    const day2 = new Date("2026-10-25T02:00:00Z"), day2pm = new Date("2026-10-25T08:45:00Z");
+    const run2 = await R.ensureRun(userId, day2);
+    expect((run2.config as { areaOffset: number; locations: string[] }).areaOffset).toBe(3);
+    expect((run2.config as { locations: string[] }).locations[0]).toBe(`${BANGALORE_AREAS[3].name}, Bengaluru`);
+    await getDb().darwinDailyRun.update({ where: { id: run2.id }, data: { startedAt: day2 } });
+    const r2 = await R.advanceRun(run2.id, { deps: cityDeps(day2pm), budgetMs: 60_000 });
+    expect(r2).toMatchObject({ status: "completed", verified: 3 }); // not cut off at 2 PM
+    const leads2 = await getDb().darwinLead.findMany({ where: { userId, metadata: { path: ["dailyRunId"], equals: run2.id } }, select: { businessName: true } });
+    expect(leads2.map((l) => l.businessName).sort()).toEqual(["Area3 Power Fitness", "Area4 Power Fitness", "Area5 Power Fitness"]);
+    // day 3: nothing new anywhere — at 2 PM it says so and keeps going (widening) instead of stopping
+    empty = true;
+    const day3 = new Date("2026-10-26T02:00:00Z"), day3pm = new Date("2026-10-26T08:45:00Z");
+    const run3 = await R.ensureRun(userId, day3);
+    await getDb().darwinDailyRun.update({ where: { id: run3.id }, data: { startedAt: day3 } });
+    const r3 = await R.advanceRun(run3.id, { deps: cityDeps(day3pm), budgetMs: 60_000 });
+    expect(r3.status).toBe("running");
+    expect(JSON.stringify(r3.log)).toMatch(/still searching more of Bangalore until the target is reached/);
+    // the next day closes it with what it found
+    expect(await R.closeStaleRuns(userId, new Date("2026-10-27T02:00:00Z"))).toBeGreaterThanOrEqual(1);
+    expect(await getDb().darwinDailyRun.count({ where: { userId, status: "running", date: { lt: "2026-10-27" } } })).toBe(0);
+    const closed = await getDb().darwinDailyRun.findUniqueOrThrow({ where: { id: run3.id } });
+    expect(closed.status).toBe("partial");
+    expect(closed.reasons[0]).toMatch(/The day ended with 0\/3 verified — the next day's search carried on in the next areas of Bangalore/);
+    expect(closed.report).not.toBeNull();
+  }, 120_000);
 });
 
 import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";
