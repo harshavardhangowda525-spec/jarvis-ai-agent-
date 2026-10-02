@@ -213,11 +213,7 @@ export async function ensureRun(userId: string, now = new Date()): Promise<Darwi
   if (cfg.allBangalore) {
     // today starts just after the last area yesterday's search reached — every area gets its turn
     const prev = await getDb().darwinDailyRun.findFirst({ where: { userId, date: { lt: date } }, orderBy: { date: "desc" }, select: { config: true } });
-    const p = (prev?.config ?? {}) as Partial<DailyConfig>;
-    const offset = p.allBangalore && Number.isFinite(p.areaOffset) ? nextOffset(p.areaOffset!, p.areasSearched ?? 0) : 0;
-    cfg.locations = rotateAreas(offset);
-    cfg.areaOffset = offset;
-    cfg.areasSearched = 0;
+    planAreas(cfg, (prev?.config ?? {}) as Partial<DailyConfig>);
     areaNote = ` across all of Bangalore (${BANGALORE_AREAS.length} areas — starting today at ${cfg.locations[0].replace(/, Bengaluru$/, "")})`;
   }
   const needsSetup = !cfg.locations.length || !env.geoapifyApiKey;
@@ -237,6 +233,50 @@ export async function ensureRun(userId: string, now = new Date()): Promise<Darwi
     if ((e as { code?: string }).code === "P2002") return (await getDb().darwinDailyRun.findUnique({ where: { userId_date: { userId, date } } }))!;
     throw e;
   }
+}
+
+/** Bangalore areas in order, starting just after the last area an earlier search (`from`) reached. */
+function planAreas(cfg: DailyConfig, from: Partial<DailyConfig>) {
+  const offset = from.allBangalore && Number.isFinite(from.areaOffset) ? nextOffset(from.areaOffset!, from.areasSearched ?? 0) : 0;
+  cfg.locations = rotateAreas(offset);
+  cfg.areaOffset = offset;
+  cfg.areasSearched = 0;
+}
+
+/**
+ * "Search for leads now": start today's search straight away — or, when today's
+ * has already finished, open it again for another full batch (today's target
+ * more), with today's settings and the next areas of Bangalore. A search that's
+ * already running just carries on. The caller then advances it.
+ */
+export async function searchNow(userId: string, now = new Date()): Promise<{ run: DarwinDailyRun; started: "new" | "again" | "running" | "needs_setup" }> {
+  const db = getDb();
+  await closeStaleRuns(userId, now);
+  let run = await todayRun(userId, now);
+  if (run?.status === "needs_setup") { await db.darwinDailyRun.delete({ where: { id: run.id } }).catch(() => {}); run = null; }
+  if (!run) {
+    run = await ensureRun(userId, now);
+    if (run.status === "running") run = await db.darwinDailyRun.update({ where: { id: run.id }, data: { startedAt: now } });
+    return { run, started: run.status === "needs_setup" ? "needs_setup" : "new" };
+  }
+  if (run.status === "running") return { run, started: "running" };
+  const { ownLocations: _own, source: _src, ...cfg } = await loadConfig(userId);
+  void _own; void _src;
+  const old = run.config as unknown as DailyConfig;
+  if (cfg.allBangalore) planAreas(cfg, old.allBangalore ? old : {});
+  const batch = cfg.target;
+  const target = Math.min(run.verified + batch, 1000);
+  cfg.target = target;
+  const where = cfg.allBangalore ? `Bangalore from ${cfg.locations[0].replace(/, Bengaluru$/, "")}` : `${cfg.locations.length} location${cfg.locations.length === 1 ? "" : "s"}`;
+  const log = [...logOf(run), { at: now.toISOString(), text: `Searching again now — ${batch} more verified no-website leads (${run.verified} found earlier today), across ${where}.` }];
+  run = await db.darwinDailyRun.update({
+    where: { id: run.id },
+    data: {
+      status: "running", target, startedAt: now, completedAt: null, reportedAt: null, reasons: [], lastError: null, lockedUntil: null,
+      comboIndex: 0, exhaustedCombos: [], config: cfg as unknown as Prisma.InputJsonValue, log: log.slice(-80) as unknown as Prisma.InputJsonValue,
+    },
+  });
+  return { run, started: "again" };
 }
 
 /**

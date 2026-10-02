@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { darwinSearchNowLine, darwinSearchNowRequest } from "@/lib/darwin/daily/intent";
 import { BANGALORE_AREAS, areaCenter, bangaloreLocations, nextOffset, rotateAreas } from "@/lib/darwin/bangalore";
 
 describe("every area of Bangalore", () => {
@@ -28,5 +29,12 @@ describe("every area of Bangalore", () => {
     expect(nextOffset(0, 3)).toBe(3);
     expect(nextOffset(n - 2, 5)).toBe(3);
     expect(nextOffset(10, 0)).toBe(11); // always moves on, even after a day that barely started
+  });
+
+  it("hears 'search for leads now' — but a specific search stays a one-off search", () => {
+    for (const t of ["make darwin search for leads now", "DARWIN, search for leads now", "search for new leads right now", "find more leads now", "start the lead search", "run today's search", "start searching", "DARWIN start the daily search", "search leads again", "search all of Bangalore"]) expect(darwinSearchNowRequest(t), t).toBe(true);
+    for (const t of ["find 20 gyms in Indiranagar", "search for cafes near Koramangala", "DARWIN report", "how many leads did DARWIN find today", "open DARWIN", "search for leads in Mysuru now", "start searching for cafes"]) expect(darwinSearchNowRequest(t), t).toBe(false);
+    expect(darwinSearchNowLine({ run: { status: "running", verified: 4, target: 50, lastError: null } })).toBe("Searching now — 4 of 50 verified so far. I'll keep going until I reach the target.");
+    expect(darwinSearchNowLine({ run: { status: "needs_setup", verified: 0, target: 50, lastError: "Geoapify isn't configured (GEOAPIFY_API_KEY), so DARWIN can't search." } })).toMatch(/^I can't search yet: Geoapify isn't configured/);
   });
 });

@@ -158,11 +158,16 @@ export function DailyTarget({ daily, onViewLeads, onOpenCrm }: {
             <Sheet className="h-3 w-3" />GOOGLE SHEET
           </a>
         )}
+        {run && (run.status === "completed" || run.status === "partial") && (
+          <div className="mt-2.5 flex gap-1.5">
+            <Btn onClick={async () => setMsg(await daily.act({ action: "now" }))} icon={busy === "now" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}>SEARCH MORE NOW</Btn>
+          </div>
+        )}
         {(!run || run.status === "needs_setup") && (
           <div className="mt-2.5 flex gap-1.5">
             {run?.status === "needs_setup"
               ? <Btn onClick={() => setSettings(true)} icon={<Settings2 className="h-3 w-3" />}>SET UP</Btn>
-              : <Btn onClick={async () => setMsg(await daily.act({ action: "start" }))} icon={busy === "start" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}>START NOW</Btn>}
+              : <Btn onClick={async () => setMsg(await daily.act({ action: "now" }))} icon={busy === "now" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}>START NOW</Btn>}
           </div>
         )}
         {msg && <p className="mt-1.5 text-[10px] text-rose-200/80">{msg}</p>}

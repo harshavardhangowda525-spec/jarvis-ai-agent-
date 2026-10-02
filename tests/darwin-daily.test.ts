@@ -453,6 +453,27 @@ d("DARWIN daily run (integration)", () => {
     expect(closed.status).toBe("partial");
     expect(closed.reasons[0]).toMatch(/The day ended with 0\/3 verified — the next day's search carried on in the next areas of Bangalore/);
     expect(closed.report).not.toBeNull();
+    // "search for leads now": starts today's search straight away…
+    empty = false;
+    const day5 = new Date("2026-10-28T03:00:00Z"), day5later = new Date("2026-10-28T11:00:00Z");
+    const a = await R.searchNow(userId, day5);
+    expect(a.started).toBe("new");
+    const ra = await R.advanceRun(a.run.id, { deps: cityDeps(day5), budgetMs: 60_000 });
+    expect(ra).toMatchObject({ status: "completed", verified: 3 });
+    const firstArea = (ra.config as { locations: string[] }).locations[0];
+    // …and after it's finished, searches again for another full batch from the next areas
+    const b = await R.searchNow(userId, day5later);
+    expect(b.started).toBe("again");
+    expect(b.run).toMatchObject({ id: a.run.id, status: "running", target: 6, completedAt: null });
+    expect((b.run.config as { locations: string[] }).locations[0]).not.toBe(firstArea);
+    expect(JSON.stringify(b.run.log)).toMatch(/Searching again now — 3 more verified no-website leads \(3 found earlier today\)/);
+    const rb = await R.advanceRun(b.run.id, { deps: cityDeps(day5later), budgetMs: 60_000 });
+    expect(rb).toMatchObject({ status: "completed", verified: 6 });
+    // while one is running, asking again just lets it carry on
+    expect((await R.searchNow(userId, day5later)).started).toBe("again");
+    const running = await R.todayRun(userId, day5later);
+    expect((await R.searchNow(userId, day5later)).started).toBe("running");
+    expect(running?.status).toBe("running");
   }, 120_000);
 });
 

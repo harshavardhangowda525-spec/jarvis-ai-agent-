@@ -2,7 +2,8 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { env } from "@/lib/env";
-import { advanceRun, adoptEmailGoal, darwinDailyView, dailyDue, ensureRun, saveConfig, todayRun, syncRunToSheet } from "@/lib/darwin/daily/run";
+import { advanceRun, adoptEmailGoal, darwinDailyView, dailyDue, ensureRun, saveConfig, searchNow, todayRun, syncRunToSheet } from "@/lib/darwin/daily/run";
+import { syncFromDarwin } from "@/lib/robin/darwin-sync";
 import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -12,7 +13,8 @@ export const maxDuration = 300;
 /**
  * DARWIN's daily search. GET = today's progress / report (starts today's run
  * once it's due). POST: tick (continue the search), start (start now even before
- * the scheduled time), settings (locations, categories, target…), ack (JARVIS
+ * the scheduled time), now (search right now — start, or another batch after
+ * today's finished), settings (locations, categories, target…), ack (JARVIS
  * has told you the report).
  */
 export async function GET() {
@@ -29,6 +31,7 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("tick") }),
   z.object({ action: z.literal("start") }),
   z.object({ action: z.literal("ack") }),
+  z.object({ action: z.literal("now") }),
   z.object({
     action: z.literal("settings"),
     locations: z.array(z.string().trim().min(2).max(120)).max(12).optional(),
@@ -67,6 +70,12 @@ export async function POST(req: Request) {
       else if (run.status === "needs_setup") { await getDb().darwinDailyRun.delete({ where: { id: run.id } }); run = await ensureRun(user.id); }
       if (run.status === "running") await advanceRun(run.id, { budgetMs: 250_000 });
       await syncRunToSheet(run.id);
+    } else if (body.action === "now") {
+      // "search for leads now": start, or search again for another batch, straight away
+      const { run } = await searchNow(user.id);
+      if (run.status === "running") await advanceRun(run.id, { budgetMs: 250_000 });
+      await syncRunToSheet(run.id);
+      await syncFromDarwin(user.id).catch(() => {});
     } else if (body.action === "tick") {
       const run = await todayRun(user.id);
       if (run?.status === "running") await advanceRun(run.id, { budgetMs: 250_000 });

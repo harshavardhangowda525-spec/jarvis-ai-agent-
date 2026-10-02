@@ -31,7 +31,7 @@ import { parseDailyCommand } from "@/lib/ev/daily/intent";
 import { useGesture, useGestureHandler } from "@/components/gesture/gesture-provider";
 import { gestureModeCommand } from "@/lib/gesture/intent";
 import { DarwinReportCard, useDarwinReport } from "@/components/console/darwin-report";
-import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";
+import { darwinDailyRequest, darwinProgressLine, darwinSearchNowLine, darwinSearchNowRequest } from "@/lib/darwin/daily/intent";
 import { WeatherPopup, type WeatherData } from "@/components/console/weather-popup";
 import { BrowserPopup, type BrowserTarget } from "@/components/console/browser-popup";
 import { NiosAlerts, useNiosWatch } from "@/components/console/nios-alert";
@@ -559,6 +559,15 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         if (gm === "off") { g.disable(); reply("Gesture mode off. I've released the camera."); return; }
         reply("Gesture mode on. Raise your hand when you're ready.");
         void g.enable().then((ok) => { if (!ok) setTimeout(() => { const e = gestureRef.current?.error; if (e) reply(e); }, 50); });
+        return;
+      }
+
+      // ===== "DARWIN, search for leads now" — the daily search runs right away =====
+      if (darwinSearchNowRequest(t)) {
+        reply("On it — DARWIN is searching Bangalore for new leads now. I'll tell you how it goes.");
+        void fetch("/api/darwin/daily", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "now" }) })
+          .then(async (r) => { const j = await r.json().catch(() => ({})); reply(r.ok ? darwinSearchNowLine(j.data) : `DARWIN couldn't start the search: ${j.error ?? `HTTP ${r.status}`}`); void darwinReportRef.current.reload(); })
+          .catch(() => reply("I couldn't reach DARWIN right now."));
         return;
       }
 

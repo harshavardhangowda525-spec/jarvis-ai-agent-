@@ -19,7 +19,7 @@ import { PhoneActions, STATUS_OPTIONS, normStage, statusTone, websiteHost, fmtDi
 import { DarwinMap, type DarwinMapHandle, type MapNodeInput } from "./darwin/darwin-map";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import { DailyTarget, useDarwinDaily } from "./darwin/daily-target";
-import { darwinDailyRequest, darwinProgressLine } from "@/lib/darwin/daily/intent";
+import { darwinDailyRequest, darwinProgressLine, darwinSearchNowLine, darwinSearchNowRequest } from "@/lib/darwin/daily/intent";
 import { parseMemoryCommand } from "@/lib/memory/intent";
 import { isMikeActivation } from "@/lib/mike/wake";
 
@@ -278,6 +278,17 @@ export function DarwinConsole() {
             agent.appendLocalExchange(s, line); speak(d.message);
           })
           .catch(() => { const m = "I couldn't reach my memory just now — say it again in a moment."; agent.appendLocalExchange(s, m); speak(m); });
+        return;
+      }
+      // "search for leads now" → the daily search (every area of Bangalore) runs right away
+      if (darwinSearchNowRequest(s)) {
+        const d = dailyRef.current;
+        const start = "On it — searching Bangalore for new leads now.";
+        agent.appendLocalExchange(s, start); speak(start); pushFeed("Daily search started now", "ok");
+        void d.act({ action: "now" }).then(async (err) => {
+          const line = err ? `I couldn't start the search: ${err}` : darwinSearchNowLine((await d.reload()) ?? null);
+          pushFeed(line, err ? "warn" : "ok"); speak(line);
+        });
         return;
       }
       if (darwinDailyRequest(s) && dailyRef.current.view) {

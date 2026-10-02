@@ -845,6 +845,12 @@ Settings (optional):
     whole city gets covered in turn.
   - Turn it off in DARWIN's daily settings (or `DARWIN_ALL_BANGALORE=false`) to
     search only your own locations.
+- **Search now.** Say "DARWIN, search for leads now" (in DARWIN or JARVIS), or press
+  **START NOW** / **SEARCH MORE NOW** on the daily ring.
+  - Before today's search has started, it starts it.
+  - After today's search has finished, it searches again for another full batch
+    (today's target more), carrying on from the next areas of Bangalore.
+  - A search that's already running just keeps going.
 - **Keeps going until the target.** If the day's leads aren't all found by
   2 PM, the search logs it and keeps going for the rest of the day, through more
   areas and then a wider radius. A search still short at midnight is closed with
