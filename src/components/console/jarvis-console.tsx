@@ -203,8 +203,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (!path.startsWith("/dashboard") || path === "/dashboard") return;
     // MIKE (e.g. "show me the Tesla chart") opens through its launch iris
     if (path.startsWith("/dashboard/mike")) { setMikeLaunch(true); setTimeout(() => router.push(path), 1050); return; }
-    // ROBIN (e.g. "open ABC Café in Robin") opens through its own launch
-    if (path.startsWith("/dashboard/robin")) { setRobinLaunch(true); setTimeout(() => router.push(path), 1000); return; }
+    // RUBIN (e.g. "open ABC Café in Rubin") opens through its own launch
+    if (path.startsWith("/dashboard/rubin")) { setRobinLaunch(true); setTimeout(() => router.push(path), 1000); return; }
     router.push(path);
   }, [router]);
 
@@ -433,11 +433,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   }, [router, voice, voiceStarted]);
   const [robinLaunch, setRobinLaunch] = useState(false);
   const launchRobin = useCallback((cmd?: string) => {
-    // ROBIN takes over the sales command center; Robin greets you once it's online.
-    // "Robin, show today's follow-ups" opens Robin and runs the command there.
-    logActivity({ category: "agent", agent: "ROBIN", action: "Activated ROBIN", importance: 1 });
+    // RUBIN takes over the sales command center; Rubin greets you once it's online.
+    // "Rubin, show today's follow-ups" opens Rubin and runs the command there.
+    logActivity({ category: "agent", agent: "RUBIN", action: "Activated RUBIN", importance: 1 });
     setRobinLaunch(true);
-    setTimeout(() => router.push(`/dashboard/robin${cmd ? `?cmd=${encodeURIComponent(cmd)}` : ""}`), 1000);
+    setTimeout(() => router.push(`/dashboard/rubin${cmd ? `?cmd=${encodeURIComponent(cmd)}` : ""}`), 1000);
   }, [router]);
   const openHumanoid = useCallback(() => {
     logActivity({ category: "agent", agent: "HUMANOID", action: "Opened Humanoid View", importance: 1 });
@@ -719,8 +719,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           .catch(() => { agent.appendLocalExchange(t, "I couldn't reach the server."); say("I couldn't reach the server."); });
         return;
       }
-      // "Robin", "Activate Robin", "Open Robin", "Start Robin" → ROBIN takes over (sales & CRM);
-      // "Robin, show me today's follow-ups" → Robin opens and does it. ("Ask Robin …" stays with JARVIS.)
+      // "Rubin", "Activate Rubin", "Open Rubin", "Start Rubin" → RUBIN takes over (sales & CRM);
+      // "Rubin, show me today's follow-ups" → Rubin opens and does it. ("Ask Rubin …" stays with JARVIS.)
       if (isRobinActivation(t)) {
         launchRobin();
         return;

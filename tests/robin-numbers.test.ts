@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { followUpBreakdown, leadNumberOf, leadLabel, spokenLead, wordsToNumber } from "@/lib/robin/numbers";
 import { parseRobinCommand as p, splitNote } from "@/lib/robin/command";
 
-describe("ROBIN lead numbers", () => {
+describe("RUBIN lead numbers", () => {
   it("hears a lead named by its number — digits or words", () => {
     for (const [t, n] of [["7", 7], ["#7", 7], ["lead 7", 7], ["Lead #12", 12], ["number 3", 3], ["no. 4", 4], ["client 9", 9], ["lead number 15", 15], ["lead seven", 7], ["number twenty one", 21], ["lead twenty-five", 25], ["Number Eight.", 8]] as const) expect(leadNumberOf(t), t).toBe(n);
     for (const t of ["ABC Café", "Cafe 7 Seas", "seven", "0", "lead", "Iron Gym 2"]) expect(leadNumberOf(t), t).toBeNull();
@@ -24,7 +24,7 @@ describe("ROBIN lead numbers", () => {
   });
 });
 
-describe("ROBIN takes down follow-up notes", () => {
+describe("RUBIN takes down follow-up notes", () => {
   it("a note can ride along with the follow-up", () => {
     expect(p("Schedule a follow-up with 7 tomorrow at 4, note: he wants an online menu")).toEqual({ kind: "followup", name: "7", when: "tomorrow at 4", note: "he wants an online menu" });
     expect(p("follow up with ABC Café on Friday at 11am about the website pricing")).toEqual({ kind: "followup", name: "ABC Café", when: "on friday at 11am", note: "the website pricing" });

@@ -22,10 +22,10 @@ import { rapi, when } from "./api";
 import { reducedMotion } from "./anim";
 
 /**
- * ROBIN — the sales command center, built around one living holographic core.
+ * RUBIN — the sales command center, built around one living holographic core.
  * The CRM orbits beneath it as an arc of eight stages; small glass panels either
  * side are wired into the core; live activity streams along the bottom. The
- * motion is what Robin is actually doing. Everything on screen is the real CRM
+ * motion is what Rubin is actually doing. Everything on screen is the real CRM
  * (polled live); with no data it shows elegant empty states, never placeholders.
  */
 
@@ -187,11 +187,11 @@ export function RobinConsole() {
     // never go silent: if the brain couldn't answer, say why
     onError: (msg) => { setCore("error", 1800); say(`Sorry, my brain didn't answer that one — ${msg.charAt(0).toLowerCase()}${msg.slice(1).replace(/\.$/, "")}. Quick commands like "what's my day?" still work.`); },
     onNavigate: (p) => {
-      const m = p.match(/^\/dashboard\/robin\?(.*)$/);
+      const m = p.match(/^\/dashboard\/rubin\?(.*)$/);
       const sp = m ? new URLSearchParams(m[1]) : null;
       if (sp?.get("lead")) { setLeadId(sp.get("lead")); return; }
       if (sp?.get("view")) { openView(sp.get("view") as View); return; }
-      if (!p.startsWith("/dashboard/robin")) router.push(p);
+      if (!p.startsWith("/dashboard/rubin")) router.push(p);
     },
     onTool: (t) => {
       if (t.status !== "ok") return;
@@ -245,7 +245,7 @@ export function RobinConsole() {
     for (const rem of r.data.reminders ?? []) {
       setToast({ id: Date.now() + 1, text: rem.text });
       say(rem.text);
-      try { if ("Notification" in window && Notification.permission === "granted") new Notification("ROBIN", { body: rem.text }); } catch { /* ignore */ }
+      try { if ("Notification" in window && Notification.permission === "granted") new Notification("RUBIN", { body: rem.text }); } catch { /* ignore */ }
     }
   }, [lightUp, say, setCore]);
   refreshRef.current = () => refresh();
@@ -269,9 +269,9 @@ export function RobinConsole() {
   useEffect(() => {
     if (!booted || greeted.current || !ov) return;
     greeted.current = true;
-    logActivity({ category: "agent", agent: "ROBIN", action: "ROBIN online", importance: 1 });
-    void rapi("voice", "POST", { action: "ensure" }); // Robin designs its own voice once (ElevenLabs)
-    say("Hey! Robin's online — ready to manage your sales pipeline. What are we working on?");
+    logActivity({ category: "agent", agent: "RUBIN", action: "RUBIN online", importance: 1 });
+    void rapi("voice", "POST", { action: "ensure" }); // Rubin designs its own voice once (ElevenLabs)
+    say("Hey! Rubin's online — ready to manage your sales pipeline. What are we working on?");
     const cmd = params.get("cmd"), lead = params.get("lead"), view = params.get("view");
     if (lead) setLeadId(lead);
     else if (view) openView(view as View);
@@ -281,7 +281,7 @@ export function RobinConsole() {
       const m = await rapi<{ due: boolean; text: string | null }>("briefing?morning=1");
       if (m.data?.due && m.data.text) setTimeout(() => say(m.data!.text!), 2600);
     }, 900);
-    if (cmd || lead || view) router.replace("/dashboard/robin");
+    if (cmd || lead || view) router.replace("/dashboard/rubin");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [booted, ov]);
 
@@ -355,7 +355,7 @@ export function RobinConsole() {
     return hits[0];
   }, [leadId, say]);
 
-  /** Robin asked for a note ("any notes for it?") — the next thing you say that isn't a command is the note. */
+  /** Rubin asked for a note ("any notes for it?") — the next thing you say that isn't a command is the note. */
   const pendingNote = useRef<{ followUpId: string; label: string; until: number; then?: () => void } | null>(null);
   const askNote = useCallback((followUpId: string, label: string, question: string, then?: () => void) => {
     pendingNote.current = { followUpId, label, until: Date.now() + 3 * 60_000, then };
@@ -372,7 +372,7 @@ export function RobinConsole() {
   const deactivate = useCallback(() => {
     setLeaving(true);
     say("Catch you later — back to JARVIS.");
-    logActivity({ category: "agent", agent: "ROBIN", action: "Closed ROBIN", importance: 1 });
+    logActivity({ category: "agent", agent: "RUBIN", action: "Closed RUBIN", importance: 1 });
     setTimeout(() => router.push("/dashboard"), 900);
   }, [router, say]);
 
@@ -381,7 +381,7 @@ export function RobinConsole() {
     if (!text) return;
     setReply(null);
     const cmd = parseRobinCommand(text);
-    // the note Robin just asked for
+    // the note Rubin just asked for
     const pn = pendingNote.current;
     if (pn && Date.now() < pn.until && (cmd.kind === "ask" || cmd.kind === "confirm" || (cmd.kind === "note" && !cmd.name))) {
       if (cmd.kind === "confirm" && !cmd.yes) { pendingNote.current = null; say("Okay, no note."); pn.then?.(); return; }
@@ -410,7 +410,7 @@ export function RobinConsole() {
           hello: [`Hey!${nudge}`, `Hi there!${nudge}`, `Hey, good to see you!${nudge}`],
           how_are_you: [`Doing great — ready to close some deals!${nudge}`, `All good here, pipeline's humming.${nudge}`],
           thanks: ["Anytime!", "Happy to help!", "That's what I'm here for."],
-          who: ["I'm Robin, your sales buddy — I take Darwin's leads and help you turn them into clients. Try \"what's my day?\", \"show my hottest leads\" or \"schedule a follow-up with ABC Café tomorrow at 4\"."],
+          who: ["I'm Rubin, your sales buddy — I take Darwin's leads and help you turn them into clients. Try \"what's my day?\", \"show my hottest leads\" or \"schedule a follow-up with ABC Café tomorrow at 4\"."],
           bye: ["Catch you later! I'll keep an eye on the pipeline.", "See you! I'll be here."],
         }[cmd.topic];
         setCore(cmd.topic === "thanks" ? "complete" : "listening", 1200);
@@ -547,7 +547,7 @@ export function RobinConsole() {
         return askNote(f.id, spokenLead(l), `Nice, follow-up with ${spokenLead(l)} done. How did it go — anything to note?`, () => { next(); setTimeout(() => say("Want me to set up the next follow-up?"), 50); });
       }
       default: {
-        // Robin's AI brain (JARVIS's AI router) with what's on screen as context
+        // Rubin's AI brain (JARVIS's AI router) with what's on screen as context
         setCore("analyzing", 4000);
         const ctx = leadId && names.current.get(leadId) ? `\n\n[On screen: the lead ${names.current.get(leadId)} is open.]` : "";
         void agent.send((text + ctx).slice(0, 7800), { agent: "robin" });
@@ -556,7 +556,7 @@ export function RobinConsole() {
   }, [agent, askNote, confirm, convertLead, deactivate, leadId, lightUp, moveLead, openView, ov, refresh, resolve, say, setCore, signaturePulse]);
   handleRef.current = (t) => { void handle(t); };
 
-  // the core shows what Robin is doing: thinking (processing) → complete → idle; listening while you talk
+  // the core shows what Rubin is doing: thinking (processing) → complete → idle; listening while you talk
   const wasStreaming = useRef(false);
   useEffect(() => {
     if (agent.streaming) { wasStreaming.current = true; setCore("processing", 60_000); }
@@ -582,7 +582,7 @@ export function RobinConsole() {
     setTimeout(() => cmdInput.current?.focus(), 30);
   }, []);
   const focusNode = useMemo<NodeId | null>(() => (ov?.next ? (ov.stageMap.find(([id]) => id === ov.next!.leadId)?.[1] ?? null) : null), [ov]);
-  const vState = voice.status === "speaking" ? "ROBIN SPEAKING" : agent.streaming ? "THINKING" : voice.status === "recording" ? "LISTENING" : null;
+  const vState = voice.status === "speaking" ? "RUBIN SPEAKING" : agent.streaming ? "THINKING" : voice.status === "recording" ? "LISTENING" : null;
   const coreLabel = vState === "LISTENING" ? CORE_LABEL.listening : vState === "THINKING" ? CORE_LABEL.processing : core === "idle" ? (vState ?? "MONITORING PIPELINE") : CORE_LABEL[core];
   const show = (d: number, from: "up" | "down" | "left" | "right" | "none" = "up"): React.CSSProperties => ({
     opacity: booted ? 1 : 0, transform: booted || from === "none" ? undefined : { up: "translateY(-18px)", down: "translateY(26px)", left: "translateX(-36px)", right: "translateX(36px)" }[from],
@@ -629,31 +629,31 @@ export function RobinConsole() {
     <div className="flex w-full flex-col items-center gap-2">
       {cmdOpen ? (
         <form className="robin-cmd robin-cmd-open flex w-full items-center gap-1.5 rounded-xl px-2 py-1.5" onSubmit={(e) => { e.preventDefault(); const t = input; setInput(""); void handle(t); }}>
-          <button type="button" onClick={() => (voiceStarted ? voice.toggleMute() : void enableVoice())} className={cn("robin-btn flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1.5", voiceStarted && !voice.muted ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-50" : "border-white/10 text-slate-300")} aria-label={voiceStarted && !voice.muted ? "Mute Robin's microphone" : "Talk to Robin"}>
+          <button type="button" onClick={() => (voiceStarted ? voice.toggleMute() : void enableVoice())} className={cn("robin-btn flex shrink-0 items-center gap-1.5 rounded-lg border px-2 py-1.5", voiceStarted && !voice.muted ? "border-cyan-300/50 bg-cyan-300/10 text-cyan-50" : "border-white/10 text-slate-300")} aria-label={voiceStarted && !voice.muted ? "Mute Rubin's microphone" : "Talk to Rubin"}>
             {voiceStarted && !voice.muted ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
             {vState === "LISTENING" && <span className="robin-wave flex h-3 items-end gap-[2px]">{[0, 1, 2, 3, 4].map((i) => <span key={i} className="w-[2px] bg-cyan-200" style={{ height: `${30 + ((i * 37) % 70)}%`, animationDelay: `${i * 0.12}s` }} />)}</span>}
           </button>
-          <input ref={cmdInput} value={input} onChange={(e) => setInput(e.target.value)} placeholder={vState === "LISTENING" ? "Listening…" : "Tell Robin what to do…"} aria-label="Command Robin"
+          <input ref={cmdInput} value={input} onChange={(e) => setInput(e.target.value)} placeholder={vState === "LISTENING" ? "Listening…" : "Tell Rubin what to do…"} aria-label="Command Rubin"
             className="min-w-0 flex-1 bg-transparent px-1 text-[12.5px] text-slate-50 outline-none placeholder:text-slate-500" />
           <button type="submit" aria-label="Send" className="shrink-0 rounded-lg p-1.5 text-cyan-200 hover:bg-cyan-300/10 hover:text-white">{agent.streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button>
         </form>
       ) : (
-        <button type="button" onClick={openCommand} className="robin-cmd group flex items-center gap-2 rounded-xl px-4 py-2 text-[11px] tracking-[0.14em] text-cyan-50" aria-label="Open Robin's command interface">
-          <span className="text-cyan-200">COMMAND ROBIN:</span>
-          <span className="text-slate-300">{vState === "LISTENING" ? "[Listening…]" : vState === "THINKING" ? "[Thinking…]" : vState === "ROBIN SPEAKING" ? "[Speaking…]" : "[Awaiting input…]"}</span>
+        <button type="button" onClick={openCommand} className="robin-cmd group flex items-center gap-2 rounded-xl px-4 py-2 text-[11px] tracking-[0.14em] text-cyan-50" aria-label="Open Rubin's command interface">
+          <span className="text-cyan-200">COMMAND RUBIN:</span>
+          <span className="text-slate-300">{vState === "LISTENING" ? "[Listening…]" : vState === "THINKING" ? "[Thinking…]" : vState === "RUBIN SPEAKING" ? "[Speaking…]" : "[Awaiting input…]"}</span>
           <span className="robin-caret h-3 w-[1.5px] bg-cyan-200/80" />
         </button>
       )}
       {(reply || voice.transcript) && (
         <p className="robin-reply max-w-[560px] text-center text-[11.5px] leading-snug text-slate-300" key={voice.transcript || reply || ""}>
-          {voice.transcript ? <span className="text-cyan-200">“{voice.transcript}”</span> : <><span className="font-semibold tracking-[0.15em] text-cyan-300">ROBIN</span> {reply}</>}
+          {voice.transcript ? <span className="text-cyan-200">“{voice.transcript}”</span> : <><span className="font-semibold tracking-[0.15em] text-cyan-300">RUBIN</span> {reply}</>}
         </p>
       )}
     </div>
   );
   const coreText = (size: "lg" | "sm") => (
     <>
-      <span className={cn("block font-light tracking-[0.22em] text-white", size === "lg" ? "text-[clamp(22px,2.4vw,34px)]" : "text-2xl")} style={{ textShadow: "0 0 26px rgba(103,232,249,0.55)" }}>ROBIN</span>
+      <span className={cn("block font-light tracking-[0.22em] text-white", size === "lg" ? "text-[clamp(22px,2.4vw,34px)]" : "text-2xl")} style={{ textShadow: "0 0 26px rgba(103,232,249,0.55)" }}>RUBIN</span>
       <span className="mt-0.5 block text-[10px] tracking-[0.18em] text-slate-300/80">AI Core</span>
     </>
   );
@@ -671,7 +671,7 @@ export function RobinConsole() {
         {/* ---- a quiet top line */}
         <header className="flex shrink-0 items-center justify-between gap-3 px-4 pt-3 sm:px-6" style={show(0, "up")}>
           <div className="flex items-center gap-2.5">
-            <span className="text-[12px] font-semibold tracking-[0.42em] text-white">ROBIN</span>
+            <span className="text-[12px] font-semibold tracking-[0.42em] text-white">RUBIN</span>
             <span className={cn("flex items-center gap-1 text-[9.5px] tracking-[0.2em]", loadErr ? "text-amber-300" : "text-emerald-300")}><span className={cn("h-1.5 w-1.5 rounded-full", loadErr ? "bg-amber-300" : "bg-emerald-300 shadow-[0_0_8px_#6ee7b7]")} />{loadErr ? "OFFLINE" : "ONLINE"}</span>
             <span className="hidden text-[9.5px] tracking-[0.2em] text-slate-500 lg:inline">· INFINITY WEB &amp; APPS · SALES</span>
           </div>
@@ -688,7 +688,7 @@ export function RobinConsole() {
                 <Bell className="h-4 w-4" /><span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_6px_#67e8f9]" />
               </button>
             )}
-            <button type="button" title="Close Robin" aria-label="Close Robin" onClick={deactivate} className="robin-btn ml-1 shrink-0 rounded-full border border-white/10 p-2 text-slate-300 hover:text-white"><LogOut className="h-4 w-4" /></button>
+            <button type="button" title="Close Rubin" aria-label="Close Rubin" onClick={deactivate} className="robin-btn ml-1 shrink-0 rounded-full border border-white/10 p-2 text-slate-300 hover:text-white"><LogOut className="h-4 w-4" /></button>
           </div>
         </header>
 
@@ -696,7 +696,7 @@ export function RobinConsole() {
           /* ---------- desktop / laptop: one immersive stage ---------- */
           <main ref={stageRef} className="relative min-h-0 flex-1">
             {/* the core: state, name, and a click opens the command interface */}
-            <button type="button" onClick={openCommand} aria-label="Open Robin's command interface" className="robin-core-hit absolute rounded-full"
+            <button type="button" onClick={openCommand} aria-label="Open Rubin's command interface" className="robin-core-hit absolute rounded-full"
               style={{ left: lay.core.x - lay.R * 0.8, top: lay.core.y - lay.R * 0.8, width: lay.R * 1.6, height: lay.R * 1.6, ...show(200, "none") }}>
               <span className="flex h-full flex-col items-center justify-center text-center">{coreText("lg")}</span>
             </button>
@@ -739,7 +739,7 @@ export function RobinConsole() {
           /* ---------- phones: the core stays centred; the CRM scrolls beneath it ---------- */
           <main ref={stageRef} className="relative flex flex-1 flex-col">
             <div ref={coreBoxRef} className="relative mx-auto flex w-full items-center justify-center" style={{ height: clamp(box.w * 0.92, 290, 380) }}>
-              <button type="button" onClick={openCommand} aria-label="Open Robin's command interface" className="robin-core-hit flex flex-col items-center justify-center rounded-full text-center" style={{ width: lay.R * 1.6, height: lay.R * 1.6 }}>{coreText("sm")}</button>
+              <button type="button" onClick={openCommand} aria-label="Open Rubin's command interface" className="robin-core-hit flex flex-col items-center justify-center rounded-full text-center" style={{ width: lay.R * 1.6, height: lay.R * 1.6 }}>{coreText("sm")}</button>
               <p className="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 whitespace-nowrap text-[10px] tracking-[0.3em] text-cyan-200/90" aria-live="polite">{coreLabel}</p>
               {(["left", "right"] as const).map((side) => (
                 <button key={side} type="button" onClick={() => setStatsOpen(statsOpen === side ? null : side)} aria-expanded={statsOpen === side}
@@ -809,7 +809,7 @@ export function RobinConsole() {
       {/* boot titles while the core powers up */}
       {!booted && (
         <div className="pointer-events-none fixed inset-x-0 bottom-[14vh] z-20 text-center">
-          <p className="robin-typein mx-auto w-max overflow-hidden whitespace-nowrap text-[10px] tracking-[0.5em] text-cyan-200/80">INITIALIZING ROBIN AI CORE · CONNECTING CRM</p>
+          <p className="robin-typein mx-auto w-max overflow-hidden whitespace-nowrap text-[10px] tracking-[0.5em] text-cyan-200/80">INITIALIZING RUBIN AI CORE · CONNECTING CRM</p>
         </div>
       )}
     </div>
@@ -820,7 +820,7 @@ function EmptyPipeline({ onImport, style, className }: { onImport: () => void; s
   return (
     <div className={cn("robin-glass robin-in absolute inset-x-0 z-20 mx-auto w-[min(92%,400px)] rounded-2xl p-4 text-center", className)} style={style}>
       <p className="text-sm font-medium text-slate-100">No leads in the pipeline yet</p>
-      <p className="mt-1 text-xs leading-relaxed text-slate-400">When DARWIN finds a cafe, restaurant or gym, it arrives here automatically and Robin qualifies it.</p>
+      <p className="mt-1 text-xs leading-relaxed text-slate-400">When DARWIN finds a cafe, restaurant or gym, it arrives here automatically and Rubin qualifies it.</p>
       <button type="button" onClick={onImport} className="robin-btn mt-3 rounded-full border border-cyan-300/30 px-4 py-1.5 text-[11px] tracking-[0.18em] text-cyan-100">CHECK DARWIN FOR LEADS</button>
     </div>
   );

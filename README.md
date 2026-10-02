@@ -927,7 +927,7 @@ Google shows a warning for the Drive permission until the app is verified.
 | EV     | `EV_PROVIDER`       | `groq,gemini` | Groq, Gemini as backup              |
 | DARWIN | `DARWIN_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
 | MIKE   | `MIKE_PROVIDER`     | `groq,gemini` | Groq, Gemini as backup              |
-| ROBIN  | `ROBIN_PROVIDER`    | `groq,gemini` | Groq, Gemini as backup              |
+| RUBIN  | `RUBIN_PROVIDER`    | `groq,gemini` | Groq, Gemini as backup              |
 | ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `openrouter,ollama` | OpenRouter (`OPENROUTER_API_KEY`, model `OPENROUTER_MODEL`), with this PC's Ollama as the backup (model: `ULTRON_OLLAMA_MODEL`, else `OLLAMA_MODEL`, else `qwen2.5:3b`) |
 
 `JARVIS_PROVIDER=ollama` puts JARVIS back on your PC brain (then `npm run local`
@@ -1033,28 +1033,32 @@ migration `0011_mike`: your next Vercel deploy applies it (the PC uses the same
 database). With a separate local database, run `npm run db:migrate`.
 
 
-## ROBIN — sales & CRM
+## RUBIN — sales & CRM
 
-ROBIN turns DARWIN's leads into qualified prospects and paying clients. Work
-starts after DARWIN finds a business; ROBIN never searches for leads itself:
+*RUBIN was called ROBIN before. "Robin" still works as a voice command, old
+`/dashboard/robin` links open RUBIN, and the old `ROBIN_*` settings names still
+work. The internal code keeps the `robin` name, for example `/api/robin`.*
+
+RUBIN turns DARWIN's leads into qualified prospects and paying clients. Work
+starts after DARWIN finds a business; RUBIN never searches for leads itself:
 
 ```
-DARWIN → ROBIN → NEW CONTACT → CONTACTED → QUALIFIED → INTERESTED → FOLLOW-UP (+ DEMO) → PROPOSAL SENT (+ NEGOTIATION) → WON / REJECTED → CLIENT
+DARWIN → RUBIN → NEW CONTACT → CONTACTED → QUALIFIED → INTERESTED → FOLLOW-UP (+ DEMO) → PROPOSAL SENT (+ NEGOTIATION) → WON / REJECTED → CLIENT
 ```
 
-**Open it.** Say or type "Robin", "Activate Robin", "Open Robin" or "Start
-Robin". ROBIN answers "Robin is online. Ready to manage your sales pipeline."
-"Robin, show me today's follow-ups" opens ROBIN and runs the command there.
-"Close Robin", "Deactivate Robin" or "Get me back to JARVIS" returns to JARVIS.
-JARVIS can also relay questions: "JARVIS, ask Robin how many qualified leads I
-have" gets the answer "Robin reports …".
+**Open it.** Say or type "Rubin", "Activate Rubin", "Open Rubin" or "Start
+Rubin". RUBIN answers "Rubin is online. Ready to manage your sales pipeline."
+"Rubin, show me today's follow-ups" opens RUBIN and runs the command there.
+"Close Rubin", "Deactivate Rubin" or "Get me back to JARVIS" returns to JARVIS.
+JARVIS can also relay questions: "JARVIS, ask Rubin how many qualified leads I
+have" gets the answer "Rubin reports …".
 
-**The command center** (`/dashboard/robin`). It is built around one living
+**The command center** (`/dashboard/rubin`). It is built around one living
 holographic core, not a grid of cards. Everything on it is the real CRM,
 refreshed every 15 seconds:
-- **ROBIN AI core**, at the centre of the screen. Concentric and rotating
+- **RUBIN AI core**, at the centre of the screen. Concentric and rotating
   rings, a radial scanning beam, orbiting data particles, waveforms either side,
-  a glass highlight and soft bloom. It reacts to what ROBIN is doing:
+  a glass highlight and soft bloom. It reacts to what RUBIN is doing:
   - IDLE: slow rotation, breathing glow.
   - LISTENING: the rings expand and contract with your voice.
   - ANALYZING: a radar sweep and fast data particles.
@@ -1063,13 +1067,13 @@ refreshed every 15 seconds:
   - FOLLOW-UP: communication waves and notification particles orbiting the core.
   - COMPLETE: an energy pulse and a brief check mark, then back to idle.
   - ERROR: a controlled amber warning pulse, only while the error lasts.
-  Click the core (or **COMMAND ROBIN**) to open the command interface, then type
+  Click the core (or **COMMAND RUBIN**) to open the command interface, then type
   or use the mic.
 - **CRM orbit.** The pipeline curves under the core in eight stages: New
   Contact → Contacted → Qualified → Interested → Follow-Up → Proposal Sent →
   Won, with a Rejected branch. Follow-Up includes demos; Proposal Sent includes
   negotiating; Rejected covers lost, not interested and do-not-contact.
-  DARWIN's leads that score well start in Qualified, because Robin qualifies
+  DARWIN's leads that score well start in Qualified, because Rubin qualifies
   them on arrival. Logging a call then moves them to Contacted.
   - The line between stages carries flowing data.
   - On each line sits the lead that needs you most in the next stage. Hover it
@@ -1101,14 +1105,14 @@ refreshed every 15 seconds:
   sideways beneath it, and an expanded stage opens as a bottom sheet.
 - Motion respects `prefers-reduced-motion`.
 
-**DARWIN → ROBIN.** With auto-import on (the default), DARWIN's leads come over
+**DARWIN → RUBIN.** With auto-import on (the default), DARWIN's leads come over
 on their own. That happens after each daily search tick, after a manual DARWIN
-search, and whenever ROBIN is open. You get a note such as "12 new leads
+search, and whenever RUBIN is open. You get a note such as "12 new leads
 received from Darwin".
 - Duplicates are merged into the existing record rather than added again. A
   match on DARWIN record, phone, email, or name plus area counts as a duplicate.
 - Emails DARWIN really sent are carried into the lead's contact history.
-- Turn auto-import off in ROBIN's settings. "Check DARWIN for leads" then imports
+- Turn auto-import off in RUBIN's settings. "Check DARWIN for leads" then imports
   on demand.
 
 **Qualification.** Each lead is ranked High, Medium, Low or Needs Review from
@@ -1120,8 +1124,8 @@ the facts on record. These include website status, which contact channels it has
   will buy.
 - You can override any priority.
 
-**Contact tracking.** ROBIN never contacts anyone.
-- CALL opens your phone's dialer. Afterwards ROBIN asks "How did the call go?":
+**Contact tracking.** RUBIN never contacts anyone.
+- CALL opens your phone's dialer. Afterwards RUBIN asks "How did the call go?":
   No answer, Busy, Wrong number, Spoke with owner, Interested, Not interested,
   Call later, Wants demo, or Wants quotation. You can add notes and a next
   follow-up.
@@ -1140,10 +1144,10 @@ leads arrived, and new leads take the next one.
 **Follow-up notes.** Every follow-up keeps your notes.
 - "Follow up with 7 tomorrow at 4, note: wants an online menu" (or "… about the
   menu") saves the note with it.
-- Without a note, Robin asks "Any notes for it?", and whatever you say next is
+- Without a note, Rubin asks "Any notes for it?", and whatever you say next is
   saved.
 - "Done with 7, he wants a quote next week" completes the follow-up with that
-  note. A plain "mark the follow-up with 7 done" makes Robin ask how it went.
+  note. A plain "mark the follow-up with 7 done" makes Rubin ask how it went.
 - "Note for 7: call after 6 pm" adds a note to lead 7's next follow-up, or to the
   lead itself when none is scheduled.
 - **"How many follow-ups do we have?"** gives the breakdown: overdue, today and
@@ -1152,7 +1156,7 @@ leads arrived, and new leads take the next one.
   and "today's follow-ups" narrow it down.
 
 **Reminder emails.** Before each follow-up and demo is due (an hour before by
-default), Robin emails you a reminder.
+default), Rubin emails you a reminder.
 - It's sent from your connected Gmail to your own address; it never goes to a
   lead.
 - Each reminder has the lead number and name, what to do (call, WhatsApp,
@@ -1160,8 +1164,8 @@ default), Robin emails you a reminder.
 - Several things coming up at once go out as one email. Each follow-up and demo
   is reminded once. Something already more than 2 hours overdue isn't reminded.
 - Turn it off, change the timing (15 min to 1 day before) or send reminders to
-  another address under ROBIN → Settings → Reminder emails.
-- Robin checks for reminders:
+  another address under RUBIN → Settings → Reminder emails.
+- Rubin checks for reminders:
   - every minute with `npm run local`;
   - every 2 minutes while JARVIS is open in a browser;
   - on each request to `GET /api/cron/robin` (with `Authorization: Bearer
@@ -1171,27 +1175,27 @@ default), Robin emails you a reminder.
   `/api/cron/robin` every 5 minutes.
 - Google must be connected in JARVIS Settings for the emails to go out.
 
-**Your commands come first.** ROBIN talks like a friend and does what you tell
+**Your commands come first.** RUBIN talks like a friend and does what you tell
 it straight away, with no "are you sure?". Your command is the approval, whether
 you give it by voice, by click or by dragging a card. That includes WON, LOST,
 DO NOT CONTACT, accepting a quotation, converting to a client and emailing a
 quotation.
 - Say **"undo"** to put the last stage move back. The full history is always kept.
-- ROBIN never makes those decisions on its own: DARWIN imports, qualification and
+- RUBIN never makes those decisions on its own: DARWIN imports, qualification and
   logged calls never mark a lead won or lost.
-- ROBIN asks a question only when it can't tell what you mean: which lead when
+- RUBIN asks a question only when it can't tell what you mean: which lead when
   several match, or a missing time or price.
 - It still never invents numbers or prices and never claims a message was
   delivered.
 
-**Quotations.** Set your services and prices under ROBIN → Settings. Prices start
-empty; ROBIN never invents or changes a price. A quotation includes discount,
+**Quotations.** Set your services and prices under RUBIN → Settings. Prices start
+empty; RUBIN never invents or changes a price. A quotation includes discount,
 tax (GST %), validity and payment terms, and it is a professional A4 PDF. Send
 it yourself ("I sent it") or email the PDF from your Gmail after confirming.
-When it is accepted, ROBIN offers to make them a client ("make ABC Café a
+When it is accepted, RUBIN offers to make them a client ("make ABC Café a
 client" also works). The client keeps the lead's whole history.
 
-**Voice commands** (handled instantly; anything else goes to ROBIN's AI brain on
+**Voice commands** (handled instantly; anything else goes to RUBIN's AI brain on
 JARVIS's AI router):
 - "show me today's follow-ups"
 - "show my highest-priority leads"
@@ -1212,9 +1216,9 @@ JARVIS's AI router):
 - "make ABC Café a client"
 - "undo"
 
-If a name matches several leads, ROBIN asks which one. A morning sales
-briefing plays the first time ROBIN opens each day; it can be turned off in
-Settings. Demo reminders arrive 30 minutes before, in ROBIN, and as a browser
+If a name matches several leads, RUBIN asks which one. A morning sales
+briefing plays the first time RUBIN opens each day; it can be turned off in
+Settings. Demo reminders arrive 30 minutes before, in RUBIN, and as a browser
 notification if you've allowed those.
 
 **Data.** Everything lives in Postgres (migration `0013_robin`). Your next Vercel
@@ -1226,18 +1230,18 @@ tables:
 - clients, payments
 - services, settings, notifications, audit log
 
-Every change records who made it: you, voice, ROBIN, DARWIN or a webhook.
+Every change records who made it: you, voice, RUBIN, DARWIN or a webhook.
 
 Env (all optional):
-- `ROBIN_PROVIDER` (default `groq,gemini`)
-- `ROBIN_VOICE_ID` (ElevenLabs voice). Leave it unset to let Robin use its own
-  voice. The first time ROBIN opens with `ELEVENLABS_API_KEY` set, it designs a
+- `RUBIN_PROVIDER` (default `groq,gemini`)
+- `RUBIN_VOICE_ID` (ElevenLabs voice). Leave it unset to let Rubin use its own
+  voice. The first time RUBIN opens with `ELEVENLABS_API_KEY` set, it designs a
   voice with ElevenLabs Voice Design and saves it to your ElevenLabs account. The
   default description is a warm, friendly young male voice with a light Indian
-  English accent. To change it, describe a different voice in ROBIN → ⚙ Settings →
-  ROBIN'S VOICE and press "Create a new voice". Until the designed voice exists, or
-  if your plan can't design voices, Robin speaks with the stock voice "Eric".
-- `ROBIN_WEBHOOK_SECRET` turns on `POST /api/robin/webhook`, which other systems
+  English accent. To change it, describe a different voice in RUBIN → ⚙ Settings →
+  RUBIN'S VOICE and press "Create a new voice". Until the designed voice exists, or
+  if your plan can't design voices, Rubin speaks with the stock voice "Eric".
+- `RUBIN_WEBHOOK_SECRET` turns on `POST /api/robin/webhook`, which other systems
   can use to send a new lead or a reply. Requests are signed with
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
   `x-robin-timestamp`, and must be no more than 5 minutes old.

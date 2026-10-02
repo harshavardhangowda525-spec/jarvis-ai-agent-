@@ -31,7 +31,7 @@ const schema = z.discriminatedUnion("event", [
 
 export async function POST(req: Request) {
   try {
-    if (!env.robinWebhookSecret) return fail("ROBIN webhook is off (set ROBIN_WEBHOOK_SECRET).", 503);
+    if (!env.robinWebhookSecret) return fail("RUBIN webhook is off (set ROBIN_WEBHOOK_SECRET).", 503);
     const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "local";
     if (!rateLimit(`robin:webhook:${ip}`, 60, 60_000).allowed) return fail("Too many requests.", 429);
     const raw = await req.text();

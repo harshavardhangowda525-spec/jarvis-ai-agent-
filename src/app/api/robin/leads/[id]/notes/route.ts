@@ -6,7 +6,7 @@ import { addFollowUpNote } from "@/lib/robin/engage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** A note you told Robin about this lead — on its next follow-up, or on the lead when none is scheduled. */
+/** A note you told Rubin about this lead — on its next follow-up, or on the lead when none is scheduled. */
 const schema = z.object({ text: z.string().trim().min(1).max(1000), source: z.enum(["user", "voice"]).optional() });
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   return robinApi(req, "lead-note", async (user) => {

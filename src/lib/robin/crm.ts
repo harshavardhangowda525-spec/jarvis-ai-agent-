@@ -10,9 +10,9 @@ import { qualify, type QualifyInput } from "./qualify";
 import { CLOSED, STAGE_ORDER, CONFIRM_STAGES, DEFAULT_SERVICES, DEFAULT_SETTINGS, STAGE_LABEL, isStage, type RobinSettings, type Stage, type Priority, PRIORITIES } from "./types";
 
 /**
- * ROBIN's CRM core: leads, duplicate detection, qualification, stage changes
+ * RUBIN's CRM core: leads, duplicate detection, qualification, stage changes
  * (with full history), audit. Every write here is a real database record and
- * every change says who made it (you, your voice, Robin, DARWIN, a webhook).
+ * every change says who made it (you, your voice, Rubin, DARWIN, a webhook).
  */
 
 export type Source = "user" | "voice" | "robin" | "darwin" | "system" | "webhook";
@@ -53,7 +53,7 @@ export async function audit(userId: string, action: string, entity: string, enti
 export async function logRobin(userId: string, leadId: string | null, type: string, detail: string, meta?: Record<string, unknown>, importance = 2) {
   await getDb().robinActivity.create({ data: { userId, leadId, type, detail: detail.slice(0, 500), meta: (meta ?? undefined) as Prisma.InputJsonValue | undefined } });
   // and JARVIS's own history (briefings), never blocking the CRM write
-  void recordActivity(userId, { category: "business", agent: "ROBIN", action: detail, importance, source: "robin", metadata: leadId ? { leadId, type } : { type } });
+  void recordActivity(userId, { category: "business", agent: "RUBIN", action: detail, importance, source: "robin", metadata: leadId ? { leadId, type } : { type } });
 }
 
 // ---------------------------------------------------------------- settings + services
@@ -95,7 +95,7 @@ export interface LeadInput extends QualifyInput {
   notes?: string | null;
 }
 
-/** An existing Robin lead that is the same business (DARWIN id, phone, email, or name + city). */
+/** An existing Rubin lead that is the same business (DARWIN id, phone, email, or name + city). */
 export async function findDuplicate(userId: string, l: { darwinLeadId?: string | null; phone?: string | null; email?: string | null; businessName: string; city?: string | null; address?: string | null }): Promise<RobinLead | null> {
   const db = getDb();
   const or: Prisma.RobinLeadWhereInput[] = [];
@@ -177,13 +177,13 @@ export async function requalify(userId: string, leadId: string, source: Source =
   return lead;
 }
 
-/** Your override always wins over Robin's ranking (null = go back to Robin's). */
+/** Your override always wins over Rubin's ranking (null = go back to Rubin's). */
 export async function setPriority(userId: string, leadId: string, override: Priority | null, source: Source): Promise<RobinLead> {
   if (override && !PRIORITIES.includes(override)) throw new RobinError("Unknown priority.", 422, "invalid");
   const l = await mustLead(userId, leadId);
   const computed = qualify(l).priority;
   const lead = await getDb().robinLead.update({ where: { id: l.id }, data: { priorityOverride: override, priority: override ?? computed } });
-  await logRobin(userId, l.id, "priority", override ? `${l.businessName} set to ${override.replace("_", " ")} priority by you` : `${l.businessName} back to Robin's ranking (${computed.replace("_", " ")})`, { override }, 1);
+  await logRobin(userId, l.id, "priority", override ? `${l.businessName} set to ${override.replace("_", " ")} priority by you` : `${l.businessName} back to Rubin's ranking (${computed.replace("_", " ")})`, { override }, 1);
   await audit(userId, "priority_override", "lead", l.id, source, { from: l.priority, to: override ?? computed });
   return lead;
 }
@@ -196,7 +196,7 @@ export async function mustLead(userId: string, leadId: string): Promise<RobinLea
 
 /**
  * Move a lead to another stage. Decisions (WON, LOST, DO NOT CONTACT) need
- * `confirm: true` — Robin never makes them on its own.
+ * `confirm: true` — Rubin never makes them on its own.
  */
 export async function moveStage(userId: string, leadId: string, to: string, o: { source: Source; note?: string | null; confirm?: boolean; at?: Date }): Promise<{ lead: RobinLead; changed: boolean; from: string }> {
   if (!isStage(to)) throw new RobinError(`"${to}" isn't a pipeline stage.`, 422, "invalid");
@@ -245,7 +245,7 @@ export async function updateLead(userId: string, leadId: string, patch: LeadPatc
 /**
  * Find a lead by what you said ("ABC Cafe", "abc café", "the salon on MG road").
  * Exact → starts with → contains → shared words. Returns every close match so
- * Robin can ask "which one?" instead of guessing.
+ * Rubin can ask "which one?" instead of guessing.
  */
 /** The next free lead number for this user. */
 export async function nextLeadNumber(userId: string): Promise<number> {

@@ -4,8 +4,8 @@ import type { NodeId, Stage } from "./types";
 import { leadNumberOf } from "./numbers";
 
 /**
- * What a spoken/typed ROBIN command means. Fast local routing for the commands
- * that drive the interface; anything else goes to Robin's AI brain. Client-safe.
+ * What a spoken/typed RUBIN command means. Fast local routing for the commands
+ * that drive the interface; anything else goes to Rubin's AI brain. Client-safe.
  * Nothing here changes data — the console validates the lead first and asks
  * for confirmation on decisions.
  */
@@ -75,7 +75,7 @@ export function parseRobinCommand(raw: string): RobinCommand {
   if (/^(yes|yeah|yep|yup|confirm(ed)?|do it|go ahead|sure|correct|ok(ay)?)( please| do it| confirm)?[.!\s]*$/.test(low)) return { kind: "confirm", yes: true };
   if (/^(no|nope|cancel|don'?t|stop|never ?mind|not now)[.!\s]*$/.test(low)) return { kind: "confirm", yes: false };
   // small talk — answered on the spot (no AI needed)
-  const bare = low.replace(/[.!?,]/g, " ").replace(/\b(robin|robbin|robyn|buddy|bro|man|dude|mate|there)\b/g, " ").replace(/\s+/g, " ").trim();
+  const bare = low.replace(/[.!?,]/g, " ").replace(/\b(rubin|ruben|reuben|robin|robbin|robyn|buddy|bro|man|dude|mate|there)\b/g, " ").replace(/\s+/g, " ").trim();
   if (/^(hi+|hey+|hello+|hiya|yo|hola|namaste|good (morning|afternoon|evening)|sup|wassup|what'?s up|hey hi|hi hi)$/.test(bare)) return { kind: "chat", topic: "hello" };
   if (/^((hi|hey|hello) )?(how are you( doing)?|how'?s it going|how are things|how do you do|you good|all good)$/.test(bare)) return { kind: "chat", topic: "how_are_you" };
   if (/^(thanks?( a lot| so much)?|thank you( so much)?|thx|cheers|great job|nice|awesome|cool|perfect|good job|well done)$/.test(bare)) return { kind: "chat", topic: "thanks" };
@@ -155,7 +155,7 @@ export function parseRobinCommand(raw: string): RobinCommand {
   m = text.match(/^(?:open|show(?: me)?|pull up|bring up|go to|display)\s+(?:the\s+)?((?:lead|client|customer|number|no\.?)\s*(?:number\s+)?#?\s*\d{1,6}|#?\d{1,6}|(?:lead|client|number)\s+[a-z]+(?:[\s-][a-z]+)?)[.!?]*$/i);
   if (m && (/\d/.test(m[1]) || leadNumberOf(m[1]))) return { kind: "open", name: m[1].trim() };
   m = text.match(/^(?:open|show(?: me)?|pull up|bring up|go to|display)\s+(?:the\s+)?(?:lead\s+(?:for\s+)?)?(.{2,80}?)(?:'s\s+(?:lead|profile|details))?[.!?]*$/i);
-  if (m && !/\b(leads?|pipeline|crm|funnel|revenue|follow[- ]?ups?|quotations?|demos?|clients?|analytics|robin|jarvis|today|my day)\b/i.test(m[1])) return { kind: "open", name: m[1].trim() };
+  if (m && !/\b(leads?|pipeline|crm|funnel|revenue|follow[- ]?ups?|quotations?|demos?|clients?|analytics|rubin|ruben|reuben|robin|jarvis|today|my day)\b/i.test(m[1])) return { kind: "open", name: m[1].trim() };
   return { kind: "ask", text: raw.trim() };
 }
 

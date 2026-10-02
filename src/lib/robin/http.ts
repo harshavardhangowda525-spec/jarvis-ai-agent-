@@ -5,7 +5,7 @@ import { fail, handleError, rateLimit } from "@/lib/api";
 import { RobinError } from "./crm";
 
 /**
- * Every ROBIN API: signed-in user only (each query is scoped to that user),
+ * Every RUBIN API: signed-in user only (each query is scoped to that user),
  * rate-limited, validated with zod, and errors mapped to plain answers.
  * `needs_confirmation` comes back as HTTP 409 with `code` so the UI (or voice)
  * asks you before trying again with `confirm: true`.

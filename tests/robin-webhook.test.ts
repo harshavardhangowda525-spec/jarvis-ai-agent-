@@ -5,7 +5,7 @@ import { signRobinWebhook } from "@/lib/robin/webhook";
 
 const d = isDbConfigured ? describe : describe.skip;
 
-d("ROBIN webhook (signed)", () => {
+d("RUBIN webhook (signed)", () => {
   let email = "";
   let userId = "";
   let POST: (req: Request) => Promise<Response>;

@@ -4,7 +4,7 @@ import { getDb, isDbConfigured } from "@/lib/db";
 
 const d = isDbConfigured ? describe : describe.skip;
 
-d("Robin designs its own voice (ElevenLabs Voice Design, mocked)", () => {
+d("Rubin designs its own voice (ElevenLabs Voice Design, mocked)", () => {
   let userId = "";
   let V: typeof import("@/lib/robin/voice");
   const calls: { url: string; method: string; body: any; key: string | null }[] = [];
@@ -32,7 +32,7 @@ d("Robin designs its own voice (ElevenLabs Voice Design, mocked)", () => {
     expect(r).toEqual({ voiceId: "robin-voice-1", preview: "SUQz" });
     expect(calls[0]).toMatchObject({ url: "https://api.elevenlabs.io/v1/text-to-voice/design", method: "POST", key: "el-test-key" });
     expect(calls[0].body.voice_description).toMatch(/friendly young adult male/);
-    expect(calls[1]).toMatchObject({ url: "https://api.elevenlabs.io/v1/text-to-voice", body: { generated_voice_id: "gen-1", voice_name: "ROBIN (JARVIS sales agent)" } });
+    expect(calls[1]).toMatchObject({ url: "https://api.elevenlabs.io/v1/text-to-voice", body: { generated_voice_id: "gen-1", voice_name: "RUBIN (JARVIS sales agent)" } });
     expect(await V.robinVoiceFor(userId)).toBe("robin-voice-1");
     expect(await V.robinVoiceStatus(userId)).toMatchObject({ using: "designed", voiceId: "robin-voice-1", error: null });
     expect(await V.ensureRobinVoice(userId)).toBe("exists"); // never re-designs on its own
@@ -43,7 +43,7 @@ d("Robin designs its own voice (ElevenLabs Voice Design, mocked)", () => {
     expect(calls.map((c) => `${c.method} ${c.url.replace("https://api.elevenlabs.io/v1", "")}`)).toEqual(["POST /text-to-voice/design", "POST /text-to-voice", "DELETE /voices/robin-voice-1"]);
     expect(await V.robinVoiceFor(userId)).toBe("robin-voice-2");
   });
-  it("if ElevenLabs refuses, Robin keeps its current voice and says why", async () => {
+  it("if ElevenLabs refuses, Rubin keeps its current voice and says why", async () => {
     fail = "voice design is not available on your plan";
     await expect(V.createRobinVoice(userId)).rejects.toThrow(/may not allow Voice Design/);
     fail = null;

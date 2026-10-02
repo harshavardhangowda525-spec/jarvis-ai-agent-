@@ -648,7 +648,7 @@ body {
 }
 
 /* ============================================================================
-   ROBIN — sales command center. Deep black / graphite, glass, electric blue,
+   RUBIN — sales command center. Deep black / graphite, glass, electric blue,
    cyan, a touch of violet. Motion is calm and purposeful; reduced-motion users
    get the same information without the movement.
    ========================================================================== */
@@ -750,7 +750,7 @@ body {
 @keyframes robin-letter { from { opacity: 0; transform: translateY(14px); filter: blur(6px); letter-spacing: .5em; } to { opacity: 1; transform: none; filter: none; } }
 @keyframes robin-typein { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
 @keyframes robin-toast { 0% { opacity: 0; transform: translateY(-14px); } 8%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; transform: translateY(-8px); } }
-/* ---- ROBIN command center: orbit, glass HUD, command pill ---- */
+/* ---- RUBIN command center: orbit, glass HUD, command pill ---- */
 .robin-noise { opacity: .035; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); mix-blend-mode: overlay; }
 .robin-draw-long { stroke-dasharray: 2400; stroke-dashoffset: 2400; animation: robin-draw 2.2s cubic-bezier(.4,0,.2,1) .2s forwards; }
 .robin-dataflow { animation: robin-dataflow 2.4s linear infinite; }

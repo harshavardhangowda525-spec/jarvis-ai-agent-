@@ -4,11 +4,11 @@ import { getDb } from "@/lib/db";
 import { audit, createLead, loadSettings, logRobin, advanceTo, type LeadInput, type Source } from "./crm";
 
 /**
- * DARWIN → ROBIN. DARWIN finds and verifies businesses; Robin receives them.
- * Robin never searches for leads itself. Each DARWIN lead comes over once:
+ * DARWIN → RUBIN. DARWIN finds and verifies businesses; Rubin receives them.
+ * Rubin never searches for leads itself. Each DARWIN lead comes over once:
  * duplicates are merged into the existing CRM record (remembered as an alias so
  * they aren't re-checked), and any email DARWIN really sent is carried into
- * Robin's contact history.
+ * Rubin's contact history.
  */
 
 type Meta = {
@@ -39,8 +39,8 @@ export function darwinToLead(d: DarwinLead): LeadInput {
 export interface SyncResult { imported: number; duplicates: number; names: string[]; remaining: number; skipped?: "off" }
 
 /**
- * Bring DARWIN's leads that Robin hasn't seen yet into the CRM.
- * `ids` = only these (the "Send to Robin" button works even with auto-import off).
+ * Bring DARWIN's leads that Rubin hasn't seen yet into the CRM.
+ * `ids` = only these (the "Send to Rubin" button works even with auto-import off).
  */
 export async function syncFromDarwin(userId: string, o: { ids?: string[]; limit?: number; source?: Source } = {}): Promise<SyncResult> {
   const db = getDb();
@@ -65,7 +65,7 @@ export async function syncFromDarwin(userId: string, o: { ids?: string[]; limit?
     }
     res.imported++;
     if (res.names.length < 8) res.names.push(lead.businessName);
-    // outreach DARWIN really did (Gmail confirmed) becomes part of Robin's contact history
+    // outreach DARWIN really did (Gmail confirmed) becomes part of Rubin's contact history
     const sent = await db.darwinMessage.findMany({ where: { userId, leadId: d.id, status: { in: ["sent", "delivered", "replied"] } }, orderBy: { sentAt: "asc" } });
     for (const m of sent) {
       await db.robinInteraction.create({ data: { userId, leadId: lead.id, channel: m.channel === "instagram_dm" ? "instagram" : "email", status: m.status === "replied" ? "sent" : m.status, subject: m.subject, notes: m.body.slice(0, 4000), externalId: m.externalId, occurredAt: m.sentAt ?? m.createdAt } });

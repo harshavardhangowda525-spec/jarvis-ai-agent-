@@ -2,7 +2,7 @@ import { categoryBucket, verifyPhone } from "@/lib/darwin/daily/verify";
 import type { Priority } from "./types";
 
 /**
- * ROBIN's qualification engine. PURE. It ranks leads for YOUR workflow from the
+ * RUBIN's qualification engine. PURE. It ranks leads for YOUR workflow from the
  * facts the CRM holds — it is not a prediction that anyone will buy, and every
  * point it gives comes with the reason, so the priority is never a black box.
  */

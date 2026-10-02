@@ -58,7 +58,7 @@ const createSchema = z.object({
   notes: z.string().max(4000).optional().nullable(),
 });
 
-/** Add a lead by hand (Robin still checks for duplicates and qualifies it). */
+/** Add a lead by hand (Rubin still checks for duplicates and qualifies it). */
 export async function POST(req: Request) {
   return robinApi(req, "lead-create", async (user) => {
     const body = createSchema.parse(await req.json());

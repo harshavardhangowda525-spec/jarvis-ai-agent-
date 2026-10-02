@@ -20,7 +20,7 @@ const schema = z.object({
     emailReminders: z.boolean().optional(), reminderMinutes: z.number().int().min(5).max(1440).optional(),
     reminderEmail: z.union([z.literal(""), z.string().trim().email().max(160)]).optional(),
   }).optional(),
-  // your services and prices (null price = not set; Robin won't quote it until you set one)
+  // your services and prices (null price = not set; Rubin won't quote it until you set one)
   services: z.array(z.object({ id: z.string().optional(), name: z.string().trim().min(1).max(120), description: z.string().max(1000).nullable().optional(), price: z.number().min(0).max(1e9).nullable().optional(), unit: z.string().max(40).nullable().optional(), active: z.boolean().optional() })).max(60).optional(),
   removeServices: z.array(z.string()).max(60).optional(),
 });

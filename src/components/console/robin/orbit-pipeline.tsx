@@ -8,7 +8,7 @@ import { STAGE_LABEL, money, type NodeId, type Stage } from "@/lib/robin/types";
 import { Count, reducedMotion } from "./anim";
 
 /**
- * ROBIN's CRM as an orbit beneath the core: the eight stages sit on one arc,
+ * RUBIN's CRM as an orbit beneath the core: the eight stages sit on one arc,
  * joined by flowing light. Every orb, count and lead bubble is a real CRM
  * record. Hover a lead for its stage and contact status, drag it onto another
  * stage to move it, click a stage to expand it. When a lead changes stage it
@@ -210,7 +210,7 @@ export const OrbitPipeline = forwardRef<OrbitHandle, Props>(function OrbitPipeli
         {surges.map((s) => (
           <path key={s.id} d={segPath(s.node)} stroke={s.node === "lost" ? "rgba(253,164,175,0.9)" : s.node === "won" ? "rgba(110,231,183,0.95)" : "rgba(165,243,252,0.95)"} strokeWidth={2.4} fill="none" pathLength={1} className="robin-surge" filter="url(#ro-glow)" />
         ))}
-        {/* DARWIN → ROBIN: where new leads enter */}
+        {/* DARWIN → RUBIN: where new leads enter */}
         <circle cx={at(g, tailA).x} cy={at(g, tailA).y} r={2.5} fill="rgba(165,243,252,0.7)" />
       </svg>
       <span className="absolute whitespace-nowrap text-[8.5px] tracking-[0.3em] text-slate-500" style={{ left: at(g, tailA).x + 8, top: at(g, tailA).y - 14 }}>DARWIN</span>

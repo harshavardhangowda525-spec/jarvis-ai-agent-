@@ -9,8 +9,8 @@ import { rapi, localInput, when, ago } from "./api";
 
 /**
  * One lead, everything about it: business, qualification (with the reasons),
- * sales state, full timeline — and the actions. Robin never contacts anyone:
- * CALL opens your dialer, WHATSAPP opens WhatsApp; afterwards Robin asks how it
+ * sales state, full timeline — and the actions. Rubin never contacts anyone:
+ * CALL opens your dialer, WHATSAPP opens WhatsApp; afterwards Rubin asks how it
  * went and records only what you tell it.
  */
 
@@ -93,7 +93,7 @@ export function LeadPanel({ leadId, tz, onClose, onChanged, ask, say, externalSh
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <span className="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2.5 py-0.5 text-[10px] tracking-[0.16em] text-cyan-100">{STAGE_LABEL[l.stage as Stage]?.toUpperCase()}</span>
           <select aria-label="Priority" value={l.priorityOverride ?? "auto"} onChange={(e) => void patch({ priority: e.target.value === "auto" ? null : e.target.value })} className={cn("rounded-full border bg-transparent px-2 py-0.5 text-[10px] tracking-[0.12em] outline-none", l.priority === "high" ? "border-cyan-300/50 text-cyan-200" : l.priority === "medium" ? "border-sky-300/30 text-sky-200" : "border-white/15 text-slate-300")}>
-            <option className="bg-slate-900" value="auto">{PRIORITY_LABEL[l.priority as Priority]} (Robin)</option>
+            <option className="bg-slate-900" value="auto">{PRIORITY_LABEL[l.priority as Priority]} (Rubin)</option>
             {PRIORITIES.map((p) => <option className="bg-slate-900" key={p} value={p}>{PRIORITY_LABEL[p]} (yours)</option>)}
           </select>
           {w.client && <span className="rounded-full border border-emerald-300/40 bg-emerald-300/10 px-2.5 py-0.5 text-[10px] tracking-[0.16em] text-emerald-200">CLIENT</span>}
@@ -363,7 +363,7 @@ function CallSheet({ name, busy, onCancel, onSave }: { name: string; tz: string;
       <textarea className={cn(field, "mt-2 min-h-[48px]")} placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} />
       <label className="mt-2 flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={fu} onChange={(e) => setFu(e.target.checked)} />Next follow-up</label>
       {fu && <input type="datetime-local" className={cn(field, "mt-1.5")} value={due} onChange={(e) => setDue(e.target.value)} />}
-      <p className="mt-2 text-[10px] text-slate-500">Nothing is recorded unless you save — Robin never assumes a call happened.</p>
+      <p className="mt-2 text-[10px] text-slate-500">Nothing is recorded unless you save — Rubin never assumes a call happened.</p>
       <Btns busy={busy} onCancel={onCancel} label="Log call" disabled={!outcome} />
     </form>
   );
@@ -454,7 +454,7 @@ function QuoteSheet({ leadId, currency, busy, setBusy, onCancel, onDone, say }: 
           <button type="button" aria-label="Remove" onClick={() => setItems((x) => x.filter((_, j) => j !== k))} className="text-slate-500 hover:text-rose-300"><Trash2 className="h-3.5 w-3.5" /></button>
         </div>
       ))}
-      {missing && <p className="mt-1.5 text-[10px] text-amber-200">Type a price for each service (Robin never invents one). Set default prices in Settings.</p>}
+      {missing && <p className="mt-1.5 text-[10px] text-amber-200">Type a price for each service (Rubin never invents one). Set default prices in Settings.</p>}
       {items.length > 0 && (
         <>
           <div className="mt-2 grid grid-cols-2 gap-2">

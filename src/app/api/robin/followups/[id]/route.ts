@@ -10,7 +10,7 @@ const schema = z.object({ action: z.enum(["complete", "cancel", "note"]), notes:
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   return robinApi(req, "followup", async (user) => {
     const b = schema.parse(await req.json());
-    // a note you told Robin, on this follow-up
+    // a note you told Rubin, on this follow-up
     if (b.action === "note") return ok(await addFollowUpNote(user.id, { followUpId: params.id, text: b.notes ?? "" }, b.source ?? "user"));
     const row = b.action === "complete" ? await completeFollowUp(user.id, params.id, { notes: b.notes }, b.source ?? "user") : await cancelFollowUp(user.id, params.id, b.source ?? "user");
     // "Follow-up completed. Would you like to schedule the next one?"

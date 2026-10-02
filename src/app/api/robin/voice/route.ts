@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-/** Robin's own designed voice: status, create (or re-create from your description), or ensure on first open. */
+/** Rubin's own designed voice: status, create (or re-create from your description), or ensure on first open. */
 export async function GET(req: Request) {
   return robinApi(req, "voice", async (user) => ok(await robinVoiceStatus(user.id)));
 }

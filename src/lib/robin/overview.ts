@@ -5,7 +5,7 @@ import { dayBounds, loadSettings, userTz } from "./crm";
 import { NODES, nodeOf, CLOSED, STAGE_ORDER, type NodeId, type Stage } from "./types";
 
 /**
- * Everything ROBIN's command center shows, from the real CRM: the pipeline
+ * Everything RUBIN's command center shows, from the real CRM: the pipeline
  * (counts, values, the leads in each stage), today's work, the next action,
  * live activity. No placeholders — an empty CRM returns zeros and empty lists.
  */
@@ -76,7 +76,7 @@ export async function robinOverview(userId: string, now = new Date()): Promise<O
   const [changes, activeIds, qualifiedToday, fuWindow, drafts] = await Promise.all([
     db.robinStageChange.findMany({ where: { userId }, select: { leadId: true, toStage: true } }),
     activeConversationIds(userId, now),
-    // leads that reached QUALIFIED today (not every lead Robin scored)
+    // leads that reached QUALIFIED today (not every lead Rubin scored)
     db.robinStageChange.findMany({ where: { userId, toStage: "qualified", createdAt: { gte: start } }, select: { leadId: true }, distinct: ["leadId"] }).then((r) => r.length),
     db.robinFollowUp.findMany({ where: { userId, dueAt: { gte: monthAgo, lt: now }, status: { in: ["pending", "completed"] } }, select: { status: true } }),
     db.robinQuotation.count({ where: { userId, status: "draft" } }),

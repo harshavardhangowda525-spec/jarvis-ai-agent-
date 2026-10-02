@@ -8,8 +8,8 @@ import { money } from "./types";
 
 /**
  * Quotations. Prices come from YOUR services list (Settings) or what you type —
- * Robin never invents a price. Sending, accepting and converting are your
- * decisions: Robin prepares, you confirm.
+ * Rubin never invents a price. Sending, accepting and converting are your
+ * decisions: Rubin prepares, you confirm.
  */
 
 export interface QuoteItemInput { service: string; description?: string | null; quantity?: number; unitPrice?: number | null }
@@ -47,7 +47,7 @@ export async function createQuotation(userId: string, leadId: string, q: QuoteIn
     const svc = services.find((s) => s.name.toLowerCase() === it.service.trim().toLowerCase());
     const unitPrice = it.unitPrice ?? svc?.price ?? null;
     if (unitPrice == null || !Number.isFinite(unitPrice) || unitPrice < 0) {
-      throw new RobinError(`No price for "${it.service}" — type one, or set it under Robin → Settings → Services.`, 422, "invalid");
+      throw new RobinError(`No price for "${it.service}" — type one, or set it under Rubin → Settings → Services.`, 422, "invalid");
     }
     const quantity = Math.max(0.01, Number(it.quantity ?? 1));
     return { service: (svc?.name ?? it.service).trim().slice(0, 120), description: (it.description ?? svc?.description ?? null)?.slice(0, 1000) ?? null, quantity, unitPrice: round2(unitPrice), amount: round2(quantity * unitPrice), position };
@@ -98,7 +98,7 @@ export async function renderQuotationPdf(userId: string, id: string) {
 
 /**
  * Mark a quotation as sent. `via: "manual"` = you sent it yourself (WhatsApp,
- * in person…). `via: "gmail"` = Robin emails the PDF from your Gmail — only with
+ * in person…). `via: "gmail"` = Rubin emails the PDF from your Gmail — only with
  * `confirm: true`, and it's "sent" only when Gmail returns a message id.
  */
 export async function sendQuotation(userId: string, id: string, o: { via: "manual" | "gmail"; confirm?: boolean; to?: string | null; message?: string | null }, source: Source) {
@@ -125,7 +125,7 @@ export async function sendQuotation(userId: string, id: string, o: { via: "manua
   return row;
 }
 
-/** Accepting is the client's decision that YOU record — it needs confirmation. Then Robin offers to convert. */
+/** Accepting is the client's decision that YOU record — it needs confirmation. Then Rubin offers to convert. */
 export async function decideQuotation(userId: string, id: string, decision: "accepted" | "rejected", o: { confirm?: boolean; note?: string | null }, source: Source) {
   const db = getDb();
   const q = await getQuotation(userId, id);

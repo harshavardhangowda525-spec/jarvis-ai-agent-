@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Activity history: the command and how it went (routine chit-chat skipped).
-        const who = agent === "ev" ? "EV" : agent === "darwin" ? "DARWIN" : agent === "mike" ? "MIKE" : agent === "robin" ? "ROBIN" : "JARVIS";
+        const who = agent === "ev" ? "EV" : agent === "darwin" ? "DARWIN" : agent === "mike" ? "MIKE" : agent === "robin" ? "RUBIN" : "JARVIS";
         // "Forget …" commands aren't themselves remembered.
         if (!isTrivialCommand(message) && !/^\s*(please\s+)?(jarvis[,\s]+)?forget\b/i.test(message)) {
           const okTools = toolSummaries.filter((t) => t.status === "ok");

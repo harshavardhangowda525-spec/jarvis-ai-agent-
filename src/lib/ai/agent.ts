@@ -162,8 +162,8 @@ export async function* runAgent(
       journalSummary: `Journal: ${(c.open ?? 0) + (c.triggered ?? 0)} open setup(s), ${c.won ?? 0} won, ${c.lost ?? 0} lost, ${c.expired ?? 0} expired, ${c.no_trade ?? 0} no-trade decisions.`,
     });
   } else if (isRobin) {
-    // ROBIN's sales brain — the live CRM snapshot, nothing else from other agents.
-    // The snapshot is a bonus: if it can't be built, Robin still answers (its tools read the CRM).
+    // RUBIN's sales brain — the live CRM snapshot, nothing else from other agents.
+    // The snapshot is a bonus: if it can't be built, Rubin still answers (its tools read the CRM).
     const tz = validTz(input.timezone);
     const nowLocal = new Date().toLocaleString("en-IN", { timeZone: tz, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" });
     let crmSummary = "CRM snapshot unavailable right now — use the robin_* tools to read the CRM.";
@@ -286,7 +286,7 @@ export async function* runAgent(
   }
 }
 
-const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE", robin: "ROBIN" } as const;
+const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE", robin: "RUBIN" } as const;
 
 const PROVIDER_NAMES: Record<string, string> = { groq: "Groq", gemini: "Gemini", ollama: "your PC brain (Ollama)", cerebras: "Cerebras", openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude" };
 const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.groq.com)", gemini: "GEMINI_API_KEY (free at aistudio.google.com/apikey)" };
@@ -297,7 +297,7 @@ const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.
  *   EV     → EV_PROVIDER,     default "groq,gemini" = Groq, Gemini as backup
  *   DARWIN → DARWIN_PROVIDER, default "groq,gemini" = Groq, Gemini as backup
  *   MIKE   → MIKE_PROVIDER,   default "groq,gemini" = Groq, Gemini as backup
- *   ROBIN  → ROBIN_PROVIDER,  default "groq,gemini" = Groq, Gemini as backup
+ *   RUBIN  → ROBIN_PROVIDER,  default "groq,gemini" = Groq, Gemini as backup
  * A provider id (or a comma list) means those providers in that order and
  * nothing else. "auto" = every configured provider, fastest first (JARVIS also
  * honours the per-user Settings pick). If none of them is set up, `missing`
@@ -690,7 +690,7 @@ function aiErrorMessage(err: unknown): string {
 
 /** Remember meaningful tool actions (and every failure) in the activity history. */
 async function recordToolActivity(userId: string, tool: { name: string; agentScope?: string }, input: unknown, ok: boolean, summary: string | null, error: string | null) {
-  const agent = tool.agentScope === "ev" ? "EV" : tool.agentScope === "darwin" ? "DARWIN" : tool.agentScope === "mike" ? "MIKE" : tool.agentScope === "robin" ? "ROBIN" : "JARVIS";
+  const agent = tool.agentScope === "ev" ? "EV" : tool.agentScope === "darwin" ? "DARWIN" : tool.agentScope === "mike" ? "MIKE" : tool.agentScope === "robin" ? "RUBIN" : "JARVIS";
   const ev = describeToolEvent(tool.name, (input ?? {}) as Record<string, unknown>, agent, ok, summary, error);
   if (ev) await recordActivity(userId, { ...ev, agent, source: "tool", metadata: { tool: tool.name } });
 }

@@ -39,7 +39,7 @@ const NAV = [
   { href: "/dashboard/ultron", label: "ULTRON", icon: Code2 },
   { href: "/dashboard/darwin", label: "DARWIN", icon: Radar },
   { href: "/dashboard/mike", label: "MIKE", icon: CandlestickChart },
-  { href: "/dashboard/robin", label: "ROBIN", icon: Handshake },
+  { href: "/dashboard/rubin", label: "RUBIN", icon: Handshake },
   { href: "/dashboard/memory", label: "AI Agents", icon: Bot },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },
   { href: "/dashboard/settings", label: "Systems", icon: Server },
@@ -78,7 +78,7 @@ export function AppShell({
   // JARVIS, DARWIN and ULTRON are full-immersion screens — the nav rails fold
   // away so the cinematic interface owns the whole viewport (JARVIS has its own
   // systems menu).
-  const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/darwin") || pathname.startsWith("/dashboard/ultron") || pathname.startsWith("/dashboard/mike") || pathname.startsWith("/dashboard/robin");
+  const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/darwin") || pathname.startsWith("/dashboard/ultron") || pathname.startsWith("/dashboard/mike") || pathname.startsWith("/dashboard/rubin");
 
   const name = user.displayName || user.email.split("@")[0];
 
@@ -99,7 +99,7 @@ export function AppShell({
       .catch(() => setBuild(null));
   }, []);
 
-  // ROBIN's reminder emails: while JARVIS is open anywhere, check every 2 minutes
+  // RUBIN's reminder emails: while JARVIS is open anywhere, check every 2 minutes
   // (each follow-up/demo is emailed once; the server decides what's due)
   useEffect(() => {
     const check = () => { void fetch("/api/robin/reminders", { method: "POST" }).catch(() => {}); };

@@ -80,7 +80,7 @@ export function FollowUpsPanel({ tz, onOpenLead, onChanged, say, onClose }: { tz
           {group("OVERDUE", q.overdue, "text-amber-300")}
           {group("TODAY", q.today, "text-emerald-300")}
           {group("UPCOMING", q.upcoming, "text-slate-400")}
-          <p className="mt-2 text-[10px] text-slate-500">These are your tasks. Robin never contacts anyone automatically.</p>
+          <p className="mt-2 text-[10px] text-slate-500">These are your tasks. Rubin never contacts anyone automatically.</p>
         </>
       )}
     </Drawer>
@@ -245,7 +245,7 @@ export function AddLeadPanel({ onClose, onCreated, say }: { onClose: () => void;
         <select className={field} value={f.websiteStatus} onChange={(e) => setF({ ...f, websiteStatus: e.target.value })}>
           {[["unknown", "Website: unknown"], ["no_website", "No website"], ["has_website", "Has a website"], ["outdated", "Outdated website"], ["poor", "Poor website"]].map(([v, t]) => <option className="bg-slate-900" key={v} value={v}>{t}</option>)}
         </select>
-        <p className="text-[10px] text-slate-500 sm:col-span-2">DARWIN's leads arrive automatically — use this for referrals and walk-ins. Robin checks for duplicates first.</p>
+        <p className="text-[10px] text-slate-500 sm:col-span-2">DARWIN's leads arrive automatically — use this for referrals and walk-ins. Rubin checks for duplicates first.</p>
         <div className="flex justify-end sm:col-span-2"><button type="submit" disabled={busy} className="robin-btn rounded-full border border-cyan-300/50 bg-cyan-300/15 px-4 py-1 text-[11px] text-cyan-50">{busy ? "Adding…" : "Add lead"}</button></div>
       </form>
     </Drawer>
@@ -260,15 +260,15 @@ export function SettingsPanel({ onClose, say, onSaved }: { onClose: () => void; 
   const [removed, setRemoved] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   useEffect(() => { void rapi<{ settings: RobinSettings; services: Svc[] }>("settings").then((r) => { if (r.data) { setS(r.data.settings); setSvc(r.data.services); } }); }, []);
-  if (!s) return <Drawer title="ROBIN SETTINGS" onClose={onClose}><Spin /></Drawer>;
+  if (!s) return <Drawer title="RUBIN SETTINGS" onClose={onClose}><Spin /></Drawer>;
   const set = <K extends keyof RobinSettings>(k: K, v: RobinSettings[K]) => setS({ ...s, [k]: v });
   return (
-    <Drawer title="ROBIN SETTINGS" onClose={onClose} wide>
+    <Drawer title="RUBIN SETTINGS" onClose={onClose} wide>
       <div className="grid gap-5 md:grid-cols-2">
         <div className="space-y-2.5">
-          <p className="text-[10px] tracking-[0.28em] text-cyan-200/70">DARWIN → ROBIN</p>
+          <p className="text-[10px] tracking-[0.28em] text-cyan-200/70">DARWIN → RUBIN</p>
           <label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={s.autoImport} onChange={(e) => set("autoImport", e.target.checked)} />Receive DARWIN&apos;s new leads automatically</label>
-          <label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={s.morningReport} onChange={(e) => set("morningReport", e.target.checked)} />Morning sales briefing when Robin first opens each day</label>
+          <label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={s.morningReport} onChange={(e) => set("morningReport", e.target.checked)} />Morning sales briefing when Rubin first opens each day</label>
           <p className="pt-2 text-[10px] tracking-[0.28em] text-cyan-200/70" data-robin-reminders>REMINDER EMAILS</p>
           <label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={s.emailReminders} onChange={(e) => set("emailReminders", e.target.checked)} />Email me before each follow-up and demo is due</label>
           {s.emailReminders && (
@@ -295,7 +295,7 @@ export function SettingsPanel({ onClose, say, onSaved }: { onClose: () => void; 
         </div>
         <div>
           <p className="mb-2 text-[10px] tracking-[0.28em] text-cyan-200/70">SERVICES &amp; PRICES</p>
-          <p className="mb-2 text-[10px] text-slate-500">Robin never sets or changes a price — these are yours. Empty = Robin asks for a price when quoting.</p>
+          <p className="mb-2 text-[10px] text-slate-500">Rubin never sets or changes a price — these are yours. Empty = Rubin asks for a price when quoting.</p>
           {svc.map((x, i) => (
             <div key={x.id ?? `n${i}`} className="mb-1.5 grid grid-cols-[1fr_90px_80px_24px] items-center gap-1.5">
               <input className={field} value={x.name} onChange={(e) => setSvc(svc.map((y, j) => (j === i ? { ...y, name: e.target.value } : y)))} />
@@ -321,7 +321,7 @@ export function SettingsPanel({ onClose, say, onSaved }: { onClose: () => void; 
   );
 }
 
-// ---------------------------------------------------------------- Robin's own voice
+// ---------------------------------------------------------------- Rubin's own voice
 interface VoiceStatus { voiceId: string | null; description: string; createdAt: string | null; error: string | null; creating: boolean; using: "env" | "designed" | "default"; elevenLabs: boolean }
 function VoiceSection({ say }: { say: (t: string) => void }) {
   const [v, setV] = useState<VoiceStatus | null>(null);
@@ -332,16 +332,16 @@ function VoiceSection({ say }: { say: (t: string) => void }) {
   useEffect(() => { if (!v?.creating) return; const t = setInterval(() => void load(), 4000); return () => clearInterval(t); }, [v?.creating, load]);
   const play = (src: string) => { try { void new Audio(src).play(); } catch { /* ignore */ } };
   const hear = async () => {
-    const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Hey! It's Robin. Ready when you are — let's turn some leads into clients today.", agent: "robin" }) });
+    const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Hey! It's Rubin. Ready when you are — let's turn some leads into clients today.", agent: "robin" }) });
     if (!r.ok) return say((await r.json().catch(() => ({})))?.error ?? "Couldn't play the voice.");
     play(URL.createObjectURL(await r.blob()));
   };
   if (!v) return null;
   return (
     <div className="mt-5 border-t border-white/[0.06] pt-4">
-      <p className="mb-1 text-[10px] tracking-[0.28em] text-cyan-200/70">ROBIN&apos;S VOICE</p>
+      <p className="mb-1 text-[10px] tracking-[0.28em] text-cyan-200/70">RUBIN&apos;S VOICE</p>
       <p className="mb-2 text-[11px] text-slate-400">
-        {v.using === "env" ? "Using the voice set in ROBIN_VOICE_ID." : v.using === "designed" ? `Robin's own voice, designed ${v.createdAt ? new Date(v.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : ""} from the description below.` : v.creating ? "Designing Robin's voice…" : "Using the stock voice (Eric) until Robin's own voice is created."}
+        {v.using === "env" ? "Using the voice set in ROBIN_VOICE_ID." : v.using === "designed" ? `Rubin's own voice, designed ${v.createdAt ? new Date(v.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : ""} from the description below.` : v.creating ? "Designing Rubin's voice…" : "Using the stock voice (Eric) until Rubin's own voice is created."}
         {!v.elevenLabs && " Needs ELEVENLABS_API_KEY."}
       </p>
       {v.error && <p className="mb-2 text-[11px] text-amber-200">Last try: {v.error}</p>}
@@ -355,11 +355,11 @@ function VoiceSection({ say }: { say: (t: string) => void }) {
           if (r.data?.preview) play(`data:audio/mpeg;base64,${r.data.preview}`);
           say("Here's my new voice — how do I sound?");
         }} className="robin-btn inline-flex items-center gap-1 rounded-full border border-cyan-300/50 bg-cyan-300/15 px-3 py-1 text-[11px] text-cyan-50 disabled:opacity-40">
-          {(busy || v.creating) && <Loader2 className="h-3 w-3 animate-spin" />}{v.using === "designed" ? "Create a new voice" : "Create Robin's voice"}
+          {(busy || v.creating) && <Loader2 className="h-3 w-3 animate-spin" />}{v.using === "designed" ? "Create a new voice" : "Create Rubin's voice"}
         </button>
         <button type="button" disabled={!v.elevenLabs} onClick={() => void hear()} className="robin-btn rounded-full border border-white/10 px-3 py-1 text-[11px] text-slate-200 disabled:opacity-40">Hear it</button>
       </div>
-      <p className="mt-1.5 text-[10px] text-slate-500">ElevenLabs designs a brand-new voice from your description and saves it to your ElevenLabs account (it uses one custom-voice slot; the previous Robin voice is removed).</p>
+      <p className="mt-1.5 text-[10px] text-slate-500">ElevenLabs designs a brand-new voice from your description and saves it to your ElevenLabs account (it uses one custom-voice slot; the previous Rubin voice is removed).</p>
     </div>
   );
 }

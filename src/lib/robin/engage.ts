@@ -5,7 +5,7 @@ import { RobinError, advanceTo, logRobin, audit, mustLead, moveStage, dayBounds,
 import { CALL_OUTCOMES, CHANNELS, FOLLOWUP_ACTIONS, DEMO_TYPES, OUTCOME_LABEL, type Channel } from "./types";
 
 /**
- * Contact tracking, follow-ups and demos. Robin never contacts anyone by itself:
+ * Contact tracking, follow-ups and demos. Rubin never contacts anyone by itself:
  * a call is only recorded when YOU log how it went, a WhatsApp/Instagram message
  * only when you say you sent it, and "sent"/"delivered" only when an API
  * confirmed it. Opening the dialer or WhatsApp records nothing.
@@ -96,7 +96,7 @@ export async function completeFollowUp(userId: string, id: string, o: { notes?: 
 }
 
 /**
- * Take down a note you told Robin. It goes on the follow-up it's about (`followUpId`),
+ * Take down a note you told Rubin. It goes on the follow-up it's about (`followUpId`),
  * else the lead's next pending follow-up, else the lead's own notes — so "how many
  * follow-ups do we have?" can read it back with the follow-up.
  */
@@ -185,7 +185,7 @@ export async function updateDemo(userId: string, id: string, u: { status: "compl
 
 /**
  * Demos starting within the next 30 minutes that haven't been announced yet.
- * Each is announced once, as an in-app Robin notification (and a browser
+ * Each is announced once, as an in-app Rubin notification (and a browser
  * notification only if you allowed those).
  */
 export async function demoReminders(userId: string, now = new Date()) {

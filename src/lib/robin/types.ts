@@ -1,6 +1,6 @@
 /**
- * ROBIN — Sales & CRM agent. Shared (client-safe) vocabulary: pipeline stages,
- * priorities, call outcomes, chart nodes. Robin's work starts AFTER DARWIN finds
+ * RUBIN — Sales & CRM agent. Shared (client-safe) vocabulary: pipeline stages,
+ * priorities, call outcomes, chart nodes. Rubin's work starts AFTER DARWIN finds
  * a business; it never searches for leads itself.
  */
 
@@ -72,13 +72,13 @@ export const QUOTE_STATUSES = ["draft", "sent", "accepted", "rejected", "expired
 export const CLIENT_STATUSES = ["active", "completed", "maintenance", "inactive"] as const;
 export const PAYMENT_STATUSES = ["unpaid", "partial", "paid"] as const;
 
-/** Service names Robin starts with. Prices are NOT set — you set them in Settings. */
+/** Service names Rubin starts with. Prices are NOT set — you set them in Settings. */
 export const DEFAULT_SERVICES = [
   "Website", "Mobile App", "Website + App", "Maintenance", "Hosting", "Domain", "Custom Development", "AI Promotional Video",
 ];
 
 export interface RobinSettings {
-  /** DARWIN's new leads come over to Robin automatically. */
+  /** DARWIN's new leads come over to Rubin automatically. */
   autoImport: boolean;
   currency: string;
   /** Default GST / tax % on quotations. */
@@ -89,7 +89,7 @@ export interface RobinSettings {
   companyPhone: string;
   companyEmail: string;
   companyAddress: string;
-  /** "Good morning. Here's your sales briefing." the first time Robin opens each day. */
+  /** "Good morning. Here's your sales briefing." the first time Rubin opens each day. */
   morningReport: boolean;
   /** Email you a reminder before each follow-up and demo is due (from your connected Gmail). */
   emailReminders: boolean;
@@ -107,7 +107,7 @@ export const DEFAULT_SETTINGS: RobinSettings = {
 };
 export const REMINDER_MINUTES = [15, 30, 60, 120, 180, 1440] as const;
 
-/** Robin's core states (drive the hologram). */
+/** Rubin's core states (drive the hologram). */
 export const CORE_STATES = ["idle", "listening", "analyzing", "processing", "qualifying", "contacting", "following_up", "demo", "quotation", "complete", "error"] as const;
 export type CoreState = (typeof CORE_STATES)[number];
 export const CORE_LABEL: Record<CoreState, string> = {

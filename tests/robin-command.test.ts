@@ -4,31 +4,31 @@ import { isRobinActivation, isRobinDeactivation, robinCommand, stripRobinWake } 
 import { qualify, explain, attention } from "@/lib/robin/qualify";
 import { money, nodeOf } from "@/lib/robin/types";
 
-describe("ROBIN wake words", () => {
-  it("activates on Robin / Activate / Open / Start Robin", () => {
-    for (const t of ["Robin", "Activate Robin", "Open Robin", "Start Robin", "Jarvis, open Robin", "robbin", "Robin online", "switch to Robin"]) expect(isRobinActivation(t), t).toBe(true);
-    for (const t of ["ask Robin how many qualified leads I have", "Robin, show today's follow-ups", "rob the bank", "open mike"]) expect(isRobinActivation(t), t).toBe(false);
+describe("RUBIN wake words", () => {
+  it("activates on Rubin / Activate / Open / Start Rubin", () => {
+    for (const t of ["Rubin", "Activate Rubin", "Open Rubin", "Start Rubin", "Jarvis, open Rubin", "robbin", "Rubin online", "switch to Rubin"]) expect(isRobinActivation(t), t).toBe(true);
+    for (const t of ["ask Rubin how many qualified leads I have", "Rubin, show today's follow-ups", "rob the bank", "open mike"]) expect(isRobinActivation(t), t).toBe(false);
   });
-  it("commands addressed to Robin and closing", () => {
-    expect(robinCommand("Robin, show me today's follow-ups")).toBe("show me today's follow-ups");
-    expect(robinCommand("Activate Robin")).toBeNull();
-    expect(stripRobinWake("Robin, mark ABC Café as interested")).toBe("mark ABC Café as interested");
-    for (const t of ["Close Robin", "Deactivate Robin", "Get me back to JARVIS", "back to Jarvis", "Robin, stand down"]) expect(isRobinDeactivation(t), t).toBe(true);
+  it("commands addressed to Rubin and closing", () => {
+    expect(robinCommand("Rubin, show me today's follow-ups")).toBe("show me today's follow-ups");
+    expect(robinCommand("Activate Rubin")).toBeNull();
+    expect(stripRobinWake("Rubin, mark ABC Café as interested")).toBe("mark ABC Café as interested");
+    for (const t of ["Close Rubin", "Deactivate Rubin", "Get me back to JARVIS", "back to Jarvis", "Rubin, stand down"]) expect(isRobinDeactivation(t), t).toBe(true);
     expect(isRobinDeactivation("close the deal with ABC")).toBe(false);
   });
 });
 
-describe("ROBIN voice commands", () => {
+describe("RUBIN voice commands", () => {
   const p = parseRobinCommand;
   it("views and filters", () => {
-    expect(p("Robin, show me today's follow-ups.")).toEqual({ kind: "followups", which: "today" });
+    expect(p("Rubin, show me today's follow-ups.")).toEqual({ kind: "followups", which: "today" });
     expect(p("Show leads waiting for follow-up")).toEqual({ kind: "followups", which: "all" });
-    expect(p("Robin, show me my highest-priority leads.")).toEqual({ kind: "leads", filter: "hottest" });
+    expect(p("Rubin, show me my highest-priority leads.")).toEqual({ kind: "leads", filter: "hottest" });
     expect(p("show me the hottest leads")).toEqual({ kind: "leads", filter: "hottest" });
-    expect(p("Robin, show me all qualified leads.")).toEqual({ kind: "leads", filter: "qualified" });
-    expect(p("Robin, show me leads that haven't been contacted.")).toEqual({ kind: "leads", filter: "uncontacted" });
-    expect(p("Robin, show me all quotations.")).toEqual({ kind: "view", view: "quotations" });
-    expect(p("Robin, show my CRM.")).toEqual({ kind: "view", view: "pipeline" });
+    expect(p("Rubin, show me all qualified leads.")).toEqual({ kind: "leads", filter: "qualified" });
+    expect(p("Rubin, show me leads that haven't been contacted.")).toEqual({ kind: "leads", filter: "uncontacted" });
+    expect(p("Rubin, show me all quotations.")).toEqual({ kind: "view", view: "quotations" });
+    expect(p("Rubin, show my CRM.")).toEqual({ kind: "view", view: "pipeline" });
     expect(p("Show me the sales pipeline.")).toEqual({ kind: "view", view: "pipeline" });
     expect(p("Show my potential revenue.")).toEqual({ kind: "view", view: "revenue" });
     expect(p("Show pipeline value")).toEqual({ kind: "view", view: "revenue" });
@@ -36,30 +36,30 @@ describe("ROBIN voice commands", () => {
     expect(p("show the funnel")).toEqual({ kind: "view", view: "funnel" });
   });
   it("numbers and the briefing", () => {
-    expect(p("Robin, how many clients did I win this month?")).toEqual({ kind: "stat", stat: "won_month" });
-    expect(p("Robin, show me my conversion rate.")).toEqual({ kind: "stat", stat: "conversion" });
+    expect(p("Rubin, how many clients did I win this month?")).toEqual({ kind: "stat", stat: "won_month" });
+    expect(p("Rubin, show me my conversion rate.")).toEqual({ kind: "stat", stat: "conversion" });
     expect(p("how many qualified leads do I have")).toEqual({ kind: "stat", stat: "count", filter: "qualified" });
-    expect(p("Robin, what's my day?")).toEqual({ kind: "briefing" });
+    expect(parseRobinCommand("Rubin, what's my day?")).toEqual({ kind: "briefing" });
   });
   it("actions on a lead (names keep their spelling)", () => {
-    expect(p("Robin, mark ABC Café as interested.")).toEqual({ kind: "move", name: "ABC Café", stage: "interested" });
-    expect(p("Robin, move ABC Café to quotation sent.")).toEqual({ kind: "move", name: "ABC Café", stage: "quotation_sent" });
+    expect(p("Rubin, mark ABC Café as interested.")).toEqual({ kind: "move", name: "ABC Café", stage: "interested" });
+    expect(p("Rubin, move ABC Café to quotation sent.")).toEqual({ kind: "move", name: "ABC Café", stage: "quotation_sent" });
     expect(p("Move ABC Café to quotation.")).toEqual({ kind: "move", name: "ABC Café", stage: "quotation_sent" });
-    expect(p("Robin, mark this lead as not interested.")).toEqual({ kind: "move", name: null, stage: "not_interested" });
+    expect(p("Rubin, mark this lead as not interested.")).toEqual({ kind: "move", name: null, stage: "not_interested" });
     expect(p("mark Urban Salon as won")).toEqual({ kind: "move", name: "Urban Salon", stage: "won" });
-    expect(p("Robin, schedule a follow-up with ABC Café tomorrow at 4 PM.")).toEqual({ kind: "followup", name: "ABC Café", when: "tomorrow at 4 pm." });
+    expect(p("Rubin, schedule a follow-up with ABC Café tomorrow at 4 PM.")).toEqual({ kind: "followup", name: "ABC Café", when: "tomorrow at 4 pm." });
     expect(p("book a demo with Prime Clinic on Friday at 11am")).toEqual({ kind: "demo", name: "Prime Clinic", when: "on friday at 11am" });
-    expect(p("Robin, open ABC Café.")).toEqual({ kind: "open", name: "ABC Café" });
+    expect(p("Rubin, open ABC Café.")).toEqual({ kind: "open", name: "ABC Café" });
     expect(p("yes")).toEqual({ kind: "confirm", yes: true });
     expect(p("no, cancel")).toEqual({ kind: "ask", text: "no, cancel" });
     expect(p("cancel")).toEqual({ kind: "confirm", yes: false });
-    expect(p("Close Robin")).toEqual({ kind: "exit" });
+    expect(p("Close Rubin")).toEqual({ kind: "exit" });
     expect(p("undo")).toEqual({ kind: "undo" });
-    for (const t of ["hi", "Hi.", "hey Robin", "Hello!", "Robin, hi", "good morning", "what's up"]) expect(p(t), t).toEqual({ kind: "chat", topic: "hello" });
+    for (const t of ["hi", "Hi.", "hey Rubin", "Hello!", "Rubin, hi", "good morning", "what's up"]) expect(p(t), t).toEqual({ kind: "chat", topic: "hello" });
     expect(p("how are you?")).toEqual({ kind: "chat", topic: "how_are_you" });
     expect(p("thank you")).toEqual({ kind: "chat", topic: "thanks" });
     expect(p("who are you")).toEqual({ kind: "chat", topic: "who" });
-    expect(p("Robin, undo that.")).toEqual({ kind: "undo" });
+    expect(p("Rubin, undo that.")).toEqual({ kind: "undo" });
     expect(p("take it back")).toEqual({ kind: "undo" });
     expect(p("Make ABC Café a client.")).toEqual({ kind: "convert", name: "ABC Café" });
     expect(p("convert this lead to a client")).toEqual({ kind: "convert", name: null });
@@ -121,5 +121,19 @@ describe("timezone setting", () => {
     expect(normalizeTz("America/New_York")).toBe("America/New_York");
     expect(normalizeTz("")).toBeNull();
     expect(normalizeTz("my place")).toBeNull();
+  });
+});
+
+import { isRobinActivation as on, robinCommand as cmd, isRobinDeactivation as off } from "@/lib/robin/wake";
+describe("RUBIN (formerly ROBIN) answers to its new name — and the old one", () => {
+  it("wakes and takes commands as Rubin, Ruben or Reuben, and still as Robin", () => {
+    for (const t of ["Rubin", "Activate Rubin", "open Rubin", "Ruben", "hey Reuben", "Robin", "activate Robin"]) expect(on(t), t).toBe(true);
+    expect(on("ask Rubin how many qualified leads I have")).toBe(false);
+    expect(cmd("Rubin, show me today's follow-ups")).toBe("show me today's follow-ups");
+    expect(cmd("Robin, show me today's follow-ups")).toBe("show me today's follow-ups");
+    expect(off("close Rubin")).toBe(true);
+    expect(off("deactivate robin")).toBe(true);
+    expect(parseRobinCommand("Rubin, what's my day?")).toEqual({ kind: "briefing" });
+    expect(parseRobinCommand("hi Rubin")).toEqual({ kind: "chat", topic: "hello" });
   });
 });

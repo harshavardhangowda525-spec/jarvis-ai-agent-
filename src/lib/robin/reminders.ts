@@ -7,10 +7,10 @@ import { loadSettings, logRobin, userTz } from "./crm";
 import { spokenLead } from "./numbers";
 
 /**
- * Robin emails YOU before a follow-up or demo is due (default: an hour before),
+ * Rubin emails YOU before a follow-up or demo is due (default: an hour before),
  * from your connected Gmail to your own address — one email per check listing
  * everything coming up, each follow-up/demo reminded once. Nothing is ever sent
- * to a lead. Runs from `npm run local` (every minute), JARVIS/ROBIN open in a
+ * to a lead. Runs from `npm run local` (every minute), JARVIS/RUBIN open in a
  * browser (every couple of minutes) and /api/cron/robin.
  */
 
@@ -67,16 +67,16 @@ export function reminderEmail(items: ReminderItem[], tz: string, now: Date, appU
       `  ${i.what} · ${dayOf(i.dueAt, tz, now)} at ${timeOf(i.dueAt, tz)} (${inWords(+i.dueAt - +now)})`,
       ...(i.lead.phone ? [`  Phone: ${i.lead.phone}`] : []),
       notes.length ? `  Your notes: ${notes.join("; ")}` : "  Your notes: none",
-      ...(appUrl ? [`  Open: ${appUrl.replace(/\/+$/, "")}/dashboard/robin?lead=${i.leadId}`] : []),
+      ...(appUrl ? [`  Open: ${appUrl.replace(/\/+$/, "")}/dashboard/rubin?lead=${i.leadId}`] : []),
     ].join("\n");
   });
   const body = [
-    sorted.length === 1 ? "Hi! Quick heads-up from Robin — this is coming up:" : `Hi! Quick heads-up from Robin — ${sorted.length} things are coming up:`,
+    sorted.length === 1 ? "Hi! Quick heads-up from Rubin — this is coming up:" : `Hi! Quick heads-up from Rubin — ${sorted.length} things are coming up:`,
     "",
     blocks.join("\n\n"),
     "",
-    "When it's done, tell Robin how it went (e.g. \"done with " + (first.lead.number ?? first.lead.businessName) + ", …\") and it'll note it down.",
-    "— Robin (JARVIS · Sales & CRM)",
+    "When it's done, tell Rubin how it went (e.g. \"done with " + (first.lead.number ?? first.lead.businessName) + ", …\") and it'll note it down.",
+    "— Rubin (JARVIS · Sales & CRM)",
   ].join("\n");
   return { subject, body };
 }

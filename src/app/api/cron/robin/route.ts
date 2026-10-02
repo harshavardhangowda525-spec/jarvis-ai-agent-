@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Scheduled ROBIN check: email every user their follow-ups and demos coming up
+ * Scheduled RUBIN check: email every user their follow-ups and demos coming up
  * soon (`npm run local` calls this every minute; any scheduler can).
  * Needs `Authorization: Bearer <CRON_SECRET>`. Emails only go to the user.
  */

@@ -2,14 +2,14 @@
 
 export interface ApiResult<T> { ok: boolean; data?: T; error?: string; code?: string | null; status: number }
 
-/** Robin's API from the browser. Errors come back as plain messages; 409 + code "needs_confirmation" = ask, then retry with confirm. */
+/** Rubin's API from the browser. Errors come back as plain messages; 409 + code "needs_confirmation" = ask, then retry with confirm. */
 export async function rapi<T = any>(path: string, method: "GET" | "POST" | "PATCH" = "GET", body?: unknown): Promise<ApiResult<T>> {
   try {
     const r = await fetch(`/api/robin/${path}`, { method, cache: "no-store", headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
     const j = await r.json().catch(() => ({}));
     return { ok: r.ok && j.ok !== false, data: j.data, error: j.error, code: j.code ?? null, status: r.status };
   } catch {
-    return { ok: false, error: "Couldn't reach Robin — check your connection.", status: 0 };
+    return { ok: false, error: "Couldn't reach Rubin — check your connection.", status: 0 };
   }
 }
 

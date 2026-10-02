@@ -92,7 +92,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   mikeAlertTool as ToolDefinition,
   mikeMarketSummaryTool as ToolDefinition,
   mikeChartTool as ToolDefinition,
-  // ROBIN (sales & CRM): its own tools only while Robin is active; JARVIS can ask Robin / open Robin
+  // RUBIN (sales & CRM): its own tools only while Rubin is active; JARVIS can ask Rubin / open Rubin
   ...[robinLeadsTool, robinLeadTool, robinUpdateStageTool, robinSetPriorityTool, robinScheduleFollowUpTool, robinFollowUpsTool, robinCompleteFollowUpTool, robinNoteTool,
     robinLogInteractionTool, robinScheduleDemoTool, robinQuotationTool, robinAnalyticsTool, robinBriefingTool, robinReportTool, robinOpenTool,
     robinQuotationDecisionTool, robinConvertClientTool] as unknown as ToolDefinition[],
@@ -110,7 +110,7 @@ export function availableTools(agent?: "ev" | "darwin" | "mike" | "robin"): Tool
   return ALL_TOOLS.filter((t) => {
     // Agent-scoped tools (EV's) only surface for their agent.
     if (t.agentScope) return t.agentScope === agent;
-    // ROBIN stays on sales: its own tools plus a few basics (smaller requests, isolated context)
+    // RUBIN stays on sales: its own tools plus a few basics (smaller requests, isolated context)
     if (agent === "robin" && !ROBIN_BASICS.has(t.name)) return false;
     if (t.requiresCapability === "search") return capabilities.search;
     if (t.requiresCapability === "weather") return capabilities.weather;

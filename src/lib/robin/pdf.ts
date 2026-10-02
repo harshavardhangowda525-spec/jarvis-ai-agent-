@@ -53,8 +53,8 @@ export async function quotationPdf(q: QuotePdfInput): Promise<Uint8Array> {
   const reg = await doc.embedFont(f.regular, { subset: true });
   const bold = await doc.embedFont(f.bold, { subset: true });
   doc.setTitle(`Quotation ${q.number} — ${q.businessName}`);
-  doc.setAuthor(q.company.companyName || "ROBIN");
-  doc.setCreator("JARVIS · ROBIN");
+  doc.setAuthor(q.company.companyName || "RUBIN");
+  doc.setCreator("JARVIS · RUBIN");
 
   const W = 595.28, H = 841.89, M = 48;
   let page = doc.addPage([W, H]);

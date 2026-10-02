@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       ev: env.evVoiceId,
       darwin: env.darwinVoiceId,
       mike: env.mikeVoiceId,
-      // Robin speaks with the voice it designed for you (ROBIN_VOICE_ID still wins)
+      // Rubin speaks with the voice it designed for you (ROBIN_VOICE_ID still wins)
       robin: agent === "robin" ? await robinVoiceFor(user.id) : env.robinVoiceId,
     };
     const voiceId = agent && agent !== "jarvis"

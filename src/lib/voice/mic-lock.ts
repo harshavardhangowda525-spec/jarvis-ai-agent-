@@ -2,7 +2,7 @@
  * One browser speech recognizer at a time.
  *
  * Chrome lets a page run only ONE SpeechRecognition session. Every agent screen
- * (JARVIS, DARWIN, ROBIN, MIKE, ULTRON's panel) and the "hey JARVIS" listener
+ * (JARVIS, DARWIN, RUBIN, MIKE, ULTRON's panel) and the "hey JARVIS" listener
  * has its own recognizer, so without a referee they knock each other out and
  * the mic goes deaf — typically right after switching agents.
  *

@@ -3,14 +3,14 @@ import { getDb, isDbConfigured } from "@/lib/db";
 
 /**
  * The full journey, on the real database:
- * DARWIN finds a business → it appears in ROBIN → duplicate detection → Robin
+ * DARWIN finds a business → it appears in RUBIN → duplicate detection → Rubin
  * qualifies it → it's in the CRM → you contact it → the interaction is logged →
  * a follow-up is created and shows on the dashboard → demo → quotation (PDF) →
  * accepted → lead becomes a client → revenue appears in analytics.
  */
 const d = isDbConfigured ? describe : describe.skip;
 
-d("ROBIN: Darwin lead → client (integration)", () => {
+d("RUBIN: Darwin lead → client (integration)", () => {
   let userId = "";
   let darwinId = "";
   let leadId = "";
@@ -34,7 +34,7 @@ d("ROBIN: Darwin lead → client (integration)", () => {
   });
   afterAll(async () => { await db().user.deleteMany({ where: { id: userId } }).catch(() => {}); });
 
-  it("1–5 · DARWIN finds a business; it appears in Robin, qualified, once", async () => {
+  it("1–5 · DARWIN finds a business; it appears in Rubin, qualified, once", async () => {
     // what DARWIN's daily search saves for a verified no-website business
     const dl = await db().darwinLead.create({ data: {
       userId, businessName: "ABC Café", category: "Cafe", location: "12 MG Road, Indiranagar, Bengaluru, Karnataka", phone: "+91 98450 11111",
@@ -111,7 +111,7 @@ d("ROBIN: Darwin lead → client (integration)", () => {
   });
 
   it("11 · a quotation is generated from YOUR prices, with a real PDF", async () => {
-    // no price set anywhere → Robin refuses rather than inventing one
+    // no price set anywhere → Rubin refuses rather than inventing one
     await expect(quotes.createQuotation(userId, leadId, { items: [{ service: "Website" }] }, "user")).rejects.toThrow(/No price for "Website"/);
     await db().robinService.update({ where: { userId_name: { userId, name: "Website" } }, data: { price: 40000 } });
     const q = await quotes.createQuotation(userId, leadId, { items: [{ service: "Website" }, { service: "Hosting", unitPrice: 5000 }], discount: 5000 }, "user");
@@ -131,7 +131,7 @@ d("ROBIN: Darwin lead → client (integration)", () => {
     await expect(quotes.decideQuotation(userId, quoteId, "accepted", {}, "user")).rejects.toThrow(/Mark quotation .* as accepted/);
     const r = await quotes.decideQuotation(userId, quoteId, "accepted", { confirm: true }, "user");
     expect(r.convertSuggested).toBe(true);
-    // Robin never marks a lead WON on its own
+    // Rubin never marks a lead WON on its own
     await expect(crm.moveStage(userId, leadId, "won", { source: "voice" })).rejects.toThrow(/needs your confirmation/);
     await expect(clients.convertToClient(userId, leadId, {}, "user")).rejects.toThrow(/Convert ABC Café into a client \(₹47,200\)\?/);
     const c = await clients.convertToClient(userId, leadId, { confirm: true }, "user");

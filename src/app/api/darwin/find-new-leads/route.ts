@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const body = schema.parse(await req.json());
     try {
       const found = await findNewLeads({ userId: user.id, ...body });
-      // the new leads go straight on to ROBIN (when its auto-import is on)
+      // the new leads go straight on to RUBIN (when its auto-import is on)
       await syncFromDarwin(user.id).catch(() => {});
       return ok(found);
     } catch (err) {

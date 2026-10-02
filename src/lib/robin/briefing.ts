@@ -6,7 +6,7 @@ import { robinOverview } from "./overview";
 import { money } from "./types";
 
 /**
- * "Robin, what's my day?" and the once-a-day morning report. Every number is a
+ * "Rubin, what's my day?" and the once-a-day morning report. Every number is a
  * count from the CRM; anything that is zero is simply left out, never padded.
  */
 
@@ -74,7 +74,7 @@ export async function robinBriefing(userId: string, now = new Date()): Promise<B
   return { ...b, text };
 }
 
-/** The morning report — once per day, the first time Robin opens (if it's on in Settings). */
+/** The morning report — once per day, the first time Rubin opens (if it's on in Settings). */
 export async function morningReport(userId: string, now = new Date()): Promise<{ due: boolean; text: string | null }> {
   const db = getDb();
   const settings = await loadSettings(userId);

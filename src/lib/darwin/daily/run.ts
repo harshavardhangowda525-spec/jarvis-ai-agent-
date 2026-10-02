@@ -881,7 +881,7 @@ export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDep
     }
     // today's new leads → the user's Google Sheet (when Google is connected)
     if (run?.verified) await syncRunToSheet(run.id);
-    // …and to ROBIN, who takes them from here (when its auto-import is on)
+    // …and to RUBIN, who takes them from here (when its auto-import is on)
     if (run?.verified) await syncFromDarwin(userId).catch((e) => console.error("[darwin→robin]", (e as Error).message));
     // then email the new leads (and any earlier ones not yet written to) with the time left
     let mail: AutoEmailResult | null = null;

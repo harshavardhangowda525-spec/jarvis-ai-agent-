@@ -5,11 +5,11 @@ import { env } from "@/lib/env";
 import { RobinError } from "./crm";
 
 /**
- * ROBIN's own voice — designed from a description with ElevenLabs Voice Design
+ * RUBIN's own voice — designed from a description with ElevenLabs Voice Design
  * (POST /v1/text-to-voice/design → POST /v1/text-to-voice), saved to your
- * ElevenLabs account and remembered in Robin's settings. ROBIN_VOICE_ID always
+ * ElevenLabs account and remembered in Rubin's settings. ROBIN_VOICE_ID always
  * wins; until a designed voice exists (or if your ElevenLabs plan can't design
- * one) Robin uses the stock voice "Eric".
+ * one) Rubin uses the stock voice "Eric".
  */
 
 export const DEFAULT_VOICE_DESCRIPTION =
@@ -41,9 +41,9 @@ async function writeState(userId: string, patch: Partial<RobinVoiceState> & { st
   await db.robinSettings.upsert({ where: { userId }, create: { userId, data: next }, update: { data: next } });
 }
 
-/** The voice Robin speaks with for this user. */
+/** The voice Rubin speaks with for this user. */
 export async function robinVoiceFor(userId: string): Promise<string> {
-  if (process.env.ROBIN_VOICE_ID?.trim()) return env.robinVoiceId;
+  if ((process.env.RUBIN_VOICE_ID ?? process.env.ROBIN_VOICE_ID)?.trim()) return env.robinVoiceId;
   const s = await readState(userId).catch(() => null);
   return s?.voiceId ?? FALLBACK_VOICE;
 }
@@ -52,7 +52,7 @@ export async function robinVoiceStatus(userId: string) {
   const s = await readState(userId);
   return {
     ...s,
-    using: process.env.ROBIN_VOICE_ID?.trim() ? "env" : s.voiceId ? "designed" : "default",
+    using: (process.env.RUBIN_VOICE_ID ?? process.env.ROBIN_VOICE_ID)?.trim() ? "env" : s.voiceId ? "designed" : "default",
     elevenLabs: !!env.elevenLabsApiKey,
   };
 }
@@ -69,11 +69,11 @@ async function el<T>(path: string, init: RequestInit, timeoutMs = 90_000): Promi
 }
 
 /**
- * Design and save a new voice for Robin (replacing the one designed before).
+ * Design and save a new voice for Rubin (replacing the one designed before).
  * Returns a short MP3 preview of the new voice (base64) when ElevenLabs gives one.
  */
 export async function createRobinVoice(userId: string, description?: string): Promise<{ voiceId: string; preview: string | null }> {
-  if (!env.elevenLabsApiKey) throw new RobinError("ELEVENLABS_API_KEY isn't set — Robin can't design a voice without ElevenLabs.", 409);
+  if (!env.elevenLabsApiKey) throw new RobinError("ELEVENLABS_API_KEY isn't set — Rubin can't design a voice without ElevenLabs.", 409);
   const desc = (description?.trim() || DEFAULT_VOICE_DESCRIPTION).slice(0, 1000);
   if (desc.length < 20) throw new RobinError("Describe the voice in a little more detail (at least 20 characters).", 422);
   const before = await readState(userId);
@@ -87,11 +87,11 @@ export async function createRobinVoice(userId: string, description?: string): Pr
     if (!pick?.generated_voice_id) throw new Error("ElevenLabs didn't return a voice preview.");
     const saved = await el<{ voice_id: string }>("/text-to-voice", {
       method: "POST",
-      body: JSON.stringify({ voice_name: "ROBIN (JARVIS sales agent)", voice_description: desc, generated_voice_id: pick.generated_voice_id, labels: { agent: "robin", app: "jarvis" } }),
+      body: JSON.stringify({ voice_name: "RUBIN (JARVIS sales agent)", voice_description: desc, generated_voice_id: pick.generated_voice_id, labels: { agent: "robin", app: "jarvis" } }),
     });
     if (!saved.voice_id) throw new Error("ElevenLabs didn't save the voice.");
     await writeState(userId, { voiceId: saved.voice_id, description: desc, createdAt: new Date().toISOString(), creating: false, startedAt: null, error: null });
-    // free the slot of the voice this one replaces (only one Robin designed itself)
+    // free the slot of the voice this one replaces (only one Rubin designed itself)
     if (before.voiceId && before.voiceId !== saved.voice_id) await fetch(`${API}/voices/${before.voiceId}`, { method: "DELETE", headers: { "xi-api-key": env.elevenLabsApiKey } }).catch(() => {});
     return { voiceId: saved.voice_id, preview: pick.audio_base_64 ?? null };
   } catch (e) {
@@ -101,9 +101,9 @@ export async function createRobinVoice(userId: string, description?: string): Pr
   }
 }
 
-/** First time Robin opens with ElevenLabs set up: design its voice once, in the background. */
+/** First time Rubin opens with ElevenLabs set up: design its voice once, in the background. */
 export async function ensureRobinVoice(userId: string): Promise<"exists" | "started" | "skipped"> {
-  if (process.env.ROBIN_VOICE_ID?.trim() || !env.elevenLabsApiKey) return "skipped";
+  if ((process.env.RUBIN_VOICE_ID ?? process.env.ROBIN_VOICE_ID)?.trim() || !env.elevenLabsApiKey) return "skipped";
   const s = await readState(userId);
   if (s.voiceId) return "exists";
   if (s.creating || s.error) return "skipped"; // one try automatically; after a failure, Settings → Create

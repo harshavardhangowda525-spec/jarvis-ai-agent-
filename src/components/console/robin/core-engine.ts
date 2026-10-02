@@ -1,8 +1,8 @@
 /**
- * ROBIN's holographic core — one canvas behind the glass panels. Layered rings
+ * RUBIN's holographic core — one canvas behind the glass panels. Layered rings
  * that turn at different speeds, a translucent energy sphere with a latitude /
  * longitude lattice, an equator waveform, orbiting data points and an
- * atmospheric glow. The motion follows what Robin is really doing (qualifying,
+ * atmospheric glow. The motion follows what Rubin is really doing (qualifying,
  * following up, preparing a quotation…), and data arcs reach out to the CRM
  * chart's stages. One rAF loop, capped pixel ratio, bounded particles, paused
  * while the tab is hidden, calm under prefers-reduced-motion.
@@ -415,7 +415,7 @@ export class RobinCoreEngine {
       const t = this.time - this.stateAt;
       if (t < 1.6) {
         const draw = Math.min(1, t / 0.45), fade = t > 1.1 ? 1 - (t - 1.1) / 0.5 : 1;
-        // above the ROBIN wordmark
+        // above the RUBIN wordmark
         const ty = cy - sR * 0.52, k = 0.5;
         const pts: Pt[] = [{ x: cx - sR * 0.28 * k, y: ty + sR * 0.02 * k }, { x: cx - sR * 0.06 * k, y: ty + sR * 0.24 * k }, { x: cx + sR * 0.32 * k, y: ty - sR * 0.2 * k }];
         c.strokeStyle = this.col(H.green, 0.9 * fade, 70); c.lineWidth = 2.4; c.lineCap = "round";

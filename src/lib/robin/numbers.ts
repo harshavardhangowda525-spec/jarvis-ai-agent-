@@ -1,5 +1,5 @@
 /**
- * Every ROBIN lead has a short number (1, 2, 3 …, in the order they arrived) so
+ * Every RUBIN lead has a short number (1, 2, 3 …, in the order they arrived) so
  * you can name it by number — "follow up with 7 tomorrow at 4", "open lead 12",
  * "move number 3 to interested". And the spoken follow-up breakdown, notes
  * included. Client-safe, pure.
@@ -78,7 +78,7 @@ const noteText = (n: string | null) => (n ?? "").split(/\n+/).map((x) => x.trim(
 /**
  * "You have 4 follow-ups — 1 overdue, 2 today, 1 coming up.
  *  Overdue: lead 7, ABC Café — call, was due yesterday at 4:00 PM. Note: wants an online menu.
- *  Today: …"  Every follow-up is listed with the note you told Robin (up to `max`).
+ *  Today: …"  Every follow-up is listed with the note you told Rubin (up to `max`).
  */
 export function followUpBreakdown(q: FollowUpQueueLike, opts: { now?: Date; max?: number; which?: "all" | "today" | "overdue" | "upcoming" } = {}): string {
   const now = opts.now ?? new Date();

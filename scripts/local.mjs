@@ -193,7 +193,7 @@ if (!built || (head && stamp !== head) || process.argv.includes("--rebuild")) {
   const db = await probeDatabase(ROOT, dbUrl);
   if (db.ok) {
     say(`  Database: connected (${db.ms > 4000 ? `it was asleep — woke up in ${(db.ms / 1000).toFixed(1)} s` : `${db.ms} ms`})`);
-    // this version's database changes (e.g. ROBIN's lead numbers) — applied once per update, safe to repeat
+    // this version's database changes (e.g. RUBIN's lead numbers) — applied once per update, safe to repeat
     const migStamp = path.join(ROOT, ".next", "LOCAL_MIGRATED_COMMIT");
     const migrated = fs.existsSync(migStamp) ? fs.readFileSync(migStamp, "utf8").trim() : "";
     if (!head || migrated !== head || process.argv.includes("--migrate")) {
@@ -392,7 +392,7 @@ if (await waitFor(`${local}/login`, 120)) {
       for (const x of j?.data?.results ?? []) for (const m of x.messages ?? []) say(`  [mike] ${m}`);
     } catch { /* offline — next round */ } finally { mkTicking = false; }
   };
-  // ROBIN: email you a reminder before each follow-up / demo is due — checked every minute
+  // RUBIN: email you a reminder before each follow-up / demo is due — checked every minute
   let rbTicking = false, rbWarned = false;
   const robinTick = async () => {
     if (rbTicking) return;

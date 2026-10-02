@@ -26,14 +26,14 @@ import { runAgent } from "@/lib/ai/agent";
 import { availableTools } from "@/lib/tools/registry";
 import { getDb, isDbConfigured } from "@/lib/db";
 
-describe("ROBIN's brain: requests every provider accepts", () => {
+describe("RUBIN's brain: requests every provider accepts", () => {
   it("no agent sends a tool whose parameters are an empty object (Gemini rejects those)", () => {
     for (const a of [undefined, "ev", "darwin", "mike", "robin"] as const) {
       const empty = availableTools(a).filter((t) => { const s: any = t.inputSchema; return s?.type === "object" && !Object.keys(s.properties ?? {}).length; });
       expect(empty.map((t) => t.name), a ?? "jarvis").toEqual([]);
     }
   });
-  it("Robin gets a lean, sales-only toolset", () => {
+  it("Rubin gets a lean, sales-only toolset", () => {
     const names = availableTools("robin").map((t) => t.name);
     expect(names).toContain("robin_leads");
     expect(names).not.toContain("mike_chart");
@@ -43,13 +43,13 @@ describe("ROBIN's brain: requests every provider accepts", () => {
 });
 
 const d = isDbConfigured ? describe : describe.skip;
-d("ROBIN's brain answers (integration, stand-in providers)", () => {
+d("RUBIN's brain answers (integration, stand-in providers)", () => {
   const turn = async (userId: string) => {
     const events: any[] = [];
     for await (const ev of runAgent({ userId, timezone: "Asia/Kolkata", assistantName: "JARVIS", displayName: "Harsha", history: [], message: "what's on my follow-up list?", agent: "robin" })) events.push(ev);
     return events;
   };
-  it("a blank or Windows-style timezone in the profile doesn't break Robin's brain", async () => {
+  it("a blank or Windows-style timezone in the profile doesn't break Rubin's brain", async () => {
     const u = await getDb().user.create({ data: { email: `robin-tz-${Date.now()}@example.com`, passwordHash: "x" } });
     try {
       for (const tz of ["", "India Standard Time", "GMT+5:30"]) {
