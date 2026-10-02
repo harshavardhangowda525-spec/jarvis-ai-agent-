@@ -3,6 +3,7 @@ import { robinApi } from "@/lib/robin/http";
 import { robinOverview } from "@/lib/robin/overview";
 import { syncFromDarwin } from "@/lib/robin/darwin-sync";
 import { demoReminders } from "@/lib/robin/engage";
+import { sendDueReminders } from "@/lib/robin/reminders";
 import { expireQuotations } from "@/lib/robin/quotes";
 
 export const runtime = "nodejs";
@@ -17,7 +18,7 @@ export const maxDuration = 60;
 export async function GET(req: Request) {
   return robinApi(req, "overview", async (user) => {
     const sync = await syncFromDarwin(user.id).catch(() => null);
-    const [reminders] = await Promise.all([demoReminders(user.id).catch(() => []), expireQuotations(user.id).catch(() => 0)]);
+    const [reminders] = await Promise.all([demoReminders(user.id).catch(() => []), expireQuotations(user.id).catch(() => 0), sendDueReminders(user.id).catch(() => null)]);
     return ok({ overview: await robinOverview(user.id), sync, reminders });
   }, 120);
 }

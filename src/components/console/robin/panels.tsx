@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { X, Loader2, Check, Download, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RobinAnalytics } from "@/lib/robin/analytics";
-import { STAGE_LABEL, money, type RobinSettings, type Stage, CLIENT_STATUSES } from "@/lib/robin/types";
+import { STAGE_LABEL, money, type RobinSettings, type Stage, CLIENT_STATUSES, REMINDER_MINUTES } from "@/lib/robin/types";
 import { rapi, when, localInput } from "./api";
 import { Count } from "./anim";
 
@@ -269,6 +269,19 @@ export function SettingsPanel({ onClose, say, onSaved }: { onClose: () => void; 
           <p className="text-[10px] tracking-[0.28em] text-cyan-200/70">DARWIN → ROBIN</p>
           <label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={s.autoImport} onChange={(e) => set("autoImport", e.target.checked)} />Receive DARWIN&apos;s new leads automatically</label>
           <label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={s.morningReport} onChange={(e) => set("morningReport", e.target.checked)} />Morning sales briefing when Robin first opens each day</label>
+          <p className="pt-2 text-[10px] tracking-[0.28em] text-cyan-200/70" data-robin-reminders>REMINDER EMAILS</p>
+          <label className="flex items-center gap-2 text-xs text-slate-200"><input type="checkbox" checked={s.emailReminders} onChange={(e) => set("emailReminders", e.target.checked)} />Email me before each follow-up and demo is due</label>
+          {s.emailReminders && (
+            <>
+              <label className="flex items-center gap-2 text-[11px] text-slate-400">Send it
+                <select className={cn(field, "w-auto")} value={s.reminderMinutes} onChange={(e) => set("reminderMinutes", Number(e.target.value))} aria-label="How long before it's due">
+                  {REMINDER_MINUTES.map((m) => <option key={m} value={m} className="bg-slate-900">{m < 60 ? `${m} minutes` : m === 1440 ? "1 day" : `${m / 60} hour${m === 60 ? "" : "s"}`} before</option>)}
+                </select>
+              </label>
+              <input className={field} type="email" placeholder="To: your Gmail address (leave empty)" value={s.reminderEmail} onChange={(e) => set("reminderEmail", e.target.value.trim())} aria-label="Reminder email address" />
+              <p className="text-[10px] leading-relaxed text-slate-500">Sent from your connected Gmail to you — never to a lead — with the lead number, time and your notes.</p>
+            </>
+          )}
           <p className="pt-2 text-[10px] tracking-[0.28em] text-cyan-200/70">QUOTATIONS</p>
           {([["companyName", "Company name"], ["companyPhone", "Company phone"], ["companyEmail", "Company email"], ["companyAddress", "Company address"]] as const).map(([k, ph]) => (
             <input key={k} className={field} placeholder={ph} value={s[k]} onChange={(e) => set(k, e.target.value)} />

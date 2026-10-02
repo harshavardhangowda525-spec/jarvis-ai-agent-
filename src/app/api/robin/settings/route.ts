@@ -17,6 +17,8 @@ const schema = z.object({
     quoteValidityDays: z.number().int().min(1).max(365).optional(), paymentTerms: z.string().max(2000).optional(),
     companyName: z.string().max(120).optional(), companyPhone: z.string().max(40).optional(), companyEmail: z.string().max(160).optional(),
     companyAddress: z.string().max(300).optional(), morningReport: z.boolean().optional(),
+    emailReminders: z.boolean().optional(), reminderMinutes: z.number().int().min(5).max(1440).optional(),
+    reminderEmail: z.union([z.literal(""), z.string().trim().email().max(160)]).optional(),
   }).optional(),
   // your services and prices (null price = not set; Robin won't quote it until you set one)
   services: z.array(z.object({ id: z.string().optional(), name: z.string().trim().min(1).max(120), description: z.string().max(1000).nullable().optional(), price: z.number().min(0).max(1e9).nullable().optional(), unit: z.string().max(40).nullable().optional(), active: z.boolean().optional() })).max(60).optional(),

@@ -723,12 +723,11 @@ model RobinLead {
   client       RobinClient?
 
   @@unique([userId, darwinLeadId])
+  @@unique([userId, number])
   @@index([userId, stage])
   @@index([userId, fingerprint])
   @@index([userId, phoneKey])
   @@index([userId, email])
-
-  @@unique([userId, number])
 }
 
 /// Every qualification Robin ran (score history with its reasons).
@@ -813,6 +812,7 @@ model RobinFollowUp {
   notes       String?   @db.Text
   status      String    @default("pending") // pending | completed | cancelled
   completedAt DateTime?
+  remindedAt  DateTime? // the reminder email went out (once)
   createdAt   DateTime  @default(now())
 
   lead RobinLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
@@ -822,16 +822,17 @@ model RobinFollowUp {
 }
 
 model RobinDemo {
-  id          String    @id @default(cuid())
-  userId      String
-  leadId      String
-  scheduledAt DateTime
-  demoType    String    @default("online") // online | in_person | phone
-  notes       String?   @db.Text
-  status      String    @default("scheduled") // scheduled | completed | cancelled | rescheduled
-  remindedAt  DateTime?
-  completedAt DateTime?
-  createdAt   DateTime  @default(now())
+  id              String    @id @default(cuid())
+  userId          String
+  leadId          String
+  scheduledAt     DateTime
+  demoType        String    @default("online") // online | in_person | phone
+  notes           String?   @db.Text
+  status          String    @default("scheduled") // scheduled | completed | cancelled | rescheduled
+  remindedAt      DateTime?
+  emailRemindedAt DateTime? // the reminder email went out (once)
+  completedAt     DateTime?
+  createdAt       DateTime  @default(now())
 
   lead RobinLead @relation(fields: [leadId], references: [id], onDelete: Cascade)
 

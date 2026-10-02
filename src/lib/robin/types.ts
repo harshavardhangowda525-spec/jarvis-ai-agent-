@@ -91,13 +91,21 @@ export interface RobinSettings {
   companyAddress: string;
   /** "Good morning. Here's your sales briefing." the first time Robin opens each day. */
   morningReport: boolean;
+  /** Email you a reminder before each follow-up and demo is due (from your connected Gmail). */
+  emailReminders: boolean;
+  /** How long before it's due the reminder goes out (minutes). */
+  reminderMinutes: number;
+  /** Where reminders go — empty = your Gmail address. */
+  reminderEmail: string;
 }
 export const DEFAULT_SETTINGS: RobinSettings = {
   autoImport: true, currency: "INR", taxPct: 18, quoteValidityDays: 15,
   paymentTerms: "50% advance to start, 50% on delivery.",
   companyName: "Infinity Web & Apps", companyPhone: "", companyEmail: "", companyAddress: "",
   morningReport: true,
+  emailReminders: true, reminderMinutes: 60, reminderEmail: "",
 };
+export const REMINDER_MINUTES = [15, 30, 60, 120, 180, 1440] as const;
 
 /** Robin's core states (drive the hologram). */
 export const CORE_STATES = ["idle", "listening", "analyzing", "processing", "qualifying", "contacting", "following_up", "demo", "quotation", "complete", "error"] as const;

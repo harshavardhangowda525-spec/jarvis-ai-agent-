@@ -1151,6 +1151,26 @@ leads arrived, and new leads take the next one.
   note you gave, and the list opens on screen. "Which follow-ups are overdue?"
   and "today's follow-ups" narrow it down.
 
+**Reminder emails.** Before each follow-up and demo is due (an hour before by
+default), Robin emails you a reminder.
+- It's sent from your connected Gmail to your own address; it never goes to a
+  lead.
+- Each reminder has the lead number and name, what to do (call, WhatsApp,
+  meeting…), when, the phone number, your notes, and a link that opens the lead.
+- Several things coming up at once go out as one email. Each follow-up and demo
+  is reminded once. Something already more than 2 hours overdue isn't reminded.
+- Turn it off, change the timing (15 min to 1 day before) or send reminders to
+  another address under ROBIN → Settings → Reminder emails.
+- Robin checks for reminders:
+  - every minute with `npm run local`;
+  - every 2 minutes while JARVIS is open in a browser;
+  - on each request to `GET /api/cron/robin` (with `Authorization: Bearer
+    <CRON_SECRET>`).
+- Vercel's free plan only runs scheduled jobs once a day. If you only use the
+  Vercel site, keep JARVIS open, or have a free pinger such as cron-job.org call
+  `/api/cron/robin` every 5 minutes.
+- Google must be connected in JARVIS Settings for the emails to go out.
+
 **Your commands come first.** ROBIN talks like a friend and does what you tell
 it straight away, with no "are you sure?". Your command is the approval, whether
 you give it by voice, by click or by dragging a card. That includes WON, LOST,

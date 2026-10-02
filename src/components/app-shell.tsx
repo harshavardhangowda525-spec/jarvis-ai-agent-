@@ -99,6 +99,15 @@ export function AppShell({
       .catch(() => setBuild(null));
   }, []);
 
+  // ROBIN's reminder emails: while JARVIS is open anywhere, check every 2 minutes
+  // (each follow-up/demo is emailed once; the server decides what's due)
+  useEffect(() => {
+    const check = () => { void fetch("/api/robin/reminders", { method: "POST" }).catch(() => {}); };
+    const first = setTimeout(check, 20_000);
+    const iv = setInterval(check, 2 * 60_000);
+    return () => { clearTimeout(first); clearInterval(iv); };
+  }, []);
+
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
