@@ -13,15 +13,21 @@ import { readPose, POSE_LABEL, type Pose, type PoseReading, type Pt } from "./cl
  * by a hand that was already in view — raising a hand into the frame isn't one).
  * Pinch-clicks need a clean press-and-release with hysteresis.
  *
- * Getting around: open hand swipe → DARWIN, ← ULTRON, ↑ EV; a held fist → JARVIS.
+ * Getting around: open hand swipe → DARWIN, ← ULTRON, ↑ EV, ↓ RUBIN; a held fist → JARVIS.
+ *
+ * Swipes follow the palm's MOTION; the hand's shape is judged from how extended
+ * the fingers are across the sweep (a real hand blurs, tilts and turns side-on
+ * while it moves, so it's rarely a textbook open palm in every frame). The
+ * return stroke after a swipe is ignored, and a swipe down only counts when the
+ * hand stays in view (dropping your hand out of the frame isn't one).
  */
 
 export type GestureId =
   | "open_palm" | "fist" | "thumbs_up" | "thumbs_down" | "point" | "pinch"
-  | "swipe_left" | "swipe_right" | "palm_left" | "palm_right" | "palm_up";
+  | "swipe_left" | "swipe_right" | "palm_left" | "palm_right" | "palm_up" | "palm_down";
 
-/** jarvis/darwin/ultron/ev = go to that agent. */
-export type GestureAction = "wake" | "approve" | "reject" | "select" | "click" | "prev" | "next" | "jarvis" | "darwin" | "ultron" | "ev";
+/** jarvis/darwin/ultron/ev/rubin = go to that agent. */
+export type GestureAction = "wake" | "approve" | "reject" | "select" | "click" | "prev" | "next" | "jarvis" | "darwin" | "ultron" | "ev" | "rubin";
 
 export interface GestureDef { id: GestureId; label: string; action: GestureAction; actionLabel: string; how: string }
 
@@ -37,6 +43,7 @@ export const GESTURES: GestureDef[] = [
   { id: "palm_right", label: "SWIPE →", action: "darwin", actionLabel: "OPEN DARWIN", how: "Open hand, sweep right" },
   { id: "palm_left", label: "SWIPE ←", action: "ultron", actionLabel: "OPEN ULTRON", how: "Open hand, sweep left" },
   { id: "palm_up", label: "SWIPE ↑", action: "ev", actionLabel: "OPEN EV", how: "Open hand, sweep up" },
+  { id: "palm_down", label: "SWIPE ↓", action: "rubin", actionLabel: "OPEN RUBIN", how: "Open hand, sweep down (keep it in view)" },
 ];
 export const GESTURE_BY_ID = Object.fromEntries(GESTURES.map((g) => [g.id, g])) as Record<GestureId, GestureDef>;
 
@@ -89,12 +96,13 @@ export function params(s: GestureSettings) {
     holdMs: Math.round(700 - 330 * k),   // 370 … 700 ms
     stableMs: 90,                        // pose must persist this long to count
     stillness: 0.28 + 0.14 * k,          // max palm travel during a hold, in hand-sizes
-    swipeDist: 1.7 - 0.6 * k,            // horizontal travel for a swipe, in hand-sizes
-    swipeWindow: 520,
+    swipeDist: 1.55 - 0.6 * k,           // horizontal travel for a swipe, in hand-sizes (1.25 at the default)
+    swipeWindow: 650,
     cooldown: 1400,                      // per action
     globalCooldown: 550,                 // after any command
     swipeCooldown: 800,
-    swipeUpDist: (1.7 - 0.6 * k) * 0.85,  // vertical travel for a swipe up (the frame is shorter than it is wide)
+    swipeUpDist: (1.55 - 0.6 * k) * 0.85, // vertical travel for a swipe up/down (the frame is shorter than it is wide)
+    returnLockMs: 1300,                  // the hand coming back after a swipe isn't a swipe the other way
     settledMs: 250,                      // the hand must be in view this long before a swipe starts
     pinchOn: s.pinchOn,
     pinchOff: s.pinchOn * 1.65,
@@ -129,6 +137,21 @@ export function toScreen(p: Pt): { x: number; y: number } {
 }
 
 interface Sample { t: number; pose: Pose; conf: number; cx: number; cy: number; scale: number }
+/** The hand's rough shape from finger extension alone (robust to blur / tilt). */
+type Shape = "open" | "two" | "closed";
+interface Track { t: number; cx: number; cy: number; scale: number; shape: Shape }
+
+export function shapeOf(r: PoseReading): Shape {
+  const [, ix, md, rg, pk] = r.fingers;
+  if (r.pose === "two" && r.confidence >= 0.5) return "two";
+  if (ix > 0.5 && md > 0.5 && rg < 0.4 && pk < 0.4) return "two";
+  const ext = [ix, md, rg, pk].filter((v) => v > 0.42).length;
+  if (r.pose === "open_palm" || ext >= 3) return "open";
+  if (ext <= 1 || r.pose === "fist" || r.pose === "point" || r.pose === "thumbs_up" || r.pose === "thumbs_down") return "closed";
+  return "open"; // two fingers that aren't index+middle: a loosely open hand
+}
+type SwipeDir = "left" | "right" | "up" | "down";
+const OPPOSITE: Record<SwipeDir, SwipeDir> = { left: "right", right: "left", up: "down", down: "up" };
 
 export class GestureEngine {
   private settings: GestureSettings;
@@ -141,6 +164,10 @@ export class GestureEngine {
   private lastFire: Partial<Record<GestureAction, number>> = {};
   private lastAny = -1e9;
   private lastSwipe = -1e9;
+  private track: Track[] = [];
+  private lastSwipeDir: SwipeDir | null = null;
+  /** A swipe down waits to see the hand stay in view (dropping a hand out of the frame isn't a swipe). */
+  private pendingDown: { at: number; conf: number; cx: number; cy: number } | null = null;
   private lastSeen = -1e9;
   private handSince = -1e9;
   private pinchDown = false;
@@ -155,7 +182,7 @@ export class GestureEngine {
   setSettings(s: GestureSettings) { this.settings = s; }
   startCalibration(t: number) { this.calib = { start: t, min: Infinity, samples: 0 }; }
   reset() {
-    this.hist = []; this.stable = "none"; this.pending = null; this.holdFiredFor = null; this.rearmSince = null; this.pinchDown = false;
+    this.hist = []; this.track = []; this.pendingDown = null; this.stable = "none"; this.pending = null; this.holdFiredFor = null; this.rearmSince = null; this.pinchDown = false;
     this.fx.reset(); this.fy.reset(); this.pointerTrail = [];
   }
 
@@ -243,33 +270,68 @@ export class GestureEngine {
     } else if (this.pinchDown && r.pinch > p.pinchOff) this.pinchDown = false;
     out.pinching = this.pinchDown;
 
-    // ---- swipes: fast, mostly straight travel of a consistent pose (two fingers:
-    // left/right; open hand: left/right/up)
-    if (t - this.lastSwipe > p.swipeCooldown && this.hist.length >= 4) {
-      const win = this.hist.filter((h) => t - h.t <= p.swipeWindow);
-      for (const pose of ["two", "open_palm"] as const) {
-        const same = win.filter((h) => h.pose === pose);
-        if (same.length < 4 || same.length / win.length < 0.7) continue;
-        const a = same[0], b = same[same.length - 1];
-        if (b.t - a.t < 100) continue;
-        const scale = same.reduce((s, h) => s + h.scale, 0) / same.length;
-        const dx = -(b.cx - a.cx) / scale; // mirrored: + = the user's right
-        const dy = (b.cy - a.cy) / scale;  // + = down
+    // ---- swipes: fast, mostly straight travel of the palm. Open hand → agents
+    // (→ DARWIN, ← ULTRON, ↑ EV, ↓ RUBIN); two fingers ← / → = previous / next.
+    this.track.push({ t, cx: r.center.x, cy: r.center.y, scale: r.scale, shape: shapeOf(r) });
+    while (this.track.length && t - this.track[0].t > p.swipeWindow) this.track.shift();
+    // a pending swipe down counts once the hand comes to rest IN VIEW (a hand being
+    // put down keeps falling and leaves the frame — that cancels it)
+    if (this.pendingDown) {
+      const pd = this.pendingDown;
+      const recent = this.track.filter((h) => t - h.t <= 120);
+      const falling = recent.length > 1 ? (recent[recent.length - 1].cy - recent[0].cy) / r.scale : 0;
+      if (t - pd.at > 800) this.pendingDown = null;
+      else if (t - pd.at >= 90 && recent.length > 1 && falling < 0.3) {
+        this.pendingDown = null;
+        if (this.settings.enabled.palm_down && t - (this.lastFire.rubin ?? -1e9) >= p.swipeCooldown && t - this.lastAny >= p.globalCooldown * 0.6) this.fire(out, "palm_down", pd.conf, t);
+      }
+    }
+    if (t - this.lastSwipe > p.swipeCooldown && this.track.length >= 3) {
+      const cur = this.track[this.track.length - 1];
+      const scale = this.track.reduce((s, h) => s + h.scale, 0) / this.track.length;
+      // the furthest the palm has come along each direction within the window (mirrored: user's right = image left)
+      let best: { dir: SwipeDir; travel: number; from: number } | null = null;
+      for (let k = 0; k < this.track.length - 1; k++) {
+        const a = this.track[k];
+        if (cur.t - a.t < 80) break;
+        const dx = -(cur.cx - a.cx) / scale, dy = (cur.cy - a.cy) / scale;
+        const horiz = Math.abs(dx) >= Math.abs(dy);
+        const dir: SwipeDir = horiz ? (dx > 0 ? "right" : "left") : (dy > 0 ? "down" : "up");
+        const travel = horiz ? Math.abs(dx) : Math.abs(dy);
+        const side = horiz ? Math.abs(dy) : Math.abs(dx);
+        const need = horiz ? p.swipeDist : p.swipeUpDist;
+        if (travel >= need && side <= travel * 0.7 && (!best || travel > best.travel)) best = { dir, travel, from: k };
+      }
+      if (best) {
+        const seg = this.track.slice(best.from);
+        const count = (sh: Shape) => seg.filter((h) => h.shape === sh).length / seg.length;
+        const shape: Shape | null = count("two") >= 0.5 ? "two" : count("closed") >= 0.5 ? "closed" : "open";
         let id: GestureId | null = null;
-        if (Math.abs(dx) >= p.swipeDist && Math.abs(dy) <= Math.abs(dx) * 0.6) {
-          id = pose === "two" ? (dx < 0 ? "swipe_left" : "swipe_right") : (dx < 0 ? "palm_left" : "palm_right");
-        } else if (pose === "open_palm" && -dy >= p.swipeUpDist && Math.abs(dx) <= -dy * 0.6 && a.t - this.handSince >= p.settledMs) {
-          // up: only a hand that was already in view (raising a hand into the frame isn't a swipe)
-          id = "palm_up";
+        if (shape === "two" && (best.dir === "left" || best.dir === "right")) id = best.dir === "left" ? "swipe_left" : "swipe_right";
+        else if (shape === "open") {
+          if (best.dir === "right") id = "palm_right";
+          else if (best.dir === "left") id = "palm_left";
+          // up/down: only a hand that was already in view before it started moving
+          // (raising a hand into the frame, or lowering it out, isn't one)
+          else {
+            const vert = (h: Track) => Math.abs(h.cy - seg[0].cy) / scale;
+            let moveStart = seg[0];
+            for (const h of seg) { if (vert(h) < 0.3) moveStart = h; else break; }
+            if (moveStart.t - this.handSince >= p.settledMs) id = best.dir === "up" ? "palm_up" : "palm_down";
+          }
         }
-        if (!id) continue;
-        const action = GESTURE_BY_ID[id].action;
-        if (this.settings.enabled[id] && t - (this.lastFire[action] ?? -1e9) >= p.swipeCooldown && t - this.lastAny >= p.globalCooldown * 0.6) {
-          this.fire(out, id, same.reduce((s, h) => s + h.conf, 0) / same.length, t);
+        // the hand coming back after a swipe is not a swipe the other way
+        const returning = this.lastSwipeDir === OPPOSITE[best.dir] && t - this.lastSwipe < p.returnLockMs;
+        if (id && !returning) {
+          const conf = Math.round(Math.min(1, 0.55 + 0.45 * Math.min(1, best.travel / ((best.dir === "left" || best.dir === "right" ? p.swipeDist : p.swipeUpDist) * 1.6))) * 100) / 100;
+          const action = GESTURE_BY_ID[id].action;
+          if (id === "palm_down") this.pendingDown = { at: t, conf, cx: cur.cx, cy: cur.cy };
+          else if (this.settings.enabled[id] && t - (this.lastFire[action] ?? -1e9) >= p.swipeCooldown && t - this.lastAny >= p.globalCooldown * 0.6) this.fire(out, id, conf, t);
         }
-        // a sweep is never also a hold
-        this.lastSwipe = t; this.hist = []; this.holdSince = t; this.holdFiredFor = this.stable;
-        break;
+        if (id || returning || shape === "closed") {
+          // a sweep is never also a hold; this movement is used up
+          this.lastSwipe = t; this.lastSwipeDir = best.dir; this.track = []; this.hist = []; this.holdSince = t; this.holdFiredFor = this.stable;
+        }
       }
     }
 

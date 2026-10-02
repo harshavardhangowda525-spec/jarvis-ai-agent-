@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readPose, type Pt } from "@/lib/gesture/classify";
 import { GestureEngine, DEFAULT_SETTINGS, OneEuro, toScreen, params, type GestureEvent, type GestureSettings } from "@/lib/gesture/engine";
+import { swipe, type Dir } from "./helpers/swipe-sim";
 
 /** Build 21 landmarks for an upright hand (wrist at cx,cy; y grows down). */
 type Thumb = "side" | "up" | "down" | "tucked";
@@ -104,11 +105,15 @@ describe("gesture engine", () => {
     const ev = run(new GestureEngine(), [...times(12, () => OPEN({ cy: 0.85 })), ...Array.from({ length: 10 }, (_, i) => OPEN({ cy: 0.85 - i * 0.035 })), ...times(20, () => OPEN({ cy: 0.5 }))]);
     expect(ev.map((x) => [x.id, x.action])).toEqual([["palm_up", "ev"]]);
   });
-  it("raising a hand into view is not a swipe up, and a swipe down does nothing", () => {
+  it("raising a hand into view is not a swipe up; a swipe down opens RUBIN — but dropping your hand out of view doesn't", () => {
     // appears and rises at once — no settled hand first
     expect(run(new GestureEngine(), Array.from({ length: 10 }, (_, i) => OPEN({ cy: 0.85 - i * 0.035 }))).filter((x) => x.action === "ev")).toEqual([]);
-    const down = run(new GestureEngine(), [...times(12, () => OPEN({ cy: 0.5 })), ...Array.from({ length: 10 }, (_, i) => OPEN({ cy: 0.5 + i * 0.035 }))]);
-    expect(down.filter((x) => x.id === "palm_up" || x.id === "palm_left" || x.id === "palm_right")).toEqual([]);
+    // a hand already in view sweeps down and stays in view → RUBIN
+    const down = run(new GestureEngine(), [...times(12, () => OPEN({ cy: 0.45 })), ...Array.from({ length: 10 }, (_, i) => OPEN({ cy: 0.45 + i * 0.035 })), ...times(10, () => OPEN({ cy: 0.8 }))]);
+    expect(down.map((x) => [x.id, x.action])).toEqual([["palm_down", "rubin"]]);
+    // the same move, but the hand leaves the frame straight away (you put it down) → nothing
+    const dropped = run(new GestureEngine(), [...times(12, () => OPEN({ cy: 0.45 })), ...Array.from({ length: 10 }, (_, i) => OPEN({ cy: 0.45 + i * 0.035 })), ...times(20, () => null)]);
+    expect(dropped.filter((x) => x.action === "rubin")).toEqual([]);
   });
   it("a closed fist held opens JARVIS", () => {
     expect(run(new GestureEngine(), times(40, () => FIST())).map((x) => [x.id, x.action])).toEqual([["fist", "jarvis"]]);
@@ -213,5 +218,40 @@ describe("classifier on real MediaPipe landmarks", () => {
     const fist = (realHands as Record<string, { lm: Pt[] }[]>)["fist.jpg"][0].lm;
     const ev = run(new GestureEngine(), times(90, () => fist));
     expect(ev.map((x) => x.action)).toEqual(["jarvis"]);
+  });
+});
+
+/**
+ * Real swipes aren't textbook: the hand blurs (frames lost), tilts, turns side-on
+ * ("karate chop"), doesn't spread every finger, and comes back afterwards.
+ * Hundreds of simulated swipes of each kind, in every direction.
+ */
+describe("swipes the way people really do them", () => {
+  const want: Record<string, Partial<Record<Dir, string>>> = {
+    open: { right: "darwin", left: "ultron", up: "ev", down: "rubin" },
+    lazy: { right: "darwin", left: "ultron", up: "ev", down: "rubin" },
+    chop: { right: "darwin", left: "ultron", up: "ev", down: "rubin" },
+    two: { right: "next", left: "prev" },
+  };
+  for (const [style, dirs] of Object.entries(want)) for (const [dir, action] of Object.entries(dirs) as [Dir, string][]) {
+    it(`${style} hand, swipe ${dir} → ${action} (≥95% of 60 swipes, never a wrong one — even with the hand coming back)`, () => {
+      let ok = 0, wrong = 0;
+      for (let s = 1; s <= 60; s++) {
+        const frames = swipe(dir, s * 7 + dir.length, { style: style as "open", returnStroke: s % 2 === 0, ms: 280 + (s % 5) * 70, dist: 0.24 + (s % 4) * 0.04 });
+        const acts = run(new GestureEngine(), frames).map((x) => x.action).filter((a) => a !== "wake");
+        if (acts.length === 1 && acts[0] === action) ok++; else if (acts.length) wrong++;
+      }
+      expect(wrong).toBe(0);
+      expect(ok).toBeGreaterThanOrEqual(57);
+    });
+  }
+
+  it("a moving fist, a wave hello or small fidgets never navigate", () => {
+    // a fist sweeping across (grab-and-throw territory) is not an agent swipe
+    const fist = run(new GestureEngine(), [...times(10, () => FIST({ cx: 0.7 })), ...Array.from({ length: 10 }, (_, i) => FIST({ cx: 0.7 - i * 0.04 }))]);
+    expect(fist.filter((x) => ["darwin", "ultron", "ev", "rubin", "prev", "next"].includes(x.action))).toEqual([]);
+    // a small wave: open hand rocking a little side to side
+    const wave = run(new GestureEngine(), [...times(10, () => OPEN()), ...Array.from({ length: 40 }, (_, i) => OPEN({ cx: 0.5 + Math.sin(i / 2) * 0.05 }))]);
+    expect(wave.filter((x) => ["darwin", "ultron", "ev", "rubin"].includes(x.action))).toEqual([]);
   });
 });

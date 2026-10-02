@@ -19,7 +19,7 @@ import { GestureHud, GestureCursor, GestureToast, type ToastData } from "./gestu
  *   JARVIS console routes them through the same command router as your voice);
  *   anything unhandled falls back to sensible defaults (pinch = click the thing
  *   you're pointing at, two-finger swipes = move between items) — and the agent
- *   gestures work from every screen: open hand → DARWIN, ← ULTRON, ↑ EV, fist → JARVIS.
+ *   gestures work from every screen: open hand → DARWIN, ← ULTRON, ↑ EV, ↓ RUBIN, fist → JARVIS.
  */
 
 export type GestureStatus = "off" | "starting" | "loading" | "on" | "sleeping" | "error";
@@ -194,6 +194,10 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
         if (pathname.startsWith("/dashboard/ultron")) return "ALREADY IN ULTRON";
         router.push("/dashboard/ultron");
         return "ULTRON";
+      case "rubin":
+        if (pathname.startsWith("/dashboard/rubin")) return "ALREADY IN RUBIN";
+        router.push("/dashboard/rubin");
+        return "RUBIN";
       case "ev":
         // EV lives inside the JARVIS console — it opens EV when it sees ?open=ev
         router.push("/dashboard?open=ev");

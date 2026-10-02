@@ -635,6 +635,7 @@ come back.
 | Open hand, swipe → | **Open DARWIN** |
 | Open hand, swipe ← | **Open ULTRON** |
 | Open hand, swipe ↑ | **Open EV**, also from DARWIN or ULTRON. Your hand must already be in view: raising it into the frame doesn't count |
+| Open hand, swipe ↓ | **Open RUBIN**. Your hand must start in view and stay in view at the end: putting your hand down out of the frame doesn't count |
 
 Gestures go through the **same command router as voice**. A thumbs up is the
 same as saying "Approved". Thumbs up never confirms a laptop shutdown; that
@@ -644,7 +645,12 @@ still needs a spoken "yes".
 - A pose must be clear (confidence threshold), stable for a few frames, and held still for the hold time.
 - It then fires once, so holding a thumbs up for 5 seconds is one approval. It re-arms only after your hand shows something else for a moment or leaves the view.
 - Each action has a cooldown, and there's a short global one after any command.
-- Swipes need a fast, mostly horizontal sweep of a consistent pose.
+- Swipes follow your palm's movement. Sweep about the width of your hand
+  or more, in under ⅔ of a second, mostly in one direction. The hand doesn't
+  have to be a perfect open palm the whole way: blur, tilt, a side-on
+  "karate chop" or slightly curled fingers all work. A moving **fist** never
+  navigates.
+- Bringing your hand back after a swipe doesn't count as a swipe the other way.
 - A pinch clicks on press, and needs a release before the next click.
 - The pointer is smoothed with a one-euro filter.
 

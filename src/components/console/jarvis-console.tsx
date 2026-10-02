@@ -1095,7 +1095,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         if (evActiveRef.current && evAwaitingApproval) { sendRef.current("Reject it"); return "REJECTED"; }
         return undefined;
       }
-      // open hand: → DARWIN, ← ULTRON, ↑ EV
+      // open hand: → DARWIN, ← ULTRON, ↑ EV, ↓ RUBIN
+      case "rubin": {
+        if (brief) closeBriefing();
+        if (evActiveRef.current) closeEv();
+        if (humanoidPhase !== "off") closeHumanoid();
+        launchRobin();
+        return "RUBIN";
+      }
       case "darwin": {
         if (brief) closeBriefing();
         if (evActiveRef.current) closeEv();
