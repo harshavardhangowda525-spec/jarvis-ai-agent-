@@ -615,17 +615,16 @@ Settings (all optional): `EV_DAILY=off`, `EV_DAILY_TZ` (default `Asia/Kolkata`),
 ## Mute
 
 Say **"mute"** to any agent: JARVIS, DARWIN, RUBIN, MIKE, EV or ULTRON.
-"Jarvis, mute", "be quiet" and "stop talking" work too.
-- The agent stops talking straight away. Its replies still appear on screen,
-  but aren't spoken.
-- It keeps listening, so your commands still work.
-- Mute applies to every agent: the agent you switch to stays quiet as well.
-- A "VOICE MUTED" pill shows while it's on.
-- Say **"unmute"** ("speak again", "voice on") to any agent, or click the pill,
-  to hear them again.
-- Typing "mute" / "unmute" works too.
-- "Mute the mic" is left alone: the microphone button is different, and stops
-  the agent hearing you.
+"Jarvis, mute", "mute the mic", "stop listening" and "be quiet" work too.
+- The agent **stops talking and stops listening**. The microphone is released
+  completely, so nothing you say is heard or acted on.
+- Mute applies to every agent: an agent you open next starts muted too.
+- A "MUTED — not listening" pill shows on every screen.
+- **To unmute** (it can't hear you while muted):
+  - click the pill;
+  - click the mic button in any agent (it's the same switch);
+  - type "unmute" in any agent's box;
+  - or hold an open palm with gesture mode on.
 
 ## Gesture control
 

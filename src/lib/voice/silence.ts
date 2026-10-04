@@ -1,9 +1,10 @@
 /**
- * "Mute" — every agent (JARVIS, DARWIN, RUBIN, MIKE, EV, ULTRON) goes quiet
- * when you say it: replies still appear on screen but aren't spoken, and the
- * agent keeps LISTENING, so "unmute" brings the voice back. It's one setting
- * for the whole tab, so the agent you switch to stays quiet too.
- * (The mic button is different: it stops the agent hearing you.) Client-safe.
+ * "Mute" — every agent (JARVIS, DARWIN, RUBIN, MIKE, EV, ULTRON) stops talking
+ * AND stops listening when you say it: the microphone is released, so nothing
+ * you say is heard until you unmute — with the mic button, the "MUTED" pill,
+ * typing "unmute", or an open-palm gesture. One setting for the whole tab (the
+ * mic button is the same switch), so the agent you switch to stays muted too.
+ * Client-safe.
  */
 
 const KEY = "jarvis.voice.silent";
@@ -29,18 +30,18 @@ export function onVoiceSilent(fn: (silent: boolean) => void): () => void {
 }
 
 const NAMES = "jarvis|darwin|rubin|ruben|reuben|robin|mike|ultron|ev|eve|buddy";
-const OBJ = `(?:yourself|your\\s+voice|the\\s+voice|voice|audio|sound|speech|${NAMES}|it|everything|all|everyone|please)`;
+const OBJ = `(?:yourself|your\\s+voice|the\\s+voice|voice|audio|sound|speech|the\\s+mic(?:rophone)?|my\\s+mic(?:rophone)?|mic(?:rophone)?|${NAMES}|it|everything|all|everyone|please)`;
 
 /**
  * "mute" / "mute yourself" / "Jarvis, mute" / "be quiet" / "stop talking" → "mute";
- * "unmute" / "speak again" / "you can talk now" → "unmute"; anything else → null.
- * "mute the mic" is the microphone, not the voice — left alone.
+ * "unmute" / "speak again" / "turn the mic on" → "unmute"; anything else → null.
  */
 export function muteIntent(text: string): "mute" | "unmute" | null {
   let t = text.toLowerCase().replace(/[’]/g, "'").replace(/[.!?,;:]+/g, " ").replace(/\s+/g, " ").trim();
   // "hey Jarvis, …" / "Rubin …" / "… please"
   t = t.replace(new RegExp(`^(?:(?:hey|ok|okay)\\s+)?(?:${NAMES})\\s+`), "").replace(/^please\s+/, "").replace(/\s+(?:please|now|for now|for a while|thanks|thank you)$/, "").trim();
-  if (/\b(mic|microphone)\b/.test(t)) return null;
+  if (/^(?:turn|switch) (?:on )?(?:the |my )?mic(?:rophone)?(?: back)? on$|^(?:turn|switch) on (?:the |my )?mic(?:rophone)?$|^mic(?:rophone)? on$/.test(t)) return "unmute";
+  if (/^(?:turn|switch) (?:off )?(?:the |my )?mic(?:rophone)? off$|^(?:turn|switch) off (?:the |my )?mic(?:rophone)?$|^mic(?:rophone)? off$|^stop listening$|^don't listen$|^do not listen$/.test(t)) return "mute";
   if (new RegExp(`^(?:un-?mute|unmute)(?:\\s+${OBJ})*$`).test(t)) return "unmute";
   if (/^(?:speak|talk)(?:\s+(?:again|to me|up))+$|^you can (?:speak|talk)(?:\s+(?:again|now))*$|^(?:voice|sound|audio) (?:back )?on$|^turn (?:your |the )?(?:voice|sound|audio) (?:back )?on$|^(?:end|stop|exit) (?:silent|quiet) mode$/.test(t)) return "unmute";
   if (new RegExp(`^mute(?:\\s+${OBJ})*$`).test(t)) return "mute";
@@ -53,5 +54,5 @@ export function typedMute(text: string): string | null {
   const m = muteIntent(text);
   if (!m) return null;
   setVoiceSilent(m === "mute");
-  return m === "mute" ? "Muted — I'll reply on screen only and keep listening. Say “unmute” to hear me again." : "Unmuted — you'll hear me again.";
+  return m === "mute" ? "Muted — I've stopped listening and talking. Click the mic or the “MUTED” pill (or type “unmute”) to turn me back on." : "Unmuted — I'm listening again.";
 }

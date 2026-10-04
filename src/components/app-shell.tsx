@@ -285,7 +285,7 @@ function GestureToggle() {
   );
 }
 
-/** While "mute" is on, every agent shows this — the agents keep listening, so "unmute" (or a click) brings the voice back. */
+/** While muted, every agent shows this: nothing is listening or talking. A click turns the mic and voice back on. */
 function MutedPill() {
   const [silent, setSilent] = useState(false);
   useEffect(() => { setSilent(isVoiceSilent()); return onVoiceSilent(setSilent); }, []);
@@ -293,10 +293,10 @@ function MutedPill() {
   return (
     <button
       type="button" onClick={() => setVoiceSilent(false)} data-voice-muted
-      title="Click to hear the agents again"
+      title="Muted — the microphone is off. Click to turn it back on."
       className="fixed bottom-20 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200/30 bg-slate-950/80 px-3.5 py-1.5 text-[10.5px] tracking-[0.16em] text-amber-100 shadow-[0_8px_30px_-10px_rgba(0,0,0,0.8)] backdrop-blur-md transition hover:border-amber-200/60 md:bottom-5"
     >
-      <VolumeX className="h-3.5 w-3.5" /> VOICE MUTED <span className="normal-case tracking-normal text-amber-100/60">— say “unmute”</span>
+      <VolumeX className="h-3.5 w-3.5" /> MUTED <span className="normal-case tracking-normal text-amber-100/60">— not listening · click to unmute</span>
     </button>
   );
 }

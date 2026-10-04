@@ -237,6 +237,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
 
   const finalizeCapture = useCallback(async () => {
     capturingRef.current = false;
+    if (mutedRef.current) { chunksRef.current = []; return; } // muted: nothing you said is used
     const duration = Date.now() - speechStartedAtRef.current;
     const blob = new Blob(chunksRef.current, {
       type: recorderRef.current?.mimeType || "audio/webm",
@@ -348,7 +349,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       r.onspeechstart = () => { if (statusRef.current === "listening" && mine()) setStatusBoth("recording"); };
       r.onresult = (ev: any) => {
         // a closed screen, or one that was stood down, never acts on what it heard
-        if (disposedRef.current || !mine()) return;
+        if (disposedRef.current || !mine() || mutedRef.current) return;
         // Build the full live text (interim + final) so the caption always shows
         // what's being heard, and detect when a segment is finalized.
         let live = "", hasFinal = false;
@@ -495,6 +496,14 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     if (disposedRef.current) return false; // the screen closed while we asked
     const serverStt = !!cfg?.data?.configured;
     browserSTTRef.current = !serverStt && recognitionSupported;
+
+    // Muted (in this agent or another): voice is on, but the microphone stays closed until you unmute.
+    if (isVoiceSilent()) {
+      enabledRef.current = true; setEnabledState(true); rememberVoiceOn(true);
+      mutedRef.current = true; setMuted(true); silentRef.current = true; setSilent(true);
+      setStatusBoth("idle");
+      return true;
+    }
 
     // Browser-STT mode: let SpeechRecognition OWN the microphone. Holding a
     // getUserMedia stream (for the level meter) blocks the recognizer from
@@ -908,49 +917,43 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     const apply = (on: boolean) => {
       silentRef.current = on; setSilent(on);
       if (on) {
+        // muted: stop talking AND stop listening — the microphone is released completely
         stopSpeaking();
-        if (statusRef.current === "speaking" && enabledRef.current && !mutedRef.current) {
-          setStatusBoth("listening");
-          if (browserSTTRef.current) startRecognitionRef.current();
-        }
+        mutedRef.current = true; setMuted(true);
+        stopCapture();
+        stopRecognition();
+        if (rafRef.current != null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+        streamRef.current?.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+        audioCtxRef.current?.close().catch(() => {});
+        audioCtxRef.current = null; analyserRef.current = null;
+        capturingRef.current = false; chunksRef.current = [];
+        setLevel(0); setTranscript("");
+        if (statusRef.current !== "uninitialized" && statusRef.current !== "denied" && statusRef.current !== "unconfigured") setStatusBoth("idle");
+      } else if (mutedRef.current) {
+        mutedRef.current = false; setMuted(false);
+        const s = statusRef.current;
+        if (s === "uninitialized" || s === "requesting" || s === "denied" || s === "unconfigured") return; // voice isn't on here
+        // unmuted: open the microphone again and listen
+        if (browserSTTRef.current) { setStatusBoth("listening"); startRecognitionRef.current(true); }
+        else void initOnceRef.current();
       }
     };
     apply(isVoiceSilent());
     return onVoiceSilent(apply);
-  }, [setStatusBoth, stopSpeaking]);
+  }, [setStatusBoth, stopSpeaking, stopCapture, stopRecognition]);
   muteCmdRef.current = (text: string) => {
     const m = muteIntent(text);
     if (!m) return false;
     setTranscript("");
-    if (m === "mute") {
-      setVoiceSilent(true);
-      if (enabledRef.current && !mutedRef.current && statusRef.current !== "speaking") setStatusBoth("listening");
-    } else {
-      setVoiceSilent(false);
-      setStatusBoth(enabledRef.current && !mutedRef.current ? "listening" : "idle");
-      void speakRef.current("I'm back.");
-    }
+    setVoiceSilent(m === "mute");
+    if (m === "unmute") void speakRef.current("I'm back.");
     return true;
   };
   const speakRef = useRef<(t: string) => Promise<void>>(async () => {});
 
-  const toggleMute = useCallback(() => {
-    setMuted((m) => {
-      const next = !m;
-      rememberVoiceOn(!next); // a muted mic stays muted in the next agent too
-      mutedRef.current = next;
-      streamRef.current?.getAudioTracks().forEach((t) => (t.enabled = !next));
-      if (next) {
-        stopCapture();
-        if (browserSTTRef.current) stopRecognition();
-        if (statusRef.current === "listening") setStatusBoth("idle");
-      } else if (enabledRef.current) {
-        if (statusRef.current === "idle") setStatusBoth("listening");
-        if (browserSTTRef.current) startRecognition(true);
-      }
-      return next;
-    });
-  }, [setStatusBoth, stopCapture, startRecognition, stopRecognition]);
+  /** The mic button: the same mute as saying "mute" — shared by every agent. */
+  const toggleMute = useCallback(() => { setVoiceSilent(!mutedRef.current); }, []);
 
   const setEnabled = useCallback(
     (on: boolean) => {
