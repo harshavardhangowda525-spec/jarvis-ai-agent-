@@ -256,6 +256,7 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       if (hand) lastHand = now;
+      if (v.videoWidth && v.videoHeight) engine.current.setAspect(v.videoWidth / v.videoHeight);
       const out = engine.current.update(hand?.landmarks ?? null, now);
       const frame = { t: now, out, landmarks: hand?.landmarks ?? null };
       live.current = frame;

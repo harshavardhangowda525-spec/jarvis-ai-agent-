@@ -648,7 +648,7 @@ come back.
 
 | Gesture | Action |
 | --- | --- |
-| Open palm (hold still) | Wake JARVIS: turns voice on, or unmutes it |
+| Open palm (hold still ~1¼ s) | Wake JARVIS: turns voice on, or unmutes it. The short pause before a swipe doesn't trigger it |
 | Closed fist (hold) | **Open JARVIS**, from any screen. On the way it stops JARVIS speaking, the reply in progress and playing media, and closes EV, the browser pop-up, Humanoid View and any briefing. Background jobs keep running |
 | Thumbs up (hold) | Approve: EV's daily content, the creative on screen, or text EV is holding |
 | Thumbs down (hold) | Reject: EV's content (makes a new version), dismiss a creative, or cancel a pending shutdown |
@@ -673,7 +673,22 @@ still needs a spoken "yes".
   have to be a perfect open palm the whole way: blur, tilt, a side-on
   "karate chop" or slightly curled fingers all work. A moving **fist** never
   navigates.
-- Bringing your hand back after a swipe doesn't count as a swipe the other way.
+- Distance is measured in real proportions, so a widescreen (16:9) camera
+  needs no more sideways movement than up/down.
+- If the camera loses your blurred hand for a moment mid-swipe, the sweep
+  still counts.
+- Bringing your hand back after a swipe doesn't count as a swipe the other
+  way. To go the other way on purpose, rest your hand for about half a second
+  first.
+
+**Swipe tips:**
+- Sit so your hand fills roughly a fifth of the camera image or more, about
+  arm's length. A hand much farther away is too small for the tracker to find.
+- Raise your hand, let it settle for a beat, then sweep about one to two hand
+  widths, briskly.
+- Good, even light helps a lot: a dark room blurs fast movement.
+- Watch the tracker in the bottom-right. If it doesn't show your hand's
+  landmarks, the camera can't see your hand.
 - A pinch clicks on press, and needs a release before the next click.
 - The pointer is smoothed with a one-euro filter.
 

@@ -94,6 +94,7 @@ export function params(s: GestureSettings) {
   return {
     minConf: 0.8 - 0.25 * k,             // 0.55 … 0.80
     holdMs: Math.round(700 - 330 * k),   // 370 … 700 ms
+    wakeHoldMs: Math.round(700 - 330 * k) + 700, // open palm: 1.07 … 1.4 s
     stableMs: 90,                        // pose must persist this long to count
     stillness: 0.28 + 0.14 * k,          // max palm travel during a hold, in hand-sizes
     swipeDist: 1.55 - 0.6 * k,           // horizontal travel for a swipe, in hand-sizes (1.25 at the default)
@@ -102,7 +103,7 @@ export function params(s: GestureSettings) {
     globalCooldown: 550,                 // after any command
     swipeCooldown: 800,
     swipeUpDist: (1.55 - 0.6 * k) * 0.85, // vertical travel for a swipe up/down (the frame is shorter than it is wide)
-    returnLockMs: 1300,                  // the hand coming back after a swipe isn't a swipe the other way
+    returnLockMs: 1000,                  // the hand coming back after a swipe isn't a swipe the other way (from when it stops)
     settledMs: 250,                      // the hand must be in view this long before a swipe starts
     pinchOn: s.pinchOn,
     pinchOff: s.pinchOn * 1.65,
@@ -151,6 +152,8 @@ export function shapeOf(r: PoseReading): Shape {
   return "open"; // two fingers that aren't index+middle: a loosely open hand
 }
 type SwipeDir = "left" | "right" | "up" | "down";
+/** How long the tracker may lose a moving hand and still count the sweep as one swipe. */
+const SWIPE_GAP_MS = 600;
 const OPPOSITE: Record<SwipeDir, SwipeDir> = { left: "right", right: "left", up: "down", down: "up" };
 
 export class GestureEngine {
@@ -166,6 +169,11 @@ export class GestureEngine {
   private lastSwipe = -1e9;
   private track: Track[] = [];
   private lastSwipeDir: SwipeDir | null = null;
+  /** When the hand last moved on in the direction of the last swipe — the "coming back" lock runs from here. */
+  private swipeMoveEnd = -1e9;
+  /** The hand has rested since the last swipe — anything after that is a new move, not the way back. */
+  private swipeSettled = true;
+  private stillSince: number | null = null;
   /** A swipe down waits to see the hand stay in view (dropping a hand out of the frame isn't a swipe). */
   private pendingDown: { at: number; conf: number; cx: number; cy: number } | null = null;
   private lastSeen = -1e9;
@@ -176,13 +184,22 @@ export class GestureEngine {
   private pointerTrail: { t: number; x: number; y: number }[] = [];
   private lastPointAt = -1e9;
   private calib: { start: number; min: number; samples: number } | null = null;
+  /** Camera frame width ÷ height. Landmarks are 0..1 on BOTH axes, so without this a
+   *  sideways swipe on a 16:9 camera would need ~1.8× more real movement than an up/down one. */
+  private aspect = 1;
   onCalibrated?: (pinchOn: number) => void;
 
   constructor(settings: GestureSettings = DEFAULT_SETTINGS) { this.settings = settings; }
   setSettings(s: GestureSettings) { this.settings = s; }
+  setAspect(a: number) { if (Number.isFinite(a) && a > 0.3 && a < 4) this.aspect = a; }
   startCalibration(t: number) { this.calib = { start: t, min: Infinity, samples: 0 }; }
   reset() {
-    this.hist = []; this.track = []; this.pendingDown = null; this.stable = "none"; this.pending = null; this.holdFiredFor = null; this.rearmSince = null; this.pinchDown = false;
+    this.track = [];
+    this.resetPose();
+  }
+  /** Forget poses/holds/pinch — but not the swipe track (a blurred hand the tracker lost mid-swipe). */
+  private resetPose() {
+    this.hist = []; this.pendingDown = null; this.stable = "none"; this.pending = null; this.holdFiredFor = null; this.rearmSince = null; this.pinchDown = false;
     this.fx.reset(); this.fy.reset(); this.pointerTrail = [];
   }
 
@@ -205,13 +222,16 @@ export class GestureEngine {
     const r = landmarks ? readPose(landmarks) : null;
 
     if (!r) {
-      // brief dropouts don't reset anything; a real absence re-arms everything
-      if (t - this.lastSeen > 280) { this.reset(); }
+      // brief dropouts don't reset anything; a real absence re-arms everything. The
+      // swipe track survives a little longer: a fast swipe blurs the hand and the
+      // tracker often loses it mid-sweep, finding it again where the swipe ended.
+      if (t - this.lastSeen > 280) this.resetPose();
+      if (t - this.lastSeen > SWIPE_GAP_MS) this.track = [];
       this.pinchDown = false;
       if (this.calib) out.calibrating = Math.min(1, (t - this.calib.start) / 4000);
       return out;
     }
-    if (t - this.lastSeen > 280) this.handSince = t; // the hand (re)appeared
+    if (t - this.lastSeen > SWIPE_GAP_MS) this.handSince = t; // the hand (re)appeared (a short loss mid-swipe doesn't count)
     this.lastSeen = t;
     out.hand = true; out.reading = r;
 
@@ -272,7 +292,18 @@ export class GestureEngine {
 
     // ---- swipes: fast, mostly straight travel of the palm. Open hand → agents
     // (→ DARWIN, ← ULTRON, ↑ EV, ↓ RUBIN); two fingers ← / → = previous / next.
-    this.track.push({ t, cx: r.center.x, cy: r.center.y, scale: r.scale, shape: shapeOf(r) });
+    // measured in real (square) proportions: x stretched by the frame's aspect
+    const A = this.aspect, lm0 = landmarks![0], lm9 = landmarks![9];
+    const prev = this.track[this.track.length - 1];
+    this.track.push({ t, cx: r.center.x * A, cy: r.center.y, scale: Math.hypot((lm0.x - lm9.x) * A, lm0.y - lm9.y) || r.scale, shape: shapeOf(r) });
+    // after a swipe the hand keeps going, then comes back: the lock against the way
+    // back runs from when the hand stops moving along that line
+    if (prev && this.lastSwipeDir && !this.swipeSettled && t - this.lastSwipe < 2200) {
+      const cur = this.track[this.track.length - 1], sc = cur.scale || 1;
+      const horiz = this.lastSwipeDir === "left" || this.lastSwipeDir === "right";
+      if (Math.abs(horiz ? cur.cx - prev.cx : cur.cy - prev.cy) / sc > 0.07) { this.swipeMoveEnd = t; this.stillSince = null; }
+      else if ((this.stillSince ??= t) && t - this.stillSince >= 350) this.swipeSettled = true; // a real pause
+    }
     while (this.track.length && t - this.track[0].t > p.swipeWindow) this.track.shift();
     // a pending swipe down counts once the hand comes to rest IN VIEW (a hand being
     // put down keeps falling and leaves the frame — that cancels it)
@@ -283,7 +314,7 @@ export class GestureEngine {
       if (t - pd.at > 800) this.pendingDown = null;
       else if (t - pd.at >= 90 && recent.length > 1 && falling < 0.3) {
         this.pendingDown = null;
-        if (this.settings.enabled.palm_down && t - (this.lastFire.rubin ?? -1e9) >= p.swipeCooldown && t - this.lastAny >= p.globalCooldown * 0.6) this.fire(out, "palm_down", pd.conf, t);
+        if (this.settings.enabled.palm_down && t - (this.lastFire.rubin ?? -1e9) >= p.swipeCooldown) this.fire(out, "palm_down", pd.conf, t);
       }
     }
     if (t - this.lastSwipe > p.swipeCooldown && this.track.length >= 3) {
@@ -321,16 +352,20 @@ export class GestureEngine {
           }
         }
         // the hand coming back after a swipe is not a swipe the other way
-        const returning = this.lastSwipeDir === OPPOSITE[best.dir] && t - this.lastSwipe < p.returnLockMs;
+        const returning = this.lastSwipeDir === OPPOSITE[best.dir] && t - Math.max(this.lastSwipe, this.swipeMoveEnd) < p.returnLockMs;
         if (id && !returning) {
           const conf = Math.round(Math.min(1, 0.55 + 0.45 * Math.min(1, best.travel / ((best.dir === "left" || best.dir === "right" ? p.swipeDist : p.swipeUpDist) * 1.6))) * 100) / 100;
           const action = GESTURE_BY_ID[id].action;
           if (id === "palm_down") this.pendingDown = { at: t, conf, cx: cur.cx, cy: cur.cy };
-          else if (this.settings.enabled[id] && t - (this.lastFire[action] ?? -1e9) >= p.swipeCooldown && t - this.lastAny >= p.globalCooldown * 0.6) this.fire(out, id, conf, t);
+          // (a hold that just fired — e.g. the open palm you paused with before swiping — doesn't block it)
+          else if (this.settings.enabled[id] && t - (this.lastFire[action] ?? -1e9) >= p.swipeCooldown) this.fire(out, id, conf, t);
         }
-        if (id || returning || shape === "closed") {
+        if (returning) {
+          // the way back is used up — and it stays "coming back" (it never becomes a swipe the other way)
+          this.swipeMoveEnd = t; this.track = []; this.hist = []; this.holdSince = t;
+        } else if (id || shape === "closed") {
           // a sweep is never also a hold; this movement is used up
-          this.lastSwipe = t; this.lastSwipeDir = best.dir; this.track = []; this.hist = []; this.holdSince = t; this.holdFiredFor = this.stable;
+          this.lastSwipe = t; this.lastSwipeDir = best.dir; this.swipeMoveEnd = t; this.swipeSettled = false; this.stillSince = null; this.track = []; this.hist = []; this.holdSince = t; this.holdFiredFor = this.stable;
         }
       }
     }
@@ -351,7 +386,8 @@ export class GestureEngine {
         ? Math.hypot(recent[recent.length - 1].cx - recent[0].cx, recent[recent.length - 1].cy - recent[0].cy) / r.scale
         : 0;
       if (travel > p.stillness) this.holdSince = t; // moving — restart the hold
-      const progress = Math.min(1, (t - this.holdSince) / p.holdMs);
+      // an open palm is also how every swipe starts — waking needs a longer, deliberate hold
+      const progress = Math.min(1, (t - this.holdSince) / (holdId === "open_palm" ? p.wakeHoldMs : p.holdMs));
       if (this.settings.enabled[holdId]) out.hold = { id: holdId, progress };
       if (progress >= 1) {
         const action = GESTURE_BY_ID[holdId].action;

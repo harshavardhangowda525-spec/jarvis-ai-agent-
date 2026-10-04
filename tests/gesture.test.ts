@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { readPose, type Pt } from "@/lib/gesture/classify";
 import { GestureEngine, DEFAULT_SETTINGS, OneEuro, toScreen, params, type GestureEvent, type GestureSettings } from "@/lib/gesture/engine";
 import { swipe, type Dir } from "./helpers/swipe-sim";
@@ -87,7 +89,7 @@ describe("gesture engine", () => {
   });
   it("maps every hold pose", () => {
     const e = new GestureEngine();
-    const ev = run(e, [...times(30, () => OPEN()), ...times(20, () => null), ...times(30, () => FIST()), ...times(20, () => null), ...times(30, () => DOWN())]);
+    const ev = run(e, [...times(50, () => OPEN()), ...times(20, () => null), ...times(30, () => FIST()), ...times(20, () => null), ...times(30, () => DOWN())]);
     expect(ev.map((x) => x.action)).toEqual(["wake", "jarvis", "reject"]);
   });
   it("an open hand swiping right opens DARWIN — and doesn't also wake", () => {
@@ -95,6 +97,31 @@ describe("gesture engine", () => {
     const frames = times(14, () => null).concat(Array.from({ length: 12 }, (_, i) => OPEN({ cx: 0.7 - i * 0.03 }))); // image-left = user's right
     const ev = run(e, [...frames, ...times(40, () => OPEN({ cx: 0.37 }))]);
     expect(ev.map((x) => x.action)).toEqual(["darwin"]);
+  });
+  it("pausing with an open hand before swiping doesn't wake — and doesn't block the swipe", () => {
+    // raise the hand, hold it still ~0.8 s (the natural pause), then sweep right
+    const frames = [...times(25, () => OPEN({ cx: 0.7 })), ...Array.from({ length: 12 }, (_, i) => OPEN({ cx: 0.7 - i * 0.03 })), ...times(20, () => OPEN({ cx: 0.37 }))];
+    expect(run(new GestureEngine(), frames).map((x) => x.action)).toEqual(["darwin"]);
+  });
+  it("an open hand held still on purpose (~1.3 s) still wakes", () => {
+    expect(run(new GestureEngine(), times(45, () => OPEN())).map((x) => x.action)).toEqual(["wake"]);
+  });
+  it("a fast swipe still counts when the tracker loses the blurred hand mid-sweep", () => {
+    const frames = [...times(20, () => OPEN({ cx: 0.7 })), OPEN({ cx: 0.68 }), OPEN({ cx: 0.64 }), ...times(9, () => null), OPEN({ cx: 0.36 }), ...times(20, () => OPEN({ cx: 0.35 }))];
+    expect(run(new GestureEngine(), frames).map((x) => x.action)).toEqual(["darwin"]);
+  });
+  it("on a widescreen camera a sideways swipe needs no more real movement than an up/down one", () => {
+    // 0.15 of a 16:9 frame's width: too little if width were treated like height, plenty in real proportions
+    const sweep = (e: GestureEngine) => run(e, [...times(20, () => OPEN({ cx: 0.6, s: 0.13 })), ...Array.from({ length: 10 }, (_, i) => OPEN({ cx: 0.6 - (i + 1) * 0.015, s: 0.13 })), ...times(20, () => OPEN({ cx: 0.45, s: 0.13 }))]);
+    expect(sweep(new GestureEngine()).map((x) => x.action)).toEqual([]);
+    const wide = new GestureEngine(); wide.setAspect(16 / 9);
+    expect(sweep(wide).map((x) => x.action)).toEqual(["darwin"]);
+  });
+  it("swipe right, pause a moment, swipe left: DARWIN then ULTRON", () => {
+    const e = new GestureEngine(); e.setAspect(4 / 3);
+    const frames = [...times(20, () => OPEN({ cx: 0.7 })), ...Array.from({ length: 10 }, (_, i) => OPEN({ cx: 0.7 - (i + 1) * 0.03 })), ...times(36, () => OPEN({ cx: 0.4 })),
+      ...Array.from({ length: 10 }, (_, i) => OPEN({ cx: 0.4 + (i + 1) * 0.03 })), ...times(20, () => OPEN({ cx: 0.7 }))];
+    expect(run(e, frames).map((x) => x.action)).toEqual(["darwin", "ultron"]);
   });
   it("an open hand swiping left opens ULTRON", () => {
     const ev = run(new GestureEngine(), [...times(6, () => OPEN({ cx: 0.3 })), ...Array.from({ length: 12 }, (_, i) => OPEN({ cx: 0.3 + i * 0.03 }))]);
@@ -233,12 +260,13 @@ describe("swipes the way people really do them", () => {
     chop: { right: "darwin", left: "ultron", up: "ev", down: "rubin" },
     two: { right: "next", left: "prev" },
   };
-  for (const [style, dirs] of Object.entries(want)) for (const [dir, action] of Object.entries(dirs) as [Dir, string][]) {
-    it(`${style} hand, swipe ${dir} → ${action} (≥95% of 60 swipes, never a wrong one — even with the hand coming back)`, () => {
+  const engineFor = (aspect: number) => { const e = new GestureEngine(); e.setAspect(aspect); return e; };
+  for (const aspect of [1, 4 / 3, 16 / 9]) for (const [style, dirs] of Object.entries(want)) for (const [dir, action] of Object.entries(dirs) as [Dir, string][]) {
+    it(`${style} hand, swipe ${dir} → ${action} on a ${aspect.toFixed(2)} camera (≥95% of 60 swipes, never a wrong one — even with the hand coming back)`, () => {
       let ok = 0, wrong = 0;
       for (let s = 1; s <= 60; s++) {
         const frames = swipe(dir, s * 7 + dir.length, { style: style as "open", returnStroke: s % 2 === 0, ms: 280 + (s % 5) * 70, dist: 0.24 + (s % 4) * 0.04 });
-        const acts = run(new GestureEngine(), frames).map((x) => x.action).filter((a) => a !== "wake");
+        const acts = run(engineFor(aspect), frames).map((x) => x.action).filter((a) => a !== "wake");
         if (acts.length === 1 && acts[0] === action) ok++; else if (acts.length) wrong++;
       }
       expect(wrong).toBe(0);
@@ -246,12 +274,32 @@ describe("swipes the way people really do them", () => {
     });
   }
 
-  it("a moving fist, a wave hello or small fidgets never navigate", () => {
+  for (const aspect of [1, 4 / 3, 16 / 9]) it(`a moving fist, a wave hello or small fidgets never navigate (${aspect.toFixed(2)} camera)`, () => {
     // a fist sweeping across (grab-and-throw territory) is not an agent swipe
-    const fist = run(new GestureEngine(), [...times(10, () => FIST({ cx: 0.7 })), ...Array.from({ length: 10 }, (_, i) => FIST({ cx: 0.7 - i * 0.04 }))]);
+    const fist = run(engineFor(aspect), [...times(10, () => FIST({ cx: 0.7 })), ...Array.from({ length: 10 }, (_, i) => FIST({ cx: 0.7 - i * 0.04 }))]);
     expect(fist.filter((x) => ["darwin", "ultron", "ev", "rubin", "prev", "next"].includes(x.action))).toEqual([]);
     // a small wave: open hand rocking a little side to side
-    const wave = run(new GestureEngine(), [...times(10, () => OPEN()), ...Array.from({ length: 40 }, (_, i) => OPEN({ cx: 0.5 + Math.sin(i / 2) * 0.05 }))]);
+    const wave = run(engineFor(aspect), [...times(10, () => OPEN()), ...Array.from({ length: 40 }, (_, i) => OPEN({ cx: 0.5 + Math.sin(i / 2) * 0.05 }))]);
     expect(wave.filter((x) => ["darwin", "ultron", "ev", "rubin"].includes(x.action))).toEqual([]);
+    // fidgets: small random drift of a relaxed hand for 4 s
+    let x = 0.5, y = 0.6; let seed = 3;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32) - 0.5;
+    const fidget = run(engineFor(aspect), Array.from({ length: 120 }, () => { x += rnd() * 0.02; y += rnd() * 0.02; return OPEN({ cx: x, cy: y }); }));
+    expect(fidget.filter((e) => ["darwin", "ultron", "ev", "rubin", "prev", "next"].includes(e.action))).toEqual([]);
   });
+});
+
+describe("swipes recorded from the real MediaPipe hand tracker", () => {
+  // A real hand photo swept across 640×480 and 640×360 camera frames with motion
+  // blur, run through MediaPipe Hand Landmarker (VIDEO mode, the app's settings).
+  // Each starts with the natural pause of a raised open hand before the sweep.
+  const data = JSON.parse(readFileSync(resolve(__dirname, "fixtures/real-swipes.json"), "utf8")) as { W: number; H: number; dir: Dir; ms: number; frames: { t: number; lm: number[][] | null }[] }[];
+  const want: Record<Dir, string> = { right: "darwin", left: "ultron", up: "ev", down: "rubin" };
+  for (const c of data) {
+    it(`${c.W}×${c.H} swipe ${c.dir} (${c.ms} ms) → ${want[c.dir]}, and nothing else`, () => {
+      const e = new GestureEngine(); e.setAspect(c.W / c.H);
+      const acts = c.frames.flatMap((f) => e.update(f.lm && f.lm.map(([x, y, z]) => ({ x, y, z })), f.t).events.map((x) => x.action));
+      expect(acts).toEqual([want[c.dir]]);
+    });
+  }
 });
