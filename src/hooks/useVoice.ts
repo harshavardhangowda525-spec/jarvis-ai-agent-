@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { takeSentences } from "@/lib/voice/sentences";
 import { ULTRON_FX, buildUltronFx, type UltronFxChain } from "@/lib/voice/ultron-fx";
-import { isVoiceSilent, muteIntent, onVoiceSilent, setVoiceSilent } from "@/lib/voice/silence";
+import { isVoiceSilent, muteIntent, onVoiceSilent, setVoiceSilent, takeWakeGreeting } from "@/lib/voice/silence";
 import { claimRecognizer, onRecognizerFree, recognizerFreeFor, recognizerHolder, releaseRecognizer, type Holder } from "@/lib/voice/mic-lock";
 
 /** ULTRON's voice effect is on unless turned off in this browser (localStorage "jarvis.ultron.voicefx" = "off"). */
@@ -914,7 +914,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
 
   // ---- "mute" / "unmute" — the same in every agent, and shared between them
   useEffect(() => {
-    const apply = (on: boolean) => {
+    const apply = (on: boolean, via?: "wake") => {
       silentRef.current = on; setSilent(on);
       if (on) {
         // muted: stop talking AND stop listening — the microphone is released completely
@@ -937,6 +937,11 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         // unmuted: open the microphone again and listen
         if (browserSTTRef.current) { setStatusBoth("listening"); startRecognitionRef.current(true); }
         else void initOnceRef.current();
+        // woken by "Hey JARVIS": the agent you're on answers (just one, even if two screens are open)
+        if (via === "wake") setTimeout(() => {
+          const h = recognizerHolder();
+          if (h ? h === ownerRef.current?.id : takeWakeGreeting()) void speakRef.current("I'm back.");
+        }, 60);
       }
     };
     apply(isVoiceSilent());

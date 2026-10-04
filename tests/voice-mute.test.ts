@@ -12,3 +12,18 @@ describe("'mute' works the same in every agent", () => {
     for (const t of ["mute the video", "is my mic working", "how many follow ups do we have", "what does mute mean", "is the mute button working", "stop", "open darwin", "be quiet in the meeting tomorrow"]) expect(muteIntent(t), t).toBeNull();
   });
 });
+
+describe("isUnmuteWake — the only phrase heard while muted", () => {
+  it("wakes on 'hey Jarvis' and friends", async () => {
+    const { isUnmuteWake } = await import("@/lib/voice/silence");
+    for (const s of ["Hey Jarvis", "hey jarvis.", "okay Jarvis", "hello Javis", "Jarvis wake up", "wake up Jarvis", "hey Rubin", "hey Darwin", "hi Mike", "Jarvis, unmute", "unmute", "Hey Jarvis what time is it"]) {
+      expect(isUnmuteWake(s), s).toBe(true);
+    }
+  });
+  it("ignores everything else", async () => {
+    const { isUnmuteWake } = await import("@/lib/voice/silence");
+    for (const s of ["what time is it", "Jarvis", "jarvis open darwin", "hey", "hey there", "they're jarvis fans", "mute", "call lead 7", "unmute the mic and order pizza now"]) {
+      expect(isUnmuteWake(s), s).toBe(false);
+    }
+  });
+});

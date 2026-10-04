@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { typedMute } from "@/lib/voice/silence";
+import { isVoiceSilent, setVoiceSilent, typedMute } from "@/lib/voice/silence";
 import { MikeLaunchOverlay } from "@/components/console/mike/launch-overlay";
 import { isMikeActivation } from "@/lib/mike/wake";
 import { RobinLaunchOverlay } from "@/components/console/robin/launch-overlay";
@@ -806,7 +806,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     // The "hey Jarvis" listener only runs while voice is off, and stays out of
     // the way while voice is being resumed (two recognizers would fight).
     enabled: !voiceStarted && !resumingVoice,
-    onWake: async () => { const ok = await enableVoice(); if (ok && voiceConfigured) setTimeout(() => voice.speak("Yes?"), 350); },
+    // "hey Jarvis" while muted also unmutes
+    onWake: async () => { if (isVoiceSilent()) setVoiceSilent(false, "wake"); const ok = await enableVoice(); if (ok && voiceConfigured) setTimeout(() => voice.speak("Yes?"), 350); },
   });
 
   useEffect(() => {

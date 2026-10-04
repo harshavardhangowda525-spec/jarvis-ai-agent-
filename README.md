@@ -616,11 +616,20 @@ Settings (all optional): `EV_DAILY=off`, `EV_DAILY_TZ` (default `Asia/Kolkata`),
 
 Say **"mute"** to any agent: JARVIS, DARWIN, RUBIN, MIKE, EV or ULTRON.
 "Jarvis, mute", "mute the mic", "stop listening" and "be quiet" work too.
-- The agent **stops talking and stops listening**. The microphone is released
-  completely, so nothing you say is heard or acted on.
+- The agent **stops talking and stops listening**. Nothing you say is heard or
+  acted on, with one exception: the wake phrase.
 - Mute applies to every agent: an agent you open next starts muted too.
-- A "MUTED — not listening" pill shows on every screen.
-- **To unmute** (it can't hear you while muted):
+- A "MUTED — say “Hey JARVIS” or click to unmute" pill shows on every screen.
+- **To unmute:**
+  - say **"Hey JARVIS"**. "Jarvis, wake up", "OK Jarvis", "Hey Rubin" (or
+    Darwin, Mike, Ultron) and "unmute" work too. The agent you're on says "I'm
+    back" and listens again.
+    - While muted, the browser's recognizer runs only to catch this phrase.
+      Everything else is thrown away on the spot: it is never shown, sent or
+      acted on.
+    - It needs mic permission you already gave. Muting before voice was ever
+      on won't trigger a permission prompt; use the pill instead.
+    - It works in Chrome and Edge.
   - click the pill;
   - click the mic button in any agent (it's the same switch);
   - type "unmute" in any agent's box;

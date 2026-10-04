@@ -29,6 +29,7 @@ import { useClock } from "@/hooks/useDeviceMetrics";
 import { GestureProvider, useGesture } from "@/components/gesture/gesture-provider";
 import { Hand, VolumeX } from "lucide-react";
 import { isVoiceSilent, onVoiceSilent, setVoiceSilent } from "@/lib/voice/silence";
+import { useMutedWake } from "@/hooks/useMutedWake";
 
 // Full mission-control nav. Every item routes to a real page (several are
 // conceptual aliases of the same working page — e.g. Command Center is the
@@ -285,18 +286,19 @@ function GestureToggle() {
   );
 }
 
-/** While muted, every agent shows this: nothing is listening or talking. A click turns the mic and voice back on. */
+/** While muted, every agent shows this: nothing is heard but "Hey JARVIS". Saying it, or a click, turns the mic and voice back on. */
 function MutedPill() {
   const [silent, setSilent] = useState(false);
+  const wakeReady = useMutedWake();
   useEffect(() => { setSilent(isVoiceSilent()); return onVoiceSilent(setSilent); }, []);
   if (!silent) return null;
   return (
     <button
       type="button" onClick={() => setVoiceSilent(false)} data-voice-muted
-      title="Muted — the microphone is off. Click to turn it back on."
+      title={wakeReady ? "Muted — only listening for “Hey JARVIS”. Say it, or click, to unmute." : "Muted — the microphone is off. Click to turn it back on."}
       className="fixed bottom-20 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200/30 bg-slate-950/80 px-3.5 py-1.5 text-[10.5px] tracking-[0.16em] text-amber-100 shadow-[0_8px_30px_-10px_rgba(0,0,0,0.8)] backdrop-blur-md transition hover:border-amber-200/60 md:bottom-5"
     >
-      <VolumeX className="h-3.5 w-3.5" /> MUTED <span className="normal-case tracking-normal text-amber-100/60">— not listening · click to unmute</span>
+      <VolumeX className="h-3.5 w-3.5" /> MUTED <span className="normal-case tracking-normal text-amber-100/60">{wakeReady ? "— say “Hey JARVIS” or click to unmute" : "— not listening · click to unmute"}</span>
     </button>
   );
 }
