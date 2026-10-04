@@ -45,6 +45,8 @@ model User {
   mikeAlerts          MikeAlert[]
   robinLeads          RobinLead[]
   robinSettings       RobinSettings?
+  gateCredentials     GateCredential[]
+  gateSecurity        GateSecurity?
 
   @@index([email])
 }
@@ -975,4 +977,52 @@ model RobinAudit {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Biometric gate (face unlock). The face itself never reaches JARVIS: it is
+// matched by the device's own biometric system (Windows Hello, Face ID, Touch ID,
+// Android) and JARVIS only stores the public key of a WebAuthn credential that
+// the device unlocks after a successful match.
+// ---------------------------------------------------------------------------
+
+/// A device credential that unlocks JARVIS after the device verifies your face.
+model GateCredential {
+  id           String    @id @default(cuid())
+  userId       String
+  credentialId String    @unique // base64url credential id
+  publicKey    Bytes // COSE public key — not biometric data
+  counter      BigInt    @default(0)
+  transports   String[]
+  label        String
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// PIN fallback + failed-attempt lockout for the gate.
+model GateSecurity {
+  userId      String    @id
+  pinHash     String?
+  failedCount Int       @default(0)
+  lockouts    Int       @default(0)
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// One-time WebAuthn challenges (consumed on use, expire after a few minutes).
+model GateChallenge {
+  id        String   @id @default(cuid())
+  challenge String   @unique
+  kind      String // "register" | "unlock"
+  userId    String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
 }

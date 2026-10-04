@@ -334,6 +334,8 @@ balancer / uptime monitor.
   `Referrer-Policy`, `Permissions-Policy`).
 - The calculator uses a hand-written parser — **no `eval`/`Function`**.
 - Memory refuses to store passwords, keys, and tokens.
+- A **biometric gate** (face unlock) stands in front of JARVIS for every browser
+  session — see [Face unlock](#face-unlock-biometric-gate).
 
 ## Troubleshooting
 
@@ -611,6 +613,88 @@ Settings (all optional): `EV_DAILY=off`, `EV_DAILY_TZ` (default `Asia/Kolkata`),
 `EV_DAILY_START` (`04:00`), `EV_DAILY_READY_BY` (`05:30`), `EV_DAILY_POST_TIME`
 (`19:00`), `EV_DAILY_AUTOPUBLISH` (`off`), `EV_DAILY_VIDEO` (`auto` | `motion` |
 `magichour`), `FFMPEG_PATH` (default: the bundled `ffmpeg-static`).
+
+## Face unlock (biometric gate)
+
+JARVIS opens behind a full-screen authentication gate. It verifies your face,
+then hands over into the JARVIS core: "IDENTITY VERIFIED → WELCOME → JARVIS
+ONLINE", and the voice interface switches on.
+
+**Who decides it's you: your device, not a webcam guess.**
+- Face matching is done by the device's own secure biometric system, through
+  WebAuthn with user verification required:
+  - Windows Hello Face (an IR camera, with anti-spoofing);
+  - Face ID or Touch ID on Apple devices;
+  - Android biometrics.
+- When the device recognizes you, it signs a one-time challenge with a key that
+  never leaves its secure hardware. The server checks that signature against
+  the public key saved when you enrolled.
+- Only a valid signature, verified by the server, unlocks JARVIS. That same
+  result sets the unlock cookie the middleware enforces.
+- The webcam on the gate screen only *finds* your face, so the holographic
+  scanner can follow it. This uses MediaPipe on-device: the video is never
+  shown, stored or uploaded, and it can't unlock anything. Ordinary webcam
+  face detection is not treated as identity verification.
+- JARVIS never receives, stores or uploads face images, templates or camera
+  footage. The database holds only the credential id and its **public** key
+  (`GateCredential`).
+
+**Set it up:**
+1. Turn on Windows Hello Face in Windows Settings → Accounts → Sign-in options.
+   Use the equivalent on other devices.
+2. In JARVIS, go to Settings → **Face unlock** → **Enroll face**.
+   - Windows asks for your face; that's the enrolment.
+   - **Re-enroll** replaces your face credentials; the trash icon removes one.
+   - The same section sets an optional **PIN** (6–12 digits).
+3. Changing these settings needs an unlock from the last 10 minutes. If yours is
+   older, JARVIS sends you through the gate first.
+
+**Every launch:**
+1. Opening sequence: a point of light → the AI core → "JARVIS SYSTEM
+   INITIALIZING" → "BIOMETRIC AUTHENTICATION REQUIRED".
+2. The scanner looks for your face: CAMERA READY → FACE DETECTED → ANALYZING
+   BIOMETRIC DATA, with landmarks, contours, brackets and a scan line.
+3. VERIFYING IDENTITY: Windows Hello confirms it's you.
+4. The result:
+   - **Success:** IDENTITY VERIFIED, then the unlock animation into JARVIS.
+   - **Failure:** IDENTITY NOT RECOGNIZED. It never says why. It won't keep
+     re-prompting while you sit there: look away, or tap **Scan again**.
+
+**Other states:**
+- **Camera:** CAMERA ACCESS REQUIRED (allow, or verify without the camera) and
+  CAMERA ERROR (no camera, blocked or busy). Windows Hello still works in both,
+  because it uses its own sensor.
+- **No biometric hardware, or nothing enrolled:** the PIN or password unlocks.
+- **Signed out on a device with face unlock:** the gate signs you in by face.
+  "Sign in with password" goes to the normal login page. Signing in with your
+  password counts as passing the gate.
+
+**Session rules:**
+- An unlock lasts for the browser session only, and 12 hours at most. Closing
+  the browser, signing out, or **Lock** (🔒 in the top bar, or Settings) locks
+  JARVIS again.
+- While locked, every API returns `423 Locked`, not just the pages. The
+  exceptions are sign-in, the gate itself, health checks and the
+  secret-protected cron routes.
+- An unlock that expires while JARVIS is open sends you back to the gate.
+
+**Lockout:**
+- Five failed attempts in a row lock the gate for 1 minute. Every kind of
+  attempt counts: face not recognized, a dismissed device prompt, a wrong PIN or
+  a wrong password.
+- Each further lockout doubles the wait, up to 30 minutes.
+- While locked out, nothing unlocks, not even the correct PIN or password.
+
+**Good to know:**
+- WebAuthn credentials belong to one site address. A face enrolled on
+  `http://localhost:3000` (`npm run local`) doesn't work on your Vercel domain;
+  enrol on each.
+- The implementation is modular, so the method can be swapped later:
+  - `lib/gate/server.ts` and `api/gate/*`: verification;
+  - `lib/gate/token.ts`: the session-bound cookie;
+  - `lib/gate/policy.ts`: lockouts;
+  - `lib/gate/machine.ts`: UI states;
+  - `components/gate/*`: the visuals.
 
 ## Mute
 

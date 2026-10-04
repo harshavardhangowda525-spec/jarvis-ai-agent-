@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Check, Link2, Unplug } from "lucide-react";
+import { GateSettings } from "@/components/gate/gate-settings";
 
 interface Profile {
   displayName: string | null;
@@ -340,6 +341,9 @@ export function SettingsClient() {
           </div>
         )}
       </section>
+
+      {/* Face unlock (the biometric gate) */}
+      <GateSettings />
 
       {/* Security */}
       <section className="glass rounded-2xl p-5">

@@ -17,6 +17,7 @@ import {
   StickyNote,
   Brain,
   LogOut,
+  Lock,
   Maximize2,
   MousePointerClick,
   Code2,
@@ -116,6 +117,28 @@ export function AppShell({
     router.refresh();
   }
 
+  // Lock: stay signed in, but the biometric gate asks again
+  async function lock() {
+    await fetch("/api/gate/lock", { method: "POST" }).catch(() => {});
+    router.replace(`/unlock?next=${encodeURIComponent(location.pathname + location.search)}`);
+  }
+
+  // The unlock ran out (12 h) while JARVIS was open: every API answers 423 →
+  // go to the gate instead of failing quietly.
+  useEffect(() => {
+    const orig = window.fetch;
+    let sent = false;
+    window.fetch = async (...args) => {
+      const res = await orig(...args);
+      if (res.status === 423 && res.headers.get("x-jarvis-locked") === "1" && !sent) {
+        sent = true;
+        router.replace(`/unlock?next=${encodeURIComponent(location.pathname + location.search)}`);
+      }
+      return res;
+    };
+    return () => { window.fetch = orig; };
+  }, [router]);
+
   // Only the first nav item for a given href is "active-eligible", so duplicate
   // aliases (Dashboard/Command Center) never both light up.
   const primaryIndexForHref = new Map<string, number>();
@@ -174,6 +197,9 @@ export function AppShell({
               {name[0]?.toUpperCase()}
             </span>
             <span className="hidden text-sm text-foreground/90 md:block">{name}</span>
+            <button onClick={lock} aria-label="Lock JARVIS" title="Lock JARVIS (face unlock to return)">
+              <Lock className="h-4 w-4 text-muted-foreground transition hover:text-accent" />
+            </button>
             <button onClick={logout} aria-label="Log out" title="Log out">
               <LogOut className="h-4 w-4 text-muted-foreground transition hover:text-destructive" />
             </button>

@@ -35,7 +35,9 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         setError(json.error || "Something went wrong.");
         return;
       }
-      const next = search.get("next") || "/dashboard";
+      const raw = search.get("next") || "";
+      // same-site paths only (never "//elsewhere")
+      const next = raw.startsWith("/") && !raw.startsWith("//") && !raw.startsWith("/\\") ? raw : "/dashboard";
       router.push(next);
       router.refresh();
     } catch {

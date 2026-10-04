@@ -7,6 +7,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { getDb } from "@/lib/db";
+import { GATE_COOKIE, gateCookieOptions, signGate, type GateMethod } from "@/lib/gate/token";
 import {
   signSession,
   verifySession,
@@ -31,10 +32,14 @@ export function sessionCookieOptions() {
   };
 }
 
-/** Issue a new session: persist a row, sign a JWT, set the cookie. */
+/**
+ * Issue a new session: persist a row, sign a JWT, set the cookie. Signing in IS
+ * an authentication (password, or face sign-in from the gate), so this browser
+ * session also passes the biometric gate.
+ */
 export async function createSession(
   user: AuthUser,
-  meta: { userAgent?: string; ipAddress?: string } = {},
+  meta: { userAgent?: string; ipAddress?: string; gateMethod?: GateMethod } = {},
 ): Promise<string> {
   const db = getDb();
   const tokenId = randomUUID();
@@ -50,6 +55,7 @@ export async function createSession(
   });
   const token = await signSession({ sub: user.id, email: user.email, jti: tokenId });
   cookies().set(SESSION_COOKIE, token, sessionCookieOptions());
+  cookies().set(GATE_COOKIE, await signGate({ sub: user.id, sid: tokenId, method: meta.gateMethod ?? "signin" }), gateCookieOptions());
   return token;
 }
 
@@ -91,6 +97,7 @@ export async function destroyCurrentSession(): Promise<void> {
     }
   }
   cookies().delete(SESSION_COOKIE);
+  cookies().delete(GATE_COOKIE);
 }
 
 /** Throw-if-unauthenticated helper for route handlers. */
