@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { typedMute } from "@/lib/voice/silence";
 import { logActivity } from "@/lib/activity/client";
 import { useRouter } from "next/navigation";
 import { Mic, MicOff, Loader2, LogOut, MapPin, X, Radar, Instagram, Globe, ExternalLink, Database, RotateCw } from "lucide-react";
@@ -266,6 +267,8 @@ export function DarwinConsole() {
     sendRef.current = (t: string) => {
       const s = t.trim();
       if (!s) return;
+      const muted = typedMute(s);
+      if (muted) { agent.appendLocalExchange(s, muted); return; }
       if (DEACTIVATE_RE.test(s)) { deactivateRef.current(); return; }
       if (isMikeActivation(s)) { speak("Handing over to MIKE."); router.push("/dashboard/mike"); return; }
       // shared memory with JARVIS — saved directly, no AI needed

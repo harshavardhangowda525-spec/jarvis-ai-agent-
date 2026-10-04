@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { takeSentences } from "@/lib/voice/sentences";
 import { ULTRON_FX, buildUltronFx, type UltronFxChain } from "@/lib/voice/ultron-fx";
+import { isVoiceSilent, muteIntent, onVoiceSilent, setVoiceSilent } from "@/lib/voice/silence";
 import { claimRecognizer, onRecognizerFree, recognizerFreeFor, recognizerHolder, releaseRecognizer, type Holder } from "@/lib/voice/mic-lock";
 
 /** ULTRON's voice effect is on unless turned off in this browser (localStorage "jarvis.ultron.voicefx" = "off"). */
@@ -128,6 +129,9 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
   const [enabled, setEnabledState] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState(""); // live interim words being heard
+  // "mute": the agent stays quiet (replies on screen only) but keeps listening — one setting for every agent
+  const silentRef = useRef(false);
+  const [silent, setSilent] = useState(false);
 
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -186,6 +190,15 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     statusRef.current = s;
     setStatus(s);
   }, []);
+
+  /**
+   * Hand what you said to the agent — except "mute" / "unmute", which every agent
+   * handles the same way, right here. Returns true when it was one of those.
+   */
+  const muteCmdRef = useRef<(text: string) => boolean>(() => false);
+  const deliver = (text: string) => { if (muteCmdRef.current(text)) return; onTranscriptRef.current(text); };
+  const onTranscriptRef = useRef(onTranscript);
+  onTranscriptRef.current = onTranscript;
 
   const fail = useCallback(
     (message: string, s: VoiceStatus = "error") => {
@@ -265,7 +278,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       }
       const text: string = (json.data?.text ?? "").trim();
       if (text) {
-        onTranscript(text);
+        deliver(text);
         // Fallback re-arm: if the consumer doesn't move the mic to "speaking"
         // itself (e.g. ULTRON speaks via its own TTS, not voice.speak), resume
         // listening so the NEXT command is heard. Guarded on "processing" so it
@@ -282,7 +295,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       fail("Network error during transcription.", "error");
       setTimeout(() => enabledRef.current && !mutedRef.current && setStatusBoth("listening"), 1200);
     }
-  }, [fail, onTranscript, setStatusBoth, recognitionSupported]);
+  }, [fail, setStatusBoth, recognitionSupported]);
 
   const stopCapture = useCallback(() => {
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
@@ -349,7 +362,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
         if (!hasFinal || !live) return;
         // Finalized → dispatch the command, keep the words visible briefly.
         setStatusBoth("processing");
-        onTranscript(live);
+        deliver(live);
         setTimeout(() => {
           if (enabledRef.current && !mutedRef.current && statusRef.current === "processing") {
             setTranscript("");
@@ -747,7 +760,7 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
 
   const speak = useCallback(
     async (text: string): Promise<void> => {
-      if (!enabledRef.current || mutedRef.current) return;
+      if (!enabledRef.current || mutedRef.current || silentRef.current) return; // muted: reply on screen only
       const el = audioElRef.current;
       if (!el || !text.trim()) return;
       const seq = ++speakSeqRef.current;
@@ -811,10 +824,10 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
    */
   const speakStream = useCallback((): SpeechStream => {
     const noop: SpeechStream = { push: () => {}, end: () => {} };
-    if (!enabledRef.current || mutedRef.current || !audioElRef.current) return noop;
+    if (!enabledRef.current || mutedRef.current || silentRef.current || !audioElRef.current) return noop;
     stopSpeaking(); // a new reply replaces anything still playing
     const gen = speechGenRef.current;
-    const live = () => gen === speechGenRef.current && enabledRef.current && !mutedRef.current;
+    const live = () => gen === speechGenRef.current && enabledRef.current && !mutedRef.current && !silentRef.current;
 
     let buf = "";
     let first = true;
@@ -889,6 +902,37 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
       },
     };
   }, [setStatusBoth, speakBrowser, startRecognition, pauseRecognition, stopSpeaking, trackEnvelope, prepareOutput]);
+
+  // ---- "mute" / "unmute" — the same in every agent, and shared between them
+  useEffect(() => {
+    const apply = (on: boolean) => {
+      silentRef.current = on; setSilent(on);
+      if (on) {
+        stopSpeaking();
+        if (statusRef.current === "speaking" && enabledRef.current && !mutedRef.current) {
+          setStatusBoth("listening");
+          if (browserSTTRef.current) startRecognitionRef.current();
+        }
+      }
+    };
+    apply(isVoiceSilent());
+    return onVoiceSilent(apply);
+  }, [setStatusBoth, stopSpeaking]);
+  muteCmdRef.current = (text: string) => {
+    const m = muteIntent(text);
+    if (!m) return false;
+    setTranscript("");
+    if (m === "mute") {
+      setVoiceSilent(true);
+      if (enabledRef.current && !mutedRef.current && statusRef.current !== "speaking") setStatusBoth("listening");
+    } else {
+      setVoiceSilent(false);
+      setStatusBoth(enabledRef.current && !mutedRef.current ? "listening" : "idle");
+      void speakRef.current("I'm back.");
+    }
+    return true;
+  };
+  const speakRef = useRef<(t: string) => Promise<void>>(async () => {});
 
   const toggleMute = useCallback(() => {
     setMuted((m) => {
@@ -970,6 +1014,8 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     };
   }, [stopSpeaking]);
 
+  speakRef.current = speak;
+
   return {
     status,
     level,
@@ -988,5 +1034,11 @@ export function useVoice({ onTranscript, onError, autoListen = true, voiceProfil
     stop,
     toggleMute,
     setEnabled,
+    /** "Mute" is on: the agent stays quiet (replies on screen only) but keeps listening. */
+    silent,
+    /** Turn the voice off/on for every agent. */
+    setSilent: setVoiceSilent,
+    /** Typed text: handles "mute" / "unmute" like the spoken words. True = it was one. */
+    command: (text: string) => muteCmdRef.current(text),
   };
 }

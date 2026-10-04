@@ -612,6 +612,21 @@ Settings (all optional): `EV_DAILY=off`, `EV_DAILY_TZ` (default `Asia/Kolkata`),
 (`19:00`), `EV_DAILY_AUTOPUBLISH` (`off`), `EV_DAILY_VIDEO` (`auto` | `motion` |
 `magichour`), `FFMPEG_PATH` (default: the bundled `ffmpeg-static`).
 
+## Mute
+
+Say **"mute"** to any agent: JARVIS, DARWIN, RUBIN, MIKE, EV or ULTRON.
+"Jarvis, mute", "be quiet" and "stop talking" work too.
+- The agent stops talking straight away. Its replies still appear on screen,
+  but aren't spoken.
+- It keeps listening, so your commands still work.
+- Mute applies to every agent: the agent you switch to stays quiet as well.
+- A "VOICE MUTED" pill shows while it's on.
+- Say **"unmute"** ("speak again", "voice on") to any agent, or click the pill,
+  to hear them again.
+- Typing "mute" / "unmute" works too.
+- "Mute the mic" is left alone: the microphone button is different, and stops
+  the agent hearing you.
+
 ## Gesture control
 
 Control JARVIS with your hand in front of the camera. It's an extra layer on top

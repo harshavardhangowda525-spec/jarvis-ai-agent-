@@ -27,7 +27,8 @@ import { cn } from "@/lib/utils";
 import { ReactorLogo, RobotFace, Chevrons, Waveform } from "@/components/hud/visuals";
 import { useClock } from "@/hooks/useDeviceMetrics";
 import { GestureProvider, useGesture } from "@/components/gesture/gesture-provider";
-import { Hand } from "lucide-react";
+import { Hand, VolumeX } from "lucide-react";
+import { isVoiceSilent, onVoiceSilent, setVoiceSilent } from "@/lib/voice/silence";
 
 // Full mission-control nav. Every item routes to a real page (several are
 // conceptual aliases of the same working page — e.g. Command Center is the
@@ -256,6 +257,7 @@ export function AppShell({
           </Link>
         ))}
       </nav>
+      <MutedPill />
     </div>
     </GestureProvider>
   );
@@ -279,6 +281,22 @@ function GestureToggle() {
       title={on ? "Gesture mode is on — click to turn it off and release the camera" : "Gesture mode — control JARVIS with your hand (camera opens only while it's on)"}
     >
       <Hand className="h-4 w-4" />
+    </button>
+  );
+}
+
+/** While "mute" is on, every agent shows this — the agents keep listening, so "unmute" (or a click) brings the voice back. */
+function MutedPill() {
+  const [silent, setSilent] = useState(false);
+  useEffect(() => { setSilent(isVoiceSilent()); return onVoiceSilent(setSilent); }, []);
+  if (!silent) return null;
+  return (
+    <button
+      type="button" onClick={() => setVoiceSilent(false)} data-voice-muted
+      title="Click to hear the agents again"
+      className="fixed bottom-20 left-1/2 z-[80] flex -translate-x-1/2 items-center gap-2 rounded-full border border-amber-200/30 bg-slate-950/80 px-3.5 py-1.5 text-[10.5px] tracking-[0.16em] text-amber-100 shadow-[0_8px_30px_-10px_rgba(0,0,0,0.8)] backdrop-blur-md transition hover:border-amber-200/60 md:bottom-5"
+    >
+      <VolumeX className="h-3.5 w-3.5" /> VOICE MUTED <span className="normal-case tracking-normal text-amber-100/60">— say “unmute”</span>
     </button>
   );
 }

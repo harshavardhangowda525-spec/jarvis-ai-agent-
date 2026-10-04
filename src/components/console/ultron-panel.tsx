@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { typedMute } from "@/lib/voice/silence";
 import { isMikeActivation } from "@/lib/mike/wake";
 import { logActivity } from "@/lib/activity/client";
 import {
@@ -183,6 +184,7 @@ export function UltronPanel() {
   useEffect(() => {
     cmdRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
+      if (typedMute(t)) return;
       // Switching agents by voice — these are never sent to ULTRON as coding goals.
       if (/\b(deactivate|shut ?down|stand ?down|close|exit|leave)\b.*\b(ultron|ultra ?on)\b|^(deactivate|exit|close|stand ?down)[\s!.,]*$|\b(back to|go to|open|return to|switch to) jarvis\b/.test(low)) {
         e.speak("Handing you back to JARVIS."); setTimeout(() => router.push("/dashboard"), 900); return;
@@ -252,6 +254,7 @@ export function UltronPanel() {
     ev.currentTarget.style.setProperty("--my", `${ev.clientY - r.top}px`);
   };
   const submit = () => {
+    if (typedMute(goal)) { setGoal(""); return; } // "mute" / "unmute" — never sent to ULTRON as a goal
     if (!connected || e.working || !goal.trim()) return;
     dispatch(goal);
     setGoal("");

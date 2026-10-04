@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isVoiceSilent } from "@/lib/voice/silence";
 
 /**
  * Client for the local ULTRON runtime (real dev subagent on the user's machine).
@@ -77,7 +78,7 @@ export function useUltron() {
 
   /** Speak text in ULTRON's own voice via the shared TTS endpoint. */
   const speak = useCallback(async (text: string) => {
-    if (mutedRef.current || !text?.trim()) return;
+    if (mutedRef.current || isVoiceSilent() || !text?.trim()) return; // "mute": every agent stays quiet
     // ULTRON often reports and then states the same result — say it once.
     if (lastSpokenRef.current.text === text && Date.now() - lastSpokenRef.current.at < 5000) return;
     lastSpokenRef.current = { text, at: Date.now() };

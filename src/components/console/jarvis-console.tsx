@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { typedMute } from "@/lib/voice/silence";
 import { MikeLaunchOverlay } from "@/components/console/mike/launch-overlay";
 import { isMikeActivation } from "@/lib/mike/wake";
 import { RobinLaunchOverlay } from "@/components/console/robin/launch-overlay";
@@ -525,6 +526,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   useEffect(() => {
     sendRef.current = (t: string) => {
       const low = t.toLowerCase().trim();
+      // "mute" / "unmute" (typed — spoken ones are handled by the voice engine itself)
+      const muted = typedMute(t);
+      if (muted) { agent.appendLocalExchange(t, muted); return; }
       const reply = (answer: string) => {
         agent.appendLocalExchange(t, answer);
         if (voiceStarted && !voice.muted && voice.enabled) voice.speak(answer);

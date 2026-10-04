@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { typedMute } from "@/lib/voice/silence";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Mic, MicOff, Loader2, LogOut, CalendarClock, Presentation, FileText, Crown, BarChart3, Settings2, UserPlus, Send, Filter, TrendingUp, ChevronDown, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -380,6 +381,8 @@ export function RobinConsole() {
     const text = raw.trim();
     if (!text) return;
     setReply(null);
+    const muted = typedMute(text);
+    if (muted) { setReply(muted); return; }
     const cmd = parseRobinCommand(text);
     // the note Rubin just asked for
     const pn = pendingNote.current;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { typedMute } from "@/lib/voice/silence";
 import { useRouter } from "next/navigation";
 import { Mic, MicOff, Loader2, LogOut, Radar, FlaskConical, BookOpen, Bell, ShieldCheck, Send, SlidersHorizontal, Maximize2, CandlestickChart } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -459,6 +460,7 @@ export function MikeConsole() {
   const handle = useCallback((raw: string) => {
     const text = raw.trim();
     if (!text) return;
+    if (typedMute(text)) return; // "mute" / "unmute"
     if (isMikeDeactivation(text)) { deactivate(); return; }
     const cmd = parseMikeCommand(text);
     switch (cmd.kind) {
