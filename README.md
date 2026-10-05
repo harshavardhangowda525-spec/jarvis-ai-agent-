@@ -154,6 +154,9 @@ See [`.env.example`](./.env.example). Summary:
 | `ELEVENLABS_MODEL_ID` | optional | Default `eleven_turbo_v2_5` (low latency) |
 | `ELEVENLABS_STT_MODEL_ID` | optional | Default `scribe_v1` |
 | `SEARCH_API_KEY` | for web search | Tavily key |
+| `SEARXNG_URL` | optional (DARWIN) | Your own SearXNG instance — free, unlimited web search for DARWIN |
+| `BRAVE_SEARCH_API_KEY` | optional (DARWIN) | Brave Search API key (free plan) |
+| `SERPER_API_KEY` | optional (DARWIN) | Serper.dev key (Google results, free searches on sign-up) |
 | `WEATHER_API_KEY` | for weather | OpenWeatherMap key |
 | `GOOGLE_/GITHUB_/SLACK_/NOTION_*` | per integration | OAuth client credentials |
 
@@ -832,7 +835,7 @@ need to start it.
 3. It verifies the website with every available signal:
    - the listing's own website field;
    - the Google business profile (`GOOGLE_PLACES_API_KEY`);
-   - a web search (`SEARCH_API_KEY`, Tavily), where directories such as Justdial and social pages don't count as websites;
+   - a web search (any of the free searches below: SearXNG, Brave, Tavily, Serper), where directories such as Justdial and social pages don't count as websites;
    - a live accessibility check of any site found;
    - domains built from the business name, which only count if the page shows the full name plus the locality or phone.
 4. Each business gets one status: **No website**, **Website exists**, **Website unclear**, **Website temporarily unavailable** (or permanently closed). Only **No website** counts toward the target. In strict mode (the default), that also needs an independent confirmation from Google or web search.
@@ -919,12 +922,30 @@ DARWIN says so instead of quietly finding nothing:
 - **Already caught by an earlier outage:** businesses marked "unclear" only
   because a check failed are looked at again right away, not in three weeks.
 
-**Web-search credits last the whole month.** Tavily's free plan has 1,000 credits
-a month, and JARVIS and MIKE share the same key. Spent freely, DARWIN would use
-them up in a few days and then find nothing for the rest of the month. Instead:
-- each day gets its share of `DARWIN_SEARCH_MONTHLY_CREDITS` (default 800):
-  what's left ÷ days left;
-- set it to your plan's size, or `0` to turn pacing off;
+**More free web searches = more leads.** The web search is what confirms a
+business really has no website (and finds missing phones and emails), so each
+search DARWIN can make is a lead it can verify. DARWIN can use several free
+searches together, in this order — set any you have:
+
+| Search | Setting | Free allowance | How to get it |
+|---|---|---|---|
+| SearXNG | `SEARXNG_URL` (e.g. `http://localhost:8080`) | unlimited | Self-host: `docker run -d -p 8080:8080 searxng/searxng`, then in its `settings.yml` add `json` under `search: formats:` and restart |
+| Brave Search | `BRAVE_SEARCH_API_KEY` | ~2,000 / month | Sign up at brave.com/search/api, choose the free plan, create a key |
+| Tavily | `SEARCH_API_KEY` | 1,000 / month (shared with JARVIS and MIKE) | tavily.com |
+| Serper | `SERPER_API_KEY` | 2,500 searches on sign-up | serper.dev |
+
+When one runs out of searches, rejects its key or is down, DARWIN says so in the
+day's log and moves on to the next one for the rest of the day. Only when none of
+them can answer does the search pause.
+
+**Web searches last the whole month.** Spent freely, the monthly allowances would
+be used up in a few days, leaving nothing for the rest of the month. Instead:
+- each search with a monthly allowance gets a daily share: what's left ÷ days left;
+- the allowances are `DARWIN_BRAVE_MONTHLY` (default 2000),
+  `DARWIN_SEARCH_MONTHLY_CREDITS` (Tavily, default 800) and
+  `DARWIN_SERPER_MONTHLY` (default 2500) — set them to your plans' sizes, or `0`
+  to turn pacing off for that one;
+- SearXNG has no allowance, so with it DARWIN is never limited by search;
 - with `GOOGLE_PLACES_API_KEY` set, a business Google already settled doesn't
   use a web search at all, unless its phone or email is still missing.
 
@@ -996,10 +1017,10 @@ re-opens if it had already finished.
   its Google rating when that's verified and good. It's sent from your Gmail
   under the safeguards above.
 - **Honest shortfall.** If fewer are found, the report says how many and why.
-  For example, the others had no public email, or `SEARCH_API_KEY` isn't set.
+  For example, the others had no public email, or no web search is set up.
 
-The email goal needs automatic email on, Google connected, and ideally
-`SEARCH_API_KEY`. Without the web search, only emails on the map listing count, and
+The email goal needs automatic email on, Google connected, and ideally a web
+search (`SEARXNG_URL`, `BRAVE_SEARCH_API_KEY`, `SEARCH_API_KEY` or `SERPER_API_KEY`). Without the web search, only emails on the map listing count, and
 those are rare. Keep `DARWIN_AUTO_EMAIL_DAILY_CAP` at least as high as the goal.
 
 Settings (optional):
@@ -1009,8 +1030,10 @@ Settings (optional):
 - `DARWIN_DAILY_DEADLINE` (`14:00`)
 - `DARWIN_DAILY_REQUIRE_PHONE` (`on`)
 - `DARWIN_DAILY_TARGET` (`50`)
-- `DARWIN_SEARCH_MONTHLY_CREDITS` (`800`; `0` = no pacing): how many web-search
+- `DARWIN_SEARCH_MONTHLY_CREDITS` (`800`; `0` = no pacing): how many Tavily
   credits DARWIN spreads over each month
+- `DARWIN_BRAVE_MONTHLY` (`2000`) and `DARWIN_SERPER_MONTHLY` (`2500`): the same
+  for Brave and Serper
 - `DARWIN_DAILY_LOCATIONS` and `DARWIN_DAILY_CATEGORIES` (comma- or line-separated; also editable in DARWIN)
 - **Every area of Bangalore.** By default the daily search covers 75 areas: the
   centre and out to Yelahanka, Whitefield, Electronic City, Sarjapur and Kengeri.

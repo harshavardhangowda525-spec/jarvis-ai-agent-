@@ -16,6 +16,7 @@ import {
 } from "../geoapify";
 import { logActivity } from "../store";
 import { gatherSignals, googleAvailable, searchAvailable, type Gathered, type Outage } from "./checks";
+import { SearchPool, configuredProviders, dailyShares, type Provider, type ProviderId } from "../web-search";
 import { BUCKETS, categoryBucket, classifyWebsite, scoreLead, verifyPhone, type Bucket } from "./verify";
 import { buildReport, runLeads, type DailyReport } from "./report";
 
@@ -166,7 +167,9 @@ export interface DarwinDeps {
   now: () => Date;
   geocode: (text: string) => Promise<GeoCenter>;
   page: (o: { center: GeoCenter; radiusM: number; category: string; offset: number }) => Promise<unknown[]>;
-  gather: (c: { name: string; address: string | null; lat: number; lon: number; website: string | null; locality: string; phone?: string | null; email?: string | null }, o: { google: boolean; search: boolean; foursquare?: boolean; wantEmail?: boolean }) => Promise<Gathered>;
+  gather: (c: { name: string; address: string | null; lat: number; lon: number; website: string | null; locality: string; phone?: string | null; email?: string | null }, o: { google: boolean; search: boolean; foursquare?: boolean; wantEmail?: boolean; searcher?: SearchPool }) => Promise<Gathered>;
+  /** The web searches to use (default: every provider configured — SearXNG, Brave, Tavily, Serper). */
+  searchProviders?: Provider[];
   google: boolean;
   search: boolean;
   /** Foursquare can supply a phone number (FOURSQUARE_API_KEY). */
@@ -363,17 +366,26 @@ async function knowledge(userId: string, now: Date, run: { id: string; date: str
  * (today included), so DARWIN finds leads every day of the month instead of
  * spending everything in the first few days and then finding nothing.
  */
-export async function searchAllowance(userId: string, date: string, monthly = env.darwinSearchMonthlyCredits): Promise<number> {
-  if (!monthly) return Infinity;
+export async function searchShares(userId: string, date: string, providers: Provider[], usedToday: Partial<Record<ProviderId, number>> = {}): Promise<Partial<Record<ProviderId, number>>> {
   const runs = await getDb().darwinDailyRun.findMany({ where: { userId, date: { startsWith: date.slice(0, 7), lt: date } }, select: { apiRequests: true } });
-  const used = runs.reduce((s, r) => s + Number(((r.apiRequests ?? {}) as Partial<Api>).search ?? 0), 0);
-  const [y, m, d] = date.split("-").map(Number);
-  const daysLeft = new Date(Date.UTC(y, m, 0)).getUTCDate() - d + 1;
-  return Math.max(0, Math.floor((monthly - used) / Math.max(1, daysLeft)));
+  const before: Partial<Record<ProviderId, number>> = {};
+  for (const r of runs) {
+    const a = (r.apiRequests ?? {}) as Partial<Api>;
+    // days before providers were tracked separately were all Tavily
+    const by = a.searchBy ?? (a.search ? { tavily: a.search } : {});
+    for (const [k, v] of Object.entries(by)) before[k as ProviderId] = (before[k as ProviderId] ?? 0) + Number(v ?? 0);
+  }
+  return dailyShares(providers, before, usedToday, date);
 }
 
 type Counters = Pick<DarwinDailyRun, "verified" | "candidates" | "duplicates" | "alreadyChecked" | "websiteRejected" | "unclear" | "tempUnavailable" | "closed" | "missingPhone" | "missingEmail" | "outOfArea" | "errors">;
-type Api = { geoapify: number; google: number; search: number };
+type Api = {
+  geoapify: number; google: number; search: number;
+  /** Web searches per provider (for each provider's monthly pacing). */
+  searchBy?: Partial<Record<ProviderId, number>>;
+  /** Providers out for the rest of today (out of credits / key rejected) — not retried every tick. */
+  searchDown?: ProviderId[];
+};
 
 /**
  * Advance a run within the time budget. Safe to call from anywhere at any time:
@@ -409,9 +421,19 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     const exhausted = new Set(run.exhaustedCombos);
     let comboIndex = run.comboIndex;
     const paidCap = cfg.target * PAID_CALLS_PER_TARGET + (cfg.emailTarget ?? 0) * PAID_CALLS_PER_EMAIL;
-    // the web search's credits are paced over the month (today's share), so every day gets some
-    const searchShare = deps.search ? await searchAllowance(run.userId, run.date) : Infinity;
-    const searchCap = Math.min(paidCap, searchShare);
+    // the web searches: every free provider configured, each paced over the month (today's share)
+    const providers = deps.searchProviders ?? configuredProviders();
+    const searchByStart: Partial<Record<ProviderId, number>> = { ...(api.searchBy ?? {}) };
+    const outToday = new Set<ProviderId>(api.searchDown ?? []);
+    const shares = deps.search && providers.length ? await searchShares(run.userId, run.date, providers, searchByStart) : {};
+    const pool = new SearchPool(providers.filter((p) => !outToday.has(p.id)), shares, (o) => say(`${o.message} — trying the next web search.`, "warn"));
+    const syncSearch = () => {
+      const by: Partial<Record<ProviderId, number>> = { ...searchByStart };
+      for (const [k, v] of Object.entries(pool.used)) by[k as ProviderId] = (by[k as ProviderId] ?? 0) + (v ?? 0);
+      api.searchBy = by;
+      const hard = [...pool.down.entries()].filter(([, o]) => o.kind === "credits" || o.kind === "auth").map(([k]) => k);
+      api.searchDown = [...new Set([...outToday, ...hard])];
+    };
     // verification services that stopped working this tick (out of credits, key rejected, down)
     const down = new Map<Outage["service"], Outage>();
     /** Can a business still be confirmed as having no website? (strict: needs Google or the web search) */
@@ -420,6 +442,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     const deferred: GeoLead[] = []; // waiting for a phone-finding service that's down — not marked checked
     const say = (text: string, tone?: "ok" | "warn") => log.push({ at: deps.now().toISOString(), text: text.slice(0, 300), ...(tone ? { tone } : {}) });
     const persist = async (extra: Prisma.DarwinDailyRunUpdateInput = {}) => {
+      syncSearch();
       // how far through the city today's search got (tomorrow carries on from there)
       if (cfg.allBangalore) cfg.areasSearched = Math.min(cfg.locations.length, Math.max(cfg.areasSearched ?? 0, Math.floor(comboIndex / Math.max(1, cfg.categories.length)) + 1));
       run = await db.darwinDailyRun.update({
@@ -547,11 +570,12 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         if (readClock().getTime() - t0 > budget - 8_000) break;
         const googleUp = deps.google && !down.has("google"), searchUp = deps.search && !down.has("search");
         const useGoogle = googleUp && api.google < paidCap;
-        const useSearch = searchUp && api.search < searchCap;
+        // today's share of the free web searches must cover this batch (an unlimited SearXNG always does)
+        const useSearch = searchUp && api.search < paidCap && (!pool.configured || pool.capacity() >= Math.min(BATCH, fresh.length - i));
         if ((googleUp && !useGoogle) || (searchUp && !useSearch)) { stopReason = "paid_cap"; break; }
         const batch = fresh.slice(i, i + BATCH);
         const results = await Promise.all(batch.map(async ({ l, fp }) => {
-          try { return { l, fp, g: await deps.gather({ name: l.name, address: l.address, lat: l.lat, lon: l.lon, website: l.website, phone: l.phone, email: l.email, locality: center.label.split(",").slice(0, 2).join(",") }, { google: useGoogle, search: useSearch, foursquare: !!deps.foursquare, wantEmail: emailOpen() }) }; }
+          try { return { l, fp, g: await deps.gather({ name: l.name, address: l.address, lat: l.lat, lon: l.lon, website: l.website, phone: l.phone, email: l.email, locality: center.label.split(",").slice(0, 2).join(",") }, { google: useGoogle, search: useSearch, foursquare: !!deps.foursquare, wantEmail: emailOpen(), searcher: pool }) }; }
           catch (e) { return { l, fp, err: (e as Error).message }; }
         }));
         for (const r of results) if (!("err" in r)) { api.google += r.g.calls.google; api.search += r.g.calls.search; }
@@ -671,7 +695,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     const blockedReason = geoHard ? `DARWIN couldn't search: ${geoProblem}`
       : svcHard ? `DARWIN couldn't confirm which businesses have no website: ${svc.map((o) => o.message).join("; ")}. The businesses it found are kept and checked again once the service works.`
       : "";
-    const pacedOut = stopReason === "paid_cap" && deps.search && api.search >= searchCap && searchCap < paidCap;
+    const pacedOut = stopReason === "paid_cap" && deps.search && pool.configured && api.search < paidCap && pool.capacity() < BATCH;
     // nothing left to look for in time: each unfinished goal has passed its deadline
     const late = !done && !leadsOpen() && !emailOpen();
     const emailInfo = emailTarget ? { found: emailLeads, target: emailTarget } : undefined;
@@ -690,7 +714,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     if (done || outOfScope || capped || late || blocked) {
       const reasons = [
         ...(blocked ? [blockedReason] : []),
-        ...(pacedOut ? [`Today's share of this month's web-search credits (${searchCap} of ${env.darwinSearchMonthlyCredits}) is used — DARWIN spreads them so it finds leads every day; it carries on tomorrow. Raise DARWIN_SEARCH_MONTHLY_CREDITS if your Tavily plan has more, or add GOOGLE_PLACES_API_KEY so fewer web searches are needed`] : []),
+        ...(pacedOut ? [`Today's share of this month's free web searches is used (${providers.map((p) => `${p.label} ${(api.searchBy?.[p.id] ?? 0)}`).join(", ")} today) — DARWIN spreads them so it finds leads every day; it carries on tomorrow. To search more, add another free web search (SEARXNG_URL is unlimited; BRAVE_SEARCH_API_KEY, SERPER_API_KEY) or GOOGLE_PLACES_API_KEY`] : []),
         ...shortfallReasons({ ...c, verified: leadsCount() }, cfg, { outOfScope: outOfScope && !late && !blocked, capped: capped && !pacedOut, late, api, google: deps.google, search: deps.search, email: emailInfo }),
       ];
       const status = done ? "completed" : "partial";
@@ -781,7 +805,7 @@ export function shortfallReasons(c: Counters, cfg: DailyConfig, o: { outOfScope:
   if (c.verified >= cfg.target && !emailShort) return [];
   const r: string[] = [];
   if (emailShort) {
-    r.push(`Found ${o.email!.found} of ${o.email!.target} no-website businesses with a public email address${c.missingEmail ? ` — ${c.missingEmail} other${c.missingEmail === 1 ? "" : "s"} had no email anywhere public` : ""}${!o.search ? " (add SEARCH_API_KEY so DARWIN can look up emails beyond the map listing)" : ""}`);
+    r.push(`Found ${o.email!.found} of ${o.email!.target} no-website businesses with a public email address${c.missingEmail ? ` — ${c.missingEmail} other${c.missingEmail === 1 ? "" : "s"} had no email anywhere public` : ""}${!o.search ? " (add a free web search — SEARXNG_URL, BRAVE_SEARCH_API_KEY or SERPER_API_KEY — so DARWIN can look up emails beyond the map listing)" : ""}`);
   }
   if (o.late && c.verified < cfg.target) r.push(`Reached the ${deadlineLabel()} deadline before finding ${cfg.target}`);
   if (o.outOfScope) r.push(`Insufficient businesses found — every location × category in the search area (${cfg.locations.join(", ")}) was searched${cfg.widened ? `, even after widening it to ${cfg.categories.length} kinds of business within ${cfg.radiusKm} km` : ""}`);

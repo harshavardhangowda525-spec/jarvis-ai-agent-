@@ -129,6 +129,11 @@ export const env = {
   elevenLabsSttModelId: read("ELEVENLABS_STT_MODEL_ID") || "scribe_v1",
 
   searchApiKey: read("SEARCH_API_KEY"),
+  // More (free) web searches for DARWIN — any you set are used, in this order:
+  // SearXNG (your own, unlimited) → Brave → Tavily (SEARCH_API_KEY) → Serper.
+  searxngUrl: read("SEARXNG_URL"),
+  braveSearchApiKey: read("BRAVE_SEARCH_API_KEY"),
+  serperApiKey: read("SERPER_API_KEY"),
   weatherApiKey: read("WEATHER_API_KEY"),
 
   // Infinity Web & Apps (Supabase) — read-only analysis of the site's own data
@@ -241,6 +246,9 @@ export const env = {
   // instead of using them all up in the first few: today's share = what's left ÷ days left.
   // Tavily's free plan has 1,000 a month (JARVIS and MIKE use the same key) — "0" turns pacing off.
   darwinSearchMonthlyCredits: /^(0|off|none|unlimited)$/i.test(read("DARWIN_SEARCH_MONTHLY_CREDITS")) ? 0 : Math.max(1, Number(read("DARWIN_SEARCH_MONTHLY_CREDITS")) || 800),
+  // free searches a month DARWIN may use per provider (paced like Tavily's; "0" = no pacing)
+  darwinBraveMonthly: /^(0|off|none|unlimited)$/i.test(read("DARWIN_BRAVE_MONTHLY")) ? 0 : Math.max(1, Number(read("DARWIN_BRAVE_MONTHLY")) || 2000),
+  darwinSerperMonthly: /^(0|off|none|unlimited)$/i.test(read("DARWIN_SERPER_MONTHLY")) ? 0 : Math.max(1, Number(read("DARWIN_SERPER_MONTHLY")) || 2500),
   // DARWIN emails every new lead that has a public email address — once, from
   // the user's own Gmail — as the leads come in. Also switchable in DARWIN.
   darwinAutoEmail: !/^(0|off|false|no)$/i.test(read("DARWIN_AUTO_EMAIL")),

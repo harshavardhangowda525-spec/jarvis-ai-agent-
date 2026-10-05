@@ -1,4 +1,5 @@
 import "server-only";
+import { SearchPool, searchConfigured, type ProviderId } from "../web-search";
 import { promises as dns } from "node:dns";
 import net from "node:net";
 import { env } from "@/lib/env";
@@ -10,7 +11,7 @@ import {
 /**
  * The real-world checks behind DARWIN's website verification: DNS, a fetch of
  * the site, the Google business profile (when GOOGLE_PLACES_API_KEY is set) and
- * a web search (when SEARCH_API_KEY / Tavily is set). Every URL comes from
+ * a web search (SearXNG, Brave, Tavily or Serper — see ../web-search). Every URL comes from
  * third-party data, so fetches are SSRF-guarded: http(s) on default ports only,
  * public IPs only, and redirects are re-validated hop by hop.
  */
@@ -202,28 +203,28 @@ export async function googleProfile(name: string, address: string | null, at: { 
 
 /* ---------------- web search ---------------- */
 
-export function searchAvailable() { return !!env.searchApiKey; }
+/** Any web search configured for DARWIN (SearXNG, Brave, Tavily or Serper). */
+export function searchAvailable() { return searchConfigured(); }
 
-export interface SearchSignal { officialUrl: string | null; social: string[]; directories: number; error?: string; outage?: Outage; phone?: { phone: string; source: string } | null; email?: { email: string; source: string } | null }
+export interface SearchSignal {
+  officialUrl: string | null; social: string[]; directories: number; error?: string; outage?: Outage;
+  phone?: { phone: string; source: string } | null; email?: { email: string; source: string } | null;
+  /** Provider requests made (a provider that failed and the one that answered both count). */
+  calls?: number; provider?: ProviderId;
+}
 
-/** Search the web for the business; pick out an official site vs directory/social listings. */
-export async function webSearchSignal(name: string, locality: string, wantPhone = false, wantEmail = false): Promise<SearchSignal> {
+/**
+ * Search the web for the business; pick out an official site vs directory/social listings.
+ * The search goes through `pool` — every free provider configured, in turn (see lib/darwin/web-search).
+ */
+export async function webSearchSignal(name: string, locality: string, wantPhone = false, wantEmail = false, pool: SearchPool = new SearchPool()): Promise<SearchSignal> {
   try {
-    const res = await fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // no listed phone → ask for the contact number too (directory pages show it)
-      body: JSON.stringify({ api_key: env.searchApiKey, query: `"${name}" ${locality}${wantPhone || wantEmail ? " contact" : ""}${wantPhone ? " number" : ""}${wantEmail ? " email" : ""}`, max_results: 8, search_depth: "basic", include_answer: false }),
-      signal: AbortSignal.timeout(20_000),
-    });
-    if (!res.ok) {
-      const outage = searchOutage(res.status);
-      return { officialUrl: null, social: [], directories: 0, error: res.status === 401 ? "search credentials invalid" : res.status === 429 ? "search rate limit reached" : `search HTTP ${res.status}`, ...(outage ? { outage } : {}) };
-    }
-    const j: any = await res.json();
+    // no listed phone → ask for the contact number too (directory pages show it)
+    const answer = await pool.search(`"${name}" ${locality}${wantPhone || wantEmail ? " contact" : ""}${wantPhone ? " number" : ""}${wantEmail ? " email" : ""}`);
+    if (!answer.ok) return { officialUrl: null, social: [], directories: 0, error: `search failed: ${answer.outage.message}`, outage: answer.outage, calls: answer.calls };
     let official: string | null = null, directories = 0;
     const social: string[] = [];
-    for (const r of j?.results ?? []) {
+    for (const r of answer.results) {
       const url = String(r?.url ?? "");
       const host = hostOf(url);
       if (!host) continue;
@@ -232,13 +233,13 @@ export async function webSearchSignal(name: string, locality: string, wantPhone 
       if (/\.business\.site$/.test(host) && !official) { official = url; continue; } // Google's free sites are websites too
       if (!official && hostMatchesName(host, name)) official = `https://${host}/`;
     }
-    const texts = (j?.results ?? []).map((r: any) => ({ url: String(r?.url ?? ""), title: r?.title, content: r?.content }));
+    const texts = answer.results.map((r) => ({ url: r.url, title: r.title, content: r.content }));
     const phone = phoneFromResults(texts, name, locality);
     const email = wantEmail ? emailFromResults(texts, name, locality) : null;
-    return { officialUrl: official, social: [...new Set(social)].slice(0, 4), directories, phone, email };
+    return { officialUrl: official, social: [...new Set(social)].slice(0, 4), directories, phone, email, calls: answer.calls, provider: answer.provider };
   } catch (e) {
-    const error = (e as Error)?.name === "TimeoutError" ? "search timed out" : "search unreachable";
-    return { officialUrl: null, social: [], directories: 0, error, outage: { service: "search", kind: "down", message: `The web search (Tavily) ${error.replace(/^search /, "")}` } };
+    const error = (e as Error)?.message || "search failed";
+    return { officialUrl: null, social: [], directories: 0, error, outage: { service: "search", kind: "down", message: `The web search failed (${error})` }, calls: 0 };
   }
 }
 
@@ -284,7 +285,7 @@ export async function foursquarePhone(name: string, lat: number, lon: number): P
   return null;
 }
 
-export async function gatherSignals(c: CandidateInput, opts: { google: boolean; search: boolean; foursquare?: boolean; wantEmail?: boolean }): Promise<Gathered> {
+export async function gatherSignals(c: CandidateInput, opts: { google: boolean; search: boolean; foursquare?: boolean; wantEmail?: boolean; searcher?: SearchPool }): Promise<Gathered> {
   const listed = c.website ? await checkUrl(c.website, c.name) : null;
   // a live listed website settles it — no paid lookups needed
   if (listed?.ok && !listed.parked) {
@@ -307,7 +308,7 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
   const wantEmail = !!opts.wantEmail && !c.email;
   const useSearch = opts.search && (!googleSettles || wantPhone || wantEmail);
   const [s, guessed] = await Promise.all([
-    useSearch ? webSearchSignal(c.name, c.locality, wantPhone, wantEmail) : Promise.resolve(null),
+    useSearch ? webSearchSignal(c.name, c.locality, wantPhone, wantEmail, opts.searcher) : Promise.resolve(null),
     guessing,
   ]);
   const gCheck = g?.website ? await checkUrl(g.website, c.name) : undefined;
@@ -333,7 +334,7 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
       distinctive: nameTokens(c.name).length > 0,
     },
     google: g, search: s, phoneFound, emailFound,
-    calls: { google: opts.google ? 1 : 0, search: useSearch ? 1 : 0 },
+    calls: { google: opts.google ? 1 : 0, search: useSearch ? (s?.calls ?? 1) : 0 },
     ...(g?.outage || s?.outage ? { outage: [g?.outage, s?.outage].filter((o): o is Outage => !!o) } : {}),
   };
 }

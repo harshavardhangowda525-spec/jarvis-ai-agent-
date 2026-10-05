@@ -4,6 +4,7 @@ vi.hoisted(() => { process.env.GEOAPIFY_API_KEY = process.env.GEOAPIFY_API_KEY |
 import { getDb, isDbConfigured } from "@/lib/db";
 import type { DarwinDeps } from "@/lib/darwin/daily/run";
 import type { Gathered, Outage } from "@/lib/darwin/daily/checks";
+import type { Provider, ProviderId } from "@/lib/darwin/web-search";
 import { googleOutage, searchOutage } from "@/lib/darwin/daily/checks";
 import { GeoapifyError } from "@/lib/darwin/geoapify";
 
@@ -148,17 +149,71 @@ d("DARWIN keeps going through service outages", () => {
     expect(r.verified).toBe(5);
   });
 
-  it("web-search credits are paced over the month: today's share, then it stops for the day and says why", async () => {
-    // earlier this month: 760 of 800 used → 40 left over 27 days (5th–31st) → 1 a day
+  // ---- several free web searches (SearXNG, Brave, Tavily, Serper), each paced over the month
+  const fakeProvider = (id: ProviderId, monthly: number, answer: () => "ok" | Outage["kind"] = () => "ok"): Provider => ({
+    id, label: id[0].toUpperCase() + id.slice(1), configured: () => true, monthly: () => monthly, minIntervalMs: 0,
+    run: async () => {
+      const a = answer();
+      return a === "ok" ? { ok: true, results: [] } : { ok: false, outage: { service: "search", kind: a, message: `${id} is out (${a})` } };
+    },
+  });
+  /** A gather that really searches through the run's pool (like the real one). */
+  const poolDeps = (providers: Provider[]): DarwinDeps => ({
+    ...deps(),
+    searchProviders: providers,
+    gather: async (_c, opts): Promise<Gathered> => {
+      let calls = 0, ok = false;
+      const out: Outage[] = [];
+      if (opts.search && opts.searcher) { const a = await opts.searcher.search("q"); calls = a.calls; if (a.ok) ok = true; else out.push(a.outage); }
+      return {
+        signals: { listed: null, google: null, search: opts.search ? (ok ? { official: null, social: [], directories: 1 } : { error: "search failed", official: null, social: [], directories: 0 }) : null, guessed: [], distinctive: true },
+        google: null, search: null, calls: { google: 0, search: calls }, ...(out.length ? { outage: out } : {}),
+      };
+    },
+  });
+
+  it("each provider's free searches are paced over the month; when today's share is used it stops for the day and says how to search more", async () => {
+    // earlier this month: 760 of Tavily's 800 used → 40 left over 27 days (5th–31st) → 1 a day
     await getDb().darwinDailyRun.create({ data: { userId, date: "2026-10-01", target: 5, status: "completed", config: {}, apiRequests: { geoapify: 10, google: 0, search: 760 } } });
-    expect(await R.searchAllowance(userId, "2026-10-05", 800)).toBe(1);
-    expect(await R.searchAllowance(userId, "2026-10-05", 0)).toBe(Infinity);
-    expect(await R.searchAllowance(userId, "2026-11-01", 800)).toBe(26); // a new month starts fresh (800 / 30)
+    const tav = fakeProvider("tavily", 800);
+    expect(await R.searchShares(userId, "2026-10-05", [tav])).toEqual({ tavily: 1 });
+    expect(await R.searchShares(userId, "2026-10-05", [fakeProvider("searxng", 0)])).toEqual({}); // unlimited
+    expect(await R.searchShares(userId, "2026-10-05", [fakeProvider("brave", 2000)])).toEqual({ brave: 74 }); // its own allowance
+    expect(await R.searchShares(userId, "2026-11-01", [tav])).toEqual({ tavily: 26 }); // a new month starts fresh
     const run = await R.ensureRun(userId, clock);
-    const r = await finish(run.id, deps());
+    const r = await finish(run.id, poolDeps([tav]));
     expect(r.status).toBe("partial");
-    expect(used.search).toBeLessThanOrEqual(4); // at most one batch past the share — never the whole month's credits
-    expect(r.reasons[0]).toMatch(/Today's share of this month's web-search credits/);
+    expect((r.apiRequests as { search: number }).search).toBeLessThanOrEqual(1);
+    expect(r.reasons[0]).toMatch(/Today's share of this month's free web searches is used .*SEARXNG_URL/);
+  });
+
+  it("one search out of credits → DARWIN moves on to the next free one (and doesn't retry it all day)", async () => {
+    const run = await R.ensureRun(userId, clock);
+    const r = await finish(run.id, poolDeps([fakeProvider("tavily", 800, () => "credits"), fakeProvider("brave", 2000)]));
+    expect(r.status).toBe("completed");
+    expect(r.verified).toBe(5);
+    expect(JSON.stringify(r.log)).toMatch(/tavily is out \(credits\) — trying the next web search/);
+    const api = r.apiRequests as { searchBy: Record<string, number>; searchDown: string[] };
+    expect(api.searchBy.brave).toBeGreaterThanOrEqual(5);
+    // only the batch's lookups already in flight tried it; after that it's skipped for the day
+    expect(api.searchBy.tavily).toBeLessThanOrEqual(4); // one batch
+    expect(api.searchDown).toEqual(["tavily"]);
+  });
+
+  it("SearXNG has no monthly limit — it keeps searching after the others' shares are used", async () => {
+    await getDb().darwinDailyRun.create({ data: { userId, date: "2026-10-02", target: 5, status: "completed", config: {}, apiRequests: { geoapify: 10, google: 0, search: 0, searchBy: { brave: 2000 } } } });
+    const run = await R.ensureRun(userId, clock);
+    const r = await finish(run.id, poolDeps([fakeProvider("searxng", 0), fakeProvider("brave", 2000)]));
+    expect(r.status).toBe("completed");
+    expect((r.apiRequests as { searchBy: Record<string, number> }).searchBy.searxng).toBeGreaterThanOrEqual(5);
+  });
+
+  it("every free search out → the web search is down, today's search says so", async () => {
+    const run = await R.ensureRun(userId, clock);
+    const r = await finish(run.id, poolDeps([fakeProvider("brave", 2000, () => "auth"), fakeProvider("tavily", 800, () => "credits")]));
+    expect(r.status).toBe("partial");
+    expect(r.reasons[0]).toMatch(/couldn't confirm .*brave is out \(auth\); tavily is out \(credits\)/);
+    expect(await getDb().darwinCandidate.count({ where: { userId } })).toBe(0);
   });
 });
 
