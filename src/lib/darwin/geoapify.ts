@@ -35,8 +35,10 @@ async function call(url: string): Promise<any> {
   if (res.status === 429) {
     throw new GeoapifyError("Geoapify rate limit reached — DARWIN stopped searching. Wait a minute (or until your daily quota resets), then try again.", "rate_limit");
   }
-  if (res.status === 401 || res.status === 403) {
-    throw new GeoapifyError("Geoapify rejected the API key. Check GEOAPIFY_API_KEY.", "auth");
+  if (res.status === 401 || res.status === 403 || res.status === 402) {
+    throw new GeoapifyError(res.status === 402
+      ? "Geoapify's quota for this API key is used up — it resets daily (or upgrade the Geoapify plan)."
+      : "Geoapify rejected the API key. Check GEOAPIFY_API_KEY.", "auth");
   }
   if (!res.ok) {
     const detail = String(json?.message || json?.error || `HTTP ${res.status}`).slice(0, 200);

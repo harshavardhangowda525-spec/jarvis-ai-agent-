@@ -902,6 +902,32 @@ Each lead records where its phone came from, for example
 none of these sources set up, businesses with no listed phone are skipped before any
 checks are spent on them. They're looked at again after 3 weeks.
 
+**When a service stops working** (out of credits, key rejected, billing off),
+DARWIN says so instead of quietly finding nothing:
+- **Recognised failures:**
+  - the web search (Tavily) answering `432`/`433` (plan credits used up), `401`
+    or `429`;
+  - Google Places refusing requests (key, billing, quota);
+  - Geoapify rejecting the key or running out of quota.
+- **Credits used up or key rejected:** today's search stops. The reason shows on
+  the DAILY TARGET card and in the report. **The businesses it had found are
+  not written off**: nothing is marked "unclear", and they're checked again once
+  the service works. A brief rate limit or outage just pauses the search until
+  the next tick.
+- **One check service down:** if Google Places is down but the web search works,
+  DARWIN carries on with the web search, and vice versa.
+- **Already caught by an earlier outage:** businesses marked "unclear" only
+  because a check failed are looked at again right away, not in three weeks.
+
+**Web-search credits last the whole month.** Tavily's free plan has 1,000 credits
+a month, and JARVIS and MIKE share the same key. Spent freely, DARWIN would use
+them up in a few days and then find nothing for the rest of the month. Instead:
+- each day gets its share of `DARWIN_SEARCH_MONTHLY_CREDITS` (default 800):
+  what's left ÷ days left;
+- set it to your plan's size, or `0` to turn pacing off;
+- with `GOOGLE_PLACES_API_KEY` set, a business Google already settled doesn't
+  use a web search at all, unless its phone or email is still missing.
+
 **50 leads by 2:00 PM.** The day's search has a deadline, `DARWIN_DAILY_DEADLINE`
 (default `14:00`, in `DARWIN_DAILY_TZ`). If the configured area runs out before the
 target, DARWIN widens the search by itself instead of stopping:
@@ -983,6 +1009,8 @@ Settings (optional):
 - `DARWIN_DAILY_DEADLINE` (`14:00`)
 - `DARWIN_DAILY_REQUIRE_PHONE` (`on`)
 - `DARWIN_DAILY_TARGET` (`50`)
+- `DARWIN_SEARCH_MONTHLY_CREDITS` (`800`; `0` = no pacing): how many web-search
+  credits DARWIN spreads over each month
 - `DARWIN_DAILY_LOCATIONS` and `DARWIN_DAILY_CATEGORIES` (comma- or line-separated; also editable in DARWIN)
 - **Every area of Bangalore.** By default the daily search covers 75 areas: the
   centre and out to Yelahanka, Whitefield, Electronic City, Sarjapur and Kengeri.

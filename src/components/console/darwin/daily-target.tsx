@@ -143,6 +143,8 @@ export function DailyTarget({ daily, onViewLeads, onOpenCrm }: {
 
         {run?.status === "needs_setup" && <p className="mt-2 text-[11px] leading-snug text-amber-100/80">{run.lastError}</p>}
         {run?.status === "running" && run.lastError && <p className="mt-2 text-[10px] leading-snug text-amber-100/70">{run.lastError}</p>}
+        {/* a search stopped by a service problem (out of credits, key rejected) says so plainly */}
+        {run?.status === "partial" && run.lastError && <p className="mt-2 text-[11px] leading-snug text-amber-100/85" data-darwin-blocked>{run.lastError}</p>}
         {run?.status === "running" && run.log.length > 0 && <p className="mt-2 truncate text-[10px] text-white/40" title={run.log[run.log.length - 1].text}>{run.log[run.log.length - 1].text}</p>}
 
         {(complete || run?.status === "partial") && (

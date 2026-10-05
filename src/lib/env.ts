@@ -237,6 +237,10 @@ export const env = {
   darwinDailyStrict: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY_STRICT")),
   // only count leads with a public phone number (on by default — they're the ones you can call)
   darwinDailyRequirePhone: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY_REQUIRE_PHONE")),
+  // DARWIN spreads the web-search (Tavily) credits over the month so it finds leads EVERY day
+  // instead of using them all up in the first few: today's share = what's left ÷ days left.
+  // Tavily's free plan has 1,000 a month (JARVIS and MIKE use the same key) — "0" turns pacing off.
+  darwinSearchMonthlyCredits: /^(0|off|none|unlimited)$/i.test(read("DARWIN_SEARCH_MONTHLY_CREDITS")) ? 0 : Math.max(1, Number(read("DARWIN_SEARCH_MONTHLY_CREDITS")) || 800),
   // DARWIN emails every new lead that has a public email address — once, from
   // the user's own Gmail — as the leads come in. Also switchable in DARWIN.
   darwinAutoEmail: !/^(0|off|false|no)$/i.test(read("DARWIN_AUTO_EMAIL")),

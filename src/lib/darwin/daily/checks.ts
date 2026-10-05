@@ -112,7 +112,40 @@ async function readCapped(res: Response, max: number): Promise<string> {
 
 /* ---------------- Google business profile ---------------- */
 
-export interface GoogleProfile { found: boolean; website: string | null; closed: boolean; phone: string | null; rating: number | null; reviews: number | null; mapsUri: string | null; error?: string }
+/**
+ * A verification service that isn't working at all right now (out of credits,
+ * key rejected, billing off, rate-limited, down) — as opposed to a check that ran
+ * and found nothing. DARWIN pauses instead of marking every business "unclear".
+ */
+export interface Outage {
+  service: "search" | "google";
+  /** credits/auth won't fix themselves today; rate/down usually pass within minutes. */
+  kind: "credits" | "auth" | "rate" | "down";
+  message: string;
+}
+
+export interface GoogleProfile { found: boolean; website: string | null; closed: boolean; phone: string | null; rating: number | null; reviews: number | null; mapsUri: string | null; error?: string; outage?: Outage }
+
+/** Google Places refusing ALL requests (key, billing, API not enabled, quota) → an outage, not a per-business result. */
+export function googleOutage(status: number, body: { error?: { status?: string; message?: string } } | null): Outage | null {
+  const st = body?.error?.status ?? "";
+  const msg = String(body?.error?.message ?? "").slice(0, 140);
+  if (status === 429 || st === "RESOURCE_EXHAUSTED") return { service: "google", kind: "rate", message: `Google Places quota or rate limit reached${msg ? ` (${msg})` : ""}` };
+  if (status === 401 || status === 403 || st === "PERMISSION_DENIED" || st === "UNAUTHENTICATED" || /api key|billing/i.test(msg)) {
+    return { service: "google", kind: /billing/i.test(msg) ? "credits" : "auth", message: `Google Places refused the request — ${msg || `HTTP ${status}`}. Check GOOGLE_PLACES_API_KEY, that the Places API (New) is enabled, and billing` };
+  }
+  if (status >= 500) return { service: "google", kind: "down", message: `Google Places is having problems (HTTP ${status})` };
+  return null;
+}
+
+/** Tavily (web search) refusing ALL requests → an outage. 432/433 = the plan's credits are used up. */
+export function searchOutage(status: number): Outage | null {
+  if (status === 432 || status === 433) return { service: "search", kind: "credits", message: `The web search (Tavily) has used up its plan's credits (HTTP ${status}) — they renew with your Tavily plan, or upgrade at tavily.com` };
+  if (status === 401 || status === 403) return { service: "search", kind: "auth", message: `The web search (Tavily) rejected the key (HTTP ${status}) — check SEARCH_API_KEY` };
+  if (status === 429) return { service: "search", kind: "rate", message: "The web search (Tavily) rate limit was reached" };
+  if (status >= 500) return { service: "search", kind: "down", message: `The web search (Tavily) is having problems (HTTP ${status})` };
+  return null;
+}
 
 const tokenSim = (a: string, b: string) => {
   const A = new Set(nameTokens(a)), B = new Set(nameTokens(b));
@@ -143,7 +176,10 @@ export async function googleProfile(name: string, address: string | null, at: { 
       signal: AbortSignal.timeout(15_000),
     });
     const j: any = await res.json().catch(() => ({}));
-    if (!res.ok) return { ...empty, error: j?.error?.message ? `Google: ${String(j.error.message).slice(0, 120)}` : `Google HTTP ${res.status}` };
+    if (!res.ok) {
+      const outage = googleOutage(res.status, j);
+      return { ...empty, error: j?.error?.message ? `Google: ${String(j.error.message).slice(0, 120)}` : `Google HTTP ${res.status}`, ...(outage ? { outage } : {}) };
+    }
     for (const p of j?.places ?? []) {
       const pn = p?.displayName?.text ?? "";
       const loc = p?.location;
@@ -159,7 +195,8 @@ export async function googleProfile(name: string, address: string | null, at: { 
     }
     return empty;
   } catch (e) {
-    return { ...empty, error: (e as Error)?.name === "TimeoutError" ? "Google timed out" : "Google unreachable" };
+    const error = (e as Error)?.name === "TimeoutError" ? "Google timed out" : "Google unreachable";
+    return { ...empty, error, outage: { service: "google", kind: "down", message: `Google Places ${error.replace(/^Google /, "")}` } };
   }
 }
 
@@ -167,7 +204,7 @@ export async function googleProfile(name: string, address: string | null, at: { 
 
 export function searchAvailable() { return !!env.searchApiKey; }
 
-export interface SearchSignal { officialUrl: string | null; social: string[]; directories: number; error?: string; phone?: { phone: string; source: string } | null; email?: { email: string; source: string } | null }
+export interface SearchSignal { officialUrl: string | null; social: string[]; directories: number; error?: string; outage?: Outage; phone?: { phone: string; source: string } | null; email?: { email: string; source: string } | null }
 
 /** Search the web for the business; pick out an official site vs directory/social listings. */
 export async function webSearchSignal(name: string, locality: string, wantPhone = false, wantEmail = false): Promise<SearchSignal> {
@@ -179,9 +216,10 @@ export async function webSearchSignal(name: string, locality: string, wantPhone 
       body: JSON.stringify({ api_key: env.searchApiKey, query: `"${name}" ${locality}${wantPhone || wantEmail ? " contact" : ""}${wantPhone ? " number" : ""}${wantEmail ? " email" : ""}`, max_results: 8, search_depth: "basic", include_answer: false }),
       signal: AbortSignal.timeout(20_000),
     });
-    if (res.status === 401) return { officialUrl: null, social: [], directories: 0, error: "search credentials invalid" };
-    if (res.status === 429) return { officialUrl: null, social: [], directories: 0, error: "search rate limit reached" };
-    if (!res.ok) return { officialUrl: null, social: [], directories: 0, error: `search HTTP ${res.status}` };
+    if (!res.ok) {
+      const outage = searchOutage(res.status);
+      return { officialUrl: null, social: [], directories: 0, error: res.status === 401 ? "search credentials invalid" : res.status === 429 ? "search rate limit reached" : `search HTTP ${res.status}`, ...(outage ? { outage } : {}) };
+    }
     const j: any = await res.json();
     let official: string | null = null, directories = 0;
     const social: string[] = [];
@@ -199,7 +237,8 @@ export async function webSearchSignal(name: string, locality: string, wantPhone 
     const email = wantEmail ? emailFromResults(texts, name, locality) : null;
     return { officialUrl: official, social: [...new Set(social)].slice(0, 4), directories, phone, email };
   } catch (e) {
-    return { officialUrl: null, social: [], directories: 0, error: (e as Error)?.name === "TimeoutError" ? "search timed out" : "search unreachable" };
+    const error = (e as Error)?.name === "TimeoutError" ? "search timed out" : "search unreachable";
+    return { officialUrl: null, social: [], directories: 0, error, outage: { service: "search", kind: "down", message: `The web search (Tavily) ${error.replace(/^search /, "")}` } };
   }
 }
 
@@ -212,6 +251,8 @@ export interface Gathered {
   phoneFound?: { phone: string; source: string } | null;
   /** An email address found on public pages naming the business (web search), with where it came from. */
   emailFound?: { email: string; source: string } | null;
+  /** A service that wasn't working at all — this business's result can't be trusted, check it again later. */
+  outage?: Outage[];
 }
 
 /**
@@ -249,17 +290,25 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
   if (listed?.ok && !listed.parked) {
     return { signals: { listed, google: null, search: null, guessed: [], distinctive: nameTokens(c.name).length > 0 }, google: null, search: null, calls: { google: 0, search: 0 } };
   }
-  const [g, s, guessed] = await Promise.all([
-    opts.google ? googleProfile(c.name, c.address, c) : Promise.resolve(null),
-    opts.search ? webSearchSignal(c.name, c.locality, !verifyPhone(c.phone).ok, !!opts.wantEmail && !c.email) : Promise.resolve(null),
-    (async () => {
+  const guessing = (async () => {
       const out: UrlCheck[] = [];
       for (const d of guessDomains(c.name)) {
         const r = await resolveHost(d);
         if (r.state === "ok") out.push(await checkUrl(d, c.name, 6000, { locality: `${c.locality} ${c.address ?? ""}`, phone: c.phone }));
       }
       return out;
-    })(),
+    })();
+  // Google first: when it found the business (with or without a website) that settles the
+  // website question on its own — the web search (paid credits) only runs when it's still
+  // needed: no Google, no Google match, or a phone / email still to find
+  const g = opts.google ? await googleProfile(c.name, c.address, c) : null;
+  const googleSettles = !!g && g.found && !g.error;
+  const wantPhone = !verifyPhone(c.phone).ok && !verifyPhone(g?.phone).ok;
+  const wantEmail = !!opts.wantEmail && !c.email;
+  const useSearch = opts.search && (!googleSettles || wantPhone || wantEmail);
+  const [s, guessed] = await Promise.all([
+    useSearch ? webSearchSignal(c.name, c.locality, wantPhone, wantEmail) : Promise.resolve(null),
+    guessing,
   ]);
   const gCheck = g?.website ? await checkUrl(g.website, c.name) : undefined;
   // no phone on the listing or Google → the web search's, else Foursquare's
@@ -284,6 +333,7 @@ export async function gatherSignals(c: CandidateInput, opts: { google: boolean; 
       distinctive: nameTokens(c.name).length > 0,
     },
     google: g, search: s, phoneFound, emailFound,
-    calls: { google: opts.google ? 1 : 0, search: opts.search ? 1 : 0 },
+    calls: { google: opts.google ? 1 : 0, search: useSearch ? 1 : 0 },
+    ...(g?.outage || s?.outage ? { outage: [g?.outage, s?.outage].filter((o): o is Outage => !!o) } : {}),
   };
 }

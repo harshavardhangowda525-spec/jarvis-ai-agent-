@@ -15,7 +15,7 @@ import {
   type GeoCenter, type GeoLead,
 } from "../geoapify";
 import { logActivity } from "../store";
-import { gatherSignals, googleAvailable, searchAvailable, type Gathered } from "./checks";
+import { gatherSignals, googleAvailable, searchAvailable, type Gathered, type Outage } from "./checks";
 import { BUCKETS, categoryBucket, classifyWebsite, scoreLead, verifyPhone, type Bucket } from "./verify";
 import { buildReport, runLeads, type DailyReport } from "./report";
 
@@ -192,6 +192,8 @@ const MAX_GEO_REQUESTS_CITY = 900;    // all of Bangalore: more areas to get thr
 const PAID_CALLS_PER_TARGET = 4;      // Google / search lookups allowed per wanted lead
 const PAID_CALLS_PER_EMAIL = 8;       // …and per wanted email lead (most small businesses list no email, so more are checked)
 const RECHECK_AFTER_DAYS = 21;        // unclear / temporarily-down / phoneless businesses get another look later
+/** A reason that says a check service failed, not that the business is unclear. */
+const SERVICE_FAILURE = /(web search|google profile) check failed|search (http|rate limit|credentials|timed out|unreachable)|google (http|timed out|unreachable)|google: /i;
 const BATCH = 4;
 
 type Log = { at: string; text: string; tone?: "ok" | "warn" }[];
@@ -316,7 +318,7 @@ async function knowledge(userId: string, now: Date, run: { id: string; date: str
   const db = getDb();
   const [leads, cands, todayLeads] = await Promise.all([
     db.darwinLead.findMany({ where: { userId }, select: { fingerprint: true, sourceRef: true, phone: true, businessName: true, latitude: true, longitude: true, website: true } }),
-    db.darwinCandidate.findMany({ where: { userId }, select: { fingerprint: true, placeId: true, status: true, checkedAt: true, runDate: true } }),
+    db.darwinCandidate.findMany({ where: { userId }, select: { fingerprint: true, placeId: true, status: true, checkedAt: true, runDate: true, reasons: true } }),
     db.darwinLead.findMany({ where: { userId, metadata: { path: ["dailyRunId"], equals: run.id } }, select: { fingerprint: true, sourceRef: true } }),
   ]);
   // handled earlier in THIS run (a wider circle re-reads the nearest places) — not duplicates
@@ -329,7 +331,11 @@ async function knowledge(userId: string, now: Date, run: { id: string; date: str
   const phones = new Set(leads.map((l) => (l.phone ?? "").replace(/\D/g, "").slice(-10)).filter((p) => p.length === 10));
   const named = leads.filter((l) => l.latitude != null && l.longitude != null).map((l) => ({ n: normName(l.businessName), lat: l.latitude!, lon: l.longitude! }));
   const cutoff = now.getTime() - RECHECK_AFTER_DAYS * 86_400_000;
-  const settled = (c: { status: string; checkedAt: Date }) => !(["unclear", "temporarily_unavailable", "no_phone", "no_email"].includes(c.status) && c.checkedAt.getTime() < cutoff);
+  // "unclear" only because a check SERVICE failed (out of credits, key rejected, down) isn't a
+  // verdict on the business — look at it again right away instead of in three weeks
+  const serviceFailed = (c: { status: string; reasons: string[] }) => c.status === "unclear" && c.reasons.some((r) => SERVICE_FAILURE.test(r));
+  const settled = (c: { status: string; checkedAt: Date; reasons: string[] }) =>
+    !serviceFailed(c) && !(["unclear", "temporarily_unavailable", "no_phone", "no_email"].includes(c.status) && c.checkedAt.getTime() < cutoff);
   const candFp = new Set(cands.filter(settled).map((c) => c.fingerprint));
   const candRef = new Set(cands.filter(settled).map((c) => c.placeId).filter(Boolean) as string[]);
   return {
@@ -350,6 +356,20 @@ async function knowledge(userId: string, now: Date, run: { id: string; date: str
     },
     rememberChecked(l: GeoLead, fp: string) { candFp.add(fp); if (l.placeId) candRef.add(l.placeId); today.add(fp); if (l.placeId) today.add(l.placeId); },
   };
+}
+
+/**
+ * Today's share of the month's web-search credits: what's left ÷ the days left
+ * (today included), so DARWIN finds leads every day of the month instead of
+ * spending everything in the first few days and then finding nothing.
+ */
+export async function searchAllowance(userId: string, date: string, monthly = env.darwinSearchMonthlyCredits): Promise<number> {
+  if (!monthly) return Infinity;
+  const runs = await getDb().darwinDailyRun.findMany({ where: { userId, date: { startsWith: date.slice(0, 7), lt: date } }, select: { apiRequests: true } });
+  const used = runs.reduce((s, r) => s + Number(((r.apiRequests ?? {}) as Partial<Api>).search ?? 0), 0);
+  const [y, m, d] = date.split("-").map(Number);
+  const daysLeft = new Date(Date.UTC(y, m, 0)).getUTCDate() - d + 1;
+  return Math.max(0, Math.floor((monthly - used) / Math.max(1, daysLeft)));
 }
 
 type Counters = Pick<DarwinDailyRun, "verified" | "candidates" | "duplicates" | "alreadyChecked" | "websiteRejected" | "unclear" | "tempUnavailable" | "closed" | "missingPhone" | "missingEmail" | "outOfArea" | "errors">;
@@ -389,6 +409,15 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     const exhausted = new Set(run.exhaustedCombos);
     let comboIndex = run.comboIndex;
     const paidCap = cfg.target * PAID_CALLS_PER_TARGET + (cfg.emailTarget ?? 0) * PAID_CALLS_PER_EMAIL;
+    // the web search's credits are paced over the month (today's share), so every day gets some
+    const searchShare = deps.search ? await searchAllowance(run.userId, run.date) : Infinity;
+    const searchCap = Math.min(paidCap, searchShare);
+    // verification services that stopped working this tick (out of credits, key rejected, down)
+    const down = new Map<Outage["service"], Outage>();
+    /** Can a business still be confirmed as having no website? (strict: needs Google or the web search) */
+    const canVerify = () => !cfg.strict || (deps.google && !down.has("google")) || (deps.search && !down.has("search"));
+    let geoProblem = "";
+    const deferred: GeoLead[] = []; // waiting for a phone-finding service that's down — not marked checked
     const say = (text: string, tone?: "ok" | "warn") => log.push({ at: deps.now().toISOString(), text: text.slice(0, 300), ...(tone ? { tone } : {}) });
     const persist = async (extra: Prisma.DarwinDailyRunUpdateInput = {}) => {
       // how far through the city today's search got (tomorrow carries on from there)
@@ -431,6 +460,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         else try { center = await deps.geocode(combo.loc); api.geoapify++; }
         catch (e) {
           if (e instanceof GeoapifyError && e.kind === "rate_limit") { stopReason = "rate_limit"; say(`Geoapify rate limit — pausing until the next run. (${e.message})`, "warn"); break; }
+          if (e instanceof GeoapifyError && (e.kind === "auth" || e.kind === "network")) { stopReason = e.kind === "auth" ? "geo_auth" : "geo_down"; geoProblem = e.message; say(e.message, "warn"); break; }
           say(`Couldn't find the location "${combo.loc}": ${(e as Error).message}`, "warn");
           exhausted.add(combo.key); comboIndex++; c.errors++; continue;
         }
@@ -460,6 +490,8 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         try { features = await deps.page({ center, radiusM: radii[cur.radiusStep], category: combo.cat, offset: cur.offset }); api.geoapify++; }
         catch (e) {
           if (e instanceof GeoapifyError && e.kind === "rate_limit") { stopReason = "rate_limit"; say(`Geoapify rate limit — pausing until the next run.`, "warn"); break; }
+          // a rejected key / used-up quota / Geoapify down affects EVERY area — stop, don't mark them all searched
+          if (e instanceof GeoapifyError && (e.kind === "auth" || e.kind === "network")) { stopReason = e.kind === "auth" ? "geo_auth" : "geo_down"; geoProblem = e.message; say(e.message, "warn"); break; }
           c.errors++; say(`Search failed for ${combo.cat} in ${combo.loc}: ${(e as Error).message}`, "warn");
           exhausted.add(combo.key); comboIndex++; continue;
         }
@@ -486,7 +518,13 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         const keep = fresh.filter(useful);
         const rest = fresh.filter((x) => !useful(x));
         // Google, the web search and Foursquare can each find a number; the web search an email
-        if (!deps.google && !deps.search && !deps.foursquare) {
+        const findersSet = deps.google || deps.search || !!deps.foursquare;
+        const findersUp = (deps.google && !down.has("google")) || (deps.search && !down.has("search")) || !!deps.foursquare;
+        if (findersSet && !findersUp) {
+          // the services that could find the missing contact are down: keep these for later, unjudged
+          deferred.push(...rest.map((x) => x.l));
+          fresh.splice(0, fresh.length, ...keep);
+        } else if (!findersSet) {
           for (const x of rest) {
             const noEmail = emailOpen() && !leadsOpen();
             if (noEmail) c.missingEmail++; else c.missingPhone++;
@@ -507,19 +545,30 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
       let processed = 0;
       for (let i = 0; i < fresh.length && (leadsOpen() || emailOpen()); i += BATCH) {
         if (readClock().getTime() - t0 > budget - 8_000) break;
-        const useGoogle = deps.google && api.google < paidCap;
-        const useSearch = deps.search && api.search < paidCap;
-        if ((deps.google && !useGoogle) || (deps.search && !useSearch)) { stopReason = "paid_cap"; break; }
+        const googleUp = deps.google && !down.has("google"), searchUp = deps.search && !down.has("search");
+        const useGoogle = googleUp && api.google < paidCap;
+        const useSearch = searchUp && api.search < searchCap;
+        if ((googleUp && !useGoogle) || (searchUp && !useSearch)) { stopReason = "paid_cap"; break; }
         const batch = fresh.slice(i, i + BATCH);
         const results = await Promise.all(batch.map(async ({ l, fp }) => {
           try { return { l, fp, g: await deps.gather({ name: l.name, address: l.address, lat: l.lat, lon: l.lon, website: l.website, phone: l.phone, email: l.email, locality: center.label.split(",").slice(0, 2).join(",") }, { google: useGoogle, search: useSearch, foursquare: !!deps.foursquare, wantEmail: emailOpen() }) }; }
           catch (e) { return { l, fp, err: (e as Error).message }; }
         }));
+        for (const r of results) if (!("err" in r)) { api.google += r.g.calls.google; api.search += r.g.calls.search; }
+        // a check SERVICE failed (not the business): don't judge this batch — carry on without
+        // that service if another can confirm, else pause; the batch is checked again later
+        const outages = results.flatMap((r) => ("err" in r ? [] : r.g.outage ?? []));
+        if (outages.length) {
+          for (const o of outages) if (!down.has(o.service)) { down.set(o.service, o); say(`${o.message}.`, "warn"); }
+          processed = i;
+          if (!canVerify()) { stopReason = "verify_down"; break; }
+          i -= BATCH;
+          continue;
+        }
         for (const r of results) {
           if (!leadsOpen() && !emailOpen()) break;
           processed = i + results.indexOf(r) + 1;
           if ("err" in r) { c.errors++; continue; }
-          api.google += r.g.calls.google; api.search += r.g.calls.search;
           const v = classifyWebsite(r.g.signals, { strict: cfg.strict });
           const listingPhone = verifyPhone(r.l.phone);
           const googlePhone = verifyPhone(r.g.google?.phone);
@@ -591,7 +640,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         await persist();
       }
       // anything not verified yet waits in the backlog for the next run (never skipped)
-      const left = fresh.slice(processed).map((x) => x.l);
+      const left = [...fresh.slice(processed).map((x) => x.l), ...deferred.splice(0)];
       if (left.length) await db.darwinSearchCursor.update({ where: { id: cur.id }, data: { backlog: left as unknown as Prisma.InputJsonValue } });
       else {
         const after = await db.darwinSearchCursor.findUnique({ where: { id: cur.id }, select: { exhausted: true } });
@@ -613,11 +662,21 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
     const done = leadsDone && emailDone;
     const outOfScope = stopReason === "scope" || (comboIndex >= combos.length);
     const capped = stopReason === "geo_cap" || stopReason === "paid_cap";
+    // a service that can't work again today (out of credits / key rejected) ends today's search with that reason;
+    // one that's rate-limited or briefly down just pauses it until the next tick
+    const svc = [...down.values()];
+    const svcHard = stopReason === "verify_down" && svc.some((o) => o.kind === "credits" || o.kind === "auth");
+    const geoHard = stopReason === "geo_auth";
+    const blocked = svcHard || geoHard;
+    const blockedReason = geoHard ? `DARWIN couldn't search: ${geoProblem}`
+      : svcHard ? `DARWIN couldn't confirm which businesses have no website: ${svc.map((o) => o.message).join("; ")}. The businesses it found are kept and checked again once the service works.`
+      : "";
+    const pacedOut = stopReason === "paid_cap" && deps.search && api.search >= searchCap && searchCap < paidCap;
     // nothing left to look for in time: each unfinished goal has passed its deadline
     const late = !done && !leadsOpen() && !emailOpen();
     const emailInfo = emailTarget ? { found: emailLeads, target: emailTarget } : undefined;
     // the area ran out before the target and there's still time → widen the search and carry on
-    if (outOfScope && !done && !late && !capped) {
+    if (outOfScope && !done && !late && !capped && !blocked) {
       const w = widen(cfg);
       if (w) {
         cfg.widened = w.step;
@@ -628,12 +687,16 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         return run;
       }
     }
-    if (done || outOfScope || capped || late) {
-      const reasons = shortfallReasons({ ...c, verified: leadsCount() }, cfg, { outOfScope: outOfScope && !late, capped, late, api, google: deps.google, search: deps.search, email: emailInfo });
+    if (done || outOfScope || capped || late || blocked) {
+      const reasons = [
+        ...(blocked ? [blockedReason] : []),
+        ...(pacedOut ? [`Today's share of this month's web-search credits (${searchCap} of ${env.darwinSearchMonthlyCredits}) is used — DARWIN spreads them so it finds leads every day; it carries on tomorrow. Raise DARWIN_SEARCH_MONTHLY_CREDITS if your Tavily plan has more, or add GOOGLE_PLACES_API_KEY so fewer web searches are needed`] : []),
+        ...shortfallReasons({ ...c, verified: leadsCount() }, cfg, { outOfScope: outOfScope && !late && !blocked, capped: capped && !pacedOut, late, api, google: deps.google, search: deps.search, email: emailInfo }),
+      ];
       const status = done ? "completed" : "partial";
       const emailPart = emailTarget ? ` · ${emailLeads}/${emailTarget} with an email` : "";
       say(done ? `Daily target reached: ${leadsCount()}/${cfg.target}${emailPart}.` : `Search finished with ${leadsCount()}/${cfg.target} verified${emailPart} — ${reasons[0] ?? "scope exhausted"}.`, done ? "ok" : "warn");
-      await persist({ status, completedAt: deps.now(), reasons, lockedUntil: null });
+      await persist({ status, completedAt: deps.now(), reasons, lockedUntil: null, lastError: blocked ? blockedReason : null });
       const report = await buildReport(run);
       run = await db.darwinDailyRun.update({ where: { id: run.id }, data: { report: report as unknown as Prisma.InputJsonValue } });
       await logActivity(run.userId, "discovered", `DARWIN's daily search found ${report.verified} new verified no-website lead${report.verified === 1 ? "" : "s"} (target ${report.target}).`, undefined, { count: report.verified });
@@ -643,7 +706,12 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
         result: `${report.contactable} contactable · ${report.highPotential} high-potential · ${report.duplicates} duplicates removed · ${report.websiteRejected} with websites rejected`,
       });
     } else {
-      await persist({ lastError: stopReason === "rate_limit" ? "Geoapify rate limit — will continue on the next run." : null });
+      await persist({
+        lastError: stopReason === "rate_limit" ? "Geoapify rate limit — will continue on the next run."
+          : stopReason === "geo_down" ? `${geoProblem} — will try again on the next run.`
+          : stopReason === "verify_down" ? `${svc.map((o) => o.message).join("; ")} — paused, will try again on the next run.`
+          : null,
+      });
     }
     return run;
   } finally {

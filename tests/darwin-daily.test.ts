@@ -188,8 +188,9 @@ d("DARWIN daily run (integration)", () => {
     expect(done.status).toBe("partial");
     expect(done.verified).toBe(6);
     expect(done.reasons[0]).toMatch(/Insufficient businesses found/);
-    // nothing already saved or rejected yesterday was verified again
-    expect(calls.gather - g0).toBe(6);
+    // nothing already saved or rejected yesterday was verified again — except the one that was only
+    // "unclear" because the web search failed (a service problem, not a verdict): it gets another look
+    expect(calls.gather - g0).toBe(7);
     const report = done.report as unknown as import("@/lib/darwin/daily/report").DailyReport;
     expect(R.spokenReport(report)).toMatch(/^DARWIN completed today's search\. 6 new businesses were verified as having no website\. I could not safely verify another 44, so I did not add them\./);
     const all = await getDb().darwinLead.findMany({ where: { userId }, select: { sourceRef: true } });
