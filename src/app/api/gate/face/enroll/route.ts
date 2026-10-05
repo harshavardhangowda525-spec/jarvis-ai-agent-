@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
         select: { id: true, label: true, createdAt: true },
       });
     });
-    setDeviceHint(true);
+    await setDeviceHint(user.id);
     return ok({ enrolled: created });
   } catch (err) {
     return handleError(err);

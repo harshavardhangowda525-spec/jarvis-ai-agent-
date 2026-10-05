@@ -16,7 +16,7 @@ import { getDb } from "@/lib/db";
 import { verifySession, SESSION_COOKIE, type SessionClaims } from "@/lib/auth/jwt";
 import { getCurrentUser, type AuthUser } from "@/lib/auth/session";
 import {
-  GATE_COOKIE, GATE_DEVICE_COOKIE, deviceCookieOptions, gateCookieOptions, signGate, verifyGate,
+  GATE_COOKIE, GATE_DEVICE_COOKIE, deviceCookieOptions, gateCookieOptions, signDeviceHint, signGate, verifyDeviceHint, verifyGate,
   type GateClaims, type GateMethod,
 } from "./token";
 import { afterFailure, afterSuccess, lockedFor, type AttemptState } from "./policy";
@@ -38,9 +38,14 @@ export async function setUnlocked(userId: string, sessionId: string, method: Gat
   cookies().set(GATE_COOKIE, await signGate({ sub: userId, sid: sessionId, method }), gateCookieOptions());
 }
 export function clearUnlocked() { cookies().delete(GATE_COOKIE); }
-export function setDeviceHint(on: boolean) {
-  if (on) cookies().set(GATE_DEVICE_COOKIE, "1", deviceCookieOptions());
+/** Remember (for a year) that face sign-in is set up on this device for this user; null forgets it. */
+export async function setDeviceHint(userId: string | null) {
+  if (userId) cookies().set(GATE_DEVICE_COOKIE, await signDeviceHint(userId), deviceCookieOptions());
   else cookies().delete(GATE_DEVICE_COOKIE);
+}
+/** Whose face sign-in this device has (signed out). */
+export async function deviceHintUser(): Promise<string | null> {
+  return verifyDeviceHint(cookies().get(GATE_DEVICE_COOKIE)?.value);
 }
 
 /* ---------------- attempts & lockout ---------------- */
@@ -85,7 +90,8 @@ export function relyingParty(req: NextRequest): { rpID: string; origin: string; 
 /* ---------------- one-time challenges ---------------- */
 
 /** Remember the challenge the WebAuthn options were built with; returns its id. */
-export async function saveChallenge(kind: "register" | "unlock", userId: string | null, challenge: string): Promise<string> {
+export type ChallengeKind = "register" | "unlock" | "faceid-unlock" | "faceid-enroll";
+export async function saveChallenge(kind: ChallengeKind, userId: string | null, challenge: string): Promise<string> {
   const db = getDb();
   await db.gateChallenge.deleteMany({ where: { expiresAt: { lt: new Date() } } }).catch(() => {});
   const row = await db.gateChallenge.create({ data: { challenge, kind, userId, expiresAt: new Date(Date.now() + CHALLENGE_TTL_MS) } });
@@ -102,4 +108,34 @@ export async function consumeChallenge(id: string, kind: "register" | "unlock", 
   if (row.kind !== kind || row.expiresAt < new Date()) return null;
   if (userId !== null && row.userId !== userId) return null;
   return row.challenge;
+}
+
+/** Take a challenge (single use) with whom it was issued for; null if unknown, expired or of another kind. */
+export async function takeChallenge(id: string, kind: ChallengeKind): Promise<{ challenge: string; userId: string | null; createdAt: Date } | null> {
+  if (typeof id !== "string" || !id) return null;
+  const db = getDb();
+  const row = await db.gateChallenge.findUnique({ where: { id } });
+  if (!row) return null;
+  const { count } = await db.gateChallenge.deleteMany({ where: { id } });
+  if (!count || row.kind !== kind || row.expiresAt < new Date()) return null;
+  return { challenge: row.challenge, userId: row.userId, createdAt: row.createdAt };
+}
+
+/* ---------------- JARVIS Face ID templates ---------------- */
+
+/** This user's enrolled face for THIS server (decrypted, server-side only). */
+export async function faceTemplateFor(userId: string): Promise<{ descriptors: number[][]; createdAt: Date } | null> {
+  const { openTemplate, templateKeyId } = await import("./face-template");
+  const row = await getDb().faceTemplate.findUnique({ where: { userId_keyId: { userId, keyId: templateKeyId() } } });
+  if (!row) return null;
+  const descriptors = openTemplate(row);
+  return descriptors?.length ? { descriptors, createdAt: row.createdAt } : null;
+}
+
+/** Enrolment summary for the settings screen and the gate — dates only, never the template. */
+export async function faceIdSummary(userId: string): Promise<{ enrolled: boolean; enrolledAt: string | null; elsewhere: boolean }> {
+  const { templateKeyId } = await import("./face-template");
+  const rows = await getDb().faceTemplate.findMany({ where: { userId }, select: { keyId: true, createdAt: true } });
+  const mine = rows.find((r) => r.keyId === templateKeyId());
+  return { enrolled: !!mine, enrolledAt: mine?.createdAt.toISOString() ?? null, elsewhere: rows.some((r) => r.keyId !== templateKeyId()) };
 }

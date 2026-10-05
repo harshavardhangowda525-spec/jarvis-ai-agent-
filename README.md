@@ -616,55 +616,68 @@ Settings (all optional): `EV_DAILY=off`, `EV_DAILY_TZ` (default `Asia/Kolkata`),
 
 ## Face unlock (biometric gate)
 
-JARVIS opens behind a full-screen authentication gate. It verifies your face,
+JARVIS opens behind a full-screen authentication gate. It recognizes your face,
 then hands over into the JARVIS core: "IDENTITY VERIFIED → WELCOME → JARVIS
 ONLINE", and the voice interface switches on.
 
-**Who decides it's you: your device, not a webcam guess.**
-- Face matching is done by the device's own secure biometric system, through
-  WebAuthn with user verification required:
-  - Windows Hello Face (an IR camera, with anti-spoofing);
-  - Face ID or Touch ID on Apple devices;
-  - Android biometrics.
-- When the device recognizes you, it signs a one-time challenge with a key that
-  never leaves its secure hardware. The server checks that signature against
-  the public key saved when you enrolled.
-- Only a valid signature, verified by the server, unlocks JARVIS. That same
-  result sets the unlock cookie the middleware enforces.
-- The webcam on the gate screen only *finds* your face, so the holographic
-  scanner can follow it. This uses MediaPipe on-device: the video is never
-  shown, stored or uploaded, and it can't unlock anything. Ordinary webcam
-  face detection is not treated as identity verification.
-- JARVIS never receives, stores or uploads face images, templates or camera
-  footage. The database holds only the credential id and its **public** key
-  (`GateCredential`).
+**JARVIS Face ID: enrolled inside JARVIS, no system settings.**
+1. Open **Settings → Face unlock → Enroll face**.
+2. A holographic scan guides you: look straight, turn a little to your left and
+   right, then blink. It takes about 20 seconds.
+3. That's it: next time, JARVIS unlocks when it sees you.
 
-**Set it up:**
-1. Turn on Windows Hello Face in Windows Settings → Accounts → Sign-in options.
-   Use the equivalent on other devices.
-2. In JARVIS, go to Settings → **Face unlock** → **Enroll face**.
-   - Windows asks for your face; that's the enrolment.
-   - **Re-enroll** replaces your face credentials; the trash icon removes one.
-   - The same section sets an optional **PIN** (6–12 digits).
-3. Changing these settings needs an unlock from the last 10 minutes. If yours is
-   older, JARVIS sends you through the gate first.
+The first time you unlock with your password, JARVIS takes you straight into
+enrolment. **Re-enroll** replaces your face; **Remove** deletes it.
+
+**How it works and what is stored:**
+- At each step, the face is turned into a 128-number "face descriptor" in your
+  browser, using face-api with models served by this app. Only those numbers
+  are sent, never a photo or video. The camera feed is never shown or stored.
+- Enrolment keeps several descriptors from different angles. They're
+  encrypted with AES-256-GCM, under a key derived from the server's
+  `AUTH_SECRET`, in the `FaceTemplate` table. They're decrypted only on the
+  server to compare, and never sent back to a browser.
+- To unlock, you do a short **liveness** check: look straight, then a random
+  action (blink, or turn left or right), then look straight. The server checks
+  the steps were done and the timing is plausible, and rejects descriptors that
+  are bit-identical (a frozen or replayed image).
+- Every captured descriptor must be within **0.55** of your enrolment, and their
+  average within **0.50**. Those thresholds were measured on 34 real photos of 7
+  people: the same person scored 0.30–0.57 apart, different people never closer
+  than 0.60.
+- Only the server's verdict unlocks. It sets the session-bound unlock cookie
+  the middleware enforces.
+
+**Honest limits:** webcam face recognition is convenient, but it isn't as strong
+as a dedicated biometric sensor. Someone with a good video of you could try to
+fool any webcam. The liveness challenge, strict thresholds, server-side
+matching and the lockout make that hard. For stronger protection, you can
+*also* turn on the device's own biometrics under Settings → Face unlock →
+**Advanced**: Windows Hello with an IR camera, Face ID or Touch ID, via WebAuthn.
+Then a **Use Windows Hello** button appears on the gate.
+
+**A PC and Vercel with different `AUTH_SECRET`s** each keep their own
+enrolment, so enrol once on each.
 
 **Every launch:**
 1. Opening sequence: a point of light → the AI core → "JARVIS SYSTEM
    INITIALIZING" → "BIOMETRIC AUTHENTICATION REQUIRED".
 2. The scanner looks for your face: CAMERA READY → FACE DETECTED → ANALYZING
    BIOMETRIC DATA, with landmarks, contours, brackets and a scan line.
-3. VERIFYING IDENTITY: Windows Hello confirms it's you.
+3. VERIFYING IDENTITY: the liveness prompts (look straight → blink or turn → look
+   straight), then the server matches your face. With Advanced device
+   biometrics, Windows Hello confirms it instead.
 4. The result:
    - **Success:** IDENTITY VERIFIED, then the unlock animation into JARVIS.
    - **Failure:** IDENTITY NOT RECOGNIZED. It never says why. It won't keep
      re-prompting while you sit there: look away, or tap **Scan again**.
 
 **Other states:**
-- **Camera:** CAMERA ACCESS REQUIRED (allow, or verify without the camera) and
-  CAMERA ERROR (no camera, blocked or busy). Windows Hello still works in both,
-  because it uses its own sensor.
-- **No biometric hardware, or nothing enrolled:** the PIN or password unlocks.
+- **Camera:** CAMERA ACCESS REQUIRED and CAMERA ERROR (no camera, blocked or
+  busy). Face ID needs the camera; the PIN, password or Windows Hello still
+  work.
+- **Nothing enrolled:** the PIN or password unlocks, then JARVIS opens
+  enrolment.
 - **Signed out on a device with face unlock:** the gate signs you in by face.
   "Sign in with password" goes to the normal login page. Signing in with your
   password counts as passing the gate.
@@ -681,16 +694,19 @@ ONLINE", and the voice interface switches on.
 **Lockout:**
 - Five failed attempts in a row lock the gate for 1 minute. Every kind of
   attempt counts: face not recognized, a dismissed device prompt, a wrong PIN or
-  a wrong password.
+  a wrong password. A Face ID scan you didn't finish (prompt not followed) never
+  counts.
 - Each further lockout doubles the wait, up to 30 minutes.
 - While locked out, nothing unlocks, not even the correct PIN or password.
 
 **Good to know:**
-- WebAuthn credentials belong to one site address. A face enrolled on
-  `http://localhost:3000` (`npm run local`) doesn't work on your Vercel domain;
-  enrol on each.
+- Advanced device biometrics (WebAuthn) belong to one site address. A device
+  set up on `http://localhost:3000` (`npm run local`) doesn't work on your
+  Vercel domain; set it up on each.
 - The implementation is modular, so the method can be swapped later:
   - `lib/gate/server.ts` and `api/gate/*`: verification;
+  - `lib/gate/face-match.ts`, `face-template.ts` and `face-id.ts`: Face ID
+    (thresholds, liveness, encryption, capture);
   - `lib/gate/token.ts`: the session-bound cookie;
   - `lib/gate/policy.ts`: lockouts;
   - `lib/gate/machine.ts`: UI states;

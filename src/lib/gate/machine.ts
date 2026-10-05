@@ -49,6 +49,7 @@ export type GateEvent =
   | { type: "FACE"; present: boolean }
   | { type: "SCAN" }            // face held long enough → scanning
   | { type: "VERIFY" }          // start the device check (after the scan, or a tap)
+  | { type: "SCAN_ABORT"; lockedMs?: number } // the scan stopped part-way (prompt not followed, face lost) — not a failure
   | { type: "VERIFIED" }        // the server accepted the biometric signature
   | { type: "REJECTED"; lockedMs?: number; attemptsLeft?: number }
   | { type: "CANCELLED" }       // the device dialog was dismissed — counts as a failed scan
@@ -105,6 +106,11 @@ export function gateReducer(s: GateState, e: GateEvent, now = Date.now()): GateS
       const lockedUntil = e.type === "REJECTED" && e.lockedMs ? now + e.lockedMs : s.lockedUntil;
       const n = { ...s, failures: s.failures + 1, lockedUntil, attemptsLeft: e.type === "REJECTED" ? (e.attemptsLeft ?? s.attemptsLeft) : s.attemptsLeft };
       return { ...n, phase: lockedUntil > now ? "locked-out" : "not-recognized" };
+    }
+    case "SCAN_ABORT": {
+      if (s.phase !== "scanning") return s;
+      const lockedUntil = e.lockedMs ? now + e.lockedMs : s.lockedUntil;
+      return { ...s, lockedUntil, phase: lockedUntil > now ? "locked-out" : idle(s) };
     }
     case "ABORTED":
       return s.phase === "verifying" ? { ...s, phase: idle(s) } : s;

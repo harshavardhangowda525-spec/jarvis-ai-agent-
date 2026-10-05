@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     await recordSuccess(cred.userId);
     if (user && session) await setUnlocked(user.id, session.jti, "face");
     else await createSession({ id: cred.user.id, email: cred.user.email }, { userAgent: req.headers.get("user-agent") ?? undefined, ipAddress: clientIp(req), gateMethod: "face" });
-    setDeviceHint(true);
+    await setDeviceHint(cred.userId);
     return ok({ unlocked: true, signedIn: !user });
   } catch (err) {
     return handleError(err);

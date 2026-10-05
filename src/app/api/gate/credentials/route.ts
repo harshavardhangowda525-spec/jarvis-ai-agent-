@@ -30,7 +30,7 @@ export async function DELETE(req: NextRequest) {
     if (!id && !all) return fail("Invalid request.", 422);
     const db = getDb();
     const { count } = await db.gateCredential.deleteMany({ where: { userId: user.id, ...(all ? {} : { id: id! }) } });
-    if (!(await db.gateCredential.count({ where: { userId: user.id } }))) setDeviceHint(false);
+    if (!(await db.gateCredential.count({ where: { userId: user.id } })) && !(await db.faceTemplate.count({ where: { userId: user.id } }))) await setDeviceHint(null);
     return ok({ removed: count });
   } catch (err) {
     return handleError(err);

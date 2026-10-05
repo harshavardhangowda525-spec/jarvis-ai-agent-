@@ -4,18 +4,24 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { gateReducer, initialGate, PHASE_TITLE, type GateEvent, type GatePhase } from "@/lib/gate/machine";
 import { biometricName, faceUnlock, gateStatus, passwordUnlock, pinUnlock, platformBiometricsAvailable, type GateStatus } from "@/lib/gate/client";
-import type { FaceTracker } from "@/lib/gate/face-tracker";
+import type { FaceFrame, FaceTracker } from "@/lib/gate/face-tracker";
+import { faceIdChallenge, faceIdVerify, runFaceSteps, warmUpFaceId } from "@/lib/gate/face-id";
+import type { FaceProbe } from "@/lib/gate/face-match";
 import { GateScene, gateLayout } from "./gate-scene";
 
 /**
- * The biometric gate in front of JARVIS.
+ * The biometric gate in front of JARVIS. Two ways to verify a face:
  *
- * Who you are is decided by the DEVICE's biometric system (Windows Hello Face,
- * Face ID, Touch ID, Android) through WebAuthn, and checked by the server — the
- * same result that sets the unlock cookie the middleware enforces. The camera
- * here only finds your face so the scanner can follow it (on-device, never
- * shown, stored or sent); it can't unlock anything. Without device biometrics,
- * the PIN or password unlocks.
+ * - "camera" — JARVIS Face ID (enrolled inside JARVIS): a short liveness
+ *   challenge (look straight → blink or turn → look straight); at each step the
+ *   face is turned into a 128-number descriptor on this device, and the SERVER
+ *   compares them with your encrypted enrolment. Only descriptors are sent —
+ *   never images; the camera feed is never shown or stored.
+ * - "device" — the device's own biometrics (Windows Hello / Face ID / Touch ID)
+ *   through WebAuthn, verified by the server.
+ *
+ * Either way the server's verdict sets the unlock cookie the middleware
+ * enforces. Without either, the PIN or password unlocks.
  */
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -35,6 +41,13 @@ export function BiometricGate({ next }: { next: string }) {
   const [fallback, setFallback] = useState<null | "pin" | "password">(null);
   const [outro, setOutro] = useState<0 | 1 | 2 | 3 | 4>(0);
   const [now, setNow] = useState(() => Date.now());
+  const [mode, setMode] = useState<"camera" | "device" | null>(null);
+  const [deviceOk, setDeviceOk] = useState(false);
+  const [prompt, setPrompt] = useState<string | null>(null);
+  const modeRef = useRef(mode); modeRef.current = mode;
+  const frameRef = useRef<FaceFrame | null>(null);
+  const scan = useRef<{ challengeId: string; probes: FaceProbe[] } | null>(null);
+  const enrollAfter = useRef(false); // unlocked without a face enrolled → straight to enrolment
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -101,6 +114,7 @@ export function BiometricGate({ next }: { next: string }) {
     if (!stream.current) return;
     setCamWhy(null);
     dispatch({ type: "CAMERA", status: "on" });
+    if (modeRef.current === "camera") void warmUpFaceId(v);
     let lastSeen = 0, seen = 0, lastRun = 0, everSeen = false;
     const step = (t: number) => {
       loop.current = requestAnimationFrame(step);
@@ -108,6 +122,9 @@ export function BiometricGate({ next }: { next: string }) {
       lastRun = t;
       let f = null;
       try { f = tracker.current.detect(v, t); } catch { return; }
+      // test builds only: let an automated test act out the head turn / blink (compiled out otherwise)
+      if (process.env.NEXT_PUBLIC_GATE_TEST === "1" && f) Object.assign(f, (window as unknown as { __gatePose?: Partial<FaceFrame> }).__gatePose ?? {});
+      frameRef.current = f;
       scene.current?.setFace(f, (v.videoWidth || 4) / (v.videoHeight || 3), tracker.current.contours);
       if (f) {
         lastSeen = t; seen++; everSeen = true;
@@ -146,12 +163,16 @@ export function BiometricGate({ next }: { next: string }) {
       if (s?.signedIn && s.unlocked) { router.replace(next); return; }
       setStatus(s);
       const inn = !!s?.signedIn;
-      const canFace = plat && (inn ? (s?.enrolled ?? 0) > 0 : true);
-      // signed out with no face enrolled on this device: don't pop a sign-in prompt by itself
+      // JARVIS Face ID first; the device's own biometrics (Windows Hello…) second
+      const camera = inn ? !!s?.faceId?.enrolled : !!s?.faceSignIn;
+      const device = plat && (inn ? (s?.enrolled ?? 0) > 0 : true);
+      const m = camera ? "camera" : device ? "device" : null;
+      setMode(m); setDeviceOk(device);
+      // signed out with no face set up on this device: don't pop a sign-in prompt by itself
       armed.current = inn || !!s?.deviceHint;
-      dispatch({ type: "READY", canFace, unavailable: !plat ? "no-biometrics" : inn ? "not-enrolled" : null, lockedMs: s?.lockedMs });
-      if (!canFace && inn) setFallback(s?.pinSet ? "pin" : "password");
-      if (canFace) void startCamera();
+      dispatch({ type: "READY", canFace: !!m, unavailable: inn ? "not-enrolled" : "no-biometrics", lockedMs: s?.lockedMs });
+      if (!m && inn) { setFallback(s?.pinSet ? "pin" : "password"); enrollAfter.current = true; }
+      if (m) void startCamera();
     })();
     return () => { alive = false; clearTimeout(t1); clearTimeout(t2); };
   }, [dispatch, next, router, startCamera]);
@@ -166,6 +187,42 @@ export function BiometricGate({ next }: { next: string }) {
   useEffect(() => {
     const s = scene.current;
     if (!s) return;
+    if (st.phase === "scanning" && modeRef.current === "camera") {
+      // JARVIS Face ID: the liveness steps, capturing a descriptor at each one
+      let stopped = false;
+      const cancelled = () => stopped || phaseRef.current !== "scanning";
+      setPrompt(null); s.setProgress(0.02);
+      (async () => {
+        const ch = await faceIdChallenge("unlock");
+        if (cancelled()) return;
+        if (!ch.ok) {
+          if (ch.status === 423) { dispatch({ type: "SCAN_ABORT", lockedMs: Number(ch.data.details?.lockedMs ?? 60_000) }); return; }
+          if (ch.status === 404) { setMode(deviceOk ? "device" : null); if (!deviceOk) { dispatch({ type: "SCAN_ABORT" }); dispatch({ type: "READY", canFace: false, unavailable: "not-enrolled" }); setFallback(status?.pinSet ? "pin" : "password"); } else dispatch({ type: "SCAN_ABORT" }); return; }
+          setNote("Something went wrong — try again."); armed.current = false; dispatch({ type: "SCAN_ABORT" }); return;
+        }
+        try {
+          const probes = await runFaceSteps(ch.data.steps, {
+            frame: () => frameRef.current,
+            video: () => videoRef.current,
+            onStep: (step, i, n, text) => setPrompt(`${step === "left" ? "← " : step === "right" ? "→ " : ""}${text}${n > 1 ? `  ·  ${i + 1}/${n}` : ""}`),
+            onProgress: (p) => s.setProgress(0.04 + p * 0.76),
+            cancelled,
+          });
+          if (cancelled()) return;
+          scan.current = { challengeId: ch.data.challengeId, probes };
+          setPrompt(null);
+          dispatch({ type: "VERIFY" });
+        } catch (e) {
+          if (cancelled()) return;
+          const why = (e as Error).message;
+          setPrompt(null);
+          setNote(why === "timeout" ? "Didn't catch that — tap the scanner and follow the prompt." : why === "no-face" ? "Keep just your face in view, in good light." : "Face ID couldn't start — try again, or use your PIN or password.");
+          armed.current = false;
+          dispatch({ type: "SCAN_ABORT" });
+        }
+      })();
+      return () => { stopped = true; };
+    }
     if (st.phase === "scanning") {
       const t0 = performance.now();
       const id = setInterval(() => {
@@ -181,13 +238,27 @@ export function BiometricGate({ next }: { next: string }) {
     }
     if (st.phase === "verified") { s.setProgress(1); return; }
     s.setProgress(0);
-  }, [st.phase, dispatch]);
+  }, [st.phase, dispatch, deviceOk, status?.pinSet]);
 
   // the real check: the device verifies the face, the server verifies the device
   useEffect(() => {
     if (st.phase !== "verifying" || verifying.current) return;
     verifying.current = true;
     setNote(null); setNeedTap(false);
+    if (modeRef.current === "camera") {
+      // JARVIS Face ID: the server compares the descriptors with the enrolment
+      const sc = scan.current; scan.current = null;
+      (async () => {
+        const r = sc ? await faceIdVerify(sc.challengeId, sc.probes) : null;
+        verifying.current = false;
+        if (r?.ok) { dispatch({ type: "VERIFIED" }); return; }
+        armed.current = false;
+        if (!r || r.data.details?.expired) { dispatch({ type: "ABORTED" }); setNote("That scan expired — try again."); return; }
+        if (r.status === 404) { dispatch({ type: "ABORTED" }); setMode(deviceOk ? "device" : null); return; }
+        dispatch({ type: "REJECTED", lockedMs: Number(r.data.details?.lockedMs ?? 0) || undefined, attemptsLeft: r.data.details?.attemptsLeft as number | undefined });
+      })();
+      return;
+    }
     stopCamera(); // the device's own biometric camera may need it
     present.current = false;
     (async () => {
@@ -204,7 +275,7 @@ export function BiometricGate({ next }: { next: string }) {
       }
       void startCamera();
     })();
-  }, [st.phase, signedIn, dispatch, stopCamera, startCamera, status?.pinSet]);
+  }, [st.phase, signedIn, dispatch, stopCamera, startCamera, status?.pinSet, deviceOk]);
 
   // back to scanning mode with a face still in view → show it as detected again
   useEffect(() => {
@@ -239,7 +310,8 @@ export function BiometricGate({ next }: { next: string }) {
       setTimeout(() => setOutro(1), rm ? 300 : 1750),   // WELCOME
       setTimeout(() => setOutro(2), rm ? 600 : 2650),   // JARVIS ONLINE
       setTimeout(() => setOutro(3), rm ? 900 : 3700),   // fade
-      setTimeout(() => { dispatch({ type: "DONE" }); setOutro(4); router.replace(next); router.refresh(); }, rm ? 1100 : 4250),
+      // unlocked without a face enrolled → straight into enrolment
+      setTimeout(() => { dispatch({ type: "DONE" }); setOutro(4); router.replace(enrollAfter.current ? "/dashboard/settings?enroll=face" : next); router.refresh(); }, rm ? 1100 : 4250),
     ];
     return () => ts.forEach(clearTimeout);
   }, [st.phase, next, router, dispatch, stopCamera]);
@@ -247,9 +319,17 @@ export function BiometricGate({ next }: { next: string }) {
   /* ---------------- actions ---------------- */
   const verifyNow = () => {
     if (!st.canFace || st.lockedUntil > Date.now()) return;
-    armed.current = true; setNeedTap(false);
+    armed.current = true; setNeedTap(false); setNote(null);
+    if (mode === "camera") {
+      // Face ID needs the camera: (re)open it, or start the scan on the face in view
+      if (st.phase === "camera-error" || st.phase === "camera-permission") { void startCamera(true); return; }
+      if (st.phase === "face-detected") dispatch({ type: "SCAN" });
+      else if (st.phase === "not-recognized") dispatch({ type: "RETRY" });
+      return;
+    }
     dispatch({ type: "VERIFY" });
   };
+  const useDevice = () => { setMode("device"); armed.current = true; setNote(null); setNeedTap(false); if (st.phase === "not-recognized") dispatch({ type: "RETRY" }); setTimeout(() => dispatch({ type: "VERIFY" }), 0); };
   const allowCamera = () => { void startCamera(true); };
   const signOut = async () => { await fetch("/api/auth/logout", { method: "POST" }).catch(() => {}); router.replace("/login"); router.refresh(); };
 
@@ -261,19 +341,20 @@ export function BiometricGate({ next }: { next: string }) {
 
   const subtitle = (() => {
     switch (p) {
-      case "camera-permission": return "Allow the camera so the scanner can find your face. Your face is matched on this device — never uploaded.";
-      case "camera-ready": return needTap ? `Tap the scanner to verify with ${bio}.` : signedIn || status?.deviceHint ? "Look at the camera." : `Tap the scanner to sign in with ${bio}.`;
+      case "camera-permission": return mode === "camera" ? "JARVIS Face ID needs the camera to see your face. No photos or video are ever stored or uploaded." : "Allow the camera so the scanner can find your face. Your face is matched on this device — never uploaded.";
+      case "camera-ready": return mode === "camera" ? "Look at the camera." : needTap ? `Tap the scanner to verify with ${bio}.` : signedIn || status?.deviceHint ? "Look at the camera." : `Tap the scanner to sign in with ${bio}.`;
       case "face-detected": return armed.current ? "Hold still." : "Tap the scanner to scan again.";
-      case "scanning": return "Mapping facial landmarks…";
-      case "verifying": return `${bio} is confirming it's you — look at your camera.`;
+      case "scanning": return prompt ?? "Mapping facial landmarks…";
+      case "verifying": return mode === "camera" ? "Matching your face…" : `${bio} is confirming it's you — look at your camera.`;
       case "verified": return "ACCESS GRANTED";
       case "not-recognized": return st.attemptsLeft != null && st.attemptsLeft < 5 ? `${st.attemptsLeft} attempt${st.attemptsLeft === 1 ? "" : "s"} left before a temporary lock.` : "Try again, or use your PIN or password.";
       case "locked-out": return `Too many failed attempts. Try again in ${Math.floor(secsLeft / 60)}:${String(secsLeft % 60).padStart(2, "0")}.`;
-      case "camera-error": return camWhy === "denied" ? `Camera blocked — you can still verify with ${bio}.` : camWhy === "missing" ? `No camera found — verify with ${bio}.` : camWhy === "tracker" ? `Face tracking unavailable — verify with ${bio}.` : `The camera is busy — verify with ${bio}.`;
+      case "camera-error":
+        if (mode === "camera") return camWhy === "denied" ? "Camera blocked — allow it for this site to use Face ID, or use your PIN or password." : camWhy === "missing" ? "No camera found — use your PIN or password." : camWhy === "tracker" ? "Face tracking couldn't start — try again, or use your PIN or password." : "The camera is busy — close other apps using it and try again.";
+        return camWhy === "denied" ? `Camera blocked — you can still verify with ${bio}.` : camWhy === "missing" ? `No camera found — verify with ${bio}.` : camWhy === "tracker" ? `Face tracking unavailable — verify with ${bio}.` : `The camera is busy — verify with ${bio}.`;
       case "unavailable":
-        if (st.unavailable === "not-enrolled") return "Face unlock isn't set up yet. Unlock with your PIN or password, then enrol in Settings → Security.";
-        if (signedIn) return "This device has no secure biometric sensor JARVIS can use. Unlock with your PIN or password.";
-        return "This device has no secure biometric sensor JARVIS can use. Sign in with your password.";
+        if (signedIn) return "Face ID isn't set up yet. Unlock with your PIN or password — JARVIS will then enroll your face.";
+        return "Sign in with your password to continue.";
       default: return "";
     }
   })();
@@ -332,7 +413,7 @@ export function BiometricGate({ next }: { next: string }) {
           </h1>
         )}
         {!boot && subtitle && outro < 1 && (
-          <p key={`${p}-${subtitle}`} className="gate-in mt-2 max-w-md text-[13px] tracking-wide text-cyan-50/60" style={{ animationDelay: "120ms" }}>{subtitle}</p>
+          <p key={`${p}-${subtitle}`} className={`gate-in mt-2 max-w-md tracking-wide ${p === "scanning" && prompt ? "text-[16px] font-medium text-cyan-50 [text-shadow:0_0_14px_rgba(70,205,255,0.6)]" : "text-[13px] text-cyan-50/60"}`} style={{ animationDelay: "120ms" }} data-gate-prompt={p === "scanning" && prompt ? "" : undefined}>{subtitle}</p>
         )}
         {p === "verifying" && (
           <div className="gate-in mt-4 flex h-6 items-end gap-[3px]" aria-hidden>
@@ -345,8 +426,10 @@ export function BiometricGate({ next }: { next: string }) {
         {!boot && !done && (
           <div className="pointer-events-auto mt-5 flex flex-wrap items-center justify-center gap-3">
             {p === "camera-permission" && <GateButton onClick={allowCamera}>ENABLE CAMERA</GateButton>}
-            {p === "camera-permission" && <GateButton ghost onClick={verifyNow}>VERIFY WITHOUT CAMERA</GateButton>}
-            {(p === "camera-error" || (needTap && (p === "camera-ready" || p === "face-detected"))) && <GateButton onClick={verifyNow}>VERIFY WITH {bio.toUpperCase()}</GateButton>}
+            {p === "camera-permission" && mode === "device" && <GateButton ghost onClick={verifyNow}>VERIFY WITHOUT CAMERA</GateButton>}
+            {mode === "camera" && p === "camera-error" && camWhy !== "missing" && <GateButton onClick={verifyNow}>TRY THE CAMERA AGAIN</GateButton>}
+            {mode === "device" && (p === "camera-error" || (needTap && (p === "camera-ready" || p === "face-detected"))) && <GateButton onClick={verifyNow}>VERIFY WITH {bio.toUpperCase()}</GateButton>}
+            {mode === "camera" && deviceOk && signedIn && (status?.enrolled ?? 0) > 0 && ["camera-ready", "face-detected", "camera-error", "camera-permission", "not-recognized"].includes(p) && <GateButton ghost onClick={useDevice}>USE {bio.toUpperCase()}</GateButton>}
             {p === "camera-ready" && !signedIn && !status?.deviceHint && !needTap && <GateButton onClick={verifyNow}>SIGN IN WITH {bio.toUpperCase()}</GateButton>}
             {(p === "not-recognized" || (p === "face-detected" && !armed.current)) && <GateButton onClick={verifyNow}>SCAN AGAIN</GateButton>}
             {signedIn && p !== "verifying" && p !== "scanning" && !fallback && (
@@ -377,7 +460,9 @@ export function BiometricGate({ next }: { next: string }) {
       {/* footer */}
       {!boot && !done && (
         <div className="gate-in absolute inset-x-0 bottom-3 flex flex-col items-center gap-1 px-4 text-center text-[10.5px] tracking-wide text-cyan-50/35 sm:bottom-5">
-          <p>Your face is matched by {bio} on this device. JARVIS never receives, stores or uploads your face or camera images.</p>
+          <p>{mode === "camera"
+            ? "JARVIS Face ID turns your face into numbers on this device and checks them on your JARVIS server. No photos or video are ever stored or uploaded."
+            : `Your face is matched by ${bio} on this device. JARVIS never receives, stores or uploads your face or camera images.`}</p>
           {signedIn && (
             <p>
               {status?.email ? <span>Authorized user · {maskEmail(status.email)} · </span> : null}

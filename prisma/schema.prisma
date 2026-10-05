@@ -47,6 +47,7 @@ model User {
   robinSettings       RobinSettings?
   gateCredentials     GateCredential[]
   gateSecurity        GateSecurity?
+  faceTemplates       FaceTemplate[]
 
   @@index([email])
 }
@@ -1025,4 +1026,24 @@ model GateChallenge {
   createdAt DateTime @default(now())
 
   @@index([expiresAt])
+}
+
+/// JARVIS Face ID enrolment: face descriptors (numbers, never images),
+/// AES-256-GCM encrypted with a key derived from the server's AUTH_SECRET.
+/// One row per user per server key (a PC and Vercel with different secrets
+/// each keep their own).
+model FaceTemplate {
+  id        String   @id @default(cuid())
+  userId    String
+  keyId     String
+  data      Bytes
+  iv        Bytes
+  tag       Bytes
+  samples   Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, keyId])
 }

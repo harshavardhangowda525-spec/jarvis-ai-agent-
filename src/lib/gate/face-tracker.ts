@@ -12,7 +12,14 @@ import type { FaceLandmarker } from "@mediapipe/tasks-vision";
  */
 
 export interface FacePoint { x: number; y: number }
-export interface FaceFrame { points: FacePoint[]; box: { x: number; y: number; w: number; h: number } }
+export interface FaceFrame {
+  points: FacePoint[];
+  box: { x: number; y: number; w: number; h: number };
+  /** Head turn: −1 fully to your left … 0 straight … +1 your right (selfie view). */
+  yaw: number;
+  /** How closed the eyes are, 0 open … 1 shut (for the blink step). */
+  blink: number;
+}
 
 export class FaceTracker {
   private constructor(private fl: FaceLandmarker, public contours: { start: number; end: number }[]) {}
@@ -35,6 +42,7 @@ export class FaceTracker {
           minFaceDetectionConfidence: 0.6,
           minFacePresenceConfidence: 0.6,
           minTrackingConfidence: 0.5,
+          outputFaceBlendshapes: true,
         });
         return new FaceTracker(fl, vision.FaceLandmarker.FACE_LANDMARKS_CONTOURS);
       } catch (e) {
@@ -55,8 +63,26 @@ export class FaceTracker {
       if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
       return { x, y };
     });
-    return { points, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } };
+    return { points, box: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, yaw: yawOf(points), blink: blinkOf(r.faceBlendshapes?.[0]?.categories) };
   }
 
   close() { try { this.fl.close(); } catch { /* closed */ } }
+}
+
+/**
+ * Head yaw from where the nose tip sits between the two sides of the face
+ * (mirrored, selfie view): turning to your left moves it toward the left edge.
+ */
+export function yawOf(points: FacePoint[]): number {
+  const nose = points[1], a = points[234], b = points[454];
+  if (!nose || !a || !b) return 0;
+  const l = Math.min(a.x, b.x), r = Math.max(a.x, b.x);
+  if (r - l < 1e-4) return 0;
+  return Math.max(-1, Math.min(1, ((nose.x - l) / (r - l) - 0.5) * 2));
+}
+
+function blinkOf(cats: { categoryName: string; score: number }[] | undefined): number {
+  if (!cats) return 0;
+  const get = (n: string) => cats.find((c) => c.categoryName === n)?.score ?? 0;
+  return Math.max(get("eyeBlinkLeft"), get("eyeBlinkRight"));
 }

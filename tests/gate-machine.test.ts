@@ -42,6 +42,13 @@ describe("biometric gate state machine", () => {
     expect(s.failures).toBe(1);
   });
 
+  it("a liveness scan stopped part-way goes back to looking, without a failure", () => {
+    const s = run([...ready, { type: "FACE", present: true }, { type: "SCAN" }, { type: "SCAN_ABORT" }]);
+    expect(s.phase).toBe("camera-ready");
+    expect(s.failures).toBe(0);
+    expect(run([...ready, { type: "FACE", present: true }, { type: "SCAN" }, { type: "SCAN_ABORT", lockedMs: 60_000 }]).phase).toBe("locked-out");
+  });
+
   it("a dialog the browser refused to show isn't a failure", () => {
     const s = run([...ready, { type: "VERIFY" }, { type: "ABORTED" }]);
     expect(s.phase).toBe("camera-ready");

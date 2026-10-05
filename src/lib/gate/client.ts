@@ -12,6 +12,10 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 export interface GateStatus {
   signedIn: boolean; unlocked: boolean; deviceHint: boolean;
   email?: string; method?: string | null; fresh?: boolean; enrolled?: number; pinSet?: boolean; lockedMs?: number; attemptsLeft?: number;
+  /** JARVIS Face ID (in-app) enrolment for this server. */
+  faceId?: { enrolled: boolean; enrolledAt: string | null; elsewhere: boolean };
+  /** Signed out: this device's face sign-in user has JARVIS Face ID. */
+  faceSignIn?: boolean;
 }
 
 export type FaceResult =

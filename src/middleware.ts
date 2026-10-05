@@ -27,7 +27,7 @@ export async function middleware(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const claims = token ? await verifySession(token) : null;
   const unlocked = claims ? !!(await verifyGate(req.cookies.get(GATE_COOKIE)?.value, { sub: claims.sub, jti: claims.jti })) : false;
-  const faceOnDevice = req.cookies.get(GATE_DEVICE_COOKIE)?.value === "1";
+  const faceOnDevice = !!req.cookies.get(GATE_DEVICE_COOKIE)?.value;
 
   const go = (path: string, next?: string) => {
     const url = req.nextUrl.clone();
