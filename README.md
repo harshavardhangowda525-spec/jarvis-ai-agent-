@@ -938,6 +938,13 @@ When one runs out of searches, rejects its key or is down, DARWIN says so in the
 day's log and moves on to the next one for the rest of the day. Only when none of
 them can answer does the search pause.
 
+After adding a key, restart JARVIS (`npm run local` reads `.env.local` when it
+starts; on Vercel, add it under Environment Variables and redeploy). The start-up
+lines list the web searches found ("DARWIN web search: Serper ✓"), and DARWIN's
+daily-search settings show them under Verification sources. If today's search had
+already stopped (say Tavily ran out), it carries on by itself with the new search —
+no need to wait for tomorrow.
+
 **Web searches last the whole month.** Spent freely, the monthly allowances would
 be used up in a few days, leaving nothing for the rest of the month. Instead:
 - each search with a monthly allowance gets a daily share: what's left ÷ days left;

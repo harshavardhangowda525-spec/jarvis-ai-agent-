@@ -385,7 +385,35 @@ type Api = {
   searchBy?: Partial<Record<ProviderId, number>>;
   /** Providers out for the rest of today (out of credits / key rejected) — not retried every tick. */
   searchDown?: ProviderId[];
+  /** The web searches that were set up while this run searched (a new one re-opens a stopped run). */
+  searchWith?: ProviderId[];
 };
+
+/** The web searches a run had (runs from before this was saved only had Tavily). */
+const searchedWith = (a: Partial<Api>): ProviderId[] => a.searchWith ?? (Object.keys(a.searchBy ?? {}) as ProviderId[]).concat("tavily");
+
+/**
+ * Today's search stopped short (e.g. the web search ran out) and a web search that
+ * wasn't set up then is now (a key just added) → carry on with today's search
+ * straight away instead of waiting for tomorrow.
+ */
+export async function resumeForNewSearch(run: DarwinDailyRun, now = new Date(), providers: Provider[] = configuredProviders()): Promise<DarwinDailyRun> {
+  if (run.status !== "partial" || run.verified >= run.target) return run;
+  const had = new Set(searchedWith((run.apiRequests ?? {}) as Partial<Api>));
+  const added = providers.filter((p) => !had.has(p.id));
+  if (!added.length) return run;
+  const api = (run.apiRequests ?? {}) as Partial<Api>;
+  const log = [...logOf(run), { at: now.toISOString(), text: `New web search connected: ${added.map((p) => p.label).join(", ")} — carrying on with today's search (${run.verified}/${run.target} so far).` }];
+  return getDb().darwinDailyRun.update({
+    where: { id: run.id },
+    data: {
+      status: "running", completedAt: null, reportedAt: null, reasons: [], lastError: null, lockedUntil: null,
+      // its own share starts fresh; the ones that were out stay skipped today
+      apiRequests: { ...api, searchWith: [...had, ...added.map((p) => p.id)] } as unknown as Prisma.InputJsonValue,
+      log: log.slice(-80) as unknown as Prisma.InputJsonValue,
+    },
+  });
+}
 
 /**
  * Advance a run within the time budget. Safe to call from anywhere at any time:
@@ -433,6 +461,7 @@ export async function advanceRun(runId: string, opts: { budgetMs?: number; deps?
       api.searchBy = by;
       const hard = [...pool.down.entries()].filter(([, o]) => o.kind === "credits" || o.kind === "auth").map(([k]) => k);
       api.searchDown = [...new Set([...outToday, ...hard])];
+      api.searchWith = [...new Set([...(api.searchWith ?? []), ...providers.map((p) => p.id)])];
     };
     // verification services that stopped working this tick (out of credits, key rejected, down)
     const down = new Map<Outage["service"], Outage>();
@@ -861,7 +890,7 @@ export interface DarwinDailyView {
   allowedCategories: string[] | null;
   /** How many Bangalore areas "search every area of Bangalore" covers. */
   bangaloreAreas: number;
-  sources: { geoapify: boolean; google: boolean; search: boolean };
+  sources: { geoapify: boolean; google: boolean; search: boolean; searchWith: string[] };
   /** Automatic outreach: on/off, Gmail connected, sent in the last 24 h, leads waiting for their email. */
   email: AutoEmailState;
   /** When the day's leads should be ready ("2:00 PM"), and the Google Sheet they're added to. */
@@ -908,7 +937,7 @@ export async function darwinDailyView(userId: string, now = new Date()): Promise
     report,
     spoken: report ? spokenReport(report) : null,
     config: cfg,
-    sources: { geoapify: !!env.geoapifyApiKey, google: googleAvailable(), search: searchAvailable() },
+    sources: { geoapify: !!env.geoapifyApiKey, google: googleAvailable(), search: searchAvailable(), searchWith: configuredProviders().map((p) => p.label) },
     email: await autoEmailState(userId, cfg.autoEmail),
     deadlineLabel: deadlineLabel(),
     emailDeadlineLabel: emailDeadlineLabel(),
@@ -961,6 +990,7 @@ export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDep
     }
     if (!run && dailyDue(now, opts.earlyMin ?? 0)) run = await ensureRun(userId, now);
     if (run) run = await adoptEmailGoal(run, now);
+    if (run && deps.search) run = await resumeForNewSearch(run, now, deps.searchProviders);
     const ucfg = await loadConfig(userId);
     if (run?.status === "running") {
       const stats: { worked?: boolean } = {};

@@ -298,7 +298,7 @@ function DailySettings({ daily, onClose }: { daily: ReturnType<typeof useDarwinD
           <div className="text-[9px] tracking-[0.26em] text-white/40">VERIFICATION SOURCES</div>
           <div>Business listings (Geoapify): <Ok on={v.sources.geoapify} /></div>
           <div>Google business profile: <Ok on={v.sources.google} hint="GOOGLE_PLACES_API_KEY" /></div>
-          <div>Web search: <Ok on={v.sources.search} hint="SEARXNG_URL, BRAVE_SEARCH_API_KEY, SEARCH_API_KEY or SERPER_API_KEY" /></div>
+          <div>Web search: <Ok on={v.sources.search} hint="SEARXNG_URL, BRAVE_SEARCH_API_KEY, SEARCH_API_KEY or SERPER_API_KEY" />{v.sources.searchWith?.length ? <span className="text-white/45"> ({v.sources.searchWith.join(", ")})</span> : null}</div>
           <div>Website reachability + name/domain matching: <Ok on /></div>
         </div>
         {err && <p className="mt-2 text-[11px] text-rose-200">{err}</p>}

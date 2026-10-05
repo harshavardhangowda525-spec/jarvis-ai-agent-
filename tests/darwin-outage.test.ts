@@ -208,6 +208,33 @@ d("DARWIN keeps going through service outages", () => {
     expect((r.apiRequests as { searchBy: Record<string, number> }).searchBy.searxng).toBeGreaterThanOrEqual(5);
   });
 
+  it("today's search stopped (Tavily out) → a web search added afterwards (Serper key) carries it on the same day", async () => {
+    const tavOut = fakeProvider("tavily", 800, () => "credits");
+    const run = await R.ensureRun(userId, clock);
+    const stopped = await finish(run.id, poolDeps([tavOut]));
+    expect(stopped.status).toBe("partial");
+    expect(stopped.verified).toBe(0);
+    // nothing new → stays stopped
+    expect((await R.resumeForNewSearch(stopped, clock, [tavOut])).status).toBe("partial");
+    // the Serper key is added → today's search carries on and finds the leads
+    const serper = fakeProvider("serper", 2500);
+    const resumed = await R.resumeForNewSearch(stopped, clock, [tavOut, serper]);
+    expect(resumed.status).toBe("running");
+    expect(JSON.stringify(resumed.log)).toMatch(/New web search connected: Serper/);
+    const r = await finish(run.id, poolDeps([tavOut, serper]));
+    expect(r.status).toBe("completed");
+    expect(r.verified).toBe(5);
+    expect((r.apiRequests as { searchDown: string[] }).searchDown).toEqual(["tavily"]); // not asked again today
+    expect((await R.resumeForNewSearch(r, clock, [tavOut, serper])).status).toBe("completed");
+  });
+
+  it("a run from before searches were tracked (Tavily only) re-opens when Serper is added", async () => {
+    const run = await R.ensureRun(userId, clock);
+    const old = await getDb().darwinDailyRun.update({ where: { id: run.id }, data: { status: "partial", apiRequests: { geoapify: 3, google: 0, search: 4 } } });
+    expect((await R.resumeForNewSearch(old, clock, [fakeProvider("tavily", 800)])).status).toBe("partial");
+    expect((await R.resumeForNewSearch(old, clock, [fakeProvider("tavily", 800), fakeProvider("serper", 2500)])).status).toBe("running");
+  });
+
   it("every free search out → the web search is down, today's search says so", async () => {
     const run = await R.ensureRun(userId, clock);
     const r = await finish(run.id, poolDeps([fakeProvider("brave", 2000, () => "auth"), fakeProvider("tavily", 800, () => "credits")]));

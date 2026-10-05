@@ -159,6 +159,9 @@ if (blank.length) say(`  Note: these came through empty (marked Sensitive on Ver
 const googleGone = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"].filter((k) => isPlaceholder(appEnv[k]));
 if (!googleGone.length) say("  Google (Gmail, Calendar, Drive): client ID and secret found in .env.local ✓");
 else say(`  Note: ${googleGone.join(" and ")} ${googleGone.length > 1 ? "aren't" : "isn't"} in ${path.basename(envFile)} — Google (Gmail, Calendar, Drive) shows "Not configured" on this PC.\n        Copy the value${googleGone.length > 1 ? "s" : ""} from Google Cloud Console → APIs & Services → Credentials → your OAuth client, then restart.`);
+// DARWIN's web searches (confirm "no website" — more searches, more leads a day)
+const searches = [["SEARXNG_URL", "SearXNG"], ["BRAVE_SEARCH_API_KEY", "Brave"], ["SEARCH_API_KEY", "Tavily"], ["SERPER_API_KEY", "Serper"]].filter(([k]) => !isPlaceholder(appEnv[k])).map(([, n]) => n);
+say(searches.length ? `  DARWIN web search: ${searches.join(", ")} ✓` : "  Note: no web search for DARWIN — set SERPER_API_KEY, BRAVE_SEARCH_API_KEY or SEARXNG_URL in .env.local so it can confirm leads.");
 if (blank.includes("INSTAGRAM_ACCESS_TOKEN")) say("        Instagram: open EV once in your Vercel JARVIS — it saves the connection to your database, and EV on this PC uses it.");
 
 // ---- 2. dependencies ------------------------------------------------------------------
