@@ -9,7 +9,9 @@ import type { FaceFrame } from "@/lib/gate/face-tracker";
  * failure glitch, and the unlock (rings blast outward, flash, shockwave, the
  * scanner collapses to a point that grows into the JARVIS core).
  *
- * Purely visual. The face points are only drawn — never measured, kept or sent.
+ * Purely visual. The live camera view is drawn inside the lens, framed on your
+ * face, with the landmarks laid exactly over it — on this screen only; frames
+ * are never kept or sent. The face points are only drawn, never measured.
  */
 
 type RGB = [number, number, number];
@@ -54,6 +56,10 @@ export class GateScene {
 
   private face: FaceFrame | null = null; private faceAspect = 4 / 3; private contours: { start: number; end: number }[] = [];
   private faceAlpha = 0; private bracket = 1.3; private progress = 0; private progressShown = 0;
+  /** The live camera view shown in the lens (never recorded). */
+  private video: HTMLVideoElement | null = null; private videoAlpha = 0;
+  /** How the camera frame maps into the lens (centre in frame units, scale relative to R) — smoothed. */
+  private view = { bx: 2 / 3, by: 0.5, k: 0 };
   private open = 0;      // scanner opened (0 = core only)
   private core = 0;      // AI core visibility
   private speed = 0.6; private rot = [0, 0, 0, 0];
@@ -91,6 +97,8 @@ export class GateScene {
     this.face = f; this.faceAspect = aspect; if (contours.length) this.contours = contours;
   }
   setProgress(p: number) { this.progress = clamp(p); }
+  /** Show this camera's live view in the lens (null hides it). */
+  setVideo(v: HTMLVideoElement | null) { this.video = v; }
   getProgress() { return this.progress; }
 
   setPhase(p: GatePhase) {
@@ -145,7 +153,19 @@ export class GateScene {
     this.tint = mix(this.tint, tintT, 1 - Math.exp(-dt * 4));
     const openT = ph === "initializing" ? 0 : succ >= 0 ? 1 : 1;
     this.open = approach(this.open, openT, dt, ph === "initializing" ? 4 : 2.6);
-    let coreT = ph === "initializing" ? 1 : this.face && this.faceAlpha > 0.3 ? 0 : 0.42;
+    const vid = this.video, vidReady = !!vid && vid.readyState >= 2 && vid.videoWidth > 0;
+    this.videoAlpha = approach(this.videoAlpha, vidReady && ph !== "initializing" && succ < 0 ? 1 : 0, dt, 4);
+    // frame the lens on the face (or the whole picture when there isn't one), smoothly
+    {
+      const asp = vidReady ? vid!.videoWidth / vid!.videoHeight : this.faceAspect;
+      const f = this.face;
+      const tgt = f
+        ? { bx: (f.box.x + f.box.w / 2) * asp, by: f.box.y + f.box.h / 2, k: 1.32 / Math.max(f.box.h, f.box.w * asp * 0.9, 1e-3) }
+        : { bx: asp / 2, by: 0.5, k: 2.04 };
+      if (!this.view.k) this.view = tgt;
+      else { this.view.bx = approach(this.view.bx, tgt.bx, dt, 6); this.view.by = approach(this.view.by, tgt.by, dt, 6); this.view.k = approach(this.view.k, tgt.k, dt, 5); }
+    }
+    let coreT = ph === "initializing" ? 1 : (this.face && this.faceAlpha > 0.3) || this.videoAlpha > 0.3 ? 0 : 0.42;
     if (succ >= 0) coreT = succ < 1.6 ? 0 : 1;
     this.core = approach(this.core, coreT, dt, succ >= 1.6 ? 3 : 3.5);
     this.faceAlpha = approach(this.faceAlpha, this.face && succ < 0 ? 1 : 0, dt, 5);
@@ -163,6 +183,11 @@ export class GateScene {
     const vg = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(this.w, this.h) * 0.75);
     vg.addColorStop(0, rgba(this.tint, 0.07 * bootDark)); vg.addColorStop(0.5, rgba(this.tint, 0.02 * bootDark)); vg.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = vg; ctx.fillRect(0, 0, this.w, this.h);
+
+    // ---- your live camera view inside the lens
+    const succBlast = succ >= 0 ? easeOut(clamp(succ / 0.9)) : 0;
+    const va = this.videoAlpha * this.open * (1 - succBlast);
+    if (va > 0.01 && vidReady) this.drawVideo(vid!, cx, cy, R * 0.965 * (0.3 + 0.7 * easeOut(this.open)), R, va);
 
     ctx.globalCompositeOperation = "lighter";
     // stars with slow parallax
@@ -366,12 +391,36 @@ export class GateScene {
     ctx.stroke();
   }
 
+  /** The camera picture, mirrored like a selfie, framed by the same mapping as the landmarks. */
+  private drawVideo(v: HTMLVideoElement, cx: number, cy: number, lens: number, R: number, a: number) {
+    const ctx = this.ctx, c = this.tint;
+    const asp = v.videoWidth / v.videoHeight, k = this.view.k * R;
+    const w = asp * k, h = k, x0 = cx - this.view.bx * k, y0 = cy - this.view.by * k;
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, lens, 0, 6.283); ctx.clip();
+    ctx.globalAlpha = 0.92 * a;
+    ctx.filter = "saturate(0.6) contrast(1.08) brightness(0.95)";
+    ctx.translate(x0 + w, y0); ctx.scale(-1, 1);
+    try { ctx.drawImage(v, 0, 0, w, h); } catch { /* frame not ready */ }
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.filter = "none"; ctx.globalAlpha = 1;
+    // holographic treatment: a cool tint, faint scan lines, edges fading into the lens
+    ctx.fillStyle = rgba(c, 0.13 * a); ctx.fillRect(cx - lens, cy - lens, lens * 2, lens * 2);
+    ctx.fillStyle = `rgba(0,0,0,${0.12 * a})`;
+    for (let y = cy - lens; y < cy + lens; y += 3) ctx.fillRect(cx - lens, y, lens * 2, 1);
+    const edge = ctx.createRadialGradient(cx, cy, lens * 0.62, cx, cy, lens);
+    edge.addColorStop(0, "rgba(1,3,9,0)"); edge.addColorStop(1, `rgba(1,3,9,${0.85 * a})`);
+    ctx.fillStyle = edge; ctx.fillRect(cx - lens, cy - lens, lens * 2, lens * 2);
+    ctx.restore();
+  }
+
   private drawFace(cx: number, cy: number, R: number, a: number, t: number, scanning: boolean) {
-    const f = this.face!, ctx = this.ctx, c = this.tint, asp = this.faceAspect;
-    // fit the face inside the lens, centred
-    const bw = f.box.w * asp, bh = f.box.h, k = (R * 1.32) / Math.max(bh, bw * 0.9, 1e-3);
-    const bx = (f.box.x + f.box.w / 2) * asp, by = f.box.y + f.box.h / 2;
+    const f = this.face!, ctx = this.ctx, c = this.tint, asp = this.video?.videoWidth ? this.video.videoWidth / this.video.videoHeight : this.faceAspect;
+    // the same (smoothed) framing as the camera view, so the hologram sits exactly on your face
+    const bw = f.box.w * asp, bh = f.box.h, k = this.view.k * R, bx = this.view.bx, by = this.view.by;
     const P = (i: number) => { const p = f.points[i]; return { x: cx + (p.x * asp - bx) * k, y: cy + (p.y - by) * k }; };
+    // with your face visible underneath, the mesh is a touch lighter
+    a *= 1 - 0.3 * this.videoAlpha;
     // contours
     ctx.lineWidth = 1; ctx.strokeStyle = rgba(c, 0.5 * a);
     ctx.beginPath();
@@ -391,9 +440,10 @@ export class GateScene {
       }
     }
     // the face box in lens coords → brackets that lock on
-    const x0 = cx - (bw / 2) * k, y0 = cy - (bh / 2) * k, w = bw * k, h = bh * k;
+    const x0 = cx + (f.box.x * asp - bx) * k, y0 = cy + (f.box.y - by) * k, w = bw * k, h = bh * k;
+    const bcx = x0 + w / 2, bcy = y0 + h / 2;
     const s = this.bracket, pad = 10;
-    this.drawBrackets(cx - (w / 2 + pad) * s, cy - (h / 2 + pad) * s, (w + pad * 2) * s, (h + pad * 2) * s, 0.85 * a, t);
+    this.drawBrackets(bcx - (w / 2 + pad) * s, bcy - (h / 2 + pad) * s, (w + pad * 2) * s, (h + pad * 2) * s, (0.85 / (1 - 0.3 * this.videoAlpha)) * a, t);
     if (scanning) {
       // landmark points + the lines between them, appearing as the analysis progresses
       const shown = Math.floor(this.progressShown * 1.4 * KEY_LINKS.length);

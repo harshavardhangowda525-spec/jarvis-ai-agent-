@@ -51,6 +51,7 @@ export function FaceEnrollment({ onClose, onReverify }: { onClose: (enrolled: bo
 
   const stopCamera = useCallback(() => {
     cancelAnimationFrame(loop.current);
+    scene.current?.setVideo(null);
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
   }, []);
@@ -87,6 +88,7 @@ export function FaceEnrollment({ onClose, onReverify }: { onClose: (enrolled: bo
       setStage("waiting");
       setPrompt("Look straight at the camera");
       setReady(true);
+      scene.current?.setVideo(videoRef.current); // your live view in the scanner (on this screen only)
       const v = videoRef.current!;
       let lastRun = 0, lastSeen = 0;
       const step = (t: number) => {
@@ -182,7 +184,7 @@ export function FaceEnrollment({ onClose, onReverify }: { onClose: (enrolled: bo
         </div>
       </div>
       <p className="absolute inset-x-0 bottom-3 px-4 text-center text-[10.5px] tracking-wide text-cyan-50/35 sm:bottom-5">
-        Your face is turned into numbers on this device and stored encrypted on your JARVIS server. No photos or video are ever saved or uploaded.
+        Your camera view is shown only on this screen. Your face is turned into numbers on this device and stored encrypted on your JARVIS server — no photos or video are ever saved or uploaded.
       </p>
     </div>
   );

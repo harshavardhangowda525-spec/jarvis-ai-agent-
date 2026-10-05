@@ -16,7 +16,8 @@ import { GateScene, gateLayout } from "./gate-scene";
  *   challenge (look straight → blink or turn → look straight); at each step the
  *   face is turned into a 128-number descriptor on this device, and the SERVER
  *   compares them with your encrypted enrolment. Only descriptors are sent —
- *   never images; the camera feed is never shown or stored.
+ *   never images. Your live camera view is shown inside the scanner on this
+ *   screen only; frames are never stored or uploaded.
  * - "device" — the device's own biometrics (Windows Hello / Face ID / Touch ID)
  *   through WebAuthn, verified by the server.
  *
@@ -81,6 +82,7 @@ export function BiometricGate({ next }: { next: string }) {
   /* ---------------- camera + on-device face finding (presentation only) ---------------- */
   const stopCamera = useCallback(() => {
     cancelAnimationFrame(loop.current); loop.current = 0;
+    scene.current?.setVideo(null);
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
     if (videoRef.current) videoRef.current.srcObject = null;
@@ -114,6 +116,7 @@ export function BiometricGate({ next }: { next: string }) {
     if (!stream.current) return;
     setCamWhy(null);
     dispatch({ type: "CAMERA", status: "on" });
+    scene.current?.setVideo(v); // your live view in the scanner (on this screen only)
     if (modeRef.current === "camera") void warmUpFaceId(v);
     let lastSeen = 0, seen = 0, lastRun = 0, everSeen = false;
     const step = (t: number) => {
@@ -372,7 +375,7 @@ export function BiometricGate({ next }: { next: string }) {
   return (
     <div className={`gate-root fixed inset-0 z-[200] overflow-hidden bg-[#010309] text-white transition-opacity duration-500 ${outro >= 3 ? "opacity-0" : "opacity-100"}`} data-gate-phase={p}>
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" aria-hidden />
-      {/* the camera feed is never shown — it only feeds the on-device face finder */}
+      {/* the camera element itself stays hidden — the scene draws its picture inside the scanner */}
       <video ref={videoRef} muted playsInline aria-hidden className="pointer-events-none fixed left-0 top-0 h-px w-px opacity-0" />
 
       {/* status line */}
@@ -461,7 +464,7 @@ export function BiometricGate({ next }: { next: string }) {
       {!boot && !done && (
         <div className="gate-in absolute inset-x-0 bottom-3 flex flex-col items-center gap-1 px-4 text-center text-[10.5px] tracking-wide text-cyan-50/35 sm:bottom-5">
           <p>{mode === "camera"
-            ? "JARVIS Face ID turns your face into numbers on this device and checks them on your JARVIS server. No photos or video are ever stored or uploaded."
+            ? "Your camera view is shown only on this screen. JARVIS Face ID turns your face into numbers on this device and checks them on your JARVIS server — no photos or video are ever stored or uploaded."
             : `Your face is matched by ${bio} on this device. JARVIS never receives, stores or uploads your face or camera images.`}</p>
           {signedIn && (
             <p>

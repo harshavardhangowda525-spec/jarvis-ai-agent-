@@ -632,7 +632,10 @@ enrolment. **Re-enroll** replaces your face; **Remove** deletes it.
 **How it works and what is stored:**
 - At each step, the face is turned into a 128-number "face descriptor" in your
   browser, using face-api with models served by this app. Only those numbers
-  are sent, never a photo or video. The camera feed is never shown or stored.
+  are sent, never a photo or video. While scanning, your live camera view is
+  shown inside the holographic scanner, framed on your face with the landmarks
+  laid over it. It appears on that screen only and is never recorded or
+  uploaded.
 - Enrolment keeps several descriptors from different angles. They're
   encrypted with AES-256-GCM, under a key derived from the server's
   `AUTH_SECRET`, in the `FaceTemplate` table. They're decrypted only on the
