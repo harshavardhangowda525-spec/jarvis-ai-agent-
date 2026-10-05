@@ -162,6 +162,14 @@ else say(`  Note: ${googleGone.join(" and ")} ${googleGone.length > 1 ? "aren't"
 // DARWIN's web searches (confirm "no website" — more searches, more leads a day)
 const searches = [["SEARXNG_URL", "SearXNG"], ["BRAVE_SEARCH_API_KEY", "Brave"], ["SEARCH_API_KEY", "Tavily"], ["SERPER_API_KEY", "Serper"]].filter(([k]) => !isPlaceholder(appEnv[k])).map(([, n]) => n);
 say(searches.length ? `  DARWIN web search: ${searches.join(", ")} ✓` : "  Note: no web search for DARWIN — set SERPER_API_KEY, BRAVE_SEARCH_API_KEY or SEARXNG_URL in .env.local so it can confirm leads.");
+// keys that are almost right (a typo, or SerpApi's name instead of Serper's) and a file Notepad saved as .txt
+const SEARCH_KEYS = ["SEARXNG_URL", "BRAVE_SEARCH_API_KEY", "SEARCH_API_KEY", "SERPER_API_KEY"];
+for (const k of Object.keys(appEnv).filter((k) => /SERP|BRAVE|SEARX/i.test(k) && !SEARCH_KEYS.includes(k) && !isPlaceholder(appEnv[k]))) {
+  say(`  ! ${k} in .env.local isn't a name DARWIN reads — ${/SERPAPI/i.test(k) ? "SerpApi (serpapi.com) is a different service; DARWIN uses Serper (serper.dev): " : ""}rename it to ${/BRAVE/i.test(k) ? "BRAVE_SEARCH_API_KEY" : /SEARX/i.test(k) ? "SEARXNG_URL" : "SERPER_API_KEY"}.`);
+}
+for (const f of [".env.local.txt", ".env.txt"]) {
+  if (fs.existsSync(path.join(ROOT, f))) say(`  ! Found ${f} — Windows saved it with .txt on the end, so JARVIS can't read it. Rename it to ${f.replace(/\.txt$/, "")} (or copy its lines into .env.local).`);
+}
 if (blank.includes("INSTAGRAM_ACCESS_TOKEN")) say("        Instagram: open EV once in your Vercel JARVIS — it saves the connection to your database, and EV on this PC uses it.");
 
 // ---- 2. dependencies ------------------------------------------------------------------
