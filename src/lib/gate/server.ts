@@ -113,11 +113,9 @@ export async function consumeChallenge(id: string, kind: "register" | "unlock", 
 /** Take a challenge (single use) with whom it was issued for; null if unknown, expired or of another kind. */
 export async function takeChallenge(id: string, kind: ChallengeKind): Promise<{ challenge: string; userId: string | null; createdAt: Date } | null> {
   if (typeof id !== "string" || !id) return null;
-  const db = getDb();
-  const row = await db.gateChallenge.findUnique({ where: { id } });
-  if (!row) return null;
-  const { count } = await db.gateChallenge.deleteMany({ where: { id } });
-  if (!count || row.kind !== kind || row.expiresAt < new Date()) return null;
+  // one round trip: deleting it returns it (and a second taker gets nothing)
+  const row = await getDb().gateChallenge.delete({ where: { id } }).catch(() => null);
+  if (!row || row.kind !== kind || row.expiresAt < new Date()) return null;
   return { challenge: row.challenge, userId: row.userId, createdAt: row.createdAt };
 }
 

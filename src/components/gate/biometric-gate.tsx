@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { gateReducer, initialGate, PHASE_TITLE, type GateEvent, type GatePhase } from "@/lib/gate/machine";
 import { biometricName, faceUnlock, gateStatus, passwordUnlock, pinUnlock, platformBiometricsAvailable, type GateStatus } from "@/lib/gate/client";
 import type { FaceFrame, FaceTracker } from "@/lib/gate/face-tracker";
-import { faceIdChallenge, faceIdVerify, runFaceSteps, warmUpFaceId } from "@/lib/gate/face-id";
+import { faceIdBusy, faceIdChallenge, faceIdVerify, loadFaceId, runFaceSteps, warmUpFaceId } from "@/lib/gate/face-id";
 import type { FaceProbe } from "@/lib/gate/face-match";
 import { GateScene, gateLayout } from "./gate-scene";
 
@@ -49,6 +49,7 @@ export function BiometricGate({ next }: { next: string }) {
   const frameRef = useRef<FaceFrame | null>(null);
   const scan = useRef<{ challengeId: string; probes: FaceProbe[] } | null>(null);
   const enrollAfter = useRef(false); // unlocked without a face enrolled → straight to enrolment
+  const challenge = useRef<ReturnType<typeof faceIdChallenge> | null>(null); // fetched ahead while the face settles
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -107,7 +108,7 @@ export function BiometricGate({ next }: { next: string }) {
     if (!tracker.current) {
       try {
         const { FaceTracker } = await import("@/lib/gate/face-tracker");
-        tracker.current = await FaceTracker.create();
+        tracker.current = await FaceTracker.shared();
       } catch {
         stopCamera(); setCamWhy("tracker"); dispatch({ type: "CAMERA", status: "error" });
         return;
@@ -121,7 +122,7 @@ export function BiometricGate({ next }: { next: string }) {
     let lastSeen = 0, seen = 0, lastRun = 0, everSeen = false;
     const step = (t: number) => {
       loop.current = requestAnimationFrame(step);
-      if (t - lastRun < 66 || !tracker.current || v.readyState < 2) return; // ~15 fps is plenty
+      if (t - lastRun < 66 || !tracker.current || v.readyState < 2 || faceIdBusy()) return; // ~15 fps is plenty
       lastRun = t;
       let f = null;
       try { f = tracker.current.detect(v, t); } catch { return; }
@@ -152,16 +153,20 @@ export function BiometricGate({ next }: { next: string }) {
     await openCamera();
   }, [dispatch, openCamera]);
 
-  useEffect(() => () => { stopCamera(); tracker.current?.close(); tracker.current = null; }, [stopCamera]);
+  // the tracker itself is kept (shared) so the next unlock doesn't load it again
+  useEffect(() => () => { stopCamera(); tracker.current = null; }, [stopCamera]);
 
   /* ---------------- opening sequence + what this device can do ---------------- */
   useEffect(() => {
     let alive = true;
     const rm = reduceMotion();
-    const t1 = setTimeout(() => setBootLine(1), rm ? 50 : 1500);
-    const t2 = setTimeout(() => setBootLine(2), rm ? 400 : 2900);
+    const t1 = setTimeout(() => setBootLine(1), rm ? 50 : 250);
+    const t2 = setTimeout(() => setBootLine(2), rm ? 300 : 900);
+    // the face tracker loads while the opening plays (it's needed whichever way you verify)
+    void import("@/lib/gate/face-tracker").then(({ FaceTracker }) => FaceTracker.shared()).catch(() => {});
     (async () => {
-      const [s, plat] = await Promise.all([gateStatus().catch(() => null), platformBiometricsAvailable(), sleep(rm ? 1100 : 4300)]);
+      const opening = sleep(rm ? 500 : 1600);
+      const [s, plat] = await Promise.all([gateStatus().catch(() => null), platformBiometricsAvailable()]);
       if (!alive) return;
       if (s?.signedIn && s.unlocked) { router.replace(next); return; }
       setStatus(s);
@@ -170,12 +175,16 @@ export function BiometricGate({ next }: { next: string }) {
       const camera = inn ? !!s?.faceId?.enrolled : !!s?.faceSignIn;
       const device = plat && (inn ? (s?.enrolled ?? 0) > 0 : true);
       const m = camera ? "camera" : device ? "device" : null;
-      setMode(m); setDeviceOk(device);
+      setMode(m); setDeviceOk(device); modeRef.current = m;
       // signed out with no face set up on this device: don't pop a sign-in prompt by itself
       armed.current = inn || !!s?.deviceHint;
+      // the camera and Face ID's networks start NOW, during the opening — not after it
+      if (m === "camera") void loadFaceId().catch(() => {});
+      if (m) void startCamera();
+      await opening;
+      if (!alive) return;
       dispatch({ type: "READY", canFace: !!m, unavailable: inn ? "not-enrolled" : "no-biometrics", lockedMs: s?.lockedMs });
       if (!m && inn) { setFallback(s?.pinSet ? "pin" : "password"); enrollAfter.current = true; }
-      if (m) void startCamera();
     })();
     return () => { alive = false; clearTimeout(t1); clearTimeout(t2); };
   }, [dispatch, next, router, startCamera]);
@@ -183,7 +192,9 @@ export function BiometricGate({ next }: { next: string }) {
   /* ---------------- the scan ---------------- */
   useEffect(() => {
     if (st.phase !== "face-detected" || !armed.current) return;
-    const t = setTimeout(() => dispatch({ type: "SCAN" }), 550);
+    // fetch the scan's challenge while the face settles, so the scan starts straight away
+    if (modeRef.current === "camera" && !challenge.current) challenge.current = faceIdChallenge("unlock");
+    const t = setTimeout(() => dispatch({ type: "SCAN" }), 200);
     return () => clearTimeout(t);
   }, [st.phase, dispatch]);
 
@@ -196,7 +207,8 @@ export function BiometricGate({ next }: { next: string }) {
       const cancelled = () => stopped || phaseRef.current !== "scanning";
       setPrompt(null); s.setProgress(0.02);
       (async () => {
-        const ch = await faceIdChallenge("unlock");
+        const ch = await (challenge.current ?? faceIdChallenge("unlock"));
+        challenge.current = null; // single use
         if (cancelled()) return;
         if (!ch.ok) {
           if (ch.status === 423) { dispatch({ type: "SCAN_ABORT", lockedMs: Number(ch.data.details?.lockedMs ?? 60_000) }); return; }
@@ -305,16 +317,16 @@ export function BiometricGate({ next }: { next: string }) {
   // unlocked → the cinematic hand-over into JARVIS
   useEffect(() => {
     if (st.phase !== "verified") return;
-    stopCamera(); tracker.current?.close(); tracker.current = null;
+    stopCamera(); tracker.current = null;
     try { sessionStorage.setItem("jarvis.voice.on", "1"); } catch { /* storage blocked */ }
     router.prefetch(next);
     const rm = reduceMotion();
     const ts = [
-      setTimeout(() => setOutro(1), rm ? 300 : 1750),   // WELCOME
-      setTimeout(() => setOutro(2), rm ? 600 : 2650),   // JARVIS ONLINE
-      setTimeout(() => setOutro(3), rm ? 900 : 3700),   // fade
+      setTimeout(() => setOutro(1), rm ? 300 : 1000),   // WELCOME
+      setTimeout(() => setOutro(2), rm ? 600 : 1600),   // JARVIS ONLINE
+      setTimeout(() => setOutro(3), rm ? 900 : 2200),   // fade
       // unlocked without a face enrolled → straight into enrolment
-      setTimeout(() => { dispatch({ type: "DONE" }); setOutro(4); router.replace(enrollAfter.current ? "/dashboard/settings?enroll=face" : next); router.refresh(); }, rm ? 1100 : 4250),
+      setTimeout(() => { dispatch({ type: "DONE" }); setOutro(4); router.replace(enrollAfter.current ? "/dashboard/settings?enroll=face" : next); router.refresh(); }, rm ? 1100 : 2600),
     ];
     return () => ts.forEach(clearTimeout);
   }, [st.phase, next, router, dispatch, stopCamera]);

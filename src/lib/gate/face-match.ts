@@ -4,7 +4,7 @@
  * A face is reduced, in the browser, to a 128-number descriptor (face-api's
  * recognition network). Only descriptors ever leave the camera code — never
  * images. Enrolment keeps several descriptors from different angles; an unlock
- * is a short liveness challenge (look straight → blink or turn → look straight)
+ * is a short liveness challenge (look straight → blink or turn)
  * whose descriptors must all match the enrolment.
  *
  * Thresholds were measured on 34 real photos of 7 people: the same person was
@@ -48,10 +48,10 @@ export const STEP_PROMPT: Record<FaceStep, string> = {
 /** The enrolment plan: several straight-on samples plus both sides and a blink. */
 export const ENROLL_STEPS: FaceStep[] = ["center", "center", "center", "left", "left", "right", "right", "blink"];
 
-/** An unlock challenge: look straight, one random action, look straight. */
+/** An unlock challenge: look straight, then one random action (blink / turn left / turn right). */
 export function unlockSteps(rand: () => number = Math.random): FaceStep[] {
   const actions: FaceStep[] = ["blink", "left", "right"];
-  return ["center", actions[Math.floor(rand() * actions.length) % actions.length], "center"];
+  return ["center", actions[Math.floor(rand() * actions.length) % actions.length]];
 }
 
 export function isDescriptor(x: unknown): x is number[] {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FaceFrame, FaceTracker } from "@/lib/gate/face-tracker";
-import { faceIdChallenge, faceIdEnroll, loadFaceId, runFaceSteps, warmUpFaceId } from "@/lib/gate/face-id";
+import { faceIdBusy, faceIdChallenge, faceIdEnroll, loadFaceId, runFaceSteps, warmUpFaceId } from "@/lib/gate/face-id";
 import type { GatePhase } from "@/lib/gate/machine";
 import { GateScene, gateLayout } from "./gate-scene";
 
@@ -55,7 +55,7 @@ export function FaceEnrollment({ onClose, onReverify }: { onClose: (enrolled: bo
     stream.current?.getTracks().forEach((t) => t.stop());
     stream.current = null;
   }, []);
-  useEffect(() => () => { alive.current = false; stopCamera(); tracker.current?.close(); }, [stopCamera]);
+  useEffect(() => () => { alive.current = false; stopCamera(); }, [stopCamera]); // the tracker is shared — kept for the gate
 
   // camera + face tracker + recognition models
   useEffect(() => {
@@ -75,8 +75,8 @@ export function FaceEnrollment({ onClose, onReverify }: { onClose: (enrolled: bo
       }
       try {
         const { FaceTracker } = await import("@/lib/gate/face-tracker");
-        const [t] = await Promise.all([FaceTracker.create(), loadFaceId()]);
-        if (!alive.current) { t.close(); return; }
+        const [t] = await Promise.all([FaceTracker.shared(), loadFaceId()]);
+        if (!alive.current) return;
         tracker.current = t;
         setPrompt("Calibrating…");
         await warmUpFaceId(videoRef.current!);
@@ -93,7 +93,7 @@ export function FaceEnrollment({ onClose, onReverify }: { onClose: (enrolled: bo
       let lastRun = 0, lastSeen = 0;
       const step = (t: number) => {
         loop.current = requestAnimationFrame(step);
-        if (t - lastRun < 66 || !tracker.current || v.readyState < 2) return;
+        if (t - lastRun < 66 || !tracker.current || v.readyState < 2 || faceIdBusy()) return;
         lastRun = t;
         let f: FaceFrame | null = null;
         try { f = tracker.current.detect(v, t); } catch { return; }

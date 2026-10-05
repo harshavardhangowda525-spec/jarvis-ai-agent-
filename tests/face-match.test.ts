@@ -64,9 +64,9 @@ describe("liveness", () => {
     expect(livenessProblem(["center", "blink", "center"], ok(["center", "blink", "center"]).map((p, i) => ({ ...p, t: i * 100 })))).toBe("too-fast");
     expect(livenessProblem(["center", "blink", "center"], ok(["center", "blink"]))).toBe("incomplete");
   });
-  it("unlock challenges always look straight, act, look straight", () => {
+  it("unlock challenges always look straight, then one random action", () => {
     const seen = new Set<string>();
-    for (let i = 0; i < 60; i++) { const s = unlockSteps(); expect(s[0]).toBe("center"); expect(s[2]).toBe("center"); seen.add(s[1]); }
+    for (let i = 0; i < 60; i++) { const s = unlockSteps(); expect(s).toHaveLength(2); expect(s[0]).toBe("center"); seen.add(s[1]); }
     expect([...seen].sort()).toEqual(["blink", "left", "right"]);
   });
 });

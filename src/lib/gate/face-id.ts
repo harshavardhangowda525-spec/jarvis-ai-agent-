@@ -30,10 +30,23 @@ export function loadFaceId(): Promise<FaceApi> {
   return loading;
 }
 
+let busy = 0;
+/** A capture is running: the presence tracker skips frames meanwhile so the two don't fight over the GPU/CPU. */
+export const faceIdBusy = () => busy > 0;
+
 /** The descriptor of the one face in view — null if there's no face, or more than one. */
 export async function describeFace(video: HTMLVideoElement): Promise<number[] | null> {
   const faceapi = await loadFaceId();
-  const all = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.45 })).withFaceLandmarks().withFaceDescriptors();
+  busy++;
+  try {
+    return await describeWith(faceapi, video);
+  } finally {
+    busy--;
+  }
+}
+
+async function describeWith(faceapi: FaceApi, video: HTMLVideoElement): Promise<number[] | null> {
+  const all = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.45 })).withFaceLandmarks().withFaceDescriptors();
   if (all.length !== 1) return null;
   const d = all[0];
   // the face must be a reasonable size in the frame (not a tiny photo in the background)
@@ -91,11 +104,11 @@ export async function runFaceSteps(steps: FaceStep[], cb: ScanCallbacks, stepTim
         }
         const pose = step === "left" ? f.yaw <= -TURN_YAW : step === "right" ? f.yaw >= TURN_YAW : Math.abs(f.yaw) <= CENTER_YAW;
         const ready = pose && blinkDone && (step !== "blink" || f.blink < 0.25);
-        if (ready) { heldSince ||= performance.now(); if (performance.now() - heldSince > 220) { poseYaw = f.yaw; break; } }
+        if (ready) { heldSince ||= performance.now(); if (performance.now() - heldSince > 120) { poseYaw = f.yaw; break; } }
         else heldSince = 0;
       }
       cb.onProgress((i + 0.4 * Math.min(1, (performance.now() - start) / 2500)) / steps.length);
-      await wait(50);
+      await wait(33);
     }
     // capture: the descriptor of the face right now
     const v = cb.video();

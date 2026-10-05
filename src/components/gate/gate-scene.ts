@@ -140,7 +140,8 @@ export class GateScene {
     const dt = Math.min(0.05, (now - (this.last || now)) / 1000); this.last = now;
     const t = (now - this.t0) / 1000;
     const ph = this.phase, since = (now - this.phaseAt) / 1000;
-    const succ = this.successAt ? (now - this.successAt) / 1000 : -1;
+    // the unlock sequence plays at 1.5× — the same motion, sooner into JARVIS
+    const succ = this.successAt ? ((now - this.successAt) / 1000) * 1.5 : -1;
     const fail = this.failAt ? (now - this.failAt) / 1000 : 99;
     const ctx = this.ctx, R = this.R, cx = this.cx, cy = this.cy;
 

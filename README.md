@@ -641,7 +641,7 @@ enrolment. **Re-enroll** replaces your face; **Remove** deletes it.
   `AUTH_SECRET`, in the `FaceTemplate` table. They're decrypted only on the
   server to compare, and never sent back to a browser.
 - To unlock, you do a short **liveness** check: look straight, then a random
-  action (blink, or turn left or right), then look straight. The server checks
+  action (blink, or turn left or right). The server checks
   the steps were done and the timing is plausible, and rejects descriptors that
   are bit-identical (a frozen or replayed image).
 - Every captured descriptor must be within **0.55** of your enrolment, and their
@@ -667,8 +667,8 @@ enrolment, so enrol once on each.
    INITIALIZING" → "BIOMETRIC AUTHENTICATION REQUIRED".
 2. The scanner looks for your face: CAMERA READY → FACE DETECTED → ANALYZING
    BIOMETRIC DATA, with landmarks, contours, brackets and a scan line.
-3. VERIFYING IDENTITY: the liveness prompts (look straight → blink or turn → look
-   straight), then the server matches your face. With Advanced device
+3. VERIFYING IDENTITY: the liveness prompts (look straight → blink or turn), then
+   the server matches your face. With Advanced device
    biometrics, Windows Hello confirms it instead.
 4. The result:
    - **Success:** IDENTITY VERIFIED, then the unlock animation into JARVIS.

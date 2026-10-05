@@ -24,26 +24,25 @@ export async function POST(req: NextRequest) {
     const body = (await req.json().catch(() => null)) as { challengeId?: string; probes?: FaceProbe[] } | null;
     if (!body?.challengeId || !Array.isArray(body.probes) || body.probes.length > 12) return fail("Invalid request.", 422);
 
-    const { user, session } = await gateContext();
-    const ch = await takeChallenge(body.challengeId, "faceid-unlock");
+    const [{ user, session }, ch] = await Promise.all([gateContext(), takeChallenge(body.challengeId, "faceid-unlock")]);
     if (!ch?.userId) return fail("That scan expired. Try again.", 400, { expired: true });
     const target = ch.userId;
     // signed in: it must be your own challenge; signed out: this device's face sign-in user
     if (user ? user.id !== target : (await deviceHintUser()) !== target) return fail("That scan expired. Try again.", 400, { expired: true });
 
-    const locked = await lockRemaining(target);
+    // independent lookups at once: the lockout and the (encrypted) enrolment
+    const [locked, tpl] = await Promise.all([lockRemaining(target), faceTemplateFor(target)]);
     if (locked > 0) return fail("Too many failed attempts.", 423, { lockedMs: locked });
 
     const steps = ch.challenge.split(":")[1].split(",") as FaceStep[];
     const elapsed = Date.now() - ch.createdAt.getTime();
     // the probes can't claim more time than really passed since the challenge was issued
-    const live = livenessProblem(steps, body.probes, { minMs: 600, maxMs: elapsed + 1500 });
+    const live = livenessProblem(steps, body.probes, { minMs: 250, maxMs: elapsed + 1500 });
     if (live) {
       const r = await recordFailure(target);
       return fail(NOT_RECOGNIZED, r.lockedMs > 0 ? 423 : 401, { ...r, liveness: true });
     }
 
-    const tpl = await faceTemplateFor(target);
     if (!tpl) return fail("No face is enrolled yet.", 404, { notEnrolled: true });
     const m = matchProbes(tpl.descriptors, body.probes.map((p) => p.descriptor));
     if (!m.ok) {
@@ -51,14 +50,14 @@ export async function POST(req: NextRequest) {
       return fail(NOT_RECOGNIZED, r.lockedMs > 0 ? 423 : 401, r);
     }
 
-    await recordSuccess(target);
+    const cleared = recordSuccess(target);
     if (user && session) await setUnlocked(user.id, session.jti, "face");
     else {
       const u = await getDb().user.findUnique({ where: { id: target }, select: { id: true, email: true } });
       if (!u) return fail(NOT_RECOGNIZED, 401);
       await createSession(u, { userAgent: req.headers.get("user-agent") ?? undefined, ipAddress: clientIp(req), gateMethod: "face" });
     }
-    await setDeviceHint(target);
+    await Promise.all([setDeviceHint(target), cleared]);
     return ok({ unlocked: true, signedIn: !user });
   } catch (err) {
     return handleError(err);

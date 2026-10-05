@@ -24,6 +24,13 @@ export interface FaceFrame {
 export class FaceTracker {
   private constructor(private fl: FaceLandmarker, public contours: { start: number; end: number }[]) {}
 
+  private static cached: Promise<FaceTracker> | null = null;
+  /** One tracker for the whole tab: loaded once (early, during the gate's opening) and reused. */
+  static shared(): Promise<FaceTracker> {
+    FaceTracker.cached ??= FaceTracker.create().catch((e) => { FaceTracker.cached = null; throw e; });
+    return FaceTracker.cached;
+  }
+
   static async create(): Promise<FaceTracker> {
     const vision = await import("@mediapipe/tasks-vision");
     let fileset;
