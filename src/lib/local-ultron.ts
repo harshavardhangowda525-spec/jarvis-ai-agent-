@@ -29,6 +29,18 @@ export function ultronKnown(): boolean {
   } catch { return false; }
 }
 
+/** Is ULTRON running on this computer right now? (its /health — no pairing needed). Client-side. */
+export async function ultronHealth(): Promise<{ known: boolean; reachable: boolean; brain: string | null; ms?: number }> {
+  const known = ultronKnown();
+  if (!known) return { known, reachable: false, brain: null };
+  const t0 = performance.now();
+  try {
+    const r = await fetch(`${ultronHttp()}/health`, { signal: AbortSignal.timeout(2500) });
+    const j = (await r.json().catch(() => null)) as { brain?: unknown } | null;
+    return { known, reachable: r.ok, brain: typeof j?.brain === "string" ? j.brain.slice(0, 80) : null, ms: Math.round(performance.now() - t0) };
+  } catch { return { known, reachable: false, brain: null }; }
+}
+
 const OFFLINE = "My local runtime isn't running on this computer — start it with npm run local (or ULTRON), then ask again.";
 
 export async function ultronCall<T extends Record<string, unknown>>(path: string, init: { method?: "GET" | "POST"; body?: unknown; timeoutMs?: number; offline?: string } = {}): Promise<UltronResult<T>> {

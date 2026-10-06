@@ -19,6 +19,8 @@ import { instantAnswer } from "@/lib/instant";
 import { inIndia, parseOpenLinkRef, parseOpenSite, pickLink, type SiteTarget } from "@/lib/open-site";
 import { installedAppNames, openLocalApp, openUrlOnPc, parseOpenApp, planOpen, refreshInstalledApps, ultronKnown } from "@/lib/local-apps";
 import { parseMemoryCommand } from "@/lib/memory/intent";
+import { isSystemAnalysis } from "@/lib/system/intent";
+import { SystemAnalysis, spokenResult } from "./system-scan/system-analysis";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import type { AgentTiming } from "@/hooks/useAgent";
 import { useAgent } from "@/hooks/useAgent";
@@ -234,6 +236,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [evToday, setEvToday] = useState(false);
   const dailyAskedAt = useRef(0);
   const sayRef = useRef<(t: string) => void>(() => {});
+  /** The open system analysis (a new number = a new run), 0 = closed. */
+  const [systemScan, setSystemScan] = useState(0);
   const watchRenderRef = useRef<(p: Parameters<ReturnType<typeof useRenderWatch>["watch"]>[0]) => void>(() => {});
   const agentRef = useRef<{ appendLocalExchange: (u: string, a: string, l?: { url: string; label: string }[], o?: { note?: boolean }) => void }>({ appendLocalExchange: () => {} });
   const daily = useDailyContent({
@@ -529,6 +533,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // "mute" / "unmute" (typed — spoken ones are handled by the voice engine itself)
       const muted = typedMute(t);
       if (muted) { agent.appendLocalExchange(t, muted); return; }
+      // ===== "Analyze the system": the holographic self-diagnostic (read-only) =====
+      if (isSystemAnalysis(t)) {
+        agent.appendLocalExchange(t, "Entering system analysis mode — checking the core, every agent, the connections between them, performance and security. Nothing is changed.");
+        sayRef.current("Entering system analysis mode.");
+        setSystemScan((n) => n + 1);
+        return;
+      }
       const reply = (answer: string) => {
         agent.appendLocalExchange(t, answer);
         if (voiceStarted && !voice.muted && voice.enabled) voice.speak(answer);
@@ -1192,6 +1203,17 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         />
       )}
       {weather && <WeatherPopup data={weather} onClose={() => setWeather(null)} />}
+      {systemScan > 0 && (
+        <SystemAnalysis
+          key={systemScan}
+          onClose={() => setSystemScan(0)}
+          onFinish={(s, issues) => {
+            const line = spokenResult(s);
+            agent.appendLocalExchange("", `${line}${issues.length ? `\n\n${issues.map((l) => `• ${l.status === "fail" ? "✕" : "!"} ${l.label} — ${l.detail}`).join("\n")}` : ""}`);
+            sayRef.current(line);
+          }}
+        />
+      )}
       {browser && <BrowserPopup target={browser} onClose={() => setBrowser(null)} onOpenTab={(u) => { openTab(u); }} />}
       <NiosAlerts watch={nios} />
       <DarwinReportCard w={darwinReport} onOpenDarwin={launchDarwin} />

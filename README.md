@@ -359,6 +359,37 @@ balancer / uptime monitor.
 Built as a real, deployable agent — not a mockup. Add a tool, and JARVIS can do
 something new.
 
+## System analysis ("Analyze the system")
+
+Say or type **"Analyze the system"** (or "run a self-diagnostic", "diagnose
+yourself"). JARVIS runs a read-only check of itself and shows it as a
+holographic scan:
+
+- **The scan:** the core expands into SYSTEM ANALYSIS MODE, the rings turn and
+  a beam sweeps around it. Each agent (EV, DARWIN, MIKE, RUBIN, ULTRON, Voice)
+  is a node connected to the core.
+- **What it follows:** the node being checked pulses, and data flows between
+  it and the core.
+- **Results:** a real problem flashes the node amber (attention) or red
+  (fault). A node whose checks pass turns green (verified). A node with
+  nothing set up is grey (not in use).
+- **Progress:** the counter is checks completed out of checks planned. When it
+  finishes, the problems are listed and JARVIS reads out the result.
+
+Every check is done for real, at that moment:
+
+| Stage | What it checks |
+|---|---|
+| Core | database, sign-in secret, each agent's brain routing, each AI provider's own model list (a free call that proves the key works and the model exists), the PC brain, tool failures in 24 h |
+| Agents | per agent: its configuration, its latest run (EV's daily content, DARWIN's search), its failures in the last 24 h; Binance for MIKE; ElevenLabs quota for voice; ULTRON is checked by your browser, on your own computer |
+| Connections | Gmail for DARWIN, the DARWIN → RUBIN handover, the shared memory |
+| Performance | database latency, slowest tool, database size, media stored in the database |
+| Self-diagnostic | Next.js version against known advisories, accounts and sign-up, the lock screen setup |
+
+Nothing is changed, sent or spent. The steps arrive from the server as they
+happen (`POST /api/system/analyze`, NDJSON), and the screen plays them at a
+readable pace. It can run at most 3 times a minute.
+
 ## Previous-day briefing
 
 Open JARVIS and it briefs you on **yesterday** (your own timezone): the core
