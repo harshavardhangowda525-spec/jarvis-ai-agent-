@@ -1,6 +1,6 @@
 "use client";
 
-import { STEP_PROMPT, CENTER_YAW, TURN_YAW, type FaceProbe, type FaceStep } from "./face-match";
+import { STEP_PROMPT, CENTER_YAW, TURN_YAW, MIN_FACE_PX, MIN_FACE_FRAC, MIN_FACE_SCORE, type FaceProbe, type FaceStep } from "./face-match";
 import type { FaceFrame } from "./face-tracker";
 
 /**
@@ -34,8 +34,14 @@ let busy = 0;
 /** A capture is running: the presence tracker skips frames meanwhile so the two don't fight over the GPU/CPU. */
 export const faceIdBusy = () => busy > 0;
 
-/** The descriptor of the one face in view — null if there's no face, or more than one. */
-export async function describeFace(video: HTMLVideoElement): Promise<number[] | null> {
+export type Described = { descriptor: number[] } | { problem: "none" | "many" | "small" | "unclear" };
+
+/**
+ * The descriptor of the one face in view. Refuses faces too small or too
+ * unclear to tell people apart: a small, soft face gives a "generic" descriptor
+ * that sits close to everyone's, which is how a stranger could pass.
+ */
+export async function describeFace(video: HTMLVideoElement): Promise<Described> {
   const faceapi = await loadFaceId();
   busy++;
   try {
@@ -45,14 +51,23 @@ export async function describeFace(video: HTMLVideoElement): Promise<number[] | 
   }
 }
 
-async function describeWith(faceapi: FaceApi, video: HTMLVideoElement): Promise<number[] | null> {
+async function describeWith(faceapi: FaceApi, video: HTMLVideoElement): Promise<Described> {
   const all = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.45 })).withFaceLandmarks().withFaceDescriptors();
-  if (all.length !== 1) return null;
+  if (!all.length) return { problem: "none" };
+  if (all.length > 1) return { problem: "many" };
   const d = all[0];
-  // the face must be a reasonable size in the frame (not a tiny photo in the background)
-  if (d.detection.box.width < (video.videoWidth || 640) * 0.09) return null;
-  return Array.from(d.descriptor);
+  const w = d.detection.box.width;
+  if (w < MIN_FACE_PX || w < (video.videoWidth || 640) * MIN_FACE_FRAC) return { problem: "small" };
+  if (d.detection.score < MIN_FACE_SCORE) return { problem: "unclear" };
+  return { descriptor: Array.from(d.descriptor) };
 }
+
+const HINT: Record<Exclude<Described, { descriptor: number[] }>["problem"], string> = {
+  none: "Keep your face in view",
+  many: "Only one face in view, please",
+  small: "Move closer to the camera",
+  unclear: "More light on your face, please",
+};
 
 /** Run the networks once in the background so the first real capture is quick (shaders compile on first use). */
 export async function warmUpFaceId(video: HTMLVideoElement): Promise<void> {
@@ -110,17 +125,24 @@ export async function runFaceSteps(steps: FaceStep[], cb: ScanCallbacks, stepTim
       cb.onProgress((i + 0.4 * Math.min(1, (performance.now() - start) / 2500)) / steps.length);
       await wait(33);
     }
-    // capture: the descriptor of the face right now
+    // capture: the descriptor of the face right now — close and clear enough to tell people apart
     const v = cb.video();
-    let descriptor: number[] | null = null;
-    for (let k = 0; k < 6 && !descriptor; k++) {
+    let descriptor: number[] | null = null, hinted = false, misses = 0;
+    const capStart = performance.now();
+    while (!descriptor) {
       if (cb.cancelled()) throw new Error("cancelled");
+      if (!v) throw new Error("no-face");
       const tc = performance.now();
-      descriptor = v ? await describeFace(v) : null;
-      trace("capture", k, descriptor ? "ok" : "none", Math.round(performance.now() - tc) + "ms");
-      if (!descriptor) await wait(120);
+      const r = await describeFace(v);
+      trace("capture", "problem" in r ? r.problem : "ok", Math.round(performance.now() - tc) + "ms");
+      if ("descriptor" in r) { descriptor = r.descriptor; break; }
+      // no face at all for a while → give up; too far / too dark → say what to do and keep waiting
+      if (r.problem === "none" && ++misses >= 6) throw new Error("no-face");
+      if (performance.now() - capStart > stepTimeoutMs) throw new Error(r.problem === "small" ? "too-far" : r.problem === "unclear" ? "too-dark" : "no-face");
+      if (r.problem !== "none") { hinted = true; cb.onStep(step, i, steps.length, HINT[r.problem]); }
+      await wait(120);
     }
-    if (!descriptor) throw new Error("no-face");
+    if (hinted) cb.onStep(step, i, steps.length, STEP_PROMPT[step]);
     // the head angle when the pose was confirmed and the capture began
     probes.push({ step, descriptor, yaw: poseYaw, blink: step === "blink" ? true : undefined, t: Math.round(performance.now() - t0) });
     cb.onProgress((i + 1) / steps.length);

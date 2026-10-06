@@ -20,6 +20,7 @@ import {
   type GateClaims, type GateMethod,
 } from "./token";
 import { afterFailure, afterSuccess, lockedFor, type AttemptState } from "./policy";
+import { FACE_TEMPLATE_VERSION } from "./face-match";
 
 export const CHALLENGE_TTL_MS = 3 * 60_000;
 
@@ -125,15 +126,22 @@ export async function takeChallenge(id: string, kind: ChallengeKind): Promise<{ 
 export async function faceTemplateFor(userId: string): Promise<{ descriptors: number[][]; createdAt: Date } | null> {
   const { openTemplate, templateKeyId } = await import("./face-template");
   const row = await getDb().faceTemplate.findUnique({ where: { userId_keyId: { userId, keyId: templateKeyId() } } });
-  if (!row) return null;
+  // enrolled under the old, looser capture standard → no longer trusted to unlock
+  if (!row || row.version < FACE_TEMPLATE_VERSION) return null;
   const descriptors = openTemplate(row);
   return descriptors?.length ? { descriptors, createdAt: row.createdAt } : null;
 }
 
 /** Enrolment summary for the settings screen and the gate — dates only, never the template. */
-export async function faceIdSummary(userId: string): Promise<{ enrolled: boolean; enrolledAt: string | null; elsewhere: boolean }> {
+export async function faceIdSummary(userId: string): Promise<{ enrolled: boolean; enrolledAt: string | null; elsewhere: boolean; outdated: boolean }> {
   const { templateKeyId } = await import("./face-template");
-  const rows = await getDb().faceTemplate.findMany({ where: { userId }, select: { keyId: true, createdAt: true } });
-  const mine = rows.find((r) => r.keyId === templateKeyId());
-  return { enrolled: !!mine, enrolledAt: mine?.createdAt.toISOString() ?? null, elsewhere: rows.some((r) => r.keyId !== templateKeyId()) };
+  const rows = await getDb().faceTemplate.findMany({ where: { userId }, select: { keyId: true, createdAt: true, updatedAt: true, version: true } });
+  const all = rows.find((r) => r.keyId === templateKeyId());
+  const mine = all && all.version >= FACE_TEMPLATE_VERSION ? all : undefined;
+  return {
+    enrolled: !!mine,
+    enrolledAt: mine?.updatedAt.toISOString() ?? null,
+    elsewhere: rows.some((r) => r.keyId !== templateKeyId()),
+    outdated: !!all && !mine,
+  };
 }

@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { getDb } from "@/lib/db";
 import { ok, fail, handleError } from "@/lib/api";
 import { gateContext, setDeviceHint, takeChallenge } from "@/lib/gate/server";
-import { enrollmentProblem, livenessProblem, type FaceProbe, type FaceStep } from "@/lib/gate/face-match";
+import { FACE_TEMPLATE_VERSION, enrollmentProblem, livenessProblem, type FaceProbe, type FaceStep } from "@/lib/gate/face-match";
 import { sealTemplate, templateKeyId } from "@/lib/gate/face-template";
 import { isFresh } from "@/lib/gate/token";
 
@@ -33,8 +33,8 @@ export async function POST(req: NextRequest) {
     const keyId = templateKeyId();
     const row = await getDb().faceTemplate.upsert({
       where: { userId_keyId: { userId: user.id, keyId } },
-      create: { userId: user.id, keyId, ...sealed, samples: body.samples.length },
-      update: { ...sealed, samples: body.samples.length },
+      create: { userId: user.id, keyId, ...sealed, samples: body.samples.length, version: FACE_TEMPLATE_VERSION },
+      update: { ...sealed, samples: body.samples.length, version: FACE_TEMPLATE_VERSION },
       select: { createdAt: true, updatedAt: true },
     });
     await setDeviceHint(user.id);

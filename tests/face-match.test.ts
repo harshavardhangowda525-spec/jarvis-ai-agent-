@@ -29,6 +29,27 @@ describe("JARVIS Face ID matching", () => {
     expect(r.ok).toBe(false);
     expect(r.max).toBeGreaterThan(0.55);
   });
+  it("a look-alike (as close as small, soft webcam faces of different people got: ~0.47) no longer passes", () => {
+    const enrolled = ENROLL_STEPS.map((_, i) => sample(me, 10 + i));
+    // someone 0.42 from me in a random direction, plus the usual capture noise
+    const r = rng(77);
+    const dir = me.map(() => r());
+    const n = Math.hypot(...dir);
+    const lookalike = me.map((v, i) => v + (dir[i] / n) * 0.42);
+    const m = matchProbes(enrolled, [sample(lookalike, 50), sample(lookalike, 51), sample(lookalike, 52)]);
+    expect(m.max).toBeLessThan(0.55); // the old rule (every look < 0.55, average < 0.50) let this in…
+    expect(m.mean).toBeLessThan(0.5);
+    expect(m.ok).toBe(false); // …the new one doesn't
+    // the real person still passes
+    expect(matchProbes(enrolled, [sample(me, 60), sample(me, 61), sample(me, 62)]).ok).toBe(true);
+  });
+  it("being close to ONE enrolled sample isn't enough — every look must be close to the enrolled face's average too", () => {
+    const enrolled = [...ENROLL_STEPS.slice(1).map((_, i) => sample(me, 10 + i)), sample(other, 9)];
+    const m = matchProbes(enrolled, [sample(other, 50), sample(other, 51), sample(other, 52)]);
+    expect(m.max).toBeLessThan(0.45);
+    expect(m.center).toBeGreaterThan(0.42);
+    expect(m.ok).toBe(false);
+  });
   it("nothing enrolled / nothing probed never matches", () => {
     expect(matchProbes([], [sample(me, 1)]).ok).toBe(false);
     expect(matchProbes([sample(me, 1)], []).ok).toBe(false);
@@ -64,9 +85,9 @@ describe("liveness", () => {
     expect(livenessProblem(["center", "blink", "center"], ok(["center", "blink", "center"]).map((p, i) => ({ ...p, t: i * 100 })))).toBe("too-fast");
     expect(livenessProblem(["center", "blink", "center"], ok(["center", "blink"]))).toBe("incomplete");
   });
-  it("unlock challenges always look straight, then one random action", () => {
+  it("unlock challenges look straight, do one random action, then look straight again", () => {
     const seen = new Set<string>();
-    for (let i = 0; i < 60; i++) { const s = unlockSteps(); expect(s).toHaveLength(2); expect(s[0]).toBe("center"); seen.add(s[1]); }
+    for (let i = 0; i < 60; i++) { const s = unlockSteps(); expect(s).toHaveLength(3); expect(s[0]).toBe("center"); expect(s[2]).toBe("center"); seen.add(s[1]); }
     expect([...seen].sort()).toEqual(["blink", "left", "right"]);
   });
 });

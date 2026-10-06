@@ -110,6 +110,7 @@ export function GateSettings() {
           <div className="text-[11px] text-muted-foreground">
             {status?.faceId?.enrolled
               ? `Enrolled ${new Date(status.faceId.enrolledAt!).toLocaleString()}`
+              : status?.faceId?.outdated ? "Face recognition is stricter now — re-enroll your face (closer to the camera) to use Face ID again"
               : status?.faceId?.elsewhere ? "Enrolled on another JARVIS server — enroll here too" : "Not enrolled yet"}
           </div>
         </div>

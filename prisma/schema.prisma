@@ -1040,6 +1040,8 @@ model FaceTemplate {
   iv        Bytes
   tag       Bytes
   samples   Int
+  /// capture standard (FACE_TEMPLATE_VERSION); older templates don't unlock
+  version   Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

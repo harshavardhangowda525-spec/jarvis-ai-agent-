@@ -7,10 +7,15 @@
  * is a short liveness challenge (look straight → blink or turn)
  * whose descriptors must all match the enrolment.
  *
- * Thresholds were measured on 34 real photos of 7 people: the same person was
- * 0.30–0.57 apart (median 0.44), different people never closer than 0.60
- * (median 0.84). Unlock needs EVERY probe within 0.55 and their average within
- * 0.50.
+ * Thresholds were measured on real photos of 7 people rendered the way a webcam
+ * sees them (small, soft, dim, noisy). A clear, close face keeps different
+ * people 0.57+ apart — but a small, soft face (what a 9%-of-the-frame face
+ * gave) pulls everyone's descriptor towards an "average face": strangers came
+ * within 0.49 of each other, so they could pass. Now:
+ * - only a close, clear face is used at all (MIN_FACE_* — "move closer" otherwise);
+ * - unlock needs every look within 0.45 of the enrolment, their average within
+ *   0.40, and every look within 0.42 of the enrolment's average face;
+ * - an unlock takes three looks (straight, an action, straight again).
  *
  * This is camera-based recognition: it's convenient, but a determined attacker
  * with a good video of you could try to fool any webcam. The liveness challenge,
@@ -19,8 +24,16 @@
  */
 
 export const DESCRIPTOR_LENGTH = 128;
-export const MATCH_EACH = 0.55;
-export const MATCH_MEAN = 0.5;
+export const MATCH_EACH = 0.45;
+export const MATCH_MEAN = 0.4;
+/** Every look must also be this close to the enrolment's average face. */
+export const MATCH_CENTROID = 0.42;
+/** A face is only described when it's at least this big (px, and share of the frame width) and this clearly detected. */
+export const MIN_FACE_PX = 140;
+export const MIN_FACE_FRAC = 0.18;
+export const MIN_FACE_SCORE = 0.6;
+/** Templates made before the stricter capture standard don't unlock (re-enrol). */
+export const FACE_TEMPLATE_VERSION = 2;
 /** Head turn needed for a "left"/"right" step (yaw: −1 = fully to your left … +1 = your right). */
 export const TURN_YAW = 0.24;
 /** "Look straight" means |yaw| below this. */
@@ -48,10 +61,10 @@ export const STEP_PROMPT: Record<FaceStep, string> = {
 /** The enrolment plan: several straight-on samples plus both sides and a blink. */
 export const ENROLL_STEPS: FaceStep[] = ["center", "center", "center", "left", "left", "right", "right", "blink"];
 
-/** An unlock challenge: look straight, then one random action (blink / turn left / turn right). */
+/** An unlock challenge: look straight, one random action (blink / turn left / turn right), straight again. */
 export function unlockSteps(rand: () => number = Math.random): FaceStep[] {
   const actions: FaceStep[] = ["blink", "left", "right"];
-  return ["center", actions[Math.floor(rand() * actions.length) % actions.length]];
+  return ["center", actions[Math.floor(rand() * actions.length) % actions.length], "center"];
 }
 
 export function isDescriptor(x: unknown): x is number[] {
@@ -64,13 +77,24 @@ export function distance(a: number[], b: number[]): number {
   return Math.sqrt(s);
 }
 
-/** How close each probe is to the enrolled face (its nearest enrolled sample). */
-export function matchProbes(enrolled: number[][], probes: number[][]): { ok: boolean; mean: number; max: number; each: number[] } {
-  if (!enrolled.length || !probes.length) return { ok: false, mean: Infinity, max: Infinity, each: [] };
+export function centroid(ds: number[][]): number[] {
+  const c = new Array(DESCRIPTOR_LENGTH).fill(0);
+  for (const d of ds) for (let i = 0; i < DESCRIPTOR_LENGTH; i++) c[i] += d[i] / ds.length;
+  return c;
+}
+
+/**
+ * How close each look is to the enrolled face: to its nearest enrolled sample
+ * AND to the enrolment's average face (one lucky near-sample isn't enough).
+ */
+export function matchProbes(enrolled: number[][], probes: number[][]): { ok: boolean; mean: number; max: number; each: number[]; center: number } {
+  if (!enrolled.length || !probes.length) return { ok: false, mean: Infinity, max: Infinity, each: [], center: Infinity };
   const each = probes.map((p) => Math.min(...enrolled.map((e) => distance(e, p))));
   const mean = each.reduce((s, d) => s + d, 0) / each.length;
   const max = Math.max(...each);
-  return { ok: max < MATCH_EACH && mean < MATCH_MEAN, mean, max, each };
+  const avg = centroid(enrolled);
+  const center = Math.max(...probes.map((p) => distance(p, avg)));
+  return { ok: max < MATCH_EACH && mean < MATCH_MEAN && center < MATCH_CENTROID, mean, max, each, center };
 }
 
 /** Does this sequence of probes actually perform the steps asked (and look like a live capture)? */
@@ -96,6 +120,9 @@ export function livenessProblem(steps: FaceStep[], probes: FaceProbe[], opts: { 
   return null;
 }
 
+/** Enrolment samples must sit this close together (median) — a consistent, clear capture. */
+export const ENROLL_SPREAD = 0.42;
+
 /** Is this a usable enrolment — enough angles, and clearly one person throughout? */
 export function enrollmentProblem(probes: FaceProbe[]): string | null {
   const d = probes.map((p) => p.descriptor);
@@ -105,7 +132,7 @@ export function enrollmentProblem(probes: FaceProbe[]): string | null {
   for (let i = 0; i < d.length; i++) {
     const others = d.filter((_, j) => j !== i).map((o) => distance(d[i], o)).sort((a, b) => a - b);
     const median = others[Math.floor(others.length / 2)];
-    if (median > MATCH_EACH) return "The samples don't look like one person — make sure only you are in view, in good light, and try again.";
+    if (median > ENROLL_SPREAD) return "The samples don't look like one person — make sure only you are in view, in good light, and try again.";
   }
   return null;
 }

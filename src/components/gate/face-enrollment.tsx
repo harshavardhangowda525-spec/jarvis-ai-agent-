@@ -145,7 +145,7 @@ export function FaceEnrollment({ onClose, onReverify }: { onClose: (enrolled: bo
       } catch (e) {
         if (stopped || !alive.current) return;
         const why = (e as Error).message;
-        setError(why === "timeout" ? "Didn't catch that step — follow each prompt slowly and try again." : why === "no-face" ? "Keep only your face in view, in good light, and try again." : "Something went wrong — try again.");
+        setError(why === "timeout" ? "Didn't catch that step — follow each prompt slowly and try again." : why === "too-far" ? "Come closer — your face should fill more of the camera — and try again." : why === "too-dark" ? "Too dark — face a light and try again." : why === "no-face" ? "Keep only your face in view, in good light, and try again." : "Something went wrong — try again.");
         setStage("failed");
       }
     }, 300);

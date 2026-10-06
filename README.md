@@ -643,14 +643,23 @@ enrolment. **Re-enroll** replaces your face; **Remove** deletes it.
   encrypted with AES-256-GCM, under a key derived from the server's
   `AUTH_SECRET`, in the `FaceTemplate` table. They're decrypted only on the
   server to compare, and never sent back to a browser.
-- To unlock, you do a short **liveness** check: look straight, then a random
-  action (blink, or turn left or right). The server checks
+- Only a close, clear face is used: at least 140 px wide and 18% of the camera
+  frame, clearly detected. Otherwise the scanner says "Move closer to the
+  camera" (or asks for more light) and waits. A small, soft face gives a
+  generic descriptor that sits close to everyone's, which is how strangers
+  could pass before.
+- To unlock, you do a short **liveness** check: look straight, a random
+  action (blink, or turn left or right), then look straight again. The server checks
   the steps were done and the timing is plausible, and rejects descriptors that
   are bit-identical (a frozen or replayed image).
-- Every captured descriptor must be within **0.55** of your enrolment, and their
-  average within **0.50**. Those thresholds were measured on 34 real photos of 7
-  people: the same person scored 0.30–0.57 apart, different people never closer
-  than 0.60.
+- Every look must be within **0.45** of your nearest enrolled sample, their
+  average within **0.40**, and every look within **0.42** of your enrolment's
+  average face. Measured on photos of 7 people rendered like webcam frames:
+  close, clear faces of different people stayed 0.57+ apart. In the browser
+  test, the enrolled person scored about 0.14 and a stranger about 0.80.
+- **Enrolments from before this standard (version 1) no longer unlock.** JARVIS
+  asks for your PIN or password once, then takes you to re-enroll. Sit close to
+  the camera, in your usual light.
 - Only the server's verdict unlocks. It sets the session-bound unlock cookie
   the middleware enforces.
 

@@ -231,7 +231,7 @@ export function BiometricGate({ next }: { next: string }) {
           if (cancelled()) return;
           const why = (e as Error).message;
           setPrompt(null);
-          setNote(why === "timeout" ? "Didn't catch that — tap the scanner and follow the prompt." : why === "no-face" ? "Keep just your face in view, in good light." : "Face ID couldn't start — try again, or use your PIN or password.");
+          setNote(why === "timeout" ? "Didn't catch that — tap the scanner and follow the prompt." : why === "too-far" ? "Come closer — your face should fill more of the camera." : why === "too-dark" ? "Too dark to recognise you — face a light and try again." : why === "no-face" ? "Keep just your face in view, in good light." : "Face ID couldn't start — try again, or use your PIN or password.");
           armed.current = false;
           dispatch({ type: "SCAN_ABORT" });
         }
