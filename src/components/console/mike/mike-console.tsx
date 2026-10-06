@@ -15,6 +15,7 @@ import { parseMikeCommand } from "@/lib/mike/command";
 import { isMikeDeactivation } from "@/lib/mike/wake";
 import { spokenSummary } from "@/lib/mike/summary";
 import { fmtPct, fmtPrice } from "@/lib/mike/format";
+import { marketRead } from "@/lib/mike/market-read";
 import { MikeCoreEngine, type CoreState, type RingSpec } from "./core-engine";
 import { MikeChart, DEFAULT_TOGGLES, type ChartToggles, type LevelKey, type LevelPos } from "./mike-chart";
 import { LiveChartView, type ChartMeta } from "./live-chart";
@@ -481,7 +482,7 @@ export function MikeConsole() {
       case "risk": setModal({ kind: "risk" }); return;
       default: {
         // the brain gets what's on screen, so "why no trade?" / "explain this chart" are about THIS analysis
-        const ctx = analysis ? `\n\n[On screen: MIKE analysis of ${analysis.asset.display} ${TF_LABEL[analysis.timeframe]} at ${analysis.generatedAt} (${analysis.data.freshness} data, ${analysis.data.source}). Decision: ${analysis.decision === "setup" ? `${analysis.setup?.direction} setup, entry ${fmtPrice(analysis.setup?.entryLow)}–${fmtPrice(analysis.setup?.entryHigh)}, stop ${fmtPrice(analysis.setup?.stop)}, targets ${analysis.setup?.targets.map((t) => fmtPrice(t.price)).join("/")}` : "NO TRADE"}. Reasons: ${analysis.noTradeReasons.join("; ") || "none"}. Checks: ${analysis.checks.map((c) => `${CHECK_LABEL[c.id]} ${c.state} (${c.detail})`).join("; ")}. Confidence ${analysis.confidence.score}/100. Regime: ${analysis.regime.label}.]` : "";
+        const ctx = analysis ? `\n\n[On screen: MIKE analysis of ${analysis.asset.display} ${TF_LABEL[analysis.timeframe]} at ${analysis.generatedAt} (${analysis.data.freshness} data, ${analysis.data.source}). Decision: ${analysis.decision === "setup" ? `${analysis.setup?.direction} setup, entry ${fmtPrice(analysis.setup?.entryLow)}–${fmtPrice(analysis.setup?.entryHigh)}, stop ${fmtPrice(analysis.setup?.stop)}, targets ${analysis.setup?.targets.map((t) => fmtPrice(t.price)).join("/")}` : "NO TRADE"}. Reasons: ${analysis.noTradeReasons.join("; ") || "none"}. Checks: ${analysis.checks.map((c) => `${CHECK_LABEL[c.id]} ${c.state} (${c.detail})`).join("; ")}. Confidence ${analysis.confidence.score}/100. Regime: ${analysis.regime.label}.${readLine(analysis)}]` : "";
         void agent.send((text + ctx).slice(0, 7800), { agent: "mike" });
       }
     }
@@ -673,4 +674,11 @@ function FreshBadge({ f, note }: { f: string; note: string }) {
   };
   const [t, c] = m[f] ?? m.delayed;
   return <span title={note} className={cn("rounded border px-1.5 py-px font-mono text-[9px] tracking-wider", c)}>{f === "live" && <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />}{t}</span>;
+}
+
+/** MIKE's market read for the brain's on-screen context — so "why no trade?" still gets the analysis. */
+function readLine(a: MikeAnalysis): string {
+  const r = marketRead(a);
+  if (!r) return "";
+  return ` Market read: ${r.lean.text}; ${r.structure}${r.lastEvent ? ` (last: ${r.lastEvent})` : ""}; resistance ${r.resistance.map((l) => l.price).join(", ") || "none nearby"}; support ${r.support.map((l) => l.price).join(", ") || "none nearby"}; ${r.indicators.map((i) => `${i.label}: ${i.value}`).join("; ")}. Levels to watch: ${r.watch.join(" ")}`;
 }

@@ -1,6 +1,7 @@
 import type { MikeAnalysis } from "./types";
 import { CHECK_LABEL, CONFIDENCE_NOTE, RISK_WARNING, TF_LABEL, TIER_LABEL } from "./types";
 import { fmtPrice } from "./format";
+import { marketRead } from "./market-read";
 
 /**
  * Compact, structured views of an analysis: one for the AI brain (every number
@@ -76,5 +77,7 @@ export function spokenSummary(a: MikeAnalysis): string {
     return `${name}, ${TF_LABEL[a.timeframe]}: validated ${a.setup.direction} setup. Entry ${fmtPrice(a.setup.entryLow)} to ${fmtPrice(a.setup.entryHigh)}, stop ${fmtPrice(a.setup.stop)}, risk to reward one to ${a.setup.riskReward}. Analysis confidence ${a.confidence.score} out of 100 — that's evidence quality, not a win probability.`;
   }
   const why = (a.noTradeReasons[0] ?? "insufficient evidence").split(" — ")[0].toLowerCase();
-  return `${name}, ${TF_LABEL[a.timeframe]}: no high-conviction setup. Main reason: ${why}. Insufficient evidence — no trade.`;
+  const r = marketRead(a);
+  const read = r ? ` ${r.lean.text.replace(" — ", ", ")}, at ${r.price}.${r.resistance[0] ? ` Resistance ${r.resistance[0].price}` : ""}${r.resistance[0] && r.support[0] ? "," : r.resistance[0] ? "." : ""}${r.support[0] ? ` support ${r.support[0].price}.` : ""}` : "";
+  return `${name}, ${TF_LABEL[a.timeframe]}:${read} No high-conviction setup — main reason: ${why}. No trade for now.`;
 }

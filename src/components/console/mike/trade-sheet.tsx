@@ -5,6 +5,8 @@ import { cn } from "@/lib/utils";
 import type { MikeAnalysis } from "@/lib/mike/types";
 import { CHECK_LABEL, CONFIDENCE_NOTE, RISK_WARNING, TF_LABEL, TIER_LABEL } from "@/lib/mike/types";
 import { fmtPrice } from "@/lib/mike/format";
+import { marketRead, type MarketRead } from "@/lib/mike/market-read";
+import type { Bias } from "@/lib/mike/types";
 import type { LevelKey } from "./mike-chart";
 
 export type SheetPhase = "empty" | "building" | "ready" | "no_trade";
@@ -64,6 +66,7 @@ export function TradeSheet({ analysis, phase, alertKey, rowRef, onExplain }: {
 
   const dir = s?.direction;
   const fresh = FRESH[a.data.freshness] ?? FRESH.delayed;
+  const read = phase === "no_trade" ? marketRead(a) : null;
   return (
     <div className={cn("relative", alerting && "mike-alert")}>
       {alerting && <div className="pointer-events-none absolute inset-0 rounded-2xl border-2 border-cyan-300/70 mike-radial" />}
@@ -159,8 +162,10 @@ export function TradeSheet({ analysis, phase, alertKey, rowRef, onExplain }: {
         ) : (
           <div className="mt-4">
             <div className="mike-reason text-center text-lg font-bold tracking-[0.12em] text-amber-200 sm:text-xl" style={{ animationDelay: "0.7s" }}>NO HIGH-CONVICTION SETUP</div>
-            <div className="mt-1 text-center text-[11px] text-slate-400">MIKE deliberately rejected this setup.</div>
-            <div className="mt-3 space-y-1.5">
+            <div className="mt-1 text-center text-[11px] text-slate-400">{read ? "Here's MIKE's analysis — it just doesn't see a trade worth taking right now." : "MIKE deliberately rejected this setup."}</div>
+            {read && <MarketReadPanel r={read} />}
+            {read && <div className="hud-label mt-4 text-[9px] tracking-[0.24em] text-amber-300/80">WHY NO TRADE</div>}
+            <div className={cn("space-y-1.5", read ? "mt-1.5" : "mt-3")}>
               {a.noTradeReasons.map((r, i) => {
                 const [head, ...rest] = r.split(" — ");
                 return (
@@ -188,6 +193,58 @@ export function TradeSheet({ analysis, phase, alertKey, rowRef, onExplain }: {
           {onExplain && <button onClick={onExplain} className="mike-btn shrink-0 rounded border border-cyan-400/30 px-2 py-1 text-[10px] text-cyan-200">{phase === "no_trade" ? "WHY NO TRADE?" : "EXPLAIN"}</button>}
         </div>
       </div>
+    </div>
+  );
+}
+
+const TONE: Record<Bias, string> = { bullish: "text-emerald-300", bearish: "text-rose-300", neutral: "text-slate-300" };
+const ARROW: Record<Bias, string> = { bullish: "▲", bearish: "▼", neutral: "◆" };
+
+/** MIKE's read of the market — shown with a rejected setup, so there's always an analysis. */
+function MarketReadPanel({ r }: { r: MarketRead }) {
+  return (
+    <div className="mike-reason mt-3 rounded-xl border border-cyan-400/15 bg-cyan-400/[0.03] p-3" style={{ animationDelay: "0.85s" }} data-market-read>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div className="hud-label text-[9px] tracking-[0.24em] text-cyan-300/80">MARKET ANALYSIS</div>
+        <div className="font-mono text-[12px] text-slate-200">
+          {r.price}{r.changePct != null && <span className={cn("ml-1.5", r.changePct >= 0 ? "text-emerald-300" : "text-rose-300")}>{r.changePct >= 0 ? "+" : ""}{r.changePct}%</span>}
+        </div>
+      </div>
+      <div className={cn("mt-1 text-[13px] font-semibold", TONE[r.lean.bias])}>{ARROW[r.lean.bias]} {r.lean.text}</div>
+      {r.timeframes.length > 1 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {r.timeframes.map((t) => (
+            <span key={t.timeframe} className={cn("rounded border border-white/10 px-1.5 py-0.5 font-mono text-[10px]", TONE[t.bias])} title={`${t.role} timeframe · score ${t.score}`}>
+              {t.label} {ARROW[t.bias]} {t.score > 0 ? "+" : ""}{t.score}
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 text-[11px] text-slate-300">{r.structure}{r.lastEvent && <span className="text-slate-400"> · last: {r.lastEvent}</span>}</div>
+      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div>
+          <div className="hud-label text-[9px] text-rose-300/70">RESISTANCE ABOVE</div>
+          {r.resistance.length ? r.resistance.map((l) => <div key={l.price} className="font-mono text-[11px] text-slate-200">{l.price} <span className="text-slate-500">+{l.distPct}% · {l.touches}×</span></div>) : <div className="text-[11px] text-slate-500">none nearby</div>}
+        </div>
+        <div>
+          <div className="hud-label text-[9px] text-emerald-300/70">SUPPORT BELOW</div>
+          {r.support.length ? r.support.map((l) => <div key={l.price} className="font-mono text-[11px] text-slate-200">{l.price} <span className="text-slate-500">{l.distPct}% · {l.touches}×</span></div>) : <div className="text-[11px] text-slate-500">none nearby</div>}
+        </div>
+      </div>
+      {r.indicators.length > 0 && (
+        <div className="mt-2 space-y-0.5">
+          {r.indicators.map((i) => (
+            <div key={i.label} className="flex gap-2 text-[11px]"><span className="w-36 shrink-0 text-slate-500">{i.label}</span><span className={TONE[i.tone]}>{i.value}</span></div>
+          ))}
+        </div>
+      )}
+      {r.watch.length > 0 && (
+        <div className="mt-2 rounded-lg border border-white/5 bg-black/20 px-2.5 py-1.5">
+          <div className="hud-label text-[9px] text-cyan-300/70">LEVELS TO WATCH</div>
+          {r.watch.map((w) => <div key={w} className="text-[11px] text-slate-300">• {w}</div>)}
+          <div className="mt-0.5 text-[9px] text-slate-500">Levels to watch, not trade signals — run MIKE again when price gets there.</div>
+        </div>
+      )}
     </div>
   );
 }
