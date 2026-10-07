@@ -27,6 +27,19 @@ const docker = (args, opts = {}) => spawnSync("docker", args, { cwd: DIR, encodi
 
 const win = process.platform === "win32";
 
+/**
+ * Docker Desktop installed but this terminal was opened before it (its PATH entry isn't
+ * picked up yet) → use the docker.exe inside Docker Desktop directly.
+ */
+export function useDesktopCli(env = process.env, exists = fs.existsSync) {
+  if (process.platform !== "win32" || spawnSync("docker", ["--version"], { stdio: "ignore", shell: true }).status === 0) return false;
+  for (const base of [env.ProgramFiles, env.ProgramW6432, "C:\\Program Files"].filter(Boolean)) {
+    const bin = path.win32.join(base, "Docker", "Docker", "resources", "bin");
+    if (exists(path.win32.join(bin, "docker.exe"))) { env.PATH = `${bin};${env.PATH ?? ""}`; env.Path = env.PATH; return true; }
+  }
+  return false;
+}
+
 /** Is Docker's engine answering right now? */
 export const dockerRunning = () => spawnSync("docker", ["info"], { stdio: "ignore", shell: win }).status === 0;
 
@@ -105,6 +118,7 @@ async function main() {
   const stop = process.argv.includes("stop");
   const noDocker = "Docker isn't installed. Install Docker Desktop (docker.com/products/docker-desktop), open it once, then run  npm run searxng  again.\n" +
     "No Docker? DARWIN can still search with a free key: BRAVE_SEARCH_API_KEY (brave.com/search/api) or SERPER_API_KEY (serper.dev) in .env.local.";
+  useDesktopCli();
   if (docker(["--version"]).status !== 0 && !dockerDesktopPath()) die(noDocker);
   const docked = await startDocker({ log: say });
   if (docked === "not_installed") die(docker(["--version"]).status === 0 ? "Docker is installed but its engine isn't running — start it (Docker Desktop, or  sudo systemctl start docker  on Linux), then run  npm run searxng  again." : noDocker);
