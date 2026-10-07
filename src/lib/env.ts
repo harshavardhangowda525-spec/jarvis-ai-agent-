@@ -225,6 +225,9 @@ export const env = {
   // DARWIN's autonomous daily search: finds N new, verified no-website leads a
   // day in your target locations. Locations/categories are also editable in DARWIN.
   darwinDaily: !/^(0|off|false|no)$/i.test(read("DARWIN_DAILY")),
+  // "Instagram + No Website Leads": a separate daily task that starts once the main daily search is complete
+  darwinIg: !/^(0|off|false|no)$/i.test(read("DARWIN_INSTAGRAM")),
+  darwinIgTarget: Math.min(Math.max(Number(read("DARWIN_INSTAGRAM_TARGET") || 20), 1), 100),
   darwinDailyTz: read("DARWIN_DAILY_TZ") || read("EV_DAILY_TZ") || "Asia/Kolkata",
   darwinDailyStart: read("DARWIN_DAILY_START") || "06:00",
   // the day's leads should be ready by this time (the search widens itself to get there)

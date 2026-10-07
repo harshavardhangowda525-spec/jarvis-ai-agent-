@@ -969,10 +969,27 @@ searches together, in this order — set any you have:
 
 | Search | Setting | Free allowance | How to get it |
 |---|---|---|---|
-| SearXNG | `SEARXNG_URL` (e.g. `http://localhost:8080`) | unlimited | Self-host: `docker run -d -p 8080:8080 searxng/searxng`, then in its `settings.yml` add `json` under `search: formats:` and restart |
+| SearXNG | `SEARXNG_URL` | unlimited | **`npm run searxng`** — sets it all up (below) |
 | Brave Search | `BRAVE_SEARCH_API_KEY` | ~2,000 / month | Sign up at brave.com/search/api, choose the free plan, create a key |
 | Tavily | `SEARCH_API_KEY` | 1,000 / month (shared with JARVIS and MIKE) | tavily.com |
 | Serper | `SERPER_API_KEY` | 2,500 searches on sign-up | serper.dev |
+
+**Connect SearXNG (free, unlimited — recommended):**
+1. Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop).
+2. In the JARVIS folder run `npm run searxng`. It:
+   - creates a private secret in `searxng/.env` (git-ignored);
+   - starts SearXNG from `searxng/docker-compose.yml` on `http://localhost:8888`,
+     reachable only from this computer, with JSON results on and no rate limiter;
+   - checks it answers;
+   - writes `SEARXNG_URL="http://localhost:8888"` into `.env.local`.
+3. Restart `npm run local`. The start-up lines show "DARWIN web search: SearXNG ✓"
+   and, from then on, `npm run local` starts SearXNG by itself if it isn't
+   running. `npm run searxng -- stop` stops it.
+
+SearXNG on your PC serves the JARVIS running on your PC. Vercel can't reach it, so
+on Vercel DARWIN uses the other searches. If SearXNG's engines don't answer (for
+example, blocked by a captcha), DARWIN treats that as an outage, not as "nothing
+found", so a business is never judged website-less from an empty search.
 
 When one runs out of searches, rejects its key or is down, DARWIN says so in the
 day's log and moves on to the next one for the rest of the day. Only when none of
@@ -1110,6 +1127,66 @@ Settings (optional):
 - `DARWIN_EMAIL_TARGET` (`25`) and `DARWIN_EMAIL_DEADLINE` (`18:00`)
 
 Without Google Places or web search, strict mode can't confirm the absence of a website. Those businesses are reported as "unclear" rather than counted.
+
+## DARWIN: Instagram + No Website Leads
+
+A second, separate daily task. It starts **only after the daily lead search is marked
+COMPLETE**, never alongside it. It never changes, delays or reduces the daily target, and
+its leads are never mixed into the daily list.
+
+**What it looks for:** businesses with an **active Instagram account** and **no official
+website**. These already market themselves online, but have no site. It searches cafes,
+restaurants, gyms, salons, spas, clothing stores, clinics, coaching centres, yoga
+studios, hotels, bakeries, real-estate agencies, photographers, event planners, beauty
+parlours and jewellery stores, in the areas today's daily search covered.
+
+**How each business is checked:**
+1. **A real business:** found in the map listings (OpenStreetMap via Geoapify), with its
+   real name, address and phone. These are skipped:
+   - businesses already in DARWIN's daily list or this list (same listing, phone, or
+     name at the same spot);
+   - businesses the daily search found with a website;
+   - anything this task looked at before.
+2. **Instagram = VERIFIED**, only when all three are proven:
+   - **the account exists:** instagram.com serves the profile, or search engines index
+     Instagram's own profile page for it;
+   - **it carries the business's name:** in the handle or the profile name;
+   - **it belongs to this business:** the business's own map listing links it, or the
+     profile names its area or shows its phone.
+
+   Otherwise it's NOT VERIFIED, and the business is left out.
+3. **Website = NO OFFICIAL WEBSITE FOUND:** the same checks as the daily search (listing,
+   domains under its name, a web search for an official site), confirmed by an
+   independent web search. A listing whose "website" is its Instagram page counts as
+   Instagram, not as a website. If the website check can't finish, the business is left
+   out.
+4. **Only VERIFIED + NO OFFICIAL WEBSITE FOUND is saved**, to its own list, with:
+   - name, category, location, phone, Instagram username and URL;
+   - both verification results, with the evidence;
+   - Instagram activity (followers and posts, when public — otherwise "Counts not
+     public", never guessed);
+   - lead score, source, date found, contact status, follow-up status and notes.
+5. **Score (0–100):** followers, posts, a public phone (mobile scores higher), kinds of
+   business that gain most from a website, and a clear business identity. High
+   potential = 60+ with a phone.
+
+**Where to see it:**
+- On DARWIN's map, the **Instagram + No Website** pill under the daily target.
+- In the **CRM**, the **INSTAGRAM + NO WEBSITE** tab:
+  - the summary: businesses found, Instagram verified, no website verified,
+    contactable, high-potential, duplicates removed and unverified excluded;
+  - the verified leads, with contact and follow-up status and notes you can edit.
+  - **RUN NOW** works on today's task straight away, but only once the daily target is
+    complete.
+
+**Searches:** it needs a web search to verify accounts, ideally SearXNG
+(`npm run searxng`, unlimited). With paid-allowance searches it only uses what's left of
+**today's** share after the daily search, and its searches count toward each search's
+monthly pacing. It makes at most 80 map requests a day.
+
+Settings (optional):
+- `DARWIN_INSTAGRAM=off` turns it off.
+- `DARWIN_INSTAGRAM_TARGET` (default `20`) sets the leads a day.
 
 ## Instagram on your PC
 

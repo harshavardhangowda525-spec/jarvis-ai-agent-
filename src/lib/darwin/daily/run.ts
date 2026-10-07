@@ -189,7 +189,7 @@ export function defaultDeps(): DarwinDeps {
   };
 }
 
-const PAGE = 50;
+export const PAGE = 50;
 const MAX_GEO_REQUESTS = 600;         // per day (room to widen the search) — well inside Geoapify's free 3,000/day
 const MAX_GEO_REQUESTS_CITY = 900;    // all of Bangalore: more areas to get through (no geocoding needed)
 const PAID_CALLS_PER_TARGET = 4;      // Google / search lookups allowed per wanted lead
@@ -367,7 +367,13 @@ async function knowledge(userId: string, now: Date, run: { id: string; date: str
  * spending everything in the first few days and then finding nothing.
  */
 export async function searchShares(userId: string, date: string, providers: Provider[], usedToday: Partial<Record<ProviderId, number>> = {}): Promise<Partial<Record<ProviderId, number>>> {
-  const runs = await getDb().darwinDailyRun.findMany({ where: { userId, date: { startsWith: date.slice(0, 7), lt: date } }, select: { apiRequests: true } });
+  const month = { userId, date: { startsWith: date.slice(0, 7), lt: date } };
+  const [daily, ig] = await Promise.all([
+    getDb().darwinDailyRun.findMany({ where: month, select: { apiRequests: true } }),
+    // the "Instagram + No Website" phase's searches come out of the same monthly allowances
+    getDb().darwinIgRun.findMany({ where: month, select: { apiRequests: true } }).catch(() => []),
+  ]);
+  const runs = [...daily, ...ig];
   const before: Partial<Record<ProviderId, number>> = {};
   for (const r of runs) {
     const a = (r.apiRequests ?? {}) as Partial<Api>;
@@ -970,13 +976,13 @@ const progressOf = (r: DarwinDailyRun) => [r.verified, r.candidates, r.alreadyCh
  * the caller should come straight back (the cron chains itself; the local
  * runner loops) so the day's leads are ready without anyone opening DARWIN.
  */
-export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDeps; userIds?: string[]; earlyMin?: number; emailDeps?: AutoEmailDeps } = {}) {
+export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDeps; userIds?: string[]; earlyMin?: number; emailDeps?: AutoEmailDeps; igDeps?: import("@/lib/darwin/instagram/run").IgDeps } = {}) {
   if (!env.darwinDaily) return { skipped: "DARWIN_DAILY is off", results: [], more: false };
   const deps = opts.deps ?? defaultDeps();
   const now = deps.now();
   const users = opts.userIds ?? await darwinUsers();
   const per = Math.max(30_000, Math.floor((opts.budgetMs ?? 240_000) / Math.max(users.length, 1)));
-  const results: { userId: string; status: string; verified: number; emailed?: number; emailWaiting?: number; emailNote?: string | null }[] = [];
+  const results: { userId: string; status: string; verified: number; emailed?: number; emailWaiting?: number; emailNote?: string | null; instagramLeads?: number }[] = [];
   let more = false;
   const clock = opts.emailDeps?.now ?? (() => new Date());
   for (const userId of users) {
@@ -1011,10 +1017,26 @@ export async function runDarwinDaily(opts: { budgetMs?: number; deps?: DarwinDep
       mail = await sendAutoEmails(userId, { until: userStart + per - 5_000, deps: opts.emailDeps });
       if (mail.sent > 0 && mail.waiting > 0 && !mail.stopped) more = true;
     }
+    // last, with whatever time is left: the separate "Instagram + No Website Leads" task —
+    // only once today's main search is COMPLETE (it never delays or replaces it)
+    let igSaved: number | undefined;
+    if (env.darwinIg && run) {
+      const IG = await import("@/lib/darwin/instagram/run");
+      await IG.closeStaleIgRuns(userId, now);
+      let ig = await IG.ensureIgRun(run, now);
+      const left = userStart + per - clock().getTime() - 5_000;
+      if (ig?.status === "running" && left > 20_000) {
+        const before = `${ig.found}/${ig.saved}/${ig.comboIndex}`;
+        ig = await IG.advanceIgRun(ig.id, { budgetMs: left, deps: opts.igDeps });
+        if (ig.status === "running" && `${ig.found}/${ig.saved}/${ig.comboIndex}` !== before) more = true;
+      }
+      igSaved = ig?.saved;
+    }
     if (!run && !mail?.sent) continue;
     results.push({
       userId, status: run?.status ?? "not_started", verified: run?.verified ?? 0,
       ...(mail ? { emailed: mail.sent, emailWaiting: mail.waiting, emailNote: mail.stopped } : {}),
+      ...(igSaved != null ? { instagramLeads: igSaved } : {}),
     });
   }
   return { date: dailyNow(now).date, results, more };

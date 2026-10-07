@@ -53,7 +53,11 @@ export const PROVIDERS: Provider[] = [
         if (res.status === 403) return out("SearXNG", "auth", "refused JSON results — enable the json format (search → formats) in its settings.yml");
         if (res.status === 429) return out("SearXNG", "rate", "rate limit reached");
         if (!res.ok) return out("SearXNG", res.status >= 500 ? "down" : "auth", `HTTP ${res.status}`);
-        const j = (await res.json()) as { results?: { url?: string; title?: string; content?: string }[] };
+        const j = (await res.json()) as { results?: { url?: string; title?: string; content?: string }[]; unresponsive_engines?: unknown[] };
+        // no results because its engines didn't answer (blocked, captcha, offline) isn't "nothing found" —
+        // treating it as an empty search would make every business look website-less
+        const silent = Array.isArray(j.unresponsive_engines) ? j.unresponsive_engines.length : 0;
+        if (!(j.results ?? []).length && silent > 0) return out("SearXNG", "rate", `its search engines didn't answer (${silent} unresponsive) — no results to trust`);
         return { ok: true, results: (j.results ?? []).slice(0, 10).map((r) => ({ url: str(r.url), title: str(r.title), content: str(r.content) })) };
       } catch (e) { return failed("SearXNG", e); }
     },

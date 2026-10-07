@@ -28,6 +28,12 @@ describe("free web-search providers: their answers are read the same way", () =>
     expect(String(f.mock.calls[0][0])).toMatch(/^http:\/\/searx\.local:8080\/search\?q=Sri\+Ram\+Bakery\+Mysuru&format=json/);
     mockFetch(() => json(403, "Forbidden"));
     expect(await byId("searxng").run("q")).toMatchObject({ ok: false, outage: { kind: "auth", message: expect.stringMatching(/json format/) } });
+    // its engines all silent (blocked / offline): not "no website anywhere" — an outage
+    mockFetch(() => json(200, { results: [], unresponsive_engines: [["google", "timeout"], ["bing", "CAPTCHA"]] }));
+    expect(await byId("searxng").run("q")).toMatchObject({ ok: false, outage: { kind: "rate", message: expect.stringMatching(/didn't answer \(2 unresponsive\)/) } });
+    // genuinely nothing found (engines answered) is still a valid empty answer
+    mockFetch(() => json(200, { results: [], unresponsive_engines: [] }));
+    expect(await byId("searxng").run("q")).toEqual({ ok: true, results: [] });
   });
 
   it("Brave: description + extra snippets; key / quota / rate errors", async () => {

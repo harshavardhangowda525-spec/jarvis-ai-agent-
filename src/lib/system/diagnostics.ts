@@ -8,6 +8,7 @@ import { getLiveBrain } from "@/lib/ai/brain";
 import { availableTools } from "@/lib/tools/registry";
 import { configuredProviders } from "@/lib/darwin/web-search";
 import { todayRun } from "@/lib/darwin/daily/run";
+import { todayIgRun } from "@/lib/darwin/instagram/run";
 import { emailChannelReady } from "@/lib/darwin/email";
 import { resolveIgCreds } from "@/lib/ev/instagram";
 import { faceIdSummary, attemptState } from "@/lib/gate/server";
@@ -165,6 +166,13 @@ export function plan(userId: string, probe: ClientProbe, deps: DiagnosticDeps): 
     if (!r) return info("not started yet today");
     const line = `${r.status} · ${r.verified}/${r.target} verified`;
     return r.lastError ? warn(`${line} — ${r.lastError.replace(/\s+/g, " ").slice(0, 160)}`) : r.status === "needs_setup" ? warn(`${line} — needs setup`) : ok(line);
+  });
+  add("agents", "darwin", "Instagram + No Website", async () => {
+    if (!env.darwinIg) return info("turned off (DARWIN_INSTAGRAM=off)");
+    const r = await todayIgRun(userId, new Date(deps.now()));
+    if (!r) return info("waits for today's daily target to be complete");
+    const line = `${r.status} · ${r.saved}/${r.target} verified`;
+    return r.lastError ? warn(`${line} — ${r.lastError.slice(0, 160)}`) : ok(line);
   });
   add("agents", "darwin", "Failures (24 h)", () => failures24h(userId, AGENT_LOG_NAME.darwin, deps.now()));
 

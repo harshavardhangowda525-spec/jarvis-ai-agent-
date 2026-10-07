@@ -1,0 +1,18 @@
+# SearXNG settings for JARVIS (only what differs from SearXNG's defaults).
+use_default_settings: true
+
+general:
+  instance_name: "JARVIS search"
+
+server:
+  # private instance on this computer: no rate limiter (it would need Redis/Valkey)
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  safe_search: 0
+  # DARWIN reads results as JSON
+  formats:
+    - html
+    - json

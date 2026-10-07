@@ -40,6 +40,9 @@ model User {
   evDaily             EvDaily[]
   darwinDailyRuns     DarwinDailyRun[]
   darwinCandidates    DarwinCandidate[]
+  darwinIgRuns        DarwinIgRun[]
+  darwinIgLeads       DarwinIgLead[]
+  darwinIgChecks      DarwinIgCheck[]
   dailySummaries      DailySummary[]
   mikeSignals         MikeSignal[]
   mikeAlerts          MikeAlert[]
@@ -1049,3 +1052,105 @@ model FaceTemplate {
 
   @@unique([userId, keyId])
 }
+
+/// DARWIN's secondary daily task "Instagram + No Website Leads": starts only after
+/// that day's primary DarwinDailyRun is completed, and never writes to the primary list.
+model DarwinIgRun {
+  id            String    @id @default(cuid())
+  userId        String
+  date          String // YYYY-MM-DD in DARWIN_DAILY_TZ (same day as the primary run)
+  primaryRunId  String?
+  target        Int       @default(20)
+  // running | completed | partial | needs_setup
+  status        String    @default("running")
+  comboIndex    Int       @default(0)
+  exhausted     String[]  @default([])
+  /// businesses looked at (new to DARWIN)
+  found         Int       @default(0)
+  igVerified    Int       @default(0)
+  noWebsite     Int       @default(0)
+  saved         Int       @default(0)
+  contactable   Int       @default(0)
+  highPotential Int       @default(0)
+  duplicates    Int       @default(0)
+  /// left out because Instagram or the website absence couldn't be confirmed
+  unverified    Int       @default(0)
+  noInstagram   Int       @default(0)
+  websiteFound  Int       @default(0)
+  apiRequests   Json?
+  reasons       String[]  @default([])
+  log           Json?
+  lastError     String?   @db.Text
+  lockedUntil   DateTime?
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}
+
+/// A verified "Instagram + No Website" lead (kept apart from DarwinLead).
+model DarwinIgLead {
+  id                String   @id @default(cuid())
+  userId            String
+  runId             String?
+  fingerprint       String
+  placeId           String?
+  businessName      String
+  category          String?
+  location          String?
+  latitude          Float?
+  longitude         Float?
+  phone             String?
+  instagramUsername String
+  instagramUrl      String
+  /// verified (only verified accounts are saved)
+  instagramStatus   String   @default("verified")
+  instagramEvidence String[] @default([])
+  followers         Int?
+  posts             Int?
+  instagramActivity String?
+  /// no_official_website (only confirmed absences are saved)
+  websiteStatus     String   @default("no_official_website")
+  websiteReasons    String[] @default([])
+  qualityScore      Int      @default(0)
+  highPotential     Boolean  @default(false)
+  scoreParts        Json?
+  source            String
+  foundDate         String
+  /// not_contacted | contacted | replied | interested | not_interested | converted
+  contactStatus     String   @default("not_contacted")
+  /// none | scheduled | due | done
+  followUpStatus    String   @default("none")
+  followUpAt        DateTime?
+  notes             String?  @db.Text
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@unique([userId, instagramUsername])
+  @@index([userId, createdAt])
+}
+
+/// Businesses the Instagram phase already looked at (so they aren't checked again).
+model DarwinIgCheck {
+  id          String   @id @default(cuid())
+  userId      String
+  fingerprint String
+  placeId     String?
+  name        String
+  /// lead | no_instagram | instagram_unverified | website_found | website_unclear | duplicate
+  status      String
+  reasons     String[] @default([])
+  checkedAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId, placeId])
+}
+

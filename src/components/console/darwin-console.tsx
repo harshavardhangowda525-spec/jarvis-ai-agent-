@@ -20,6 +20,7 @@ import { PhoneActions, STATUS_OPTIONS, normStage, statusTone, websiteHost, fmtDi
 import { DarwinMap, type DarwinMapHandle, type MapNodeInput } from "./darwin/darwin-map";
 import { EmailComposePopup, useEmailPopups } from "./email-popup";
 import { DailyTarget, useDarwinDaily } from "./darwin/daily-target";
+import { IgPill, IgSection } from "./darwin/instagram-leads";
 import { darwinDailyRequest, darwinProgressLine, darwinSearchNowLine, darwinSearchNowRequest } from "@/lib/darwin/daily/intent";
 import { parseMemoryCommand } from "@/lib/memory/intent";
 import { isMikeActivation } from "@/lib/mike/wake";
@@ -86,6 +87,9 @@ export function DarwinConsole() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [crmOpen, setCrmOpen] = useState(false);
   const [tableRequest, setTableRequest] = useState<TableRequest | null>(null);
+  /** Which list the CRM shows: the daily leads, or the separate "Instagram + No Website" list. */
+  const [crmSection, setCrmSection] = useState<"daily" | "instagram">("daily");
+  useEffect(() => { if (tableRequest) setCrmSection("daily"); }, [tableRequest]);
   const [refreshKey, setRefreshKey] = useState(0);
   const [flows, setFlows] = useState<{ key: number; from: number; to: number }[]>([]);
   const categoryRef = useRef<HTMLInputElement>(null);
@@ -458,6 +462,7 @@ export function DarwinConsole() {
             <DailyTarget daily={daily}
               onViewLeads={async (ids) => { await loadLeads(); setFresh(new Set(ids)); setTableRequest({ tab: "search", nonce: Date.now() }); setCrmOpen(true); }}
               onOpenCrm={() => { setTableRequest({ tab: "all", nonce: Date.now() }); setCrmOpen(true); }} />
+            <IgPill onOpen={() => { setCrmSection("instagram"); setCrmOpen(true); }} />
           </div>
 
           {/* CRM icon on the map → the full CRM */}
@@ -552,13 +557,21 @@ export function DarwinConsole() {
             <div className="mb-3 flex items-center gap-2">
               <Database className="h-4 w-4 text-cyan-200/70" />
               <span className="text-[11px] tracking-[0.35em] text-white/70">CRM</span>
+              <div className="ml-3 flex rounded-full border border-white/10 p-0.5 text-[9px] tracking-[0.2em]" role="tablist" aria-label="Lead lists">
+                {([["daily", "DAILY LEADS"], ["instagram", "INSTAGRAM + NO WEBSITE"]] as const).map(([id, label]) => (
+                  <button key={id} role="tab" aria-selected={crmSection === id} onClick={() => setCrmSection(id)}
+                    className={cn("rounded-full px-2.5 py-1 transition", crmSection === id ? (id === "instagram" ? "bg-pink-400/15 text-pink-100" : "bg-cyan-400/15 text-cyan-100") : "text-white/50 hover:text-white/80")}>
+                    {label}
+                  </button>
+                ))}
+              </div>
               <button onClick={() => setCrmOpen(false)} aria-label="Close" className="ml-auto flex h-8 w-8 items-center justify-center rounded-full text-white/50 hover:bg-white/10 hover:text-white"><X className="h-4 w-4" /></button>
             </div>
-            <div className="space-y-3">
+            {crmSection === "instagram" ? <IgSection /> : <div className="space-y-3">
               {followUps.length > 0 && <FollowUpsPanel items={followUps} dueCount={overview?.crm.followUpsDue ?? 0} onOpen={(l) => setTableRequest({ tab: "all", q: l.businessName, nonce: Date.now() })} />}
               <LeadTable searchLeads={leads.filter((l) => fresh.has(l.id))} freshIds={fresh} request={tableRequest} refreshKey={refreshKey}
                 onLeadUpdated={(l) => { setLeads((prev) => prev.map((x) => (x.id === l.id ? l : x))); loadOverview(); }} />
-            </div>
+            </div>}
           </div>
         </div>
       )}

@@ -20,6 +20,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys } from "./local-helpers.mjs";
+import { ensureSecret, searxngAnswers } from "./searxng.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const EDITH = path.join(ROOT, "edith");
@@ -161,7 +162,22 @@ if (!googleGone.length) say("  Google (Gmail, Calendar, Drive): client ID and se
 else say(`  Note: ${googleGone.join(" and ")} ${googleGone.length > 1 ? "aren't" : "isn't"} in ${path.basename(envFile)} — Google (Gmail, Calendar, Drive) shows "Not configured" on this PC.\n        Copy the value${googleGone.length > 1 ? "s" : ""} from Google Cloud Console → APIs & Services → Credentials → your OAuth client, then restart.`);
 // DARWIN's web searches (confirm "no website" — more searches, more leads a day)
 const searches = [["SEARXNG_URL", "SearXNG"], ["BRAVE_SEARCH_API_KEY", "Brave"], ["SEARCH_API_KEY", "Tavily"], ["SERPER_API_KEY", "Serper"]].filter(([k]) => !isPlaceholder(appEnv[k])).map(([, n]) => n);
-say(searches.length ? `  DARWIN web search: ${searches.join(", ")} ✓` : "  Note: no web search for DARWIN — set SERPER_API_KEY, BRAVE_SEARCH_API_KEY or SEARXNG_URL in .env.local so it can confirm leads.");
+say(searches.length ? `  DARWIN web search: ${searches.join(", ")} ✓` : "  Note: no web search for DARWIN — run  npm run searxng  (free, unlimited) or set SERPER_API_KEY / BRAVE_SEARCH_API_KEY in .env.local so it can confirm leads.");
+// your own SearXNG (npm run searxng) on this PC: start it if it isn't running
+const searxUrl = isPlaceholder(appEnv.SEARXNG_URL) ? "" : appEnv.SEARXNG_URL.trim().replace(/\/+$/, "");
+if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(searxUrl) && fs.existsSync(path.join(ROOT, "searxng", "docker-compose.yml"))) {
+  if ((await searxngAnswers(searxUrl, 2500)) !== "ok") {
+    const dockerUp = spawnSync("docker", ["info"], { stdio: "ignore", shell: win }).status === 0;
+    if (!dockerUp) say("  ! SearXNG isn't running and Docker isn't either — open Docker Desktop (it starts SearXNG next time), or DARWIN uses its other web searches meanwhile.");
+    else {
+      ensureSecret(path.join(ROOT, "searxng"));
+      const up = spawnSync("docker", ["compose", "up", "-d"], { cwd: path.join(ROOT, "searxng"), stdio: "ignore", shell: win });
+      let state = "down";
+      for (let i = 0; up.status === 0 && i < 20 && state !== "ok"; i++) { state = await searxngAnswers(searxUrl, 2000); if (state !== "ok") await new Promise((r) => setTimeout(r, 1500)); }
+      say(state === "ok" ? "  SearXNG started ✓" : "  ! Couldn't start SearXNG — run  npm run searxng  to see why. DARWIN uses its other web searches meanwhile.");
+    }
+  } else say("  SearXNG is running ✓");
+}
 // keys that are almost right (a typo, or SerpApi's name instead of Serper's) and a file Notepad saved as .txt
 const SEARCH_KEYS = ["SEARXNG_URL", "BRAVE_SEARCH_API_KEY", "SEARCH_API_KEY", "SERPER_API_KEY"];
 for (const k of Object.keys(appEnv).filter((k) => /SERP|BRAVE|SEARX/i.test(k) && !SEARCH_KEYS.includes(k) && !isPlaceholder(appEnv[k]))) {
