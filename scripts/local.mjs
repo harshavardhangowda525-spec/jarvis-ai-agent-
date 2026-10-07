@@ -20,7 +20,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys } from "./local-helpers.mjs";
-import { ensureSecret, searxngAnswers } from "./searxng.mjs";
+import { ensureSecret, searxngAnswers, startDocker } from "./searxng.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const EDITH = path.join(ROOT, "edith");
@@ -167,8 +167,10 @@ say(searches.length ? `  DARWIN web search: ${searches.join(", ")} ✓` : "  Not
 const searxUrl = isPlaceholder(appEnv.SEARXNG_URL) ? "" : appEnv.SEARXNG_URL.trim().replace(/\/+$/, "");
 if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(searxUrl) && fs.existsSync(path.join(ROOT, "searxng", "docker-compose.yml"))) {
   if ((await searxngAnswers(searxUrl, 2500)) !== "ok") {
-    const dockerUp = spawnSync("docker", ["info"], { stdio: "ignore", shell: win }).status === 0;
-    if (!dockerUp) say("  ! SearXNG isn't running and Docker isn't either — open Docker Desktop (it starts SearXNG next time), or DARWIN uses its other web searches meanwhile.");
+    // Docker Desktop installed but closed → open it (waits up to ~90 s; JARVIS starts either way)
+    const docked = await startDocker({ waitMs: 90_000, log: say });
+    const dockerUp = docked === "running" || docked === "started";
+    if (!dockerUp) say(`  ! SearXNG isn't running and Docker ${docked === "not_installed" ? "isn't installed" : "didn't start"} — run  npm run searxng  to see why. DARWIN uses its other web searches meanwhile.`);
     else {
       ensureSecret(path.join(ROOT, "searxng"));
       const up = spawnSync("docker", ["compose", "up", "-d"], { cwd: path.join(ROOT, "searxng"), stdio: "ignore", shell: win });

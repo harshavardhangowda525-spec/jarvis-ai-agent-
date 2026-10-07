@@ -975,7 +975,11 @@ searches together, in this order — set any you have:
 | Serper | `SERPER_API_KEY` | 2,500 searches on sign-up | serper.dev |
 
 **Connect SearXNG (free, unlimited — recommended):**
-1. Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop).
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop) and open it once to
+   finish its setup. After that `npm run searxng` (and `npm run local`) open it by
+   themselves when it's closed. If Docker won't start on Windows: run `wsl --install`
+   in PowerShell as Administrator and restart, and check Task Manager → Performance →
+   CPU shows "Virtualization: Enabled".
 2. In the JARVIS folder run `npm run searxng`. It:
    - creates a private secret in `searxng/.env` (git-ignored);
    - starts SearXNG from `searxng/docker-compose.yml` on `http://localhost:8888`,

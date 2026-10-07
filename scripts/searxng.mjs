@@ -11,7 +11,7 @@
  *
  * `npm run searxng -- stop` stops it. `npm run local` starts it again by itself.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -24,6 +24,54 @@ const URL_ = `http://localhost:${PORT}`;
 const say = (s) => console.log(s);
 const die = (s) => { console.error(`\n${s}\n`); process.exit(1); };
 const docker = (args, opts = {}) => spawnSync("docker", args, { cwd: DIR, encoding: "utf8", shell: process.platform === "win32", ...opts });
+
+const win = process.platform === "win32";
+
+/** Is Docker's engine answering right now? */
+export const dockerRunning = () => spawnSync("docker", ["info"], { stdio: "ignore", shell: win }).status === 0;
+
+/** Where Docker Desktop is installed (Windows / macOS), or null. */
+export function dockerDesktopPath(env = process.env, platform = process.platform, exists = fs.existsSync) {
+  if (platform === "win32") {
+    for (const base of [env.ProgramFiles, env.ProgramW6432, "C:\\Program Files"].filter(Boolean)) {
+      const p = path.win32.join(base, "Docker", "Docker", "Docker Desktop.exe");
+      if (exists(p)) return p;
+    }
+    return null;
+  }
+  if (platform === "darwin") return exists("/Applications/Docker.app") ? "/Applications/Docker.app" : null;
+  return null;
+}
+
+/**
+ * Docker installed but not running → open Docker Desktop and wait for its engine
+ * (the first start after a reboot can take a minute or two).
+ * "running" | "started" | "not_installed" | "timeout"
+ */
+export async function startDocker({ waitMs = 150_000, log = () => {} } = {}) {
+  if (dockerRunning()) return "running";
+  const app = dockerDesktopPath();
+  if (!app) return "not_installed";
+  log("  Docker isn't running — starting Docker Desktop (this can take a minute or two)…");
+  try {
+    const child = process.platform === "darwin" ? spawn("open", ["-a", "Docker"], { detached: true, stdio: "ignore" }) : spawn(app, [], { detached: true, stdio: "ignore" });
+    child.on("error", () => {});
+    child.unref();
+  } catch { return "timeout"; }
+  const until = Date.now() + waitMs;
+  while (Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 3000));
+    if (dockerRunning()) return "started";
+  }
+  return "timeout";
+}
+
+const WINDOWS_HELP =
+  "Docker Desktop didn't start. On Windows the usual causes are:\n" +
+  "  1. WSL 2 isn't set up — open PowerShell as Administrator, run:  wsl --install  then restart the PC.\n" +
+  "  2. Docker Desktop is waiting for you — open it from the Start menu and accept its terms / finish its first-run setup.\n" +
+  "  3. Virtualization is off — Task Manager → Performance → CPU should say \"Virtualization: Enabled\"; if not, turn it on in the BIOS (Intel VT-x / AMD SVM).\n" +
+  "When the Docker Desktop window says \"Engine running\", run  npm run searxng  again.";
 
 export function ensureSecret(dir = DIR) {
   const f = path.join(dir, ".env");
@@ -55,12 +103,13 @@ export async function searxngAnswers(base = URL_, timeoutMs = 4000) {
 
 async function main() {
   const stop = process.argv.includes("stop");
-  const v = docker(["--version"]);
-  if (v.status !== 0) {
-    die("Docker isn't installed. Install Docker Desktop (docker.com/products/docker-desktop), start it, then run  npm run searxng  again.\n" +
-      "No Docker? You can still give DARWIN a free web search: BRAVE_SEARCH_API_KEY (brave.com/search/api) or SERPER_API_KEY (serper.dev) in .env.local.");
-  }
-  if (docker(["info"], { stdio: "ignore" }).status !== 0) die("Docker is installed but not running — open Docker Desktop, wait until it says it's running, then run  npm run searxng  again.");
+  const noDocker = "Docker isn't installed. Install Docker Desktop (docker.com/products/docker-desktop), open it once, then run  npm run searxng  again.\n" +
+    "No Docker? DARWIN can still search with a free key: BRAVE_SEARCH_API_KEY (brave.com/search/api) or SERPER_API_KEY (serper.dev) in .env.local.";
+  if (docker(["--version"]).status !== 0 && !dockerDesktopPath()) die(noDocker);
+  const docked = await startDocker({ log: say });
+  if (docked === "not_installed") die(docker(["--version"]).status === 0 ? "Docker is installed but its engine isn't running — start it (Docker Desktop, or  sudo systemctl start docker  on Linux), then run  npm run searxng  again." : noDocker);
+  if (docked === "timeout") die(process.platform === "win32" ? WINDOWS_HELP : "Docker didn't start — open Docker Desktop, wait for \"Engine running\", then run  npm run searxng  again.");
+  if (docked === "started") say("  Docker is running ✓");
   if (stop) { docker(["compose", "down"], { stdio: "inherit" }); say("SearXNG stopped."); return; }
 
   if (ensureSecret()) say("  Created a private secret for SearXNG (searxng/.env, not committed).");
