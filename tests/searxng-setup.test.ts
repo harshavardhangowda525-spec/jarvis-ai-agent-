@@ -40,10 +40,11 @@ describe("npm run searxng — setup helpers", () => {
     expect(await searxngAnswers("http://127.0.0.1:1", 1000)).toBe("down");
   });
   it("finds Docker Desktop where Windows and macOS install it (to start it when it's closed)", () => {
+    const find = dockerDesktopPath as unknown as (env: Record<string, string>, platform: string, exists: (p: string) => boolean) => string | null;
     const winExe = "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe";
-    expect(dockerDesktopPath({ ProgramFiles: "C:\\Program Files" }, "win32", (p: string) => p === winExe)).toBe(winExe);
-    expect(dockerDesktopPath({ ProgramFiles: "C:\\Program Files" }, "win32", () => false)).toBeNull();
-    expect(dockerDesktopPath({}, "darwin", (p: string) => p === "/Applications/Docker.app")).toBe("/Applications/Docker.app");
-    expect(dockerDesktopPath({}, "linux", () => true)).toBeNull();
+    expect(find({ ProgramFiles: "C:\\Program Files" }, "win32", (p: string) => p === winExe)).toBe(winExe);
+    expect(find({ ProgramFiles: "C:\\Program Files" }, "win32", () => false)).toBeNull();
+    expect(find({}, "darwin", (p: string) => p === "/Applications/Docker.app")).toBe("/Applications/Docker.app");
+    expect(find({}, "linux", () => true)).toBeNull();
   });
 });
