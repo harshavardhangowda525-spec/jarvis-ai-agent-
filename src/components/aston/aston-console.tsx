@@ -188,7 +188,7 @@ export function AstonConsole() {
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50"
           aria-label={speechOk ? (mode === "listening" ? "Stop listening" : "Talk to ASTON") : "Type to ASTON"}
         >
-          <AstonOrb state={state} size={340} />
+          <AstonOrb state={state} size={400} />
         </button>
 
         <div className="max-w-2xl text-center" aria-live="polite">
