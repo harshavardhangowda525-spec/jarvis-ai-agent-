@@ -838,3 +838,21 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .gate-in, .gate-sheet, .gate-glitch, .gate-float, .gate-bar { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ---------------------------------------------------------------- ASTON */
+.aston-bg {
+  background:
+    radial-gradient(900px 600px at 50% 42%, rgba(24, 92, 140, 0.28), transparent 65%),
+    radial-gradient(1200px 700px at 85% 10%, rgba(30, 64, 110, 0.18), transparent 60%),
+    linear-gradient(180deg, #050a12 0%, #060d18 55%, #04070d 100%);
+  font-family: "Barlow", system-ui, sans-serif;
+}
+.aston-waves {
+  background:
+    radial-gradient(ellipse 120% 40% at 30% 120%, rgba(56, 189, 248, 0.06), transparent 60%),
+    radial-gradient(ellipse 90% 30% at 80% -10%, rgba(56, 189, 248, 0.05), transparent 60%);
+}
+.aston-word { font-weight: 300; letter-spacing: 0.28em; font-size: 1.15rem; color: #e2e8f0; }
+.aston-link { transition: color 0.2s; }
+.aston-link:hover:not(:disabled) { color: #e2e8f0; }
+.aston-link:disabled { opacity: 0.5; }

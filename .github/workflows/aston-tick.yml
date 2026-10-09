@@ -1,0 +1,39 @@
+# ASTON's heartbeat. Vercel's free (Hobby) plan only runs crons once a day, so
+# this free GitHub Actions schedule calls ASTON's cron endpoint every 10 minutes
+# (site checks, agent failures, deadlines, alert retries). Webhook events
+# (failed builds/deploys) are handled instantly and don't depend on this.
+#
+# Turned on by adding two repository secrets (Settings → Secrets → Actions):
+#   ASTON_APP_URL   your deployed JARVIS URL, e.g. https://your-app.vercel.app
+#   CRON_SECRET     the same CRON_SECRET as on the server
+# Without them the job exits immediately. Scheduled runs are free on public
+# repositories; on private ones they count toward the free Actions minutes.
+name: ASTON tick
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Run one ASTON cycle
+        env:
+          APP_URL: ${{ secrets.ASTON_APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "ASTON tick is not configured (set ASTON_APP_URL and CRON_SECRET secrets) — skipping."
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/aston.json -w "%{http_code}" --max-time 90 \
+            -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/cron/aston")
+          echo "HTTP $code"
+          # Print only counts, never payloads.
+          node -e 'const j=JSON.parse(require("fs").readFileSync("/tmp/aston.json","utf8"));const r=(j.data&&j.data.results)||[];console.log(JSON.stringify(r.map(x=>({ran:x.ran,raised:x.raised,closed:x.closed,queued:x.queued,delivered:x.delivered,failed:x.failed}))))' || true
+          test "$code" = "200"

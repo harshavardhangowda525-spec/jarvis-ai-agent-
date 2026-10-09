@@ -433,6 +433,19 @@ if (await waitFor(`${local}/login`, 120)) {
       for (const x of j?.data?.results ?? []) if (x.skipped === "gmail" && !rbWarned) { rbWarned = true; say("  [robin] A follow-up is coming up, but Gmail isn't connected — connect Google in JARVIS Settings for reminder emails."); break; }
     } catch { /* offline — next round */ } finally { rbTicking = false; }
   };
+  // ASTON: watch builds, sites and the agents; alert you when something needs you — every 2 minutes
+  let asTicking = false;
+  const astonTick = async () => {
+    if (asTicking) return;
+    asTicking = true;
+    try {
+      const r = await fetch(`${local}/api/cron/aston`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(90_000) });
+      const j = await r.json().catch(() => ({}));
+      for (const x of j?.data?.results ?? []) if (x.queued) say(`  [aston] ${x.queued === 1 ? "An alert was" : `${x.queued} alerts were`} raised — open ASTON (${local}/aston).`);
+    } catch { /* offline — next round */ } finally { asTicking = false; }
+  };
+  setTimeout(astonTick, 60_000);
+  setInterval(astonTick, 2 * 60_000);
   setTimeout(robinTick, 45_000);
   setInterval(robinTick, 60_000);
   setTimeout(mikeTick, 90_000);

@@ -268,6 +268,40 @@ export const env = {
   niosRegionalCentres: read("NIOS_REGIONAL_CENTRES"),
   niosExtraUrls: read("NIOS_EXTRA_URLS"),
   cronSecret: read("CRON_SECRET"),
+  // --- ASTON (attention manager) -------------------------------------------
+  // ASTON thinks with Groq only (GROQ_API_KEY / GROQ_MODEL above) — it never
+  // falls back to another, possibly paid, provider.
+  astonOwnerEmail: read("ASTON_OWNER_EMAIL").toLowerCase(),
+  // Alert channels: "browser,email" (default) | "browser" | "email" | "none" (in-app only).
+  astonNotificationChannel: read("ASTON_NOTIFICATION_CHANNEL").toLowerCase() || "browser,email",
+  // Signs inbound events (HMAC-SHA256) on POST /api/aston/events. Unset = endpoint off.
+  astonWebhookSecret: read("ASTON_WEBHOOK_SECRET"),
+  // GitHub webhook secret for POST /api/aston/github (workflow_run, deployment_status).
+  astonGithubWebhookSecret: read("ASTON_GITHUB_WEBHOOK_SECRET"),
+  // Production sites ASTON probes: "Infinity Web & Apps|https://example.com, Client|https://…".
+  astonWatchUrls: read("ASTON_WATCH_URLS"),
+  // Optional Vercel deploy hook ASTON may call ONLY after the owner approves a redeploy.
+  astonRedeployHookUrl: read("ASTON_REDEPLOY_HOOK_URL"),
+  astonAiTimeoutMs: Math.min(Math.max(numOr(read("ASTON_AI_TIMEOUT_MS"), 20_000), 3_000), 60_000),
+  astonAiMaxRetries: Math.min(Math.max(numOr(read("ASTON_AI_MAX_RETRIES"), 2), 0), 4),
+  // ASTON's own daily ceiling on Groq requests (stays well under the free tier's daily limit).
+  astonAiDailyCap: Math.max(1, numOr(read("ASTON_AI_DAILY_CAP"), 300)),
+  // This many failed agent actions within an hour = "repeated agent failures".
+  astonFailureThreshold: Math.max(2, numOr(read("ASTON_FAILURE_THRESHOLD"), 3)),
+  // Phone calls: OFF by default. Even when enabled, ASTON_PHONE_MODE stays "test"
+  // (nothing is dialled) until it is explicitly set to "live".
+  astonPhoneAlertsEnabled: /^(1|on|true|yes)$/i.test(read("ASTON_PHONE_ALERTS_ENABLED")),
+  astonPhoneMode: (read("ASTON_PHONE_MODE").toLowerCase() === "live" ? "live" : "test") as "live" | "test",
+  astonPhoneMaxCallsPerDay: Math.min(Math.max(numOr(read("ASTON_PHONE_MAX_CALLS_PER_DAY"), 2), 0), 20),
+  astonPhoneCooldownMin: Math.max(1, numOr(read("ASTON_PHONE_COOLDOWN_MINUTES"), 60)),
+  astonPhoneMaxDailyUsd: Math.max(0, numOr(read("ASTON_PHONE_MAX_DAILY_USD"), 0.5)),
+  // Budget estimate per call (Twilio India-mobile is ~$0.05/min; 2 minutes + headroom).
+  astonPhoneEstCostUsd: Math.max(0.01, numOr(read("ASTON_PHONE_EST_COST_USD"), 0.15)),
+  astonOwnerPhone: read("ASTON_OWNER_PHONE_NUMBER"),
+  twilioAccountSid: read("TWILIO_ACCOUNT_SID"),
+  twilioApiKey: read("TWILIO_API_KEY"),
+  twilioApiSecret: read("TWILIO_API_SECRET"),
+  twilioPhoneNumber: read("TWILIO_PHONE_NUMBER"),
   // Hard guard: even if code were misconfigured, never fabricate leads.
   mockDataDisabled: (read("MOCK_DATA") || "false").toLowerCase() !== "true",
   appEnv: read("APP_ENV").toLowerCase() || "development",
