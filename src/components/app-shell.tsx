@@ -22,7 +22,7 @@ import {
   MousePointerClick,
   Code2,
   Radar,
-  CandlestickChart, Handshake,
+  CandlestickChart, Handshake, Orbit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ReactorLogo, RobotFace, Chevrons, Waveform } from "@/components/hud/visuals";
@@ -43,6 +43,7 @@ const NAV = [
   { href: "/dashboard/darwin", label: "DARWIN", icon: Radar },
   { href: "/dashboard/mike", label: "MIKE", icon: CandlestickChart },
   { href: "/dashboard/rubin", label: "RUBIN", icon: Handshake },
+  { href: "/aston", label: "ASTON", icon: Orbit },
   { href: "/dashboard/memory", label: "AI Agents", icon: Bot },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },
   { href: "/dashboard/settings", label: "Systems", icon: Server },
@@ -109,6 +110,27 @@ export function AppShell({
     const first = setTimeout(check, 20_000);
     const iv = setInterval(check, 2 * 60_000);
     return () => { clearTimeout(first); clearInterval(iv); };
+  }, []);
+
+  // ASTON's browser alerts: while any JARVIS screen is open, show critical/high
+  // ASTON alerts as desktop notifications (claimed first so only one tab shows each)
+  useEffect(() => {
+    let stop = false;
+    const check = async () => {
+      if (stop || typeof Notification === "undefined" || Notification.permission !== "granted") return;
+      const r = await fetch("/api/aston/state").catch(() => null);
+      if (!r) return;
+      if (r.status === 401 || r.status === 403) { stop = true; return; }
+      const j = await r.json().catch(() => null);
+      for (const a of (j?.data?.browserAlerts ?? []) as { id: string; incidentId: string; priority: string; summary: string; project: string | null }[]) {
+        const claim = await fetch(`/api/aston/alerts/${a.id}`, { method: "POST" }).catch(() => null);
+        if (!claim?.ok) continue;
+        try { new Notification(`ASTON · ${a.priority.toUpperCase()}${a.project ? ` · ${a.project}` : ""}`, { body: a.summary, tag: a.incidentId, requireInteraction: a.priority === "critical" }); } catch { /* blocked */ }
+      }
+    };
+    const first = setTimeout(check, 15_000);
+    const iv = setInterval(check, 60_000);
+    return () => { stop = true; clearTimeout(first); clearInterval(iv); };
   }, []);
 
   async function logout() {

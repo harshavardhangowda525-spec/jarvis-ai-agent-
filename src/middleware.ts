@@ -14,7 +14,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifySession, SESSION_COOKIE } from "@/lib/auth/jwt";
 import { GATE_COOKIE, GATE_DEVICE_COOKIE, apiOpenWhileLocked, verifyGate } from "@/lib/gate/token";
 
-const PROTECTED_PREFIXES = ["/dashboard"];
+const PROTECTED_PREFIXES = ["/dashboard", "/aston"];
 const AUTH_PAGES = ["/login", "/signup"];
 
 /** Only same-site paths are allowed as a return address. */
@@ -69,5 +69,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/dashboard/:path*", "/login", "/signup", "/unlock", "/api/:path*"],
+  matcher: ["/", "/dashboard/:path*", "/aston", "/login", "/signup", "/unlock", "/api/:path*"],
 };

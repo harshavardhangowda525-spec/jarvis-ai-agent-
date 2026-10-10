@@ -44,6 +44,7 @@ registering a **tool** — the agent loop never changes.
 - [Gesture control](#gesture-control)
 - [DARWIN daily lead search](#darwin-daily-lead-search)
 - [MIKE — market intelligence](#mike--market-intelligence)
+- [ASTON — attention manager](#aston--attention-manager)
 
 ---
 
@@ -1571,3 +1572,14 @@ Env (all optional):
   can use to send a new lead or a reply. Requests are signed with
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
   `x-robin-timestamp`, and must be no more than 5 minutes old.
+
+## ASTON — attention manager
+
+ASTON (`/aston`) is a voice-first orb that watches builds, deployments, production
+sites, the other agents (JARVIS, ULTRON, DARWIN, EV, MIKE, RUBIN), deadlines and
+gate lockouts, and alerts you only when a person is needed. It verifies each
+problem first and never sends the same alert twice. Alerts go through the free
+channels (browser, then your Gmail); phone calls are optional and off by default.
+It thinks with **Groq only**, so it never falls back to a paid provider.
+Setup, costs and limits: [docs/ASTON.md](docs/ASTON.md). Check your Groq setup with
+`npm run aston:check-groq`.

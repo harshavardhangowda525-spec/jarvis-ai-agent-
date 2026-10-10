@@ -51,6 +51,9 @@ model User {
   gateCredentials     GateCredential[]
   gateSecurity        GateSecurity?
   faceTemplates       FaceTemplate[]
+  astonIncidents      AstonIncident[]
+  astonSites          AstonSite[]
+  astonScripts        AstonScript[]
 
   @@index([email])
 }
@@ -1154,3 +1157,166 @@ model DarwinIgCheck {
   @@index([userId, placeId])
 }
 
+
+// ---------------------------------------------------------------------------
+// ASTON — the attention manager. ASTON watches real system signals (signed
+// build/deploy webhooks, website probes, the other agents' runs and failures,
+// deadlines, gate lockouts) and decides when the owner must be interrupted.
+// Everything is persisted so a restart never loses an incident or an alert.
+// ---------------------------------------------------------------------------
+
+/// One real problem. A repeat of the same problem (same fingerprint) bumps
+/// `occurrences` on the open incident instead of creating another one.
+model AstonIncident {
+  id             String    @id @default(cuid())
+  userId         String
+  fingerprint    String
+  /// `${userId}:${fingerprint}` while open or acknowledged, null once closed.
+  /// The unique index makes two open incidents for one problem impossible.
+  openKey        String?   @unique
+  source         String // github | webhook | probe | darwin | ev | rubin | jarvis | gate | tasks | agents
+  kind           String // build_failed | deploy_failed | prod_incident | task_blocked | decision_required | agent_failures | security | deadline_risk | info
+  priority       String    @default("normal") // critical | high | normal
+  status         String    @default("open") // open | acknowledged | resolved | dismissed
+  project        String?
+  title          String
+  detail         String?   @db.Text
+  evidence       Json?
+  /// What ASTON already tried: [{ at, action, ok, note }]
+  recovery       Json?
+  recommendation String?   @db.Text
+  /// Short spoken summary (Groq, or a template when the AI is unavailable).
+  summary        String?   @db.Text
+  aiNote         String?
+  /// An action ASTON wants to take that needs the owner's approval.
+  pendingAction  Json?
+  occurrences    Int       @default(1)
+  verified       Boolean   @default(false)
+  verifyNote     String?   @db.Text
+  firstSeenAt    DateTime  @default(now())
+  lastSeenAt     DateTime  @default(now())
+  acknowledgedAt DateTime?
+  resolvedAt     DateTime?
+  resolution     String?   @db.Text
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alerts    AstonAlert[]
+  decisions AstonDecision[]
+
+  @@index([userId, status, priority])
+  @@index([userId, fingerprint])
+}
+
+/// One delivery attempt chain per incident, channel and round (round 1 is a
+/// reminder for an unacknowledged critical incident). The unique index is what
+/// stops duplicate alerts.
+model AstonAlert {
+  id            String    @id @default(cuid())
+  incidentId    String
+  userId        String
+  channel       String // browser | email | phone
+  round         Int       @default(0)
+  // pending (queued / waiting for a browser) | delivered | failed (will retry) | gave_up | skipped
+  status        String    @default("pending")
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime?
+  lastError     String?   @db.Text
+  providerRef   String?
+  testMode      Boolean   @default(false)
+  costUsd       Float?
+  deliveredAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  incident AstonIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@unique([incidentId, channel, round])
+  @@index([userId, channel, status])
+  @@index([status, nextAttemptAt])
+}
+
+/// The owner's decisions (acknowledge, resolve, approve, …) — an audit trail.
+model AstonDecision {
+  id         String   @id @default(cuid())
+  incidentId String
+  userId     String
+  action     String
+  note       String?  @db.Text
+  result     String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  incident AstonIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+}
+
+/// AI provider health + quota, persisted so a rate limit or exhausted free
+/// quota is remembered across restarts (no hammering a provider that said no).
+model AstonProviderState {
+  provider          String    @id // groq
+  status            String    @default("ok") // ok | rate_limited | quota_exhausted | outage | auth_error
+  blockedUntil      DateTime?
+  lastError         String?   @db.Text
+  lastOkAt          DateTime?
+  day               String? // UTC YYYY-MM-DD the counter below belongs to
+  requestsToday     Int       @default(0)
+  remainingRequests Int?
+  remainingTokens   Int?
+  updatedAt         DateTime  @updatedAt
+}
+
+/// A website ASTON builds from a brief: planned, styled and written section by
+/// section (each step persisted, so a build survives a restart or a rate-limit
+/// pause and simply resumes).
+model AstonSite {
+  id          String    @id @default(cuid())
+  userId      String
+  title       String
+  brief       String    @db.Text
+  status      String    @default("building") // building | done | failed
+  plan        Json?
+  css         String?   @db.Text
+  /// The reusable-class guide from the top of the stylesheet (fed to every section).
+  guide       String?   @db.Text
+  /// [{ id, type, title, brief, html }] — html is null until written.
+  sections    Json?
+  error       String?   @db.Text
+  revisions   Int       @default(0)
+  lockedUntil DateTime?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// A spoken script for the ASTON teleprompter (sales calls, DMs, demos…).
+/// Generated by Groq, editable, and kept in the owner's script library.
+model AstonScript {
+  id           String   @id @default(cuid())
+  userId       String
+  title        String
+  /// cold_call | instagram_dm | whatsapp | zoom_demo | follow_up | objections | benefits | closing | general
+  kind         String   @default("cold_call")
+  /// e.g. "Café", "Gym" — used to organise the library
+  businessType String?
+  /// { businessName, industry, service, price, offer, notes }
+  details      Json?
+  /// [{ heading, lines: [{ who: "you" | "client" | "note", text }] }]
+  content      Json
+  /// What was asked for (used when regenerating)
+  request      String   @db.Text
+  /// false = a draft (still kept); true = shown in the library
+  saved        Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, saved, updatedAt])
+}
