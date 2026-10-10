@@ -157,6 +157,37 @@ Gmail's normal sending limits. In-app display is free.
 - `POST /api/aston/phone/test` always uses the test provider and never places a
   call.
 
+## Website builder
+
+Say or type something like **"build a website for Brew Lab, a specialty café in
+Indiranagar, warm and modern"**. A liquid-glass window opens over the orb. ASTON
+writes the site live, and you watch the code stream into the editor (plan.json →
+styles.css → index.html, one section at a time) while the page assembles in the
+preview beside it.
+
+- **Output:** one self-contained, responsive, animated HTML file. It has Google
+  Fonts, a fixed header with a mobile menu, scroll reveals, inline SVG art, and
+  no frameworks or paid services.
+- **About 5 minutes, on Groq's free tier.** The build is done in small steps
+  (plan, stylesheet, then each section) so every request fits Groq's free
+  per-minute token budget. If Groq asks ASTON to slow down, the window shows a
+  countdown and carries on. Every step is saved, so a closed tab, a restart or a
+  pause simply resumes. **Pause after this step** and **Resume** are in the
+  window.
+- **Honest content.** ASTON only uses facts from your brief. Unknown phone
+  numbers, addresses and prices appear as `[placeholders]`, and any
+  testimonials are labelled as samples.
+- **Changes:** when the site is ready, type a change ("make the hero darker").
+  ASTON picks the part to change and rewrites it live.
+- **Your sites:** use **Open full screen** or **Download** (one `.html` file).
+  **Websites** at the bottom of ASTON lists past builds.
+- **Safety:** model-written `<script>` tags, inline handlers, `javascript:` links
+  and embeds are stripped; the only JavaScript is ASTON's small runtime. Previews
+  run in a sandboxed frame, and the full-screen page is served with a CSP
+  sandbox, so a generated page can never reach JARVIS.
+- **Not included yet:** real photos (illustrations are SVG/CSS), multi-page
+  sites, and publishing. Publishing would be a separate, approval-gated step.
+
 ## Limitations
 
 - Browser notifications need an open JARVIS/ASTON tab. There's no service-worker

@@ -151,7 +151,7 @@ function compile(gl: WebGLRenderingContext, type: number, src: string) {
 }
 
 /** WebGL renderer. Returns a stop function, or null when WebGL isn't available. */
-function runGl(canvas: HTMLCanvasElement, size: number, state: { current: AstonState }, reduce: boolean): (() => void) | null {
+function runGl(canvas: HTMLCanvasElement, size: number, state: { current: AstonState }, reduce: boolean, paused: { current: boolean }): (() => void) | null {
   const gl = canvas.getContext("webgl", { premultipliedAlpha: true, alpha: true, antialias: false });
   if (!gl) return null;
   let prog: WebGLProgram;
@@ -188,6 +188,7 @@ function runGl(canvas: HTMLCanvasElement, size: number, state: { current: AstonS
 
   const frame = (now: number) => {
     if (lost) return;
+    if (paused.current) { last = now; raf = requestAnimationFrame(frame); return; }
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const target = LOOK[state.current];
@@ -222,7 +223,7 @@ function runGl(canvas: HTMLCanvasElement, size: number, state: { current: AstonS
 const rgb = (v: Vec3) => v.map((x) => Math.round(Math.min(1, x) * 255)).join(",");
 
 /** 2D-canvas fallback for devices without WebGL. */
-function run2d(canvas: HTMLCanvasElement, size: number, state: { current: AstonState }, reduce: boolean): () => void {
+function run2d(canvas: HTMLCanvasElement, size: number, state: { current: AstonState }, reduce: boolean, paused: { current: boolean }): () => void {
   const ctx = canvas.getContext("2d");
   if (!ctx) return () => {};
   const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -232,6 +233,7 @@ function run2d(canvas: HTMLCanvasElement, size: number, state: { current: AstonS
   const cur: Look = { ...LOOK[state.current] };
   let raf = 0, t = 0, last = performance.now();
   const frame = (now: number) => {
+    if (paused.current) { last = now; raf = requestAnimationFrame(frame); return; }
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const target = LOOK[state.current];
@@ -288,16 +290,19 @@ function run2d(canvas: HTMLCanvasElement, size: number, state: { current: AstonS
  * plasma and membranes), a lighter 2D canvas otherwise. Colours and motion
  * glide between states.
  */
-export function AstonOrb({ state, size = 360 }: { state: AstonState; size?: number }) {
+export function AstonOrb({ state, size = 360, paused = false }: { state: AstonState; size?: number; paused?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Hidden behind a full-screen window → stop drawing (saves GPU and battery).
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
     const reduce = !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const stop = runGl(canvas, size, stateRef, reduce) ?? run2d(canvas, size, stateRef, reduce);
+    const stop = runGl(canvas, size, stateRef, reduce, pausedRef) ?? run2d(canvas, size, stateRef, reduce, pausedRef);
     return stop;
   }, [size]);
 

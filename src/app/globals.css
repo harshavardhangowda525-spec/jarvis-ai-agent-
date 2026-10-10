@@ -856,3 +856,105 @@ body {
 .aston-link { transition: color 0.2s; }
 .aston-link:hover:not(:disabled) { color: #e2e8f0; }
 .aston-link:disabled { opacity: 0.5; }
+
+/* ------------------------------------------- ASTON liquid-glass build window */
+.lg-overlay {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(1000px 600px at 50% 40%, rgba(30, 90, 160, 0.18), rgba(2, 6, 14, 0.55));
+  animation: lg-fade 0.35s ease-out;
+}
+@keyframes lg-fade { from { opacity: 0; } }
+.liquid-glass {
+  position: relative; isolation: isolate; overflow: hidden; border-radius: 30px; color: #e2e8f0;
+  background:
+    linear-gradient(140deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05) 38%, rgba(125, 211, 252, 0.06) 70%, rgba(255, 255, 255, 0.1)),
+    rgba(10, 20, 38, 0.42);
+  backdrop-filter: blur(30px) saturate(185%) brightness(1.08);
+  -webkit-backdrop-filter: blur(30px) saturate(185%) brightness(1.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 255, 255, 0.45),   /* top specular edge */
+    inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+    inset 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset 0 0 60px rgba(160, 220, 255, 0.07),     /* inner glow */
+    0 40px 120px rgba(0, 0, 0, 0.6), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  animation: lg-rise 0.5s cubic-bezier(0.2, 0.9, 0.2, 1.05);
+}
+@keyframes lg-rise { from { opacity: 0; transform: translateY(18px) scale(0.97); } }
+/* grain, so the glass reads as a material and not a flat tint */
+.liquid-glass::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: -1; opacity: 0.07; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* the liquid sheen: soft caustic highlights, warped by an animated displacement filter */
+.lg-sheen {
+  position: absolute; inset: -20%; z-index: -1; pointer-events: none; filter: url(#lg-liquid); opacity: 0.85;
+  background:
+    radial-gradient(40% 30% at 18% 8%, rgba(255, 255, 255, 0.22), transparent 70%),
+    radial-gradient(35% 25% at 85% 95%, rgba(125, 211, 252, 0.16), transparent 70%),
+    radial-gradient(30% 40% at 70% 20%, rgba(167, 139, 250, 0.1), transparent 70%);
+  /* the highlights follow the pointer (set by JS on pointer move) — nothing animates at rest,
+     so the blurred glass isn't re-rendered every frame */
+  transform: translate3d(calc(var(--mx, 0) * 3%), calc(var(--my, 0) * 3%), 0);
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.glass-inset {
+  position: relative; border-radius: 20px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(3, 9, 20, 0.62), rgba(3, 9, 20, 0.5));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), inset 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+.lg-window { width: min(1240px, 100%); height: min(800px, calc(100dvh - 32px)); display: flex; flex-direction: column; padding: 18px 20px 16px; gap: 10px; }
+.lg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.lg-kicker { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(186, 230, 253, 0.7); }
+.lg-title { font-size: 20px; font-weight: 500; letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lg-meta { display: flex; align-items: center; gap: 14px; font-variant-numeric: tabular-nums; font-size: 14px; color: #cbd5e1; }
+.lg-x { width: 32px; height: 32px; border-radius: 999px; font-size: 20px; line-height: 1; color: #e2e8f0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.14); }
+.lg-x:hover { background: rgba(255, 255, 255, 0.16); }
+.lg-progress { height: 3px; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.lg-progress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #67e8f9, #818cf8); box-shadow: 0 0 12px rgba(103, 232, 249, 0.7); transition: width 0.6s ease; }
+.lg-status { font-size: 13px; color: #94a3b8; min-height: 18px; }
+.lg-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.lg-editor, .lg-preview { display: flex; flex-direction: column; min-height: 0; }
+.lg-tabs { display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); overflow-x: auto; }
+.lg-tabs button { position: relative; padding: 7px 12px; font: 500 12px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: #64748b; border-radius: 10px 10px 0 0; white-space: nowrap; }
+.lg-tabs button.on { color: #e2e8f0; background: rgba(255, 255, 255, 0.06); }
+.lg-dot { display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 9px; background: #67e8f9; box-shadow: 0 0 8px #67e8f9; animation: lg-blink 1s infinite; vertical-align: middle; }
+@keyframes lg-blink { 50% { opacity: 0.3; } }
+.lg-code { flex: 1; margin: 0; overflow: auto; padding: 14px 16px 24px 0; display: grid; grid-template-columns: auto 1fr; font: 12.5px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #cbd5e1; tab-size: 2; }
+.lg-code code { white-space: pre; } /* no wrapping, so the line numbers stay aligned */
+.lg-gutter { white-space: pre; text-align: right; padding: 0 14px 0 12px; color: rgba(148, 163, 184, 0.35); user-select: none; }
+.lg-caret { display: inline-block; width: 7px; height: 1.1em; margin-left: 1px; vertical-align: text-bottom; background: #67e8f9; box-shadow: 0 0 10px #67e8f9; animation: lg-blink 0.9s steps(1) infinite; }
+.lg-empty { flex: 1; display: grid; place-items: center; color: #64748b; font-size: 13px; }
+.hl-tag { color: #7dd3fc; } .hl-attr { color: #c4b5fd; } .hl-str { color: #86efac; } .hl-com { color: #64748b; font-style: italic; }
+.hl-prop { color: #93c5fd; } .hl-sel { color: #f9a8d4; } .hl-at { color: #fbbf24; } .hl-num { color: #fca5a5; } .hl-fn { color: #fde68a; }
+.hl-key { color: #93c5fd; } .hl-kw { color: #f0abfc; } .hl-pun { color: #94a3b8; }
+.lg-browser { display: flex; align-items: center; gap: 6px; padding: 9px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.lg-browser i { width: 9px; height: 9px; border-radius: 9px; background: rgba(255, 255, 255, 0.18); }
+.lg-browser span { margin-left: 8px; padding: 3px 12px; border-radius: 99px; font-size: 11px; color: #94a3b8; background: rgba(255, 255, 255, 0.05); }
+.lg-preview iframe { flex: 1; width: 100%; border: 0; }
+.lg-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.lg-ask { flex: 1; min-width: 220px; }
+.lg-ask input { width: 100%; padding: 10px 16px; border-radius: 999px; font-size: 13px; color: #e2e8f0; background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12); outline: none; }
+.lg-ask input:focus { border-color: rgba(103, 232, 249, 0.5); }
+.lg-btn { padding: 10px 18px; border-radius: 999px; font-size: 13px; font-weight: 500; color: #e2e8f0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25); transition: background 0.2s; }
+.lg-btn:hover { background: rgba(255, 255, 255, 0.15); }
+.lg-btn-primary { color: #04121f; background: linear-gradient(180deg, #a5f3fc, #67e8f9); border-color: rgba(255, 255, 255, 0.5); }
+.lg-btn-primary:hover { background: linear-gradient(180deg, #cffafe, #67e8f9); }
+.lg-mobile-tabs { display: none; }
+.lg-list { width: min(520px, 100%); max-height: min(640px, calc(100dvh - 32px)); padding: 20px; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.lg-list ul { display: flex; flex-direction: column; gap: 6px; }
+.lg-list li button { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; border-radius: 16px; text-align: left; font-size: 14px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); }
+.lg-list li button:hover { background: rgba(255, 255, 255, 0.1); }
+.lg-list li button span:last-child { font-size: 12px; }
+@media (max-width: 860px) {
+  .lg-window { padding: 14px; border-radius: 24px; }
+  .lg-body { grid-template-columns: 1fr; }
+  .lg-hide-sm { display: none; }
+  .lg-mobile-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); align-self: flex-start; }
+  .lg-mobile-tabs button { padding: 6px 14px; border-radius: 999px; font-size: 12px; color: #94a3b8; }
+  .lg-mobile-tabs button.on { color: #0b1324; background: #e2e8f0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lg-sheen, .lg-overlay, .liquid-glass, .lg-caret, .lg-dot { animation: none; }
+}

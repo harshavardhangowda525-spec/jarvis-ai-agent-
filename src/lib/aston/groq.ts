@@ -54,6 +54,8 @@ type ChatBody = Omit<OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, "model"
 
 export interface GroqDeps {
   create(body: ChatBody & { model: string }, timeoutMs: number): Promise<{ data: OpenAI.Chat.ChatCompletion; headers: Record<string, string> }>;
+  /** Streaming completion: response headers + the text deltas as they arrive. */
+  stream(body: ChatBody & { model: string }, timeoutMs: number): Promise<{ headers: Record<string, string>; deltas: AsyncIterable<string> }>;
   sleep(ms: number): Promise<void>;
   now(): number;
   store: StateStore;
@@ -98,6 +100,19 @@ const defaultDeps = (): GroqDeps => ({
       .create(body as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming, { timeout: timeoutMs, maxRetries: 0 })
       .withResponse();
     return { data, headers: Object.fromEntries(response.headers.entries()) };
+  },
+  async stream(body, timeoutMs) {
+    const client = getOpenAiClient({ provider: "groq", kind: "openai", apiKey: env.groqApiKey, baseUrl: GROQ_BASE_URL, model: body.model });
+    const { data, response } = await client.chat.completions
+      .create({ ...(body as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming), stream: true }, { timeout: timeoutMs, maxRetries: 0 })
+      .withResponse();
+    async function* deltas() {
+      for await (const chunk of data) {
+        const d = chunk.choices[0]?.delta?.content;
+        if (d) yield d;
+      }
+    }
+    return { headers: Object.fromEntries(response.headers.entries()), deltas: deltas() };
   },
   sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   now: () => Date.now(),
@@ -153,11 +168,16 @@ const BLOCK_MSG: Record<string, string> = {
 };
 
 /**
- * One Groq chat completion with ASTON's safety rails. Throws AstonAiUnavailable
- * (with a user-safe message) instead of ever falling back to another provider.
+ * Run one Groq request with ASTON's safety rails (pre-flight block + daily cap,
+ * timeout, bounded retries, 429 classification, persisted state). Throws
+ * AstonAiUnavailable (user-safe message) instead of ever switching provider.
+ * `canRetry` lets a stream refuse a retry once output has been shown.
  */
-export async function groqChat(body: ChatBody, opts: { deps?: Partial<GroqDeps> } = {}): Promise<OpenAI.Chat.ChatCompletion> {
-  const d: GroqDeps = { ...defaultDeps(), ...opts.deps } as GroqDeps;
+async function guarded<T>(
+  body: ChatBody, d: GroqDeps, timeoutMs: number,
+  run: (b: ChatBody & { model: string }) => Promise<{ value: T; headers: Record<string, string> }>,
+  canRetry: () => boolean = () => true,
+): Promise<T> {
   if (!env.groqApiKey) throw new AstonAiUnavailable("not_configured", "Groq is not configured (set GROQ_API_KEY on the server).");
   const model = body.model || astonModel();
   let st = await d.store.load();
@@ -180,7 +200,7 @@ export async function groqChat(body: ChatBody, opts: { deps?: Partial<GroqDeps> 
     requests += 1;
     await d.store.save({ requestsToday: requests });
     try {
-      const { data, headers } = await d.create({ ...body, ...reasoning, model }, env.astonAiTimeoutMs);
+      const { value, headers } = await run({ ...body, ...reasoning, model });
       const q = quotaFromHeaders(headers);
       const exhausted = q.remainingRequests === 0;
       const until = exhausted ? new Date(d.now() + (q.resetRequests ?? 60 * 60_000)) : null;
@@ -189,13 +209,14 @@ export async function groqChat(body: ChatBody, opts: { deps?: Partial<GroqDeps> 
         lastError: exhausted ? "The Groq daily request quota is used up." : null,
         remainingRequests: q.remainingRequests, remainingTokens: q.remainingTokens,
       });
-      return data;
+      return value;
     } catch (e) {
       const status = statusOf(e);
       const msg = safe(e);
+      const again = attempt < env.astonAiMaxRetries && canRetry();
       if (status === 429) {
         const { daily, waitMs } = classify429(String((e as Error)?.message ?? ""), (e as { headers?: Record<string, string> }).headers ?? {});
-        if (!daily && waitMs <= 5_000 && attempt < env.astonAiMaxRetries) { await d.sleep(waitMs); continue; }
+        if (!daily && waitMs <= 5_000 && again) { await d.sleep(waitMs); continue; }
         const reason = daily ? "quota_exhausted" : "rate_limited";
         const until = new Date(d.now() + Math.max(waitMs, 5_000));
         await d.store.save({ status: reason, blockedUntil: until, lastError: msg, ...(daily ? { remainingRequests: 0 } : {}) });
@@ -211,7 +232,7 @@ export async function groqChat(body: ChatBody, opts: { deps?: Partial<GroqDeps> 
         await d.store.save({ lastError: `HTTP ${status}: ${msg}` });
         throw new AstonAiUnavailable("request_error", `Groq refused the request (HTTP ${status}): ${msg}`);
       }
-      if (attempt < env.astonAiMaxRetries) {
+      if (again) {
         await d.sleep(Math.min(8_000, 500 * 3 ** attempt) + Math.floor(Math.random() * 250));
         continue;
       }
@@ -221,6 +242,36 @@ export async function groqChat(body: ChatBody, opts: { deps?: Partial<GroqDeps> 
       throw new AstonAiUnavailable("outage", `Groq is not responding (${status ? `HTTP ${status}` : "network error/timeout"}) — ASTON will try again after ${until.toISOString()}.`, until);
     }
   }
+}
+
+/** One Groq chat completion with ASTON's safety rails. */
+export async function groqChat(body: ChatBody, opts: { deps?: Partial<GroqDeps> } = {}): Promise<OpenAI.Chat.ChatCompletion> {
+  const d: GroqDeps = { ...defaultDeps(), ...opts.deps } as GroqDeps;
+  return guarded(body, d, env.astonAiTimeoutMs, async (b) => {
+    const { data, headers } = await d.create(b, env.astonAiTimeoutMs);
+    return { value: data, headers };
+  });
+}
+
+/**
+ * A streamed Groq completion (same rails). `onDelta` receives the text as it
+ * is written. A failure before the first token is retried; after output has
+ * started it is not (the caller resumes the step instead).
+ */
+export async function groqStream(body: ChatBody, onDelta: (text: string) => void, opts: { deps?: Partial<GroqDeps>; timeoutMs?: number } = {}): Promise<string> {
+  const d: GroqDeps = { ...defaultDeps(), ...opts.deps } as GroqDeps;
+  const timeoutMs = opts.timeoutMs ?? 120_000;
+  let emitted = false;
+  return guarded(body, d, timeoutMs, async (b) => {
+    const { headers, deltas } = await d.stream(b, timeoutMs);
+    let text = "";
+    for await (const piece of deltas) {
+      emitted = true;
+      text += piece;
+      onDelta(piece);
+    }
+    return { value: text, headers };
+  }, () => !emitted);
 }
 
 export interface AiStatus {

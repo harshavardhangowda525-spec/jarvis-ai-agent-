@@ -52,6 +52,7 @@ model User {
   gateSecurity        GateSecurity?
   faceTemplates       FaceTemplate[]
   astonIncidents      AstonIncident[]
+  astonSites          AstonSite[]
 
   @@index([email])
 }
@@ -1263,4 +1264,32 @@ model AstonProviderState {
   remainingRequests Int?
   remainingTokens   Int?
   updatedAt         DateTime  @updatedAt
+}
+
+/// A website ASTON builds from a brief: planned, styled and written section by
+/// section (each step persisted, so a build survives a restart or a rate-limit
+/// pause and simply resumes).
+model AstonSite {
+  id          String    @id @default(cuid())
+  userId      String
+  title       String
+  brief       String    @db.Text
+  status      String    @default("building") // building | done | failed
+  plan        Json?
+  css         String?   @db.Text
+  /// The reusable-class guide from the top of the stylesheet (fed to every section).
+  guide       String?   @db.Text
+  /// [{ id, type, title, brief, html }] — html is null until written.
+  sections    Json?
+  error       String?   @db.Text
+  revisions   Int       @default(0)
+  lockedUntil DateTime?
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AstonOrb, type AstonState } from "./aston-orb";
+import { SiteBuilder, SiteList } from "./site-builder";
+import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
 import type { IncidentDTO } from "@/lib/aston/types";
 
 interface AiStatus { configured: boolean; model: string; status: string; blockedUntil: string | null; requestsToday: number; dailyCap: number; lastError: string | null }
@@ -10,6 +12,7 @@ interface StateData { incidents: IncidentDTO[]; browserAlerts: BrowserAlert[]; a
 interface Turn { role: "user" | "assistant"; content: string }
 
 const POLL_MS = 15_000;
+
 const TICK_MS = 2 * 60_000;
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -48,6 +51,9 @@ export function AstonConsole() {
   const [speechOk, setSpeechOk] = useState(false);
   const [voiceOn, setVoiceOn] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [builder, setBuilder] = useState<string | null>(null);
+  const [building, setBuilding] = useState(false);
+  const [showSites, setShowSites] = useState(false);
   const history = useRef<Turn[]>([]);
   const recog = useRef<any>(null);
   const voiceOnRef = useRef(voiceOn);
@@ -55,7 +61,7 @@ export function AstonConsole() {
 
   const open = (data?.incidents ?? []).filter((i) => i.status === "open" && (i.priority === "critical" || i.priority === "high"));
   const current = open[focus % Math.max(1, open.length)] ?? null;
-  const state: AstonState = mode !== "idle" ? mode : open.length ? "attention" : "idle";
+  const state: AstonState = mode !== "idle" ? mode : building ? "processing" : open.length ? "attention" : "idle";
 
   // ------------------------------------------------------------ speech out
   const speak = useCallback((line: string) => {
@@ -112,8 +118,26 @@ export function AstonConsole() {
     setSub(`“${msg}”`);
     setCaption("Processing request… connected to context…");
     setMode("processing");
+    // Website requests go straight to the builder (no extra AI round-trip).
+    if (WEBSITE_INTENT.test(msg)) {
+      try {
+        const site = await api<{ id: string }>("/api/aston/sites", { method: "POST", body: JSON.stringify({ brief: msg }) });
+        const line = "On it. I'm building the website now — watch the code as I write it.";
+        history.current = [...history.current, { role: "assistant" as const, content: line }].slice(-20);
+        setCaption(line);
+        setSub(null);
+        setMode("idle");
+        setBuilder(site.id);
+        speak(line);
+      } catch (e: any) {
+        setCaption(e?.message ?? "I couldn't start the website.");
+        setMode("idle");
+      }
+      return;
+    }
     try {
-      const r = await api<{ reply: string; ai: boolean; aiNote: string | null; changed: boolean }>("/api/aston/chat", { method: "POST", body: JSON.stringify({ messages: history.current }) });
+      const r = await api<{ reply: string; ai: boolean; aiNote: string | null; changed: boolean; site?: string | null }>("/api/aston/chat", { method: "POST", body: JSON.stringify({ messages: history.current }) });
+      if (r.site) setBuilder(r.site);
       history.current = [...history.current, { role: "assistant" as const, content: r.reply }].slice(-20);
       setCaption(r.reply);
       setSub(r.ai ? null : "AI unavailable — answered from stored incidents");
@@ -188,7 +212,7 @@ export function AstonConsole() {
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50"
           aria-label={speechOk ? (mode === "listening" ? "Stop listening" : "Talk to ASTON") : "Type to ASTON"}
         >
-          <AstonOrb state={state} size={400} />
+          <AstonOrb state={state} size={400} paused={!!builder || showSites} />
         </button>
 
         <div className="max-w-2xl text-center" aria-live="polite">
@@ -242,9 +266,12 @@ export function AstonConsole() {
           {perm === "default" && <button className="aston-link" onClick={enableAlerts}>Enable desktop alerts</button>}
           {perm === "denied" && <span>Desktop alerts blocked in this browser</span>}
           <button className="aston-link" onClick={() => { setVoiceOn((v) => !v); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }}>{voiceOn ? "Voice on" : "Voice off"}</button>
+          <button className="aston-link" onClick={() => setShowSites(true)}>Websites</button>
           {error && <span className="text-amber-400/80">{error}</span>}
         </div>
       </footer>
+      {builder && <SiteBuilder key={builder} siteId={builder} onClose={() => { setBuilder(null); setBuilding(false); }} onSpeak={speak} onBusy={setBuilding} />}
+      {showSites && !builder && <SiteList onOpen={(id) => { setShowSites(false); setBuilder(id); }} onClose={() => setShowSites(false)} />}
     </main>
   );
 }

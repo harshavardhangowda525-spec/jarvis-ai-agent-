@@ -68,6 +68,12 @@
     },
     "src/app/api/aston/ai/check/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/aston/sites/[id]/next/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/aston/sites/[id]/revise/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [

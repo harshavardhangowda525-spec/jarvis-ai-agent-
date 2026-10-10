@@ -6,6 +6,7 @@ import { AstonAiUnavailable, groqChat, type GroqDeps } from "./groq";
 import { getIncident, listIncidents, toDTO } from "./incidents";
 import { decide, requestApproval, ACTIONS, DecisionError } from "./decisions";
 import { probe, probeAllowed } from "./probe";
+import { createSite, SiteError } from "./site/builder";
 import type { IncidentDTO } from "./types";
 
 /**
@@ -17,7 +18,7 @@ import type { IncidentDTO } from "./types";
 
 type Msg = OpenAI.Chat.ChatCompletionMessageParam;
 export interface ChatTurn { role: "user" | "assistant"; content: string }
-export interface ChatResult { reply: string; ai: boolean; aiNote: string | null; changed: boolean }
+export interface ChatResult { reply: string; ai: boolean; aiNote: string | null; changed: boolean; site?: string | null }
 
 const MAX_STEPS = 4;
 
@@ -27,6 +28,7 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   { type: "function", function: { name: "acknowledge_incident", description: "Mark an incident as seen by the owner (stops further alerts). Only when the owner says so.", parameters: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } } },
   { type: "function", function: { name: "check_website", description: "Safe, read-only health check of a public website URL.", parameters: { type: "object", properties: { url: { type: "string" } }, required: ["url"] } } },
   { type: "function", function: { name: "request_approval", description: `Ask the owner to approve a consequential action on an incident. It is NOT executed until the owner approves it in ASTON. Actions: ${Object.entries(ACTIONS).filter(([, a]) => !a.safe).map(([k, a]) => `${k} (${a.label})`).join(", ")}.`, parameters: { type: "object", properties: { id: { type: "string" }, action: { type: "string" }, reason: { type: "string" } }, required: ["id", "action", "reason"] } } },
+  { type: "function", function: { name: "build_website", description: "Start building a one-page website from a brief (business, location, style, sections). Opens ASTON's live builder window, which writes the code in front of the owner.", parameters: { type: "object", properties: { brief: { type: "string", description: "Everything known about the site: business, audience, style, sections, any real contact details." } }, required: ["brief"] } } },
   { type: "function", function: { name: "agent_status", description: "Latest real status of the other agents (DARWIN daily search, EV daily content) and failures logged in the last 24 h.", parameters: { type: "object", properties: {} } } },
 ];
 
@@ -38,8 +40,12 @@ const SYSTEM =
 
 const brief = (i: IncidentDTO) => ({ id: i.id, priority: i.priority, status: i.status, project: i.project, title: i.title, summary: i.summary, next: i.recommendation, pendingApproval: i.pendingAction, seen: i.occurrences, since: i.firstSeenAt });
 
-async function runTool(userId: string, name: string, args: Record<string, unknown>, fetchImpl?: typeof fetch): Promise<{ out: unknown; changed?: boolean }> {
+async function runTool(userId: string, name: string, args: Record<string, unknown>, fetchImpl?: typeof fetch): Promise<{ out: unknown; changed?: boolean; site?: string }> {
   switch (name) {
+    case "build_website": {
+      const site = await createSite(userId, String(args.brief ?? ""));
+      return { out: { ok: true, building: true, note: "The builder window is open and writing the site live (about 5 minutes)." }, site: site.id };
+    }
     case "list_incidents":
       return { out: (await listIncidents(userId, { includeClosed: !!args.include_closed, limit: 15 })).map(brief) };
     case "get_incident": {
@@ -90,27 +96,28 @@ export async function chat(userId: string, history: ChatTurn[], o: { groq?: Part
     ...history.slice(-12).map((t) => ({ role: t.role, content: redact(t.content).slice(0, 2000) }) as Msg),
   ];
   let changed = false;
+  let site: string | null = null;
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
       const res = await groqChat({ messages, tools: TOOLS, tool_choice: "auto", max_tokens: 600, temperature: 0.3 }, { deps: o.groq });
       const m = res.choices[0]?.message;
       if (!m) break;
       const calls = m.tool_calls ?? [];
-      if (!calls.length) return { reply: (m.content ?? "").trim() || "Done.", ai: true, aiNote: null, changed };
+      if (!calls.length) return { reply: (m.content ?? "").trim() || "Done.", ai: true, aiNote: null, changed, site };
       messages.push({ role: "assistant", content: m.content ?? "", tool_calls: calls });
       for (const c of calls) {
         let out: unknown;
         try {
           const args = JSON.parse(c.function.arguments || "{}") as Record<string, unknown>;
           const r = await runTool(userId, c.function.name, args, o.fetchImpl);
-          out = r.out; changed ||= !!r.changed;
+          out = r.out; changed ||= !!r.changed; site = r.site ?? site;
         } catch (e) {
-          out = { error: e instanceof DecisionError ? e.message : "The tool failed." };
+          out = { error: e instanceof DecisionError || e instanceof SiteError ? e.message : "The tool failed." };
         }
         messages.push({ role: "tool", tool_call_id: c.id, content: JSON.stringify(out).slice(0, 6000) });
       }
     }
-    return { reply: "I looked into it but couldn't finish in time. Ask me again in a moment.", ai: true, aiNote: null, changed };
+    return { reply: "I looked into it but couldn't finish in time. Ask me again in a moment.", ai: true, aiNote: null, changed, site };
   } catch (e) {
     const note = e instanceof AstonAiUnavailable ? e.message : "Groq request failed";
     return { reply: await offlineReply(userId, note), ai: false, aiNote: note, changed };
