@@ -188,6 +188,66 @@ preview beside it.
 - **Not included yet:** real photos (illustrations are SVG/CSS), multi-page
   sites, and publishing. Publishing would be a separate, approval-gated step.
 
+## Teleprompter (sales scripts)
+
+Say or type **"ASTON, create a cold-calling sales script for a café that needs a
+website"**. Other examples: *a WhatsApp pitching script*, *a script for my website
+demo*, *a follow-up script*, *handling objections*, *closing the sale*, or just
+*open teleprompter*. ASTON writes the script with Groq and opens the
+teleprompter straight away, paused, so you can glance through it first.
+
+- **Script types:** cold call, Instagram DM, WhatsApp pitch, Zoom demo,
+  follow-up, objection handling, explaining website and app benefits, and
+  closing. Conversation scripts follow Opening → Understanding their needs →
+  Presenting the service → Handling objections → Next step.
+- **Defaults:** Infinity Web & Apps; website around ₹4,999, app around ₹55,000,
+  a demo or consultation on request, and the goal of booking a demo or meeting.
+  You can override these with `ASTON_COMPANY_NAME`, `ASTON_WEBSITE_PRICE` and
+  `ASTON_APP_PRICE`. **Customise** changes the business name, industry,
+  service, price and offer per script. ASTON never invents discounts,
+  guarantees or client details; unknowns appear as `[Owner's name]`-style
+  fill-ins.
+- **Reading:** large high-contrast text with a reading line. Your lines are
+  white, `[fill-ins]` are highlighted in cyan (you say these), `[Pause]`-style
+  directions are amber (not read aloud), and the client's likely replies are
+  smaller violet text marked "Client".
+- **Controls (touch and keyboard):**
+  - play/pause, stop, restart
+  - previous and next section
+  - speed (1–10) and text size
+  - alignment and line spacing
+  - full-screen mode and manual scroll (drag the text)
+  - progress bar, time left and word count
+  - Edit, Customise, Regenerate, Rename and Save
+
+  Keyboard: Space plays or pauses, ↑/↓ change speed, +/− change text size,
+  ←/→ move between sections, F toggles full screen, Esc closes. While the
+  script is playing, the screen is kept awake on browsers that support it.
+- **Voice:** while the teleprompter is open, only sentences that **start with
+  "ASTON"** are commands:
+  - start, pause, resume, stop
+  - scroll faster or slower
+  - increase or decrease text size
+  - restart the script
+  - go to the next section, repeat the last section
+  - edit the script, full screen, close teleprompter
+
+  Common mis-hearings ("Austin", "Ashton") work too. Everything else you say,
+  including the pitch itself, is ignored, and nothing spoken is ever written
+  into the script. ASTON doesn't read alerts aloud while the teleprompter is
+  open.
+- **Script library** (**Scripts** at the bottom of ASTON): saved and recent
+  scripts. Search them, filter by pitching method or business type, and open,
+  rename, duplicate (to adapt for another business) or delete them. Scripts
+  are stored in the database, so they survive a refresh or a new device.
+- **Editing format:** `## Heading` starts a section, `> Client: …` is the
+  client, and a line that is only `[a direction]` is a stage direction.
+
+**Phone calls:** Android usually gives the microphone to an ongoing phone call,
+so voice commands may not work on the same phone during a normal call. Touch
+controls always work. Voice works for Zoom or speakerphone, or with ASTON on a
+second device.
+
 ## Limitations
 
 - Browser notifications need an open JARVIS/ASTON tab. There's no service-worker

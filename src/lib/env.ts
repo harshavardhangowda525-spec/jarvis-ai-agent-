@@ -298,6 +298,10 @@ export const env = {
   // Budget estimate per call (Twilio India-mobile is ~$0.05/min; 2 minutes + headroom).
   astonPhoneEstCostUsd: Math.max(0.01, numOr(read("ASTON_PHONE_EST_COST_USD"), 0.15)),
   astonOwnerPhone: read("ASTON_OWNER_PHONE_NUMBER"),
+  // Teleprompter sales-script defaults (Infinity Web & Apps). Editable per script too.
+  astonCompanyName: read("ASTON_COMPANY_NAME") || "Infinity Web & Apps",
+  astonWebsitePrice: read("ASTON_WEBSITE_PRICE") || "₹4,999",
+  astonAppPrice: read("ASTON_APP_PRICE") || "₹55,000",
   twilioAccountSid: read("TWILIO_ACCOUNT_SID"),
   twilioApiKey: read("TWILIO_API_KEY"),
   twilioApiSecret: read("TWILIO_API_SECRET"),

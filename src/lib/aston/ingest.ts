@@ -8,6 +8,7 @@ import { dispatch, type NotifyDeps } from "./notify";
 import { AstonForbidden } from "./auth";
 import { DecisionError } from "./decisions";
 import { SiteError } from "./site/builder";
+import { ScriptError } from "./scripts/service";
 import type { Parsed } from "./events";
 
 /** Which user an inbound event belongs to: the owner, or (no owner set) the named account. */
@@ -36,6 +37,7 @@ export function astonError(err: unknown): NextResponse {
   if (err instanceof AstonForbidden) return fail(err.message, 403);
   if (err instanceof DecisionError) return fail(err.message, err.status);
   if (err instanceof SiteError) return fail(err.message, err.status);
+  if (err instanceof ScriptError) return fail(err.message, err.status);
   if (err instanceof SyntaxError) return fail("Invalid JSON.", 400);
   return handleError(err);
 }

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AstonOrb, type AstonState } from "./aston-orb";
 import { SiteBuilder, SiteList } from "./site-builder";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
+import { Teleprompter } from "./teleprompter";
+import { isOpenOnly, SCRIPT_INTENT, stripWake } from "@/lib/aston/scripts/format";
 import type { IncidentDTO } from "@/lib/aston/types";
 
 interface AiStatus { configured: boolean; model: string; status: string; blockedUntil: string | null; requestsToday: number; dailyCap: number; lastError: string | null }
@@ -54,6 +56,10 @@ export function AstonConsole() {
   const [builder, setBuilder] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
   const [showSites, setShowSites] = useState(false);
+  const [tele, setTele] = useState<{ request?: string; library?: boolean } | null>(null);
+  // While the teleprompter is open you're talking to a client: ASTON stays quiet
+  const teleRef = useRef(false);
+  teleRef.current = !!tele;
   const history = useRef<Turn[]>([]);
   const recog = useRef<any>(null);
   const voiceOnRef = useRef(voiceOn);
@@ -90,7 +96,7 @@ export function AstonConsole() {
         if (typeof Notification !== "undefined" && Notification.permission === "granted" && document.visibilityState !== "visible") {
           try { new Notification(`ASTON · ${a.priority.toUpperCase()}${a.project ? ` · ${a.project}` : ""}`, { body: a.summary, tag: a.incidentId, requireInteraction: a.priority === "critical" }); } catch { /* notifications blocked */ }
         }
-        speak(a.summary);
+        if (!teleRef.current) speak(a.summary);
       }
     } catch (e: any) {
       setError(e?.status === 403 ? "This account is not the ASTON owner." : e?.status === 401 ? "Signed out." : "Can't reach ASTON's server — retrying.");
@@ -118,6 +124,17 @@ export function AstonConsole() {
     setSub(`“${msg}”`);
     setCaption("Processing request… connected to context…");
     setMode("processing");
+    // Scripts / pitches → the teleprompter (checked before websites: "a script for a café that needs a website")
+    const bare = stripWake(msg).text;
+    if (SCRIPT_INTENT.test(bare)) {
+      const line = isOpenOnly(msg) ? "Opening the teleprompter." : "Writing your script now — the teleprompter will open with it.";
+      history.current = [...history.current, { role: "assistant" as const, content: line }].slice(-20);
+      setCaption(line);
+      setSub(null);
+      setMode("idle");
+      setTele(isOpenOnly(msg) ? {} : { request: bare });
+      return;
+    }
     // Website requests go straight to the builder (no extra AI round-trip).
     if (WEBSITE_INTENT.test(msg)) {
       try {
@@ -212,7 +229,7 @@ export function AstonConsole() {
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50"
           aria-label={speechOk ? (mode === "listening" ? "Stop listening" : "Talk to ASTON") : "Type to ASTON"}
         >
-          <AstonOrb state={state} size={400} paused={!!builder || showSites} />
+          <AstonOrb state={state} size={400} paused={!!builder || showSites || !!tele} />
         </button>
 
         <div className="max-w-2xl text-center" aria-live="polite">
@@ -266,11 +283,13 @@ export function AstonConsole() {
           {perm === "default" && <button className="aston-link" onClick={enableAlerts}>Enable desktop alerts</button>}
           {perm === "denied" && <span>Desktop alerts blocked in this browser</span>}
           <button className="aston-link" onClick={() => { setVoiceOn((v) => !v); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }}>{voiceOn ? "Voice on" : "Voice off"}</button>
+          <button className="aston-link" onClick={() => setTele({ library: true })}>Scripts</button>
           <button className="aston-link" onClick={() => setShowSites(true)}>Websites</button>
           {error && <span className="text-amber-400/80">{error}</span>}
         </div>
       </footer>
       {builder && <SiteBuilder key={builder} siteId={builder} onClose={() => { setBuilder(null); setBuilding(false); }} onSpeak={speak} onBusy={setBuilding} />}
+      {tele && <Teleprompter request={tele.request} library={tele.library} onClose={() => setTele(null)} onSpeak={speak} />}
       {showSites && !builder && <SiteList onOpen={(id) => { setShowSites(false); setBuilder(id); }} onClose={() => setShowSites(false)} />}
     </main>
   );
