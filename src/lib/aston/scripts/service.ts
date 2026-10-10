@@ -39,7 +39,7 @@ export function toScriptDTO(r: Row): ScriptDTO {
 }
 
 const GUIDE: Record<ScriptKind, string> = {
-  cold_call: "A phone cold call to a local business owner. Sections: Opening (permission-based, under 20 seconds), Understanding their needs (2-3 open questions), Presenting the service (tie to what they said), Handling objections (the 3 most likely, each as a client line + your reply), Next step (ask for a demo or a meeting time).",
+  cold_call: "A phone cold call to a local business owner. Sections: Opening (permission-based, under 20 seconds), Customer needs (2-3 open questions), Service introduction (tie to what they said), Benefits (2-3, in their terms), Objection handling (the 3 most likely, each as a client line + your reply), Closing and next steps (ask for a demo or a meeting time).",
   instagram_dm: "Instagram direct messages. Sections: First message (short, personal, references their page; no hard sell), If they reply, Follow-up if no reply (after 2-3 days), Booking the demo. Each 'you' line is one message, 1-3 short sentences, friendly.",
   whatsapp: "WhatsApp pitch messages. Sections: Opening message, Short value message, If they ask the price, Follow-up if no reply, Booking the demo. Each 'you' line is one message; warm, respectful, no spam tone.",
   zoom_demo: "A live Zoom/video website demo. Sections: Welcome & agenda, Understanding their needs, Walking through the demo (what to show and say at each step, with [Share screen]-style directions), Pricing & what's included, Handling objections, Next step.",
@@ -47,7 +47,7 @@ const GUIDE: Record<ScriptKind, string> = {
   objections: "Objection handling. Sections, one per objection: e.g. \"It's too expensive\", \"I already have Instagram\", \"I don't have time\", \"I'll think about it\", \"I had a bad experience before\". In each: the client line, then your calm reply that acknowledges, reframes and asks a question.",
   benefits: "Explaining why a website and a mobile app help this business, in plain words. Sections: Opening, What a website does for them, What an app adds (only if relevant), Common questions, Next step.",
   closing: "Closing professionally. Sections: Recap their needs, The recommendation, Price and what's included, Handling last-minute hesitation, Asking for the decision and agreeing the next step.",
-  general: "A complete sales pitch. Sections: Opening, Understanding their needs, Presenting the service, Handling objections, Next step.",
+  general: "A complete sales pitch. Sections: Opening, Customer needs, Service introduction, Benefits, Objection handling, Closing and next steps.",
 };
 
 function systemPrompt(kind: ScriptKind) {

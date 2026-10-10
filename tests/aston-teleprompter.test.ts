@@ -19,6 +19,7 @@ import {
 } from "@/lib/aston/scripts/format";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
 import { memoryStore, type GroqDeps } from "@/lib/aston/groq";
+import { speakableText, voiceLabel, markSelfSpeech, isSelfSpeaking } from "@/lib/aston/voice";
 
 describe("teleprompter · understanding requests", () => {
   it("routes every script request to the teleprompter (before the website builder)", () => {
@@ -70,6 +71,15 @@ describe("teleprompter · voice commands", () => {
     for (const [say, action] of cases) expect([say, parseCommand(say)]).toEqual([say, action]);
   });
 
+  it("exact short phrases work without the name (whole sentence only)", () => {
+    const cases: [string, string][] = [
+      ["Start scrolling.", "start"], ["Pause.", "pause"], ["Resume.", "resume"], ["Scroll faster.", "faster"], ["Scroll slower", "slower"],
+      ["Increase text size.", "bigger"], ["Go to the next section.", "next"], ["Repeat this section.", "repeat"],
+      ["Restart the script.", "restart"], ["Close teleprompter.", "close"],
+    ];
+    for (const [say, action] of cases) expect([say, parseCommand(say)]).toEqual([say, action]);
+  });
+
   it("never treats the pitch itself as a command", () => {
     // things you'd actually say to a client while reading
     for (const say of [
@@ -85,6 +95,24 @@ describe("teleprompter · voice commands", () => {
   it("speed scales with the text size", () => {
     expect(speedPx(4, 40, 1.5)).toBeCloseTo(18);
     expect(speedPx(8, 40, 1.5)).toBe(2 * speedPx(4, 40, 1.5));
+  });
+});
+
+describe("teleprompter · read aloud", () => {
+  it("speaks your words: directions dropped, fill-ins said plainly", () => {
+    expect(speakableText("Hi, is this the owner of [Business name]? [Pause] Great. [Smile]")).toBe("Hi, is this the owner of Business name? Great.");
+    expect(speakableText("[Wait for response]")).toBe("");
+  });
+  it("labels the voice honestly", () => {
+    expect(voiceLabel({ lang: "en-GB", name: "Google UK English Male" } as SpeechSynthesisVoice)).toBe("British English");
+    expect(voiceLabel({ lang: "en-IN", name: "x" } as SpeechSynthesisVoice)).toBe("Indian English");
+    expect(voiceLabel(null)).toBe("No voice available");
+  });
+  it("its own voice is ignored by the microphone while speaking and just after", () => {
+    markSelfSpeech(true);
+    expect(isSelfSpeaking()).toBe(true);
+    markSelfSpeech(false);
+    expect(isSelfSpeaking()).toBe(true); // a short tail after speech ends
   });
 });
 

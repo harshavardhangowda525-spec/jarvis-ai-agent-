@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AstonOrb, type AstonState } from "./aston-orb";
 import { SiteBuilder, SiteList } from "./site-builder";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
+import { markSelfSpeech, pickVoice } from "@/lib/aston/voice";
 import { Teleprompter } from "./teleprompter";
 import { isOpenOnly, SCRIPT_INTENT, stripWake } from "@/lib/aston/scripts/format";
 import type { IncidentDTO } from "@/lib/aston/types";
@@ -34,11 +35,7 @@ const aiLine = (ai: AiStatus | null) => {
   return `${label[ai.status] ?? ai.status}${until} · ${ai.requestsToday}/${ai.dailyCap} today`;
 };
 
-/** Pick a calm voice for ASTON from the browser's built-in voices (free, on-device). */
-function pickVoice(): SpeechSynthesisVoice | null {
-  const v = typeof speechSynthesis !== "undefined" ? speechSynthesis.getVoices() : [];
-  return v.find((x) => /en-GB/i.test(x.lang) && /male|daniel|arthur|george/i.test(x.name)) ?? v.find((x) => /en-GB/i.test(x.lang)) ?? v.find((x) => /^en/i.test(x.lang)) ?? null;
-}
+
 
 export function AstonConsole() {
   const [data, setData] = useState<StateData | null>(null);
@@ -56,10 +53,10 @@ export function AstonConsole() {
   const [builder, setBuilder] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
   const [showSites, setShowSites] = useState(false);
-  const [tele, setTele] = useState<{ request?: string; library?: boolean } | null>(null);
+  const [tele, setTele] = useState<{ key: number; request?: string; library?: boolean; min?: boolean } | null>(null);
   // While the teleprompter is open you're talking to a client: ASTON stays quiet
   const teleRef = useRef(false);
-  teleRef.current = !!tele;
+  teleRef.current = !!tele && !tele.min;
   const history = useRef<Turn[]>([]);
   const recog = useRef<any>(null);
   const voiceOnRef = useRef(voiceOn);
@@ -78,8 +75,8 @@ export function AstonConsole() {
     if (v) u.voice = v;
     u.rate = 1.02;
     u.pitch = 0.95;
-    u.onstart = () => setMode("speaking");
-    u.onend = u.onerror = () => setMode((m) => (m === "speaking" ? "idle" : m));
+    u.onstart = () => { markSelfSpeech(true); setMode("speaking"); };
+    u.onend = u.onerror = () => { markSelfSpeech(false); setMode((m) => (m === "speaking" ? "idle" : m)); };
     speechSynthesis.speak(u);
   }, []);
 
@@ -132,7 +129,9 @@ export function AstonConsole() {
       setCaption(line);
       setSub(null);
       setMode("idle");
-      setTele(isOpenOnly(msg) ? {} : { request: bare });
+      // "open teleprompter" brings back a minimised one exactly where you left it
+      if (isOpenOnly(msg) && tele?.min) setTele({ ...tele, min: false });
+      else setTele(isOpenOnly(msg) ? { key: Date.now() } : { key: Date.now(), request: bare });
       return;
     }
     // Website requests go straight to the builder (no extra AI round-trip).
@@ -165,7 +164,7 @@ export function AstonConsole() {
       setCaption(e?.message ?? "Something went wrong.");
       setMode("idle");
     }
-  }, [load, speak]);
+  }, [load, speak, tele]);
 
   const listen = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -229,7 +228,7 @@ export function AstonConsole() {
           className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50"
           aria-label={speechOk ? (mode === "listening" ? "Stop listening" : "Talk to ASTON") : "Type to ASTON"}
         >
-          <AstonOrb state={state} size={400} paused={!!builder || showSites || !!tele} />
+          <AstonOrb state={state} size={400} paused={!!builder || showSites || (!!tele && !tele.min)} />
         </button>
 
         <div className="max-w-2xl text-center" aria-live="polite">
@@ -283,13 +282,21 @@ export function AstonConsole() {
           {perm === "default" && <button className="aston-link" onClick={enableAlerts}>Enable desktop alerts</button>}
           {perm === "denied" && <span>Desktop alerts blocked in this browser</span>}
           <button className="aston-link" onClick={() => { setVoiceOn((v) => !v); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }}>{voiceOn ? "Voice on" : "Voice off"}</button>
-          <button className="aston-link" onClick={() => setTele({ library: true })}>Scripts</button>
+          <button className="aston-link" onClick={() => setTele(tele?.min ? { ...tele, min: false } : { key: Date.now(), library: true })}>Scripts</button>
           <button className="aston-link" onClick={() => setShowSites(true)}>Websites</button>
           {error && <span className="text-amber-400/80">{error}</span>}
         </div>
       </footer>
       {builder && <SiteBuilder key={builder} siteId={builder} onClose={() => { setBuilder(null); setBuilding(false); }} onSpeak={speak} onBusy={setBuilding} />}
-      {tele && <Teleprompter request={tele.request} library={tele.library} onClose={() => setTele(null)} onSpeak={speak} />}
+      {tele && (
+        <Teleprompter key={tele.key} request={tele.request} library={tele.library} hidden={!!tele.min}
+          onClose={() => setTele(null)} onMinimize={() => setTele((t) => (t ? { ...t, min: true } : t))} onSpeak={speak} />
+      )}
+      {tele?.min && (
+        <button className="tpg-restore" onClick={() => setTele((t) => (t ? { ...t, min: false } : t))} aria-label="Reopen the teleprompter">
+          <span aria-hidden>▤</span> Teleprompter
+        </button>
+      )}
       {showSites && !builder && <SiteList onOpen={(id) => { setShowSites(false); setBuilder(id); }} onClose={() => setShowSites(false)} />}
     </main>
   );

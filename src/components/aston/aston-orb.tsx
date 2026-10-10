@@ -182,13 +182,14 @@ function runGl(canvas: HTMLCanvasElement, size: number, state: { current: AstonS
   gl.clearColor(0, 0, 0, 0);
 
   const cur: Look = { ...LOOK[state.current] };
-  let raf = 0, t = Math.random() * 50, last = performance.now(), lost = false;
+  let raf = 0, t = Math.random() * 50, last = performance.now(), lost = false, drawn = false;
   const onLost = (e: Event) => { e.preventDefault(); lost = true; cancelAnimationFrame(raf); };
   canvas.addEventListener("webglcontextlost", onLost);
 
   const frame = (now: number) => {
     if (lost) return;
-    if (paused.current) { last = now; raf = requestAnimationFrame(frame); return; }
+    if (paused.current && drawn) { last = now; raf = requestAnimationFrame(frame); return; }
+    drawn = true; // a paused orb still shows its first frame
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const target = LOOK[state.current];
@@ -231,9 +232,10 @@ function run2d(canvas: HTMLCanvasElement, size: number, state: { current: AstonS
   canvas.height = size * dpr;
   ctx.scale(dpr, dpr);
   const cur: Look = { ...LOOK[state.current] };
-  let raf = 0, t = 0, last = performance.now();
+  let raf = 0, t = 0, last = performance.now(), drawn = false;
   const frame = (now: number) => {
-    if (paused.current) { last = now; raf = requestAnimationFrame(frame); return; }
+    if (paused.current && drawn) { last = now; raf = requestAnimationFrame(frame); return; }
+    drawn = true;
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     const target = LOOK[state.current];

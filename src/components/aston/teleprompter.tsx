@@ -1,299 +1,401 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { clamp, parseCommand, speedPx, type TeleAction } from "@/lib/aston/scripts/commands";
+import { clamp, speedPx, type TeleAction } from "@/lib/aston/scripts/commands";
+import { detectKind, KIND_LABEL, splitDirections, wordCount, type ScriptDetails, type ScriptKind } from "@/lib/aston/scripts/format";
+import { markSelfSpeech, pickVoice, speakableText, voiceLabel } from "@/lib/aston/voice";
+import { AstonOrb } from "./aston-orb";
+import { Customize, Editor, Library } from "./script-panels";
+import { useVoiceCommands, useWakeLock } from "./teleprompter-hooks";
 import {
-  detectKind, fromEditText, KIND_LABEL, SCRIPT_KINDS, splitDirections, toEditText, wordCount,
-  type ScriptDetails, type ScriptKind, type ScriptSection,
-} from "@/lib/aston/scripts/format";
+  api, DEFAULT_PREFS, lastPosition, loadPrefs, markSlowGlass, rememberPosition, savePrefs, SIZE_LABEL, SLOW_FRAME, slowGlassKnown, SPACINGS, SPEED_LABEL,
+  type Align, type ListRow, type Prefs, type Script,
+} from "./teleprompter-shared";
 
-
-interface Script {
-  id: string; title: string; kind: ScriptKind; kindLabel: string; businessType: string | null;
-  details: ScriptDetails; sections: ScriptSection[]; request: string; saved: boolean; updatedAt: string;
-}
-interface ListRow { id: string; title: string; kind: ScriptKind; kindLabel: string; businessType: string | null; saved: boolean; updatedAt: string }
 type Phase = "generating" | "ready" | "error" | "edit" | "customize" | "library";
-type VoiceState = "off" | "on" | "unsupported" | "denied" | "needs-tap";
+/** idle = still · scroll = auto-scrolling · speak = ASTON reads it aloud (the speech drives the position) */
+type Mode = "idle" | "scroll" | "speak";
 
-interface Prefs { speed: number; font: number; align: "left" | "center"; spacing: number }
-const DEFAULT_PREFS: Prefs = { speed: 4, font: 40, align: "left", spacing: 1.5 };
-const PREFS_KEY = "aston.teleprompter.prefs";
-const GUIDE = 0.32; // the reading line sits at 32% of the screen height
+const GUIDE = 0.3; // the reading line sits at 30% of the reader's height (eyes near the camera)
+const AUTO_RESUME_MS = 3000;
 
-async function api<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) }, cache: "no-store" });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.ok) throw new Error(j.error || (r.status === 401 ? "Signed out — sign in again." : `Request failed (HTTP ${r.status}).`));
-  return j.data as T;
-}
-
-function loadPrefs(): Prefs {
-  try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") }; } catch { return DEFAULT_PREFS; }
-}
-
-/* ------------------------------------------------------------------ voice */
-
-/**
- * Continuous listening for "ASTON, …" commands while the teleprompter is open.
- * Browsers stop recognition after silence, so it restarts itself. Only
- * wake-word commands act; everything else you say is ignored.
- */
-function useVoiceCommands(enabled: boolean, onAction: (a: TeleAction, heard: string) => void): [VoiceState, () => void] {
-  const [state, setState] = useState<VoiceState>("off");
-  const rec = useRef<any>(null);
-  const want = useRef(enabled);
-  const cb = useRef(onAction);
-  cb.current = onAction;
-
-  const start = useCallback(() => {
-    const SR = typeof window !== "undefined" ? (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition : null;
-    if (!SR) { setState("unsupported"); return; }
-    if (rec.current) return;
-    const r = new SR();
-    r.lang = "en-IN";
-    r.continuous = true;
-    r.interimResults = false;
-    r.maxAlternatives = 3;
-    r.onstart = () => setState("on");
-    r.onresult = (ev: any) => {
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        if (!ev.results[i].isFinal) continue;
-        for (let k = 0; k < ev.results[i].length; k++) {
-          const heard = String(ev.results[i][k].transcript ?? "");
-          const a = parseCommand(heard);
-          if (a) { cb.current(a, heard.trim()); break; }
-        }
-      }
-    };
-    r.onerror = (ev: any) => {
-      if (ev?.error === "not-allowed" || ev?.error === "service-not-allowed") { want.current = false; setState("denied"); }
-      else if (ev?.error === "audio-capture") { want.current = false; setState("denied"); }
-    };
-    r.onend = () => {
-      rec.current = null;
-      if (want.current) setTimeout(() => { if (want.current && !rec.current) start(); }, 250);
-      else setState((s) => (s === "denied" || s === "unsupported" ? s : "off"));
-    };
-    rec.current = r;
-    try { r.start(); } catch { rec.current = null; setState("needs-tap"); }
-  }, []);
-
-  useEffect(() => {
-    want.current = enabled;
-    if (enabled) start();
-    else { try { rec.current?.stop(); } catch { /* not running */ } rec.current = null; setState((s) => (s === "unsupported" || s === "denied" ? s : "off")); }
-    return () => { want.current = false; try { rec.current?.abort(); } catch { /* gone */ } rec.current = null; };
-  }, [enabled, start]);
-
-  // A user tap re-tries (Android needs a gesture before the mic can start)
-  const retry = useCallback(() => { want.current = true; setState("off"); start(); }, [start]);
-  return [state, retry];
-}
-
-/* ------------------------------------------------------------------ screen wake lock */
-
-function useWakeLock(active: boolean) {
-  useEffect(() => {
-    if (!active || typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
-    let lock: any = null, gone = false;
-    const take = async () => { try { lock = await (navigator as any).wakeLock.request("screen"); } catch { /* not allowed — the screen may dim */ } };
-    const onVis = () => { if (document.visibilityState === "visible" && !gone) take(); };
-    take();
-    document.addEventListener("visibilitychange", onVis);
-    return () => { gone = true; document.removeEventListener("visibilitychange", onVis); try { lock?.release(); } catch { /* released */ } };
-  }, [active]);
-}
-
-/* ------------------------------------------------------------------ the reader */
-
-function Line({ who, text }: { who: string; text: string }) {
-  if (who === "client") return <p className="tp-client"><span className="tp-tag">Client</span>{text}</p>;
-  if (who === "note") return <p className="tp-note">[{text.replace(/^\[|\]$/g, "")}]</p>;
-  return <p className="tp-you">{splitDirections(text).map((p, i) => (p.dir ? <span key={i} className="tp-dir">{p.t}</span> : p.slot ? <span key={i} className="tp-slot">{p.t}</span> : p.t))}</p>;
+function Line({ i, sec, who, text }: { i: number; sec: number; who: string; text: string }) {
+  if (who === "client") return <p data-line={i} data-sec={sec} className="tp-client"><span className="tp-tag">Client</span>{text}</p>;
+  if (who === "note") return <p data-line={i} data-sec={sec} className="tp-note">[{text.replace(/^\[|\]$/g, "")}]</p>;
+  return (
+    <p data-line={i} data-sec={sec} data-you="1" className="tp-you">
+      {splitDirections(text).map((p, k) => (p.dir ? <span key={k} className="tp-dir">{p.t}</span> : p.slot ? <span key={k} className="tp-slot">{p.t}</span> : p.t))}
+    </p>
+  );
 }
 
 /**
- * ASTON's teleprompter: generate → read → control by voice or touch. Playback
- * never changes the stored script; edits are saved explicitly.
+ * ASTON's teleprompter — a floating liquid-glass pop-up over ASTON. Generate
+ * → read → control by voice, touch or keyboard; optionally ASTON reads the
+ * script aloud with the spoken line highlighted. Playback never changes the
+ * stored script; edits are saved explicitly.
  */
-export function Teleprompter({ request, scriptId, library, onClose, onSpeak }: {
-  request?: string; scriptId?: string; library?: boolean; onClose: () => void; onSpeak?: (t: string) => void;
+export function Teleprompter({ request, scriptId, library, hidden = false, onClose, onMinimize, onSpeak }: {
+  request?: string; scriptId?: string; library?: boolean; hidden?: boolean;
+  onClose: () => void; onMinimize?: () => void; onSpeak?: (t: string) => void;
 }) {
   const [phase, setPhase] = useState<Phase>(library ? "library" : request ? "generating" : "ready");
   const [script, setScript] = useState<Script | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
-  const [playing, setPlaying] = useState(false);
+  const [mode, setModeState] = useState<Mode>("idle");
+  const [manual, setManual] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [chrome, setChrome] = useState(true);
-  const [more, setMore] = useState(false);
-  const [focus, setFocus] = useState(false);
+  const [section, setSection] = useState(0);
+  const [menu, setMenu] = useState(false);
   const [voiceOn, setVoiceOn] = useState(true);
   const [heard, setHeard] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const root = useRef<HTMLDivElement>(null);
-  const scroller = useRef<HTMLDivElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [ttsVoice, setTtsVoice] = useState<SpeechSynthesisVoice | null>(null);
+  const [ttsOk, setTtsOk] = useState(false);
+  const [showCards, setShowCards] = useState(false); // phones: the display controls fold away behind "Aa"
+  const [slowDevice, setSlowDevice] = useState(false);
+  useEffect(() => {
+    const reduce = typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-transparency: reduce)").matches;
+    setSlowDevice(slowGlassKnown() || reduce);
+  }, []);
+  const lite = prefs.glass === "lite" || (prefs.glass === "auto" && slowDevice);
+  const frameTimes = useRef<number[]>([]);
+
+  const panel = useRef<HTMLDivElement>(null);
+  const reader = useRef<HTMLDivElement>(null);
   const pos = useRef(0);
-  const hold = useRef(false);
-  const holdTimer = useRef<ReturnType<typeof setTimeout>>();
+  const target = useRef<number | null>(null); // a smooth glide goes here (section jumps, restart, speech)
+  const modeRef = useRef<Mode>("idle");
+  const lastPlay = useRef<Mode>("scroll");
+  const curLine = useRef(-1);
+  const lines = useRef<{ el: HTMLElement; top: number; sec: number; you: boolean }[]>([]);
+  const resumeTimer = useRef<ReturnType<typeof setTimeout>>();
+  const speechToken = useRef(0);
+  const restoreRatio = useRef<number | null>(null);
   const lastRequest = useRef(request ?? "");
 
-  useEffect(() => { setPrefs(loadPrefs()); }, []);
-  useEffect(() => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* storage blocked */ } }, [prefs]);
+  const setMode = useCallback((m: Mode) => { modeRef.current = m; setModeState(m); if (m !== "idle") lastPlay.current = m; }, []);
   const flash = useCallback((t: string) => { setToast(t); setTimeout(() => setToast((x) => (x === t ? null : x)), 1800); }, []);
 
+  useEffect(() => { setPrefs(loadPrefs()); }, []);
+  useEffect(() => { savePrefs(prefs); }, [prefs]);
+
+  // text-to-speech availability + the British voice (voices load asynchronously)
+  useEffect(() => {
+    if (typeof speechSynthesis === "undefined") return;
+    const pick = () => { const v = pickVoice(); setTtsVoice(v); setTtsOk(!!v || speechSynthesis.getVoices().length > 0); };
+    pick();
+    speechSynthesis.addEventListener?.("voiceschanged", pick);
+    return () => speechSynthesis.removeEventListener?.("voiceschanged", pick);
+  }, []);
+
   // ---------------------------------------------------------------- load / generate
+  const show = useCallback((s: Script, ratio?: number) => {
+    setScript(s); setPhase("ready"); setError(null); setProgress(0); setSection(0);
+    pos.current = 0; curLine.current = -1; restoreRatio.current = ratio ?? null;
+  }, []);
+
   const generate = useCallback(async (req: string, extra?: { kind?: ScriptKind; details?: ScriptDetails; id?: string }) => {
-    setPhase("generating"); setError(null); setPlaying(false);
+    stopSpeech(); setMode("idle"); setPhase("generating"); setError(null);
     try {
       const s = extra?.id
         ? await api<Script>(`/api/aston/scripts/${extra.id}/regenerate`, { method: "POST", body: JSON.stringify({ request: req, kind: extra.kind, details: extra.details }) })
         : await api<Script>("/api/aston/scripts", { method: "POST", body: JSON.stringify({ request: req, kind: extra?.kind, details: extra?.details }) });
-      setScript(s); setPhase("ready"); pos.current = 0; setProgress(0);
-      if (scroller.current) scroller.current.scrollTop = 0;
-      onSpeak?.(`Your ${s.kindLabel.toLowerCase()} script is ready. Say "ASTON, start" when you are.`);
+      show(s);
+      onSpeak?.("Your script is ready.");
     } catch (e: any) {
       setError(e?.message ?? "Couldn't write the script."); setPhase("error");
     }
-  }, [onSpeak]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onSpeak, show]);
 
-  const open = useCallback(async (id: string) => {
-    setError(null); setPlaying(false);
-    try { const s = await api<Script>(`/api/aston/scripts/${id}`); setScript(s); setPhase("ready"); pos.current = 0; setProgress(0); if (scroller.current) scroller.current.scrollTop = 0; }
+  const open = useCallback(async (id: string, ratio?: number) => {
+    stopSpeech(); setMode("idle");
+    try { show(await api<Script>(`/api/aston/scripts/${id}`), ratio); }
     catch (e: any) { setError(e?.message ?? "Couldn't open the script."); setPhase("error"); }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show]);
 
   useEffect(() => {
     if (request) generate(request);
     else if (scriptId) open(scriptId);
     else if (!library) {
-      // "open teleprompter": the most recent script, or the library if there is none
-      api<{ scripts: ListRow[] }>("/api/aston/scripts?scope=recent").then((r) => (r.scripts[0] ? open(r.scripts[0].id) : setPhase("library"))).catch(() => setPhase("library"));
+      // "open teleprompter": carry on with this tab's script, else the latest one, else the library
+      const last = lastPosition();
+      if (last) open(last.id, last.ratio);
+      else api<{ scripts: ListRow[] }>("/api/aston/scripts?scope=recent").then((r) => (r.scripts[0] ? open(r.scripts[0].id) : setPhase("library"))).catch(() => setPhase("library"));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ---------------------------------------------------------------- scrolling engine
+  // ---------------------------------------------------------------- line positions + the current line
+  const measure = useCallback(() => {
+    const el = reader.current;
+    if (!el) { lines.current = []; return; }
+    lines.current = [...el.querySelectorAll<HTMLElement>("[data-line]")].map((n) => ({ el: n, top: n.offsetTop, sec: Number(n.dataset.sec), you: n.dataset.you === "1" }));
+  }, []);
+  const guidePx = () => (reader.current?.clientHeight ?? 0) * GUIDE;
+  const maxScroll = () => { const el = reader.current; return el ? Math.max(0, el.scrollHeight - el.clientHeight) : 0; };
+
+  const clearHighlight = () => { reader.current?.querySelectorAll(".tp-cur").forEach((n) => n.classList.remove("tp-cur")); curLine.current = -1; };
+  const highlight = useCallback((i: number) => {
+    if (i === curLine.current) return;
+    lines.current[curLine.current]?.el.classList.remove("tp-cur");
+    curLine.current = i;
+    const l = lines.current[i];
+    if (l) { l.el.classList.add("tp-cur"); setSection(l.sec); }
+  }, []);
+
+  /** The line sitting on the reading line (binary search over measured tops). */
+  const lineAt = (scrollTop: number) => {
+    const ls = lines.current, y = scrollTop + guidePx() + 4;
+    let lo = 0, hi = ls.length - 1, ans = 0;
+    while (lo <= hi) { const mid = (lo + hi) >> 1; if (ls[mid].top <= y) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
+    return ans;
+  };
+
+  const sync = useCallback((fromSpeech = false) => {
+    const el = reader.current;
+    if (!el) return;
+    const max = maxScroll();
+    const ratio = max > 0 ? el.scrollTop / max : 0;
+    setProgress(ratio);
+    if (!fromSpeech && modeRef.current !== "speak") highlight(lineAt(el.scrollTop));
+    if (script) rememberPosition(script.id, ratio);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlight, script]);
+
+  // re-measure whenever the layout can change; keep the reading position
+  useEffect(() => {
+    const el = reader.current;
+    if (phase !== "ready" || !el) return;
+    const keep = restoreRatio.current ?? (maxScroll() > 0 ? el.scrollTop / maxScroll() : 0);
+    restoreRatio.current = null;
+    const apply = () => {
+      measure();
+      el.scrollTop = keep * maxScroll(); pos.current = el.scrollTop;
+      clearHighlight(); sync();
+    };
+    apply();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => { if (!el.clientHeight) return; const r = maxScroll() > 0 ? el.scrollTop / maxScroll() : 0; measure(); el.scrollTop = r * maxScroll(); pos.current = el.scrollTop; sync(); }) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, script, prefs.font, prefs.spacing, prefs.align]);
+
+  // ---------------------------------------------------------------- the scrolling engine (one rAF loop; idle = no loop)
   const px = speedPx(prefs.speed, prefs.font, prefs.spacing);
   const pxRef = useRef(px);
   pxRef.current = px;
+  const [gliding, setGliding] = useState(0); // bump to wake the loop for a glide while idle
 
   useEffect(() => {
-    const el = scroller.current;
-    if (!playing || !el) return;
+    const el = reader.current;
+    if (!el || hidden || (mode === "idle" && target.current === null)) return;
     let raf = 0, last = performance.now(), lastUi = 0;
     pos.current = el.scrollTop;
     const frame = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000);
+      const raw = (now - last) / 1000;
+      const dt = Math.min(0.1, raw);
       last = now;
-      const max = el.scrollHeight - el.clientHeight;
-      if (hold.current) pos.current = el.scrollTop; // your finger is on it — follow, don't fight
-      else {
-        pos.current = Math.min(max, pos.current + pxRef.current * dt);
-        el.scrollTop = pos.current;
-        if (pos.current >= max - 0.5) { setPlaying(false); flash("End of script"); }
+      // auto glass: if live blur makes this device drop frames while the text moves, switch to lite glass
+      if (prefs.glass === "auto" && !slowDevice && raw > 0) {
+        const ft = frameTimes.current;
+        ft.push(raw);
+        // decide quickly (12 frames or 1.5 s) so a slow phone doesn't stutter for long
+        if (ft.length >= 12 || (ft.length >= 4 && ft.reduce((x, y) => x + y, 0) > 1.5)) {
+          const median = [...ft].sort((x, y) => x - y)[Math.floor(ft.length / 2)];
+          frameTimes.current = [];
+          if (median > SLOW_FRAME) { markSlowGlass(); setSlowDevice(true); }
+        }
       }
-      if (now - lastUi > 250) { lastUi = now; setProgress(max > 0 ? el.scrollTop / max : 1); }
+      const max = maxScroll();
+      if (target.current !== null) {
+        const t = clamp(target.current, 0, max);
+        pos.current += (t - pos.current) * Math.min(1, dt * 6);
+        if (Math.abs(t - pos.current) < 0.5) { pos.current = t; if (modeRef.current !== "speak") target.current = null; }
+      } else if (modeRef.current === "scroll") {
+        pos.current = Math.min(max, pos.current + pxRef.current * dt);
+        if (pos.current >= max - 0.5) { setMode("idle"); flash("End of script"); }
+      }
+      el.scrollTop = pos.current;
+      if (now - lastUi > 180) { lastUi = now; sync(modeRef.current === "speak"); }
+      if (modeRef.current === "idle" && target.current === null) { sync(); return; }
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [playing, flash]);
-
-  useWakeLock(playing);
-
-  // Keep the reading position when text size / spacing changes
-  const ratio = useRef(0);
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    const max = el.scrollHeight - el.clientHeight;
-    el.scrollTop = ratio.current * max; pos.current = el.scrollTop;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefs.font, prefs.spacing, prefs.align]);
+  }, [mode, gliding, hidden, sync, setMode, flash, prefs.glass, slowDevice]);
 
-  const onScroll = () => {
-    const el = scroller.current;
-    if (!el) return;
-    const max = el.scrollHeight - el.clientHeight;
-    ratio.current = max > 0 ? el.scrollTop / max : 0;
-    if (!playing) { pos.current = el.scrollTop; setProgress(ratio.current); }
-  };
-  const grab = () => { hold.current = true; clearTimeout(holdTimer.current); };
-  const release = (ms = 450) => { clearTimeout(holdTimer.current); holdTimer.current = setTimeout(() => { hold.current = false; }, ms); };
+  const glideTo = (top: number) => { target.current = top; setGliding((g) => g + 1); };
+  const glideToLine = (i: number) => { const l = lines.current[i]; if (l) glideTo(Math.max(0, l.top - guidePx() + 6)); };
+
+  useWakeLock(mode !== "idle" && !hidden);
+
+  // ---------------------------------------------------------------- read aloud (browser speech, British voice when available)
+  function stopSpeech() {
+    speechToken.current++;
+    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    markSelfSpeech(false);
+    setSpeaking(false);
+    if (modeRef.current === "speak") target.current = null;
+  }
+
+  const speakFrom = useCallback((start: number) => {
+    if (typeof speechSynthesis === "undefined" || !ttsOk) { flash("Read-aloud isn't available in this browser"); return; }
+    stopSpeech();
+    const token = ++speechToken.current;
+    const queue = lines.current.map((l, i) => ({ ...l, i })).filter((l) => l.i >= Math.max(0, start) && l.you);
+    if (!queue.length) { flash("Nothing left to read"); return; }
+    setMode("speak");
+    const next = (k: number) => {
+      if (token !== speechToken.current) return; // stopped or restarted meanwhile
+      const item = queue[k];
+      if (!item) { setMode("idle"); setSpeaking(false); markSelfSpeech(false); flash("Finished reading"); return; }
+      const text = speakableText(item.el.textContent ?? "");
+      if (!text) { next(k + 1); return; }
+      const u = new SpeechSynthesisUtterance(text);
+      const v = pickVoice();
+      if (v) { u.voice = v; u.lang = v.lang; }
+      u.rate = 0.95; u.pitch = 0.95; // professional, calm
+      u.onstart = () => {
+        if (token !== speechToken.current) return;
+        markSelfSpeech(true); setSpeaking(true);
+        highlight(item.i); glideToLine(item.i); // the highlight follows the line actually being spoken
+      };
+      u.onend = () => { if (token === speechToken.current) { markSelfSpeech(false); next(k + 1); } };
+      u.onerror = (e) => {
+        if (token !== speechToken.current) return;
+        markSelfSpeech(false); setSpeaking(false);
+        if (e.error !== "interrupted" && e.error !== "canceled") { setMode("idle"); flash("Read-aloud stopped"); }
+      };
+      speechSynthesis.speak(u);
+    };
+    next(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ttsOk, highlight, flash, setMode]);
+
+  // nothing keeps playing behind a closed/minimised pop-up
+  useEffect(() => { if (hidden) { stopSpeech(); setMode("idle"); } }, [hidden]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => { stopSpeech(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------- sections
-  const sectionTops = () => {
-    const el = scroller.current;
-    if (!el) return [] as number[];
-    const guide = el.clientHeight * GUIDE;
-    return [...el.querySelectorAll<HTMLElement>("[data-sec]")].map((s) => Math.max(0, s.offsetTop - guide + 4));
+  /** Where each section starts reading: its first line on the reading line. */
+  const secTops = () => {
+    const firsts: number[] = [];
+    for (const l of lines.current) if (firsts[l.sec] === undefined) firsts[l.sec] = Math.max(0, l.top - guidePx() + 6);
+    return firsts.filter((t) => t !== undefined);
   };
-  const jump = (top: number) => { const el = scroller.current; if (!el) return; el.scrollTop = top; pos.current = el.scrollTop; onScroll(); };
-  const nextSection = () => { const t = sectionTops(); const cur = scroller.current?.scrollTop ?? 0; const n = t.find((x) => x > cur + 8); if (n !== undefined) jump(n); else flash("Last section"); };
-  const repeatSection = () => {
-    const t = sectionTops(); const cur = scroller.current?.scrollTop ?? 0;
-    let i = t.findLastIndex((x) => x <= cur + 8);
-    if (i > 0 && cur - t[i] < 40) i -= 1; // already at the start of this one → the one before
-    jump(t[Math.max(0, i)] ?? 0);
+  const toSection = (dir: 1 | -1 | 0) => {
+    const tops = secTops(), cur = reader.current?.scrollTop ?? 0;
+    let i = tops.findLastIndex((t) => t <= cur + 8);
+    if (dir === 1) i = tops.findIndex((t) => t > cur + 8);
+    else if (dir === -1 && i > 0 && cur - tops[i] < 40) i -= 1;
+    if (i < 0 || i >= tops.length) { flash(dir === 1 ? "Last section" : "First section"); return; }
+    if (modeRef.current === "speak") {
+      const first = lines.current.findIndex((l) => l.sec === i && l.you);
+      if (first >= 0) speakFrom(first);
+    } else glideTo(tops[i]);
   };
 
   // ---------------------------------------------------------------- actions (touch, keys and voice share these)
-  const setPref = <K extends keyof Prefs>(k: K, v: Prefs[K]) => setPrefs((p) => ({ ...p, [k]: v }));
+  const play = (m: Mode) => {
+    setManual(false); clearTimeout(resumeTimer.current);
+    if (maxScroll() > 0 && (reader.current?.scrollTop ?? 0) >= maxScroll() - 1) { pos.current = 0; if (reader.current) reader.current.scrollTop = 0; clearHighlight(); sync(); }
+    if (m === "speak") speakFrom(curLine.current < 0 ? 0 : curLine.current);
+    else { stopSpeech(); setMode("scroll"); }
+  };
+  const pause = () => { clearTimeout(resumeTimer.current); stopSpeech(); setMode("idle"); };
+
   const act = useCallback((a: TeleAction) => {
     if (phase !== "ready" && a !== "close") return;
     switch (a) {
-      case "start": case "resume": {
-        const el = scroller.current;
-        if (el && el.scrollTop >= el.scrollHeight - el.clientHeight - 1) jump(0); // at the end → from the top
-        setPlaying(true); setChrome(false); break;
+      case "start": play("scroll"); break;
+      case "resume": play(lastPlay.current); break;
+      case "pause": pause(); break;
+      case "stop": pause(); glideTo(0); break;
+      case "restart": {
+        const was = modeRef.current;
+        stopSpeech(); clearHighlight();
+        if (was === "speak") speakFrom(0); else { glideTo(0); if (was === "scroll") setMode("scroll"); }
+        break;
       }
-      case "pause": setPlaying(false); setChrome(true); break;
-      case "stop": setPlaying(false); jump(0); setChrome(true); break;
-      case "restart": jump(0); setPlaying(true); break;
       case "faster": setPrefs((p) => ({ ...p, speed: clamp(p.speed + 1, 1, 10) })); break;
       case "slower": setPrefs((p) => ({ ...p, speed: clamp(p.speed - 1, 1, 10) })); break;
-      case "bigger": setPrefs((p) => ({ ...p, font: clamp(p.font + 4, 20, 88) })); break;
-      case "smaller": setPrefs((p) => ({ ...p, font: clamp(p.font - 4, 20, 88) })); break;
-      case "next": nextSection(); break;
-      case "repeat": repeatSection(); break;
-      case "edit": setPlaying(false); setPhase("edit"); break;
-      case "fullscreen": toggleFocus(); break;
+      case "bigger": setPrefs((p) => ({ ...p, font: clamp(p.font + 4, 20, 72) })); break;
+      case "smaller": setPrefs((p) => ({ ...p, font: clamp(p.font - 4, 20, 72) })); break;
+      case "next": toSection(1); break;
+      case "repeat": toSection(-1); break;
+      case "edit": pause(); setPhase("edit"); break;
+      case "fullscreen": toggleFull(); break;
       case "close": close(); break;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+  }, [phase, speakFrom]);
 
-  const [voice, retryVoice] = useVoiceCommands(voiceOn && (phase === "ready"), (a, h) => { act(a); setHeard(h); setTimeout(() => setHeard((x) => (x === h ? null : x)), 1600); });
+  const [voice, retryVoice] = useVoiceCommands(voiceOn && phase === "ready" && !hidden, (a, h) => {
+    act(a); setHeard(h); setTimeout(() => setHeard((x) => (x === h ? null : x)), 1600);
+  });
 
-  const toggleFocus = () => {
-    const el = root.current as any;
-    if (!document.fullscreenElement && el?.requestFullscreen) el.requestFullscreen().catch(() => {});
-    else if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
-    setFocus((f) => !f);
+  // touching the script while it moves pauses it (optionally carrying on by itself)
+  const userTouch = () => {
+    if (modeRef.current === "idle" && target.current === null) return;
+    target.current = null;
+    if (modeRef.current !== "idle") {
+      const was = modeRef.current;
+      pause(); flash("Paused — you're scrolling");
+      if (prefs.autoResume) {
+        clearTimeout(resumeTimer.current);
+        resumeTimer.current = setTimeout(() => play(was), AUTO_RESUME_MS);
+      }
+    }
   };
-  const close = () => { setPlaying(false); if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); onClose(); };
+  const userScrolling = () => { if (prefs.autoResume && resumeTimer.current) { clearTimeout(resumeTimer.current); resumeTimer.current = setTimeout(() => play(lastPlay.current), AUTO_RESUME_MS); } };
+
+  const toggleFull = () => {
+    const el = panel.current as any;
+    if (!document.fullscreenElement && el?.requestFullscreen) el.requestFullscreen().catch(() => flash("Full screen isn't available here"));
+    else document.exitFullscreen?.().catch(() => {});
+  };
+  const close = () => { pause(); if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}); onClose(); };
+
+  // ---------------------------------------------------------------- modal behaviour: scroll lock, focus, keys
+  useEffect(() => {
+    if (hidden) return;
+    const prev = document.activeElement as HTMLElement | null;
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    panel.current?.focus();
+    return () => { document.body.style.overflow = overflow; prev?.focus?.(); };
+  }, [hidden]);
 
   useEffect(() => {
+    if (hidden) return;
     const onKey = (e: KeyboardEvent) => {
-      if (phase !== "ready" || (e.target as HTMLElement)?.closest("input,textarea,select")) return;
-      const map: Record<string, TeleAction> = { " ": playing ? "pause" : "start", ArrowUp: "faster", ArrowDown: "slower", "+": "bigger", "=": "bigger", "-": "smaller", ArrowRight: "next", ArrowLeft: "repeat", Escape: "close", f: "fullscreen", r: "restart", e: "edit" };
+      const typing = (e.target as HTMLElement)?.closest?.("input,textarea,select");
+      if (e.key === "Tab" && panel.current) {
+        // keep keyboard focus inside the pop-up
+        const f = [...panel.current.querySelectorAll<HTMLElement>("button,input,select,textarea,[href],[tabindex]:not([tabindex='-1'])")].filter((x) => !x.hasAttribute("disabled") && x.offsetParent);
+        if (!f.length) return;
+        const first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        return;
+      }
+      if (e.key === "Escape") { e.preventDefault(); if (menu) setMenu(false); else if (phase === "ready") close(); else if (phase !== "generating") setPhase(script ? "ready" : "library"); return; }
+      if (phase !== "ready" || typing) return;
+      const map: Record<string, TeleAction> = { " ": modeRef.current === "idle" ? "resume" : "pause", ArrowUp: "faster", ArrowDown: "slower", "+": "bigger", "=": "bigger", "-": "smaller", ArrowRight: "next", ArrowLeft: "repeat", f: "fullscreen", r: "restart", e: "edit" };
       const a = map[e.key];
       if (a) { e.preventDefault(); act(a); }
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [act, phase, playing]);
-
-  // show the controls briefly on a tap while reading
-  const chromeTimer = useRef<ReturnType<typeof setTimeout>>();
-  const tapReader = () => {
-    setChrome(true);
-    clearTimeout(chromeTimer.current);
-    if (playing) chromeTimer.current = setTimeout(() => setChrome(false), 3500);
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [act, phase, hidden, menu, script]);
 
   // ---------------------------------------------------------------- saving / editing
   const patch = async (body: Record<string, unknown>, msg: string) => {
@@ -303,281 +405,222 @@ export function Teleprompter({ request, scriptId, library, onClose, onSpeak }: {
     catch (e: any) { flash(e?.message ?? "Couldn't save."); }
     finally { setBusy(false); }
   };
-  const save = () => patch({ saved: true }, "Saved to your library");
   const rename = () => { const t = window.prompt("Script name", script?.title ?? ""); if (t && t.trim()) patch({ title: t.trim() }, "Renamed"); };
   const regenerate = () => { if (script && window.confirm("Rewrite this script with Groq? Your current text will be replaced.")) generate(script.request, { id: script.id, kind: script.kind, details: script.details }); };
 
+  const flat = useMemo(() => {
+    let i = 0;
+    return (script?.sections ?? []).map((s, si) => ({ ...s, si, lines: s.lines.map((l) => ({ ...l, i: i++ })) }));
+  }, [script]);
   const words = useMemo(() => (script ? wordCount(script.sections) : 0), [script]);
-  // how far there is to scroll (measured after layout, and again when the size or text changes)
-  const [maxScroll, setMaxScroll] = useState(0);
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    const measure = () => setMaxScroll(Math.max(0, el.scrollHeight - el.clientHeight));
-    measure();
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    ro?.observe(el);
-    if (el.firstElementChild) ro?.observe(el.firstElementChild);
-    return () => ro?.disconnect();
-  }, [script, phase, prefs.font, prefs.spacing, prefs.align]);
-  const remainingSec = px > 0 ? Math.round(((1 - progress) * maxScroll) / px) : 0;
-
-  const showChrome = !playing || chrome || more;
+  const secCount = script?.sections.length ?? 0;
+  const status = speaking ? "SPEAKING" : mode === "scroll" ? "SCROLLING" : script && phase === "ready" ? "READY" : phase === "generating" ? "WRITING" : "IDLE";
+  const chip = script ? `${script.kindLabel} script` : "Teleprompter";
+  const chipSub = script ? [script.details?.businessName, script.businessType].filter(Boolean).join(" · ") || script.title : "";
+  const playing = mode !== "idle";
 
   // ================================================================= render
   return (
-    <div ref={root} className={`tp-root ${focus ? "tp-focus" : ""}`} role="dialog" aria-modal="true" aria-label="ASTON teleprompter">
-      {/* ------------------------------------------------ top bar */}
-      <header className={`tp-top ${showChrome ? "" : "tp-hidden"}`}>
-        <button className="tp-icon" onClick={close} aria-label="Close teleprompter">×</button>
-        <div className="tp-titles">
-          <p className="tp-kind">{script ? script.kindLabel : "Teleprompter"}{script?.businessType ? ` · ${script.businessType}` : ""}</p>
-          <h2 className="tp-title">{phase === "library" ? "Script library" : script?.title ?? "ASTON"}</h2>
-        </div>
-        {phase === "ready" && script && (
-          <div className="tp-top-actions">
-            {!script.saved ? <button className="tp-chip tp-chip-on" onClick={save} disabled={busy}>Save</button> : <span className="tp-chip">Saved</span>}
-            <button className="tp-chip" onClick={() => { setPlaying(false); setPhase("library"); }}>Library</button>
+    <div className={`tpg-layer ${hidden ? "tpg-hidden" : ""} ${lite ? "tpg-lite" : ""}`} aria-hidden={hidden}>
+      <div className="tpg-backdrop" onClick={() => prefs.outsideCloses && close()} />
+      <div ref={panel} className="tpg-panel" role="dialog" aria-modal="true" aria-labelledby="tpg-title" tabIndex={-1}>
+        <div className="tpg-sheen" aria-hidden />
+        {/* ------------------------------------------------ header */}
+        <header className="tpg-head">
+          <div className="tpg-badge" aria-hidden>
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><rect x="4" y="3" width="13" height="18" rx="2.5" /><path d="M7.5 8h6M7.5 11.5h6M7.5 15h3.5" /><circle cx="18" cy="17.5" r="3" /></svg>
           </div>
-        )}
-      </header>
-      {phase === "ready" && (
-        <div className={`tp-progress ${showChrome ? "" : "tp-progress-min"}`} aria-label={`${Math.round(progress * 100)}% read`}>
-          <span style={{ transform: `scaleX(${progress})` }} />
-        </div>
-      )}
-
-      {/* ------------------------------------------------ body */}
-      {phase === "generating" && (
-        <div className="tp-center">
-          <div className="tp-pulse" aria-hidden />
-          <p className="tp-big">Writing your {KIND_LABEL[detectKind(lastRequest.current || script?.request || "")].toLowerCase()} script…</p>
-          <p className="tp-sub">“{(lastRequest.current || script?.request || "").slice(0, 140)}”</p>
-        </div>
-      )}
-
-      {phase === "error" && (
-        <div className="tp-center">
-          <p className="tp-big">That didn't work.</p>
-          <p className="tp-sub">{error}</p>
-          <div className="tp-row">
-            {(lastRequest.current || script) && <button className="tp-btn tp-btn-primary" onClick={() => (script ? generate(script.request, { id: script.id, kind: script.kind, details: script.details }) : generate(lastRequest.current))}>Try again</button>}
-            {script && <button className="tp-btn" onClick={() => setPhase("ready")}>Back to the script</button>}
-            <button className="tp-btn" onClick={() => setPhase("library")}>Open library</button>
+          <div className="tpg-titles">
+            <h2 id="tpg-title">Teleprompter</h2>
+            <p>Your script, always in focus.</p>
           </div>
-        </div>
-      )}
-
-      {phase === "ready" && script && (
-        <>
-          <div
-            ref={scroller}
-            className="tp-scroll"
-            style={{ fontSize: prefs.font, lineHeight: prefs.spacing, textAlign: prefs.align }}
-            onScroll={onScroll}
-            onPointerDown={grab} onPointerUp={() => release()} onPointerCancel={() => release()}
-            onTouchStart={grab} onTouchEnd={() => release()}
-            onWheel={() => { grab(); release(700); }}
-            onClick={tapReader}
-          >
-            <div style={{ height: `${GUIDE * 100}%` }} aria-hidden />
-            {script.sections.map((s, i) => (
-              <section key={i} data-sec={i} className="tp-sec">
-                {s.heading && <h3 className="tp-h">{s.heading}</h3>}
-                {s.lines.map((l, k) => <Line key={k} who={l.who} text={l.text} />)}
-              </section>
-            ))}
-            <p className="tp-end">— End of script —</p>
-            <div style={{ height: "70%" }} aria-hidden />
+          <div className="tpg-chip" title={script?.title}>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z" /></svg>
+            <span><b>{chip}</b><small>{chipSub || "—"}</small></span>
           </div>
-          <div className="tp-fade-top" aria-hidden />
-          <div className="tp-guide" style={{ top: `${GUIDE * 100}%` }} aria-hidden />
-          <div className="tp-fade-bottom" aria-hidden />
-          {(heard || toast) && <div className="tp-toast" role="status">{heard ? `“${heard}”` : toast}</div>}
+          <div className="tpg-head-actions">
+            <button className="tpg-round" onClick={() => act("edit")} disabled={phase !== "ready"} aria-label="Edit script" title="Edit">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden><path d="M4 20h4L19 9l-4-4L4 16v4Z" /><path d="m13.5 6.5 4 4" /></svg>
+            </button>
+            <button className="tpg-round" onClick={() => act("restart")} disabled={phase !== "ready"} aria-label="Restart script" title="Restart">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" /></svg>
+            </button>
+            <button className={`tpg-round ${menu ? "tpg-on" : ""}`} onClick={() => setMenu((m) => !m)} aria-label="More" aria-expanded={menu} title="More">⋯</button>
+            <button className="tpg-round" onClick={close} aria-label="Close teleprompter" title="Close">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden><path d="M6 6l12 12M18 6 6 18" /></svg>
+            </button>
+          </div>
+          {menu && (
+            <div className="tpg-menu" role="menu">
+              {phase === "ready" && script && (script.saved ? <span className="tpg-menu-note">✓ Saved in your library</span> : <button role="menuitem" onClick={() => { setMenu(false); patch({ saved: true }, "Saved to your library"); }}>Save to library</button>)}
+              <button role="menuitem" onClick={() => { setMenu(false); pause(); setPhase("library"); }}>Script library</button>
+              {phase === "ready" && script && <>
+                <button role="menuitem" onClick={() => { setMenu(false); pause(); setPhase("customize"); }}>Customise &amp; regenerate</button>
+                <button role="menuitem" onClick={() => { setMenu(false); regenerate(); }}>Regenerate</button>
+                <button role="menuitem" onClick={() => { setMenu(false); rename(); }}>Rename</button>
+                <button role="menuitem" onClick={() => { setMenu(false); toggleFull(); }}>Full screen</button>
+              </>}
+              {onMinimize && <button role="menuitem" onClick={() => { setMenu(false); pause(); onMinimize(); }}>Minimise (keeps your place)</button>}
+              <label className="tpg-menu-check"><input type="checkbox" checked={prefs.autoResume} onChange={(e) => setPrefs({ ...prefs, autoResume: e.target.checked })} /> Carry on after I scroll</label>
+              <label className="tpg-menu-check">Glass
+                <select value={prefs.glass} onChange={(e) => setPrefs({ ...prefs, glass: e.target.value as Prefs["glass"] })} aria-label="Glass effect">
+                  <option value="auto">Auto{prefs.glass === "auto" && slowDevice ? " (lite on this device)" : ""}</option><option value="full">Full blur</option><option value="lite">Lite (fastest)</option>
+                </select>
+              </label>
+              <label className="tpg-menu-check"><input type="checkbox" checked={prefs.outsideCloses} onChange={(e) => setPrefs({ ...prefs, outsideCloses: e.target.checked })} /> Tap outside to close</label>
+            </div>
+          )}
+        </header>
 
-          {/* ------------------------------------------------ controls */}
-          <footer className={`tp-controls ${showChrome ? "" : "tp-hidden"}`}>
-            <div className="tp-meta">
-              <span>{Math.round(progress * 100)}%</span>
-              <span>~{Math.floor(remainingSec / 60)}:{String(remainingSec % 60).padStart(2, "0")} left</span>
-              <span>{words} words</span>
-              <button className={`tp-voice tp-voice-${voice}`} onClick={() => (voice === "on" ? setVoiceOn(false) : (setVoiceOn(true), retryVoice()))}
-                title="Voice commands start with “ASTON”">
-                {voice === "on" ? "● Listening for “ASTON…”" : voice === "unsupported" ? "Voice not supported here" : voice === "denied" ? "Mic blocked — tap to retry" : voice === "needs-tap" ? "Tap to enable voice" : "Voice off"}
+        <div className="tpg-body">
+          {/* ------------------------------------------------ status column */}
+          <aside className="tpg-status">
+            <div className="tpg-orb"><AstonOrb state={speaking ? "speaking" : mode === "scroll" ? "processing" : "idle"} size={150} paused={hidden || !speaking} /></div>
+            <div className={`tpg-state tpg-state-${status.toLowerCase()}`}>
+              <span className={`tpg-eq ${speaking ? "tpg-eq-on" : ""}`} aria-hidden><i /><i /><i /><i /></span>
+              {status}
+            </div>
+            <p className="tpg-voice-name">{ttsOk ? voiceLabel(ttsVoice) : "Read-aloud unavailable"}</p>
+            <p className="tpg-voice-style">{ttsOk ? "Professional • Calm" : "The teleprompter works without it"}</p>
+            {phase === "ready" && ttsOk && (
+              <button className={`tpg-pill ${speaking || mode === "speak" ? "tpg-on" : ""}`} onClick={() => (mode === "speak" ? pause() : play("speak"))}>
+                {mode === "speak" ? "Stop reading" : "Read aloud"}
               </button>
-            </div>
-            <div className="tp-bar">
-              <button className="tp-ctl" onClick={() => act("restart")} aria-label="Restart">⟲</button>
-              <button className="tp-ctl" onClick={() => act("repeat")} aria-label="Previous section">⏮</button>
-              <button className="tp-play" onClick={() => act(playing ? "pause" : "start")} aria-label={playing ? "Pause" : "Play"}>{playing ? "❚❚" : "▶"}</button>
-              <button className="tp-ctl" onClick={() => act("next")} aria-label="Next section">⏭</button>
-              <button className={`tp-ctl ${more ? "tp-ctl-on" : ""}`} onClick={() => setMore((m) => !m)} aria-label="More options" aria-expanded={more}>⋯</button>
-            </div>
-            <div className="tp-bar tp-bar-2">
-              <div className="tp-grp" role="group" aria-label="Scroll speed">
-                <button className="tp-ctl" onClick={() => act("slower")} aria-label="Slower">−</button>
-                <span className="tp-val" aria-label="Speed">{prefs.speed}<small>speed</small></span>
-                <button className="tp-ctl" onClick={() => act("faster")} aria-label="Faster">+</button>
-              </div>
-              <div className="tp-grp" role="group" aria-label="Text size">
-                <button className="tp-ctl" onClick={() => act("smaller")} aria-label="Smaller text">A−</button>
-                <span className="tp-val" aria-label="Text size">{prefs.font}<small>size</small></span>
-                <button className="tp-ctl" onClick={() => act("bigger")} aria-label="Bigger text">A+</button>
-              </div>
-            </div>
-            {more && (
-              <div className="tp-more">
-                <div className="tp-row">
-                  <span className="tp-label">Align</span>
-                  <button className={`tp-chip ${prefs.align === "left" ? "tp-chip-on" : ""}`} onClick={() => setPref("align", "left")}>Left</button>
-                  <button className={`tp-chip ${prefs.align === "center" ? "tp-chip-on" : ""}`} onClick={() => setPref("align", "center")}>Centre</button>
-                  <span className="tp-label">Spacing</span>
-                  <input type="range" min={1.2} max={2.2} step={0.1} value={prefs.spacing} onChange={(e) => setPref("spacing", Number(e.target.value))} aria-label="Line spacing" />
+            )}
+            {phase === "ready" && (
+              <button className={`tpg-mic tpg-mic-${voice}`} onClick={() => (voice === "on" ? setVoiceOn(false) : (setVoiceOn(true), retryVoice()))} title="Voice commands">
+                {voice === "on" ? "● Voice commands on" : voice === "unsupported" ? "Voice commands unavailable" : voice === "denied" ? "Mic blocked — tap to retry" : voice === "needs-tap" ? "Tap to enable voice" : "Voice commands off"}
+              </button>
+            )}
+          </aside>
+
+          {/* ------------------------------------------------ main area */}
+          <section className="tpg-main">
+            {phase === "ready" && script && (
+              <div className="tpg-readerbox">
+                <div className="tpg-progress">
+                  <div className="tpg-bar" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><span style={{ transform: `scaleX(${progress})` }} /></div>
+                  <span className="tpg-count">{secCount ? `${section + 1} / ${secCount}` : ""}</span>
+                  <span className="tpg-pct">{Math.round(progress * 100)}%</span>
                 </div>
-                <div className="tp-row">
-                  <button className="tp-btn" onClick={() => act("stop")}>Stop</button>
-                  <button className="tp-btn" onClick={toggleFocus}>{focus ? "Exit full screen" : "Full screen"}</button>
-                  <button className="tp-btn" onClick={() => act("edit")}>Edit</button>
-                  <button className="tp-btn" onClick={() => { setPlaying(false); setPhase("customize"); }}>Customise</button>
-                  <button className="tp-btn" onClick={regenerate}>Regenerate</button>
-                  <button className="tp-btn" onClick={rename}>Rename</button>
+                <div className="tpg-readwrap">
+                <div
+                  ref={reader}
+                  className={`tpg-reader ${playing ? "tpg-playing" : ""}`}
+                  style={{ fontSize: prefs.font, lineHeight: prefs.spacing, textAlign: prefs.align }}
+                  onScroll={() => { if (modeRef.current === "idle" && target.current === null) { pos.current = reader.current?.scrollTop ?? 0; sync(); } userScrolling(); }}
+                  onPointerDown={userTouch} onWheel={userTouch} onTouchStart={userTouch}
+                  tabIndex={0} aria-label={`Script: ${script.title}`}
+                >
+                  <div style={{ height: `${GUIDE * 100}%` }} aria-hidden />
+                  {flat.map((s) => (
+                    <section key={s.si} className="tp-sec">
+                      <h3 className="tpg-h" data-sechead={s.si}><span>{s.si + 1}.</span> {s.heading || "Section"}</h3>
+                      {s.lines.map((l) => <Line key={l.i} i={l.i} sec={s.si} who={l.who} text={l.text} />)}
+                    </section>
+                  ))}
+                  <p className="tp-end">— End of script · {words} words —</p>
+                  <div style={{ height: "62%" }} aria-hidden />
+                </div>
+                <div className="tpg-fade-top" aria-hidden />
+                <div className="tpg-fade-bottom" aria-hidden />
+                {(heard || toast) && <div className="tpg-toast" role="status">{heard ? `“${heard}”` : toast}</div>}
                 </div>
               </div>
             )}
-          </footer>
-        </>
-      )}
 
-      {phase === "edit" && script && (
-        <Editor script={script} busy={busy} onCancel={() => setPhase("ready")} onSave={async (sections) => { const s = await patch({ sections }, "Edits saved"); if (s) setPhase("ready"); }} />
-      )}
-
-      {phase === "customize" && script && (
-        <Customize script={script} onCancel={() => setPhase("ready")} onGenerate={(kind, details) => generate(script.request, { id: script.id, kind, details })} />
-      )}
-
-      {phase === "library" && (
-        <Library onOpen={open} onClose={() => (script ? setPhase("ready") : close())} onNew={(req) => { lastRequest.current = req; generate(req); }} />
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ editor */
-
-function Editor({ script, busy, onCancel, onSave }: { script: Script; busy: boolean; onCancel: () => void; onSave: (s: ScriptSection[]) => void }) {
-  const [text, setText] = useState(() => toEditText(script.sections));
-  const parsed = useMemo(() => fromEditText(text), [text]);
-  return (
-    <div className="tp-panel">
-      <p className="tp-hint">“## Heading” starts a section · “&gt; Client: …” is the client · a line in [brackets] is a direction (not read aloud).</p>
-      <textarea className="tp-editor" value={text} onChange={(e) => setText(e.target.value)} spellCheck aria-label="Script text" />
-      <div className="tp-row tp-row-end">
-        <span className="tp-label">{parsed.length} sections</span>
-        <button className="tp-btn" onClick={onCancel}>Cancel</button>
-        <button className="tp-btn tp-btn-primary" disabled={busy || !parsed.length} onClick={() => onSave(parsed)}>Save edits</button>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ customise before starting */
-
-function Customize({ script, onCancel, onGenerate }: { script: Script; onCancel: () => void; onGenerate: (k: ScriptKind, d: ScriptDetails) => void }) {
-  const [kind, setKind] = useState<ScriptKind>(script.kind);
-  const [d, setD] = useState<ScriptDetails>(script.details ?? {});
-  const field = (k: keyof ScriptDetails, label: string, ph: string) => (
-    <label className="tp-field"><span>{label}</span><input value={d[k] ?? ""} placeholder={ph} maxLength={k === "notes" ? 600 : 160} onChange={(e) => setD({ ...d, [k]: e.target.value })} /></label>
-  );
-  return (
-    <div className="tp-panel">
-      <p className="tp-hint">Change the details and ASTON rewrites the script. Empty fields use your defaults; nothing is invented.</p>
-      <label className="tp-field"><span>Script type</span>
-        <select value={kind} onChange={(e) => setKind(e.target.value as ScriptKind)}>{SCRIPT_KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}</select>
-      </label>
-      <div className="tp-grid">
-        {field("businessName", "Business name", "e.g. Brew Lab")}
-        {field("industry", "Industry", "e.g. Café")}
-        {field("service", "Service", "e.g. Website development")}
-        {field("price", "Price", "e.g. ₹4,999")}
-        {field("offer", "Offer", "Only a real offer — or leave empty")}
-        {field("notes", "Notes", "Anything ASTON should know")}
-      </div>
-      <div className="tp-row tp-row-end">
-        <button className="tp-btn" onClick={onCancel}>Cancel</button>
-        <button className="tp-btn tp-btn-primary" onClick={() => onGenerate(kind, d)}>Regenerate script</button>
-      </div>
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ library */
-
-function Library({ onOpen, onClose, onNew }: { onOpen: (id: string) => void; onClose: () => void; onNew: (req: string) => void }) {
-  const [scope, setScope] = useState<"saved" | "recent">("saved");
-  const [q, setQ] = useState("");
-  const [kind, setKind] = useState("");
-  const [type, setType] = useState("");
-  const [rows, setRows] = useState<ListRow[] | null>(null);
-  const [types, setTypes] = useState<string[]>([]);
-  const [err, setErr] = useState<string | null>(null);
-  const [ask, setAsk] = useState("");
-
-  const load = useCallback(async () => {
-    try {
-      const p = new URLSearchParams({ scope, ...(q ? { q } : {}), ...(kind ? { kind } : {}), ...(type ? { type } : {}) });
-      const r = await api<{ scripts: ListRow[]; businessTypes: string[] }>(`/api/aston/scripts?${p}`);
-      setRows(r.scripts); setTypes(r.businessTypes); setErr(null);
-    } catch (e: any) { setErr(e?.message ?? "Couldn't load your scripts."); setRows([]); }
-  }, [scope, q, kind, type]);
-  useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
-
-  const rename = async (r: ListRow) => { const t = window.prompt("Script name", r.title); if (t?.trim()) { await api(`/api/aston/scripts/${r.id}`, { method: "PATCH", body: JSON.stringify({ title: t.trim() }) }).catch((e) => setErr(e.message)); load(); } };
-  const dup = async (r: ListRow) => { await api(`/api/aston/scripts/${r.id}/duplicate`, { method: "POST" }).catch((e) => setErr(e.message)); setScope("saved"); load(); };
-  const del = async (r: ListRow) => { if (window.confirm(`Delete “${r.title}”? This can't be undone.`)) { await api(`/api/aston/scripts/${r.id}`, { method: "DELETE" }).catch((e) => setErr(e.message)); load(); } };
-  const keep = async (r: ListRow) => { await api(`/api/aston/scripts/${r.id}`, { method: "PATCH", body: JSON.stringify({ saved: true }) }).catch((e) => setErr(e.message)); load(); };
-
-  return (
-    <div className="tp-panel tp-library">
-      <form className="tp-new" onSubmit={(e) => { e.preventDefault(); if (ask.trim().length >= 3) onNew(ask.trim()); }}>
-        <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="New script — e.g. “cold call for a gym that needs a website”" maxLength={1500} />
-        <button className="tp-btn tp-btn-primary" type="submit">Write</button>
-      </form>
-      <div className="tp-row">
-        <button className={`tp-chip ${scope === "saved" ? "tp-chip-on" : ""}`} onClick={() => setScope("saved")}>Saved</button>
-        <button className={`tp-chip ${scope === "recent" ? "tp-chip-on" : ""}`} onClick={() => setScope("recent")}>Recent</button>
-        <input className="tp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search…" aria-label="Search scripts" />
-      </div>
-      <div className="tp-row tp-wrap">
-        <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Pitching method">
-          <option value="">All methods</option>{SCRIPT_KINDS.map((k) => <option key={k} value={k}>{KIND_LABEL[k]}</option>)}
-        </select>
-        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="Business type">
-          <option value="">All businesses</option>{types.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <button className="tp-btn" onClick={onClose}>Close</button>
-      </div>
-      {err && <p className="tp-err">{err}</p>}
-      {!rows ? <p className="tp-sub">Loading…</p> : !rows.length ? (
-        <p className="tp-sub">{scope === "saved" ? "No saved scripts yet. Write one above, then press Save." : "Nothing yet."}</p>
-      ) : (
-        <ul className="tp-list">
-          {rows.map((r) => (
-            <li key={r.id}>
-              <button className="tp-open" onClick={() => onOpen(r.id)}>
-                <strong>{r.title}</strong>
-                <span>{r.kindLabel}{r.businessType ? ` · ${r.businessType}` : ""} · {new Date(r.updatedAt).toLocaleDateString()}{r.saved ? "" : " · draft"}</span>
-              </button>
-              <div className="tp-row-actions">
-                {!r.saved && <button onClick={() => keep(r)}>Save</button>}
-                <button onClick={() => rename(r)}>Rename</button>
-                <button onClick={() => dup(r)}>Duplicate</button>
-                <button onClick={() => del(r)} className="tp-danger">Delete</button>
+            {phase === "generating" && (
+              <div className="tpg-center">
+                <div className="tp-pulse" aria-hidden />
+                <p className="tp-big">Writing your {KIND_LABEL[detectKind(lastRequest.current || script?.request || "")].toLowerCase()} script…</p>
+                <p className="tp-sub">“{(lastRequest.current || script?.request || "").slice(0, 140)}”</p>
               </div>
-            </li>
-          ))}
-        </ul>
-      )}
+            )}
+
+            {phase === "error" && (
+              <div className="tpg-center">
+                <p className="tp-big">That didn&apos;t work.</p>
+                <p className="tp-sub">{error}</p>
+                <div className="tp-row">
+                  {(lastRequest.current || script) && <button className="tp-btn tp-btn-primary" onClick={() => (script ? generate(script.request, { id: script.id, kind: script.kind, details: script.details }) : generate(lastRequest.current))}>Try again</button>}
+                  {script && <button className="tp-btn" onClick={() => setPhase("ready")}>Back to the script</button>}
+                  <button className="tp-btn" onClick={() => setPhase("library")}>Open library</button>
+                </div>
+              </div>
+            )}
+
+            {phase === "edit" && script && (
+              <Editor script={script} busy={busy} onCancel={() => setPhase("ready")} onSave={async (sections) => {
+                const keep = progress;
+                const s = await patch({ sections }, "Edits saved");
+                if (s) { restoreRatio.current = keep; setPhase("ready"); }
+              }} />
+            )}
+            {phase === "customize" && script && (
+              <Customize script={script} onCancel={() => setPhase("ready")} onGenerate={(kind, details) => generate(script.request, { id: script.id, kind, details })} />
+            )}
+            {phase === "library" && (
+              <Library onOpen={(id) => open(id)} onClose={() => (script ? setPhase("ready") : close())} onNew={(req) => { lastRequest.current = req; generate(req); }} />
+            )}
+          </section>
+        </div>
+
+        {/* ------------------------------------------------ controls */}
+        {phase === "ready" && script && (
+          <footer className="tpg-controls">
+            <div className={`tpg-cards ${showCards ? "tpg-cards-open" : ""}`}>
+              <label className="tpg-card">
+                <span className="tpg-card-head"><span>Speed</span><em>{SPEED_LABEL(prefs.speed)}</em></span>
+                <input type="range" min={1} max={10} step={1} value={prefs.speed} onChange={(e) => setPrefs({ ...prefs, speed: Number(e.target.value) })} aria-label="Scroll speed" />
+              </label>
+              <label className="tpg-card">
+                <span className="tpg-card-head"><span>Text size</span><em>{SIZE_LABEL(prefs.font)}</em></span>
+                <input type="range" min={20} max={72} step={2} value={prefs.font} onChange={(e) => setPrefs({ ...prefs, font: Number(e.target.value) })} aria-label="Text size" />
+              </label>
+              <label className="tpg-card">
+                <span className="tpg-card-head"><span>Alignment</span></span>
+                <select value={prefs.align} onChange={(e) => setPrefs({ ...prefs, align: e.target.value as Align })} aria-label="Text alignment">
+                  <option value="left">Left</option><option value="center">Center</option><option value="justify">Justified</option>
+                </select>
+              </label>
+              <label className="tpg-card">
+                <span className="tpg-card-head"><span>Line spacing</span></span>
+                <select value={prefs.spacing} onChange={(e) => setPrefs({ ...prefs, spacing: Number(e.target.value) })} aria-label="Line spacing">
+                  {SPACINGS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="tpg-transport">
+              <button className={`tpg-btn ${manual ? "tpg-on" : ""}`} aria-pressed={manual} onClick={() => { if (manual) setManual(false); else { pause(); setManual(true); flash("Manual scroll — drag the script"); } }}>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12m0-1V4.5a1.5 1.5 0 0 1 3 0V12m0-1V6.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a6 6 0 0 1-5-2.7L3.5 15a1.6 1.6 0 0 1 2.6-1.8L8 15" /></svg>
+                <span className="tpg-label">Manual scroll</span>
+              </button>
+              <div className="tpg-play-group">
+                <button className="tpg-skip" onClick={() => act("repeat")} aria-label="Previous section">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden><path d="M6 5h2v14H6zM20 5v14L9 12z" /></svg>
+                </button>
+                <button className="tpg-play" onClick={() => (playing ? pause() : play(lastPlay.current === "speak" && ttsOk ? "speak" : "scroll"))} aria-label={playing ? "Pause" : "Play"}>
+                  {playing
+                    ? <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" /></svg>
+                    : <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden><path d="M8 5v14l11-7z" /></svg>}
+                </button>
+                <button className="tpg-skip" onClick={() => act("next")} aria-label="Next section">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden><path d="M16 5h2v14h-2zM4 5v14l11-7z" /></svg>
+                </button>
+              </div>
+              <button className={`tpg-btn tpg-only-sm ${showCards ? "tpg-on" : ""}`} aria-expanded={showCards} onClick={() => setShowCards((v) => !v)} aria-label="Display settings">Aa</button>
+              <button className="tpg-btn" onClick={() => act("restart")}>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5" /></svg>
+                <span className="tpg-label">Restart</span>
+              </button>
+              <button className="tpg-btn tpg-close" onClick={close}>
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden><rect x="5" y="5" width="14" height="14" rx="2" /></svg>
+                Close
+              </button>
+            </div>
+          </footer>
+        )}
+      </div>
     </div>
   );
 }

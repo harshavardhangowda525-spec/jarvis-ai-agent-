@@ -190,63 +190,98 @@ preview beside it.
 
 ## Teleprompter (sales scripts)
 
-Say or type **"ASTON, create a cold-calling sales script for a café that needs a
-website"**. Other examples: *a WhatsApp pitching script*, *a script for my website
-demo*, *a follow-up script*, *handling objections*, *closing the sale*, or just
-*open teleprompter*. ASTON writes the script with Groq and opens the
-teleprompter straight away, paused, so you can glance through it first.
+Say or type **"ASTON, create a sales script for a restaurant"**. Other examples:
+*a cold-calling script*, *a pitch for this business*, *my Zoom demo script*, *a
+WhatsApp pitching script*, or just *open the teleprompter*. ASTON writes the
+script with Groq and opens a floating **liquid-glass teleprompter** over the
+orb, with ASTON blurred and dimmed behind it. The script opens paused, so you
+can glance through it first.
 
-- **Script types:** cold call, Instagram DM, WhatsApp pitch, Zoom demo,
-  follow-up, objection handling, explaining website and app benefits, and
-  closing. Conversation scripts follow Opening → Understanding their needs →
-  Presenting the service → Handling objections → Next step.
-- **Defaults:** Infinity Web & Apps; website around ₹4,999, app around ₹55,000,
-  a demo or consultation on request, and the goal of booking a demo or meeting.
-  You can override these with `ASTON_COMPANY_NAME`, `ASTON_WEBSITE_PRICE` and
-  `ASTON_APP_PRICE`. **Customise** changes the business name, industry,
-  service, price and offer per script. ASTON never invents discounts,
-  guarantees or client details; unknowns appear as `[Owner's name]`-style
-  fill-ins.
-- **Reading:** large high-contrast text with a reading line. Your lines are
-  white, `[fill-ins]` are highlighted in cyan (you say these), `[Pause]`-style
-  directions are amber (not read aloud), and the client's likely replies are
-  smaller violet text marked "Client".
-- **Controls (touch and keyboard):**
-  - play/pause, stop, restart
-  - previous and next section
-  - speed (1–10) and text size
-  - alignment and line spacing
-  - full-screen mode and manual scroll (drag the text)
-  - progress bar, time left and word count
-  - Edit, Customise, Regenerate, Rename and Save
+**Layout**
+- **Header:** title, "Your script, always in focus.", the script chip (type and
+  business), and Edit, Restart, ⋯ (more) and Close buttons.
+- **Status panel:** ASTON's orb; the state (READY, SCROLLING or SPEAKING —
+  SPEAKING only while audio is actually playing); the voice (British English
+  when the device has it) and its style (Professional • Calm); **Read aloud**;
+  and the voice-command status.
+- **Reader:**
+  - large high-contrast text, with the current line highlighted in cyan glass
+  - a progress bar, a section counter (e.g. 3 / 8) and a percentage
+  - smooth continuous scrolling; section jumps glide instead of jumping
+  - `[fill-ins]` are highlighted (you say these), `[directions]` are amber (not
+    read aloud), and the client's likely replies are violet
+- **Controls:**
+  - speed and text-size sliders
+  - alignment (left, centre or justified) and line spacing
+  - Manual scroll; ⏮ ⏯ ⏭; Restart; Close
+  - On phones, the display controls fold behind **Aa**, so the script gets the
+    most room.
+- **⋯ menu:**
+  - Save to library, Script library, Customise & regenerate, Regenerate,
+    Rename, Full screen
+  - **Minimise** (keeps your place behind a small pill)
+  - *Carry on after I scroll*
+  - *Tap outside to close* (off by default)
+  - Glass effect (Auto, Full or Lite)
 
-  Keyboard: Space plays or pauses, ↑/↓ change speed, +/− change text size,
-  ←/→ move between sections, F toggles full screen, Esc closes. While the
-  script is playing, the screen is kept awake on browsers that support it.
-- **Voice:** while the teleprompter is open, only sentences that **start with
-  "ASTON"** are commands:
-  - start, pause, resume, stop
-  - scroll faster or slower
-  - increase or decrease text size
-  - restart the script
-  - go to the next section, repeat the last section
-  - edit the script, full screen, close teleprompter
-
-  Common mis-hearings ("Austin", "Ashton") work too. Everything else you say,
-  including the pitch itself, is ignored, and nothing spoken is ever written
-  into the script. ASTON doesn't read alerts aloud while the teleprompter is
-  open.
-- **Script library** (**Scripts** at the bottom of ASTON): saved and recent
-  scripts. Search them, filter by pitching method or business type, and open,
-  rename, duplicate (to adapt for another business) or delete them. Scripts
-  are stored in the database, so they survive a refresh or a new device.
+**Behaviour**
+- **Touching the script pauses it.** If *Carry on after I scroll* is on, it
+  resumes about 3 seconds after you stop.
+- **Your place is kept:**
+  - edits keep your reading position
+  - minimising keeps everything
+  - closing and saying "open the teleprompter" carries on where you were
+    (within the same browser tab)
+- **While the pop-up is open:**
+  - the page behind it doesn't scroll
+  - keyboard focus stays inside the pop-up and returns to where it was on close
+  - Escape closes it
+  - ASTON stays quiet (no alert speech)
+- **Read aloud:** uses the browser's own speech (free, on-device), with a British
+  English voice when one is installed. The highlight follows the line actually
+  being spoken (**line by line**: browsers don't reliably report word timing,
+  so ASTON doesn't claim word-level sync). Headings, directions and client
+  lines are never spoken. The teleprompter works fully without it.
+- **Voice commands:**
+  - Sentences starting with **"ASTON"** work flexibly ("ASTON, faster",
+    "ASTON, next section", …). "Austin" and "Ashton" are understood too.
+  - Without the name, only these exact whole sentences count: *Start
+    scrolling, Pause, Resume, Scroll faster, Scroll slower, Increase / Decrease
+    text size, Go to the next section, Repeat this section, Restart the script,
+    Close teleprompter*.
+  - A sentence from your pitch ("can I pause you there?") never triggers
+    anything.
+  - While ASTON is speaking (and for a moment after), the microphone ignores
+    what it hears, so ASTON's own voice can't trigger commands.
+- **Glass and smoothness:**
+  - The live blur is full glass by default.
+  - The first time the text moves, ASTON measures the real frame rate. If the
+    device drops frames (under about 33 fps), it switches to **lite glass** for
+    that tab: the same look, without live blur.
+  - It also respects the "reduce transparency" setting.
+  - Browsers without blur support get a solid tinted panel.
+- **Script types:**
+  - cold call, Instagram DM, WhatsApp, Zoom demo, follow-up, objection
+    handling, benefits, closing
+  - Sales scripts follow: Opening → Customer needs → Service introduction →
+    Benefits → Objection handling → Closing and next steps.
+- **Defaults:**
+  - Infinity Web & Apps; website around ₹4,999; app around ₹55,000; a demo or
+    meeting as the goal.
+  - Override them with `ASTON_COMPANY_NAME`, `ASTON_WEBSITE_PRICE` and
+    `ASTON_APP_PRICE`.
+  - **Customise** changes the business, industry, service, price and offer for
+    one script.
+  - ASTON never invents discounts, guarantees or client details.
+- **Script library:** saved and recent scripts. Search them, filter by method
+  or business type, and open, rename, duplicate or delete them. Scripts are
+  stored in the database.
 - **Editing format:** `## Heading` starts a section, `> Client: …` is the
   client, and a line that is only `[a direction]` is a stage direction.
 
 **Phone calls:** Android usually gives the microphone to an ongoing phone call,
-so voice commands may not work on the same phone during a normal call. Touch
-controls always work. Voice works for Zoom or speakerphone, or with ASTON on a
-second device.
+so voice commands (and read-aloud) may not work on the same phone during a
+normal call. Touch controls always work.
 
 ## Limitations
 
