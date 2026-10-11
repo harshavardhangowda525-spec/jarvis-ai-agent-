@@ -58,7 +58,7 @@ function Code({ code, file, live }: { code: string; file: string; live: boolean 
  * system, then each section — with the code streaming into the editor and the
  * page assembling in the preview beside it.
  */
-export function SiteBuilder({ siteId, onClose, onSpeak, onBusy }: { siteId: string; onClose: () => void; onSpeak?: (t: string) => void; onBusy?: (b: boolean) => void }) {
+export function SiteBuilder({ siteId, onClose, onSpeak, onBusy, onProgress }: { siteId: string; onClose: () => void; onSpeak?: (t: string) => void; onBusy?: (b: boolean) => void; onProgress?: (pct: number, done: boolean) => void }) {
   const [site, setSite] = useState<SiteDTO | null>(null);
   const [step, setStep] = useState<StepInfo | null>(null);
   const [stream, setStream] = useState("");
@@ -186,6 +186,7 @@ export function SiteBuilder({ siteId, onClose, onSpeak, onBusy }: { siteId: stri
   const total = step?.total ?? (site?.sections?.length ? site.sections.length + 2 : 9);
   const doneSteps = site ? (site.plan ? 1 : 0) + (site.css ? 1 : 0) + (site.sections ?? []).filter((s) => s.html).length : 0;
   const pct = done ? 100 : Math.min(99, Math.round((doneSteps / total) * 100));
+  useEffect(() => { onProgress?.(pct / 100, done); }, [pct, done, onProgress]);
   const status = done ? (running ? "Updating…" : "Ready") : waitUntil ? `Pausing for Groq's free limit — resuming in ${mmss(waitUntil - now)}` : step?.title ? `${step.title}…` : running ? "Starting…" : error ? "Paused" : "Ready to continue";
 
   return (

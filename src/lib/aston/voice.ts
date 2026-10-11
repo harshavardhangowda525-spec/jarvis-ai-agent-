@@ -4,8 +4,28 @@
  */
 import { isDirection } from "./scripts/format";
 
+const VOICE_KEY = "aston.voice";
+
+/** The voice the owner chose in Voice settings ("" = automatic). Saved in this browser only. */
+export function preferredVoiceName(): string {
+  try { return localStorage.getItem(VOICE_KEY) ?? ""; } catch { return ""; }
+}
+export function setPreferredVoiceName(name: string) {
+  try { if (name) localStorage.setItem(VOICE_KEY, name); else localStorage.removeItem(VOICE_KEY); } catch { /* storage blocked */ }
+}
+
+/** English voices on this device, British first. */
+export function englishVoices(): SpeechSynthesisVoice[] {
+  const v = typeof speechSynthesis !== "undefined" ? speechSynthesis.getVoices() : [];
+  const rank = (x: SpeechSynthesisVoice) => (/en-GB/i.test(x.lang) ? 0 : /en-IN/i.test(x.lang) ? 1 : 2);
+  return v.filter((x) => /^en/i.test(x.lang)).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+}
+
 export function pickVoice(): SpeechSynthesisVoice | null {
   const v = typeof speechSynthesis !== "undefined" ? speechSynthesis.getVoices() : [];
+  const chosen = preferredVoiceName();
+  const own = chosen ? v.find((x) => x.name === chosen) : undefined;
+  if (own) return own;
   return v.find((x) => /en-GB/i.test(x.lang) && /male|daniel|arthur|george/i.test(x.name)) ?? v.find((x) => /en-GB/i.test(x.lang)) ?? v.find((x) => /^en/i.test(x.lang)) ?? null;
 }
 

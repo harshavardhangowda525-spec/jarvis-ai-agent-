@@ -1,10 +1,10 @@
 # ASTON — attention manager
 
 ASTON watches Infinity Web & Apps' real systems and tells you when a person is
-needed. It lives at **`/aston`**: a full-screen holographic orb you can talk to
-(browser speech) or type to. There's no dashboard. When something needs you, the
-orb turns amber/red, says what happened, and offers **Acknowledge / Resolve /
-Approve**.
+needed. It lives at **`/aston`**: a full-screen holographic core (Project AETHER) you
+can talk to (browser speech) or type to. There's no dashboard. When something
+needs you, the core turns amber, says what happened, and offers **Review /
+Acknowledge**; the Alerts window has **Resolve / Approve / Decline**.
 
 ```
 signals ──► incident store (Postgres) ──► verify ──► Groq summary ──► alerts
@@ -13,6 +13,74 @@ signals ──► incident store (Postgres) ──► verify ──► Groq summ
  site probes, DARWIN/EV/RUBIN/JARVIS
  records, gate lockouts                                                  undelivered → shown in ASTON
 ```
+
+## The interface (Project AETHER)
+
+One living core, one status line, one command bar. Nothing else is on screen
+until you ask for it.
+
+- **The core** is plain WebGL, with no extra libraries. It has a liquid-glass
+  shell, a violet inner sphere, an electric energy core, six tilted orbital rings
+  with travelling light trails, and about 2,000 particles over a star field. It
+  draws in three passes per frame: sphere, rings and points.
+- **Speed:** on slow devices it measures the first ~90 frames. If the median
+  frame takes longer than 30 ms, it switches to **lite**: fewer particles, 1×
+  resolution, and no live blur behind the glass controls. Preferences can force
+  Full or Lite.
+- **Pausing:** it stops drawing while a full-screen window covers it, or when the
+  tab is hidden.
+- **States** come from real application state:
+
+  | State | Shown when | What the core does |
+  | --- | --- | --- |
+  | Idle | Nothing is happening | Slow orbits, breathing light |
+  | Listening | The microphone is actually open (tap or wake word) | Cyan waveform rings follow the microphone level |
+  | Analyzing | A command is being processed | Rings speed up, particles converge |
+  | Speaking | The speech engine reports it is speaking | The core pulses on each word |
+  | Executing | A website build or an approved action is running | Progress arcs: real percentage for builds, a sweeping arc when the task can't report one |
+  | Attention | There are open critical or high alerts | Amber; the alert summary sits under the core |
+  | Fault | The server is unreachable, the microphone is blocked, or a command failed | Amber/red, with the reason and a recovery button (Retry now, Type instead, Try again) |
+
+  **Listening level:**
+  - **Desktop:** the real input level, read with a Web Audio analyser.
+  - **Phones:** they can't reliably share the microphone between speech
+    recognition and an analyser, so the level follows the recogniser's own
+    sound and result events.
+
+  **Speaking:** the browser's voice doesn't give access to its sound, so the
+  core pulses on the word-boundary events the voice reports. Voices without
+  word timings get a gentle speaking rhythm between start and end, and
+  Diagnostics says which kind you have.
+- **The radial menu** (✦ next to the command bar) fans out around the core. It
+  opens holographic windows that unfold out of the core:
+  - **Alerts:** every open incident with its details and actions, plus desktop
+    alerts.
+  - **AI status:** Groq status, the daily cap, and a real live check.
+  - **Voice:** a voice picker, a preview, the wake word and microphone status.
+  - **Conversation:** this visit's conversation.
+  - **Activity:** the agent activity feed since yesterday, filterable by agent.
+  - **Diagnostics:** the server, Groq, renderer and frame rate, speech support,
+    microphone, alerts and motion.
+  - **Preferences:** voice, wake word, parallax, visual quality and motion,
+    saved in this browser.
+  - **Websites** and **Scripts:** these open the website builder and the
+    teleprompter library.
+
+  On wide screens the windows sit beside the core. On phones they're a sheet
+  over the lower screen. Close a window with ×, Escape or a tap outside.
+- **Wake word "ASTON":** turn it on with the waveform button in the command bar,
+  or in Voice. Then say "ASTON" and your command, or "ASTON, build a website for
+  a café".
+  - Only phrases starting with "ASTON" are acted on, and ASTON's own voice is
+    ignored.
+  - It runs only while the tab is open and visible. Browsers don't allow
+    background listening.
+  - Chrome sends the audio to its speech service to recognise it.
+  - On Android, Chrome may chime each time listening restarts.
+  - It's off by default.
+- **Motion:** pointer parallax is on by default on desktop. Reduced motion follows the
+  device setting, or can be forced in Preferences, and slows the core and
+  removes UI animation.
 
 ## What ASTON detects (real data only)
 
@@ -160,7 +228,7 @@ Gmail's normal sending limits. In-app display is free.
 ## Website builder
 
 Say or type something like **"build a website for Brew Lab, a specialty café in
-Indiranagar, warm and modern"**. A liquid-glass window opens over the orb. ASTON
+Indiranagar, warm and modern"**. A liquid-glass window opens over the core. ASTON
 writes the site live, and you watch the code stream into the editor (plan.json →
 styles.css → index.html, one section at a time) while the page assembles in the
 preview beside it.

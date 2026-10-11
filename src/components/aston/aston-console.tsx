@@ -1,22 +1,30 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AstonOrb, type AstonState } from "./aston-orb";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AudioLines, Mic, Send, Sparkles, Square } from "lucide-react";
+import { AstonCore, type RenderInfo } from "./core/aston-core";
+import { coreGeometry, newSignal, type CoreGeometry } from "./core/geometry";
+import { HoloWindow, RadialMenu, type MenuId, type WindowId } from "./core/holo";
+import { useMicLevel, useWakeWord } from "./core/voice-hooks";
+import {
+  ActivityBody, AiBody, AlertsBody, ConversationBody, DEFAULT_PREFS, DiagnosticsBody, loadPrefs, PrefsBody, savePrefs, VoiceBody,
+  type AiStatus, type Diag, type Prefs, type Turn,
+} from "./core/windows";
 import { SiteBuilder, SiteList } from "./site-builder";
-import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
-import { markSelfSpeech, pickVoice } from "@/lib/aston/voice";
 import { Teleprompter } from "./teleprompter";
+import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
+import { coreState, defaultLine, STATE_WORD } from "@/lib/aston/core-state";
+import { markSelfSpeech, pickVoice } from "@/lib/aston/voice";
 import { isOpenOnly, SCRIPT_INTENT, stripWake } from "@/lib/aston/scripts/format";
 import type { IncidentDTO } from "@/lib/aston/types";
 
-interface AiStatus { configured: boolean; model: string; status: string; blockedUntil: string | null; requestsToday: number; dailyCap: number; lastError: string | null }
 interface BrowserAlert { id: string; incidentId: string; priority: string; title: string; summary: string; project: string | null }
 interface StateData { incidents: IncidentDTO[]; browserAlerts: BrowserAlert[]; ai: AiStatus }
-interface Turn { role: "user" | "assistant"; content: string }
+interface Fault { kind: "server" | "mic" | "chat" | "action"; msg: string; action?: { label: string; run: () => void } }
 
 const POLL_MS = 15_000;
-
 const TICK_MS = 2 * 60_000;
+const REPLY_MS = 25_000;
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, { ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) }, cache: "no-store" });
@@ -25,58 +33,126 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return j.data as T;
 }
 
-const STATUS_WORD: Record<AstonState, string> = { idle: "IDLE", listening: "LISTENING", processing: "PROCESSING", speaking: "SPEAKING", attention: "ATTENTION REQUIRED" };
-
-const aiLine = (ai: AiStatus | null) => {
-  if (!ai) return "";
-  if (!ai.configured) return "AI offline — GROQ_API_KEY not set";
-  const until = ai.blockedUntil ? ` until ${new Date(ai.blockedUntil).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}` : "";
-  const label: Record<string, string> = { ok: "Groq online", rate_limited: "Groq rate-limited", quota_exhausted: "Groq free quota used up", outage: "Groq unreachable", auth_error: "Groq key rejected" };
-  return `${label[ai.status] ?? ai.status}${until} · ${ai.requestsToday}/${ai.dailyCap} today`;
+const TITLES: Record<WindowId, [string, string]> = {
+  alerts: ["Alerts", "Builds, deploys, sites and agents"],
+  ai: ["AI provider", "Groq — the only AI ASTON uses"],
+  voice: ["Voice", "How ASTON speaks and listens"],
+  conversation: ["Conversation", "This visit"],
+  activity: ["Agent activity", "JARVIS, ULTRON, DARWIN, ROBIN and ASTON — since yesterday"],
+  diagnostics: ["Diagnostics", "Live system check"],
+  preferences: ["Preferences", "Saved in this browser"],
 };
 
-
-
+/**
+ * ASTON — Project AETHER. One living holographic core, one line of status and
+ * one command bar. Everything else (alerts, AI status, voice, conversation,
+ * activity, diagnostics, preferences, websites, scripts) unfolds out of the
+ * core from the radial menu, only when asked for.
+ */
 export function AstonConsole() {
   const [data, setData] = useState<StateData | null>(null);
+  const [serverOk, setServerOk] = useState<boolean | null>(null);
+  const [lastSync, setLastSync] = useState<number | null>(null);
   const [mode, setMode] = useState<"idle" | "listening" | "processing" | "speaking">("idle");
-  const [caption, setCaption] = useState("Standing by.");
+  const [caption, setCaption] = useState<string | null>(null);
   const [sub, setSub] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [focus, setFocus] = useState(0);
-  const [details, setDetails] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [approving, setApproving] = useState(false);
   const [perm, setPerm] = useState<NotificationPermission | "unsupported">("default");
   const [speechOk, setSpeechOk] = useState(false);
-  const [voiceOn, setVoiceOn] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [prefs, setPrefsState] = useState<Prefs>(DEFAULT_PREFS);
+  const [fault, setFault] = useState<Fault | null>(null);
   const [builder, setBuilder] = useState<string | null>(null);
   const [building, setBuilding] = useState(false);
   const [showSites, setShowSites] = useState(false);
   const [tele, setTele] = useState<{ key: number; request?: string; library?: boolean; min?: boolean } | null>(null);
+  const [menu, setMenu] = useState(false);
+  const [win, setWin] = useState<WindowId | null>(null);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [render, setRender] = useState<RenderInfo | null>(null);
+  const [micPerm, setMicPerm] = useState("Not asked yet");
+  const [wordSync, setWordSync] = useState<boolean | null>(null);
+  const [visible, setVisible] = useState(true);
+  const [geo, setGeo] = useState<CoreGeometry>({ cx: 0, cy: 0, u: 0 });
+  const [hour, setHour] = useState(12);
+  const [reduced, setReduced] = useState(false);
+  const [voices, setVoices] = useState(0);
+  const [oneShot, setOneShot] = useState(false);
+
+  const signal = useRef(newSignal());
+  const history = useRef<Turn[]>([]);
+  const recog = useRef<any>(null);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
   // While the teleprompter is open you're talking to a client: ASTON stays quiet
   const teleRef = useRef(false);
   teleRef.current = !!tele && !tele.min;
-  const history = useRef<Turn[]>([]);
-  const recog = useRef<any>(null);
-  const voiceOnRef = useRef(voiceOn);
-  voiceOnRef.current = voiceOn;
+  const captionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMsg = useRef("");
+  const wasBuilding = useRef(false);
 
   const open = (data?.incidents ?? []).filter((i) => i.status === "open" && (i.priority === "critical" || i.priority === "high"));
   const current = open[focus % Math.max(1, open.length)] ?? null;
-  const state: AstonState = mode !== "idle" ? mode : building ? "processing" : open.length ? "attention" : "idle";
+  const alertCount = (data?.incidents ?? []).filter((i) => i.status === "open" || i.status === "acknowledged").length;
+  const state = coreState({ mode, executing: building || approving, fault: !!fault, attention: open.length > 0 });
+
+  // ------------------------------------------------------------ layout + preferences
+  useEffect(() => {
+    const p = loadPrefs();
+    setPrefsState(p);
+    setHour(new Date().getHours());
+    const fit = () => setGeo(coreGeometry(window.innerWidth, window.innerHeight));
+    fit();
+    window.addEventListener("resize", fit);
+    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    setReduced(!!mq?.matches);
+    const onMq = () => setReduced(!!mq?.matches);
+    mq?.addEventListener?.("change", onMq);
+    const onVis = () => setVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", onVis);
+    const clock = setInterval(() => setHour(new Date().getHours()), 60_000);
+    return () => { window.removeEventListener("resize", fit); mq?.removeEventListener?.("change", onMq); document.removeEventListener("visibilitychange", onVis); clearInterval(clock); };
+  }, []);
+
+  const setPrefs = useCallback((p: Partial<Prefs>) => {
+    setPrefsState((cur) => { const next = { ...cur, ...p }; savePrefs(next); return next; });
+    if (p.voice === false && typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+  }, []);
+
+  /** The line under the core. Replies stay for a while, then the greeting returns. */
+  const say = useCallback((line: string | null, ms = REPLY_MS) => {
+    setCaption(line);
+    if (captionTimer.current) clearTimeout(captionTimer.current);
+    captionTimer.current = line ? setTimeout(() => { setCaption(null); setSub(null); }, ms) : null;
+  }, []);
+
+  const remember = useCallback((role: Turn["role"], content: string) => {
+    history.current = [...history.current, { role, content }].slice(-20);
+    setTurns((t) => [...t, { role, content, at: Date.now() }].slice(-60));
+  }, []);
 
   // ------------------------------------------------------------ speech out
-  const speak = useCallback((line: string) => {
-    if (!voiceOnRef.current || typeof speechSynthesis === "undefined") return;
+  const speak = useCallback((line: string, force = false) => {
+    if ((!prefsRef.current.voice && !force) || typeof speechSynthesis === "undefined") return;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(line);
     const v = pickVoice();
     if (v) u.voice = v;
     u.rate = 1.02;
     u.pitch = 0.95;
+    let words = false;
+    signal.current.wordSync = false;
     u.onstart = () => { markSelfSpeech(true); setMode("speaking"); };
-    u.onend = u.onerror = () => { markSelfSpeech(false); setMode((m) => (m === "speaking" ? "idle" : m)); };
+    // each spoken word pulses the core (when the voice reports word timings)
+    u.onboundary = (e: SpeechSynthesisEvent) => { if (e.name && e.name !== "word") return; words = true; signal.current.wordSync = true; signal.current.pulse = 1; };
+    u.onend = u.onerror = () => {
+      markSelfSpeech(false);
+      signal.current.wordSync = false;
+      setWordSync(words);
+      setMode((m) => (m === "speaking" ? "idle" : m));
+    };
     speechSynthesis.speak(u);
   }, []);
 
@@ -85,7 +161,9 @@ export function AstonConsole() {
     try {
       const d = await api<StateData>("/api/aston/state");
       setData(d);
-      setError(null);
+      setServerOk(true);
+      setLastSync(Date.now());
+      setFault((f) => (f?.kind === "server" ? null : f));
       for (const a of d.browserAlerts) {
         // Claim the alert first, so two open tabs never both announce it.
         const ok = await api<{ delivered: boolean }>(`/api/aston/alerts/${a.id}`, { method: "POST" }).then(() => true, () => false);
@@ -96,7 +174,9 @@ export function AstonConsole() {
         if (!teleRef.current) speak(a.summary);
       }
     } catch (e: any) {
-      setError(e?.status === 403 ? "This account is not the ASTON owner." : e?.status === 401 ? "Signed out." : "Can't reach ASTON's server — retrying.");
+      setServerOk(false);
+      const msg = e?.status === 403 ? "This account is not the ASTON owner." : e?.status === 401 ? "You've been signed out — sign in again to reach ASTON." : "Can't reach ASTON's server. Retrying every 15 seconds.";
+      setFault({ kind: "server", msg, action: e?.status === 401 ? { label: "Sign in", run: () => { location.href = "/login?next=/aston"; } } : { label: "Retry now", run: () => { load(); } } });
     }
   }, [speak]);
 
@@ -109,24 +189,63 @@ export function AstonConsole() {
     setPerm(typeof Notification === "undefined" ? "unsupported" : Notification.permission);
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     setSpeechOk(!!SR);
-    if (typeof speechSynthesis !== "undefined") speechSynthesis.getVoices();
-    return () => { clearInterval(a); clearInterval(b); recog.current?.abort?.(); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); };
+    let onVoices: (() => void) | null = null;
+    if (typeof speechSynthesis !== "undefined") {
+      onVoices = () => setVoices(speechSynthesis.getVoices().length);
+      onVoices();
+      speechSynthesis.addEventListener?.("voiceschanged", onVoices);
+    }
+    // microphone permission, where the browser can report it
+    let status: PermissionStatus | null = null;
+    const label = (s: string) => (s === "granted" ? "Allowed" : s === "denied" ? "Blocked" : "Not asked yet");
+    navigator.permissions?.query({ name: "microphone" as PermissionName }).then((s) => { status = s; setMicPerm(label(s.state)); s.onchange = () => setMicPerm(label(s.state)); }).catch(() => setMicPerm("Unknown (browser doesn't say)"));
+    return () => {
+      clearInterval(a); clearInterval(b);
+      recog.current?.abort?.();
+      if (status) status.onchange = null;
+      if (typeof speechSynthesis !== "undefined") { speechSynthesis.cancel(); if (onVoices) speechSynthesis.removeEventListener?.("voiceschanged", onVoices); }
+    };
   }, [load]);
+
+  // A new alert takes over the line under the core (an old reply shouldn't hide it)
+  const seen = useRef<Set<string> | null>(null);
+  const openIds = open.map((i) => i.id).join(",");
+  useEffect(() => {
+    if (!data) return;
+    const ids = openIds ? openIds.split(",") : [];
+    const fresh = seen.current ? ids.filter((id) => !seen.current!.has(id)) : [];
+    seen.current = new Set(ids);
+    if (fresh.length && mode === "idle") { say(null); setSub(null); setFocus(Math.max(0, ids.indexOf(fresh[0]))); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openIds, data]);
+
+  // ------------------------------------------------------------ tasks
+  const onBuildProgress = useCallback((pct: number, done: boolean) => { signal.current.progress = done ? 1 : pct; }, []);
+  useEffect(() => {
+    if (building) { wasBuilding.current = true; if (signal.current.progress == null) signal.current.progress = 0; return; }
+    if (wasBuilding.current) {
+      wasBuilding.current = false;
+      if ((signal.current.progress ?? 0) >= 1) { signal.current.flash = 1; say("Task completed successfully.", 6000); }
+      signal.current.progress = null;
+    }
+  }, [building, say]);
 
   // ------------------------------------------------------------ talking
   const send = useCallback(async (content: string) => {
     const msg = content.trim();
     if (!msg) return;
-    history.current = [...history.current, { role: "user" as const, content: msg }].slice(-20);
+    lastMsg.current = msg;
+    setFault((f) => (f?.kind === "chat" || f?.kind === "mic" ? null : f));
+    remember("user", msg);
     setSub(`“${msg}”`);
-    setCaption("Processing request… connected to context…");
+    say("Analyzing your request…");
     setMode("processing");
     // Scripts / pitches → the teleprompter (checked before websites: "a script for a café that needs a website")
     const bare = stripWake(msg).text;
     if (SCRIPT_INTENT.test(bare)) {
       const line = isOpenOnly(msg) ? "Opening the teleprompter." : "Writing your script now — the teleprompter will open with it.";
-      history.current = [...history.current, { role: "assistant" as const, content: line }].slice(-20);
-      setCaption(line);
+      remember("assistant", line);
+      say(line);
       setSub(null);
       setMode("idle");
       // "open teleprompter" brings back a minimised one exactly where you left it
@@ -139,155 +258,245 @@ export function AstonConsole() {
       try {
         const site = await api<{ id: string }>("/api/aston/sites", { method: "POST", body: JSON.stringify({ brief: msg }) });
         const line = "On it. I'm building the website now — watch the code as I write it.";
-        history.current = [...history.current, { role: "assistant" as const, content: line }].slice(-20);
-        setCaption(line);
+        remember("assistant", line);
+        say(line);
         setSub(null);
         setMode("idle");
+        signal.current.progress = 0;
         setBuilder(site.id);
         speak(line);
       } catch (e: any) {
-        setCaption(e?.message ?? "I couldn't start the website.");
         setMode("idle");
+        say(null);
+        setFault({ kind: "chat", msg: e?.message ?? "I couldn't start the website.", action: { label: "Try again", run: () => send(msg) } });
       }
       return;
     }
     try {
-      const r = await api<{ reply: string; ai: boolean; aiNote: string | null; changed: boolean; site?: string | null }>("/api/aston/chat", { method: "POST", body: JSON.stringify({ messages: history.current }) });
-      if (r.site) setBuilder(r.site);
-      history.current = [...history.current, { role: "assistant" as const, content: r.reply }].slice(-20);
-      setCaption(r.reply);
+      const r = await api<{ reply: string; ai: boolean; aiNote: string | null; changed: boolean; site?: string | null }>("/api/aston/chat", { method: "POST", body: JSON.stringify({ messages: history.current.map(({ role, content }) => ({ role, content })) }) });
+      if (r.site) { signal.current.progress = 0; setBuilder(r.site); }
+      remember("assistant", r.reply);
+      say(r.reply);
       setSub(r.ai ? null : "AI unavailable — answered from stored incidents");
       setMode("idle");
       speak(r.reply);
       if (r.changed) load();
     } catch (e: any) {
-      setCaption(e?.message ?? "Something went wrong.");
       setMode("idle");
+      say(null);
+      setSub(null);
+      setFault({ kind: "chat", msg: e?.message ?? "Something went wrong.", action: { label: "Try again", run: () => send(msg) } });
     }
-  }, [load, speak, tele]);
+  }, [load, speak, tele, say, remember]);
+
+  // ------------------------------------------------------------ listening
+  const mic = useMicLevel(mode === "listening", signal);
+
+  const wake = useWakeWord(prefs.wake && visible && !oneShot && !teleRef.current && !builder && mode !== "processing", {
+    onCommand: (t) => { setSub(null); send(t); },
+    onWake: () => { if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); setMode("listening"); say("Listening for your command…"); setSub(null); },
+    onInterim: (t) => { setSub(`“${t}”`); mic.bump(); },
+    onTimeout: () => { setMode((m) => (m === "listening" ? "idle" : m)); say(null); setSub(null); },
+  });
+  useEffect(() => { if (wake.state === "denied") { setMicPerm("Blocked"); setFault({ kind: "mic", msg: "Microphone access is blocked, so ASTON can't listen. Allow it in the browser's site settings, or type your command.", action: { label: "Type instead", run: () => { setFault(null); document.getElementById("aston-input")?.focus(); } } }); } }, [wake.state]);
 
   const listen = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SR) return;
-    if (mode === "listening") { recog.current?.stop(); return; }
+    if (!SR) { document.getElementById("aston-input")?.focus(); return; }
+    if (mode === "listening") {
+      if (wake.state === "capturing") { wake.cancel(); setMode("idle"); say(null); setSub(null); }
+      else recog.current?.stop();
+      return;
+    }
     if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    setFault((f) => (f?.kind === "mic" ? null : f));
+    // the wake-word listener is already running: take its next phrase
+    if (wake.capture()) { setMode("listening"); say("Listening for your command…"); setSub(null); return; }
     const r = new SR();
     r.lang = "en-IN";
     r.interimResults = true;
     r.continuous = false;
     let finalText = "";
-    r.onstart = () => { setMode("listening"); setCaption("Listening…"); setSub(null); };
+    r.onstart = () => { setMode("listening"); say("Listening for your command…"); setSub(null); };
+    r.onsoundstart = () => mic.bump(0.35);
     r.onresult = (ev: any) => {
       let interim = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const t = ev.results[i][0].transcript;
         if (ev.results[i].isFinal) finalText += t; else interim += t;
       }
+      mic.bump();
       setSub(`“${(finalText + interim).trim()}”`);
     };
-    r.onerror = (ev: any) => { setMode("idle"); setCaption(ev?.error === "not-allowed" ? "Microphone access was blocked — type instead." : "I didn't catch that."); };
-    r.onend = () => { setMode((m) => (m === "listening" ? "idle" : m)); if (finalText.trim()) send(finalText); };
+    r.onerror = (ev: any) => {
+      setOneShot(false);
+      setMode("idle");
+      const e = ev?.error;
+      if (e === "not-allowed" || e === "service-not-allowed" || e === "audio-capture") {
+        setMicPerm("Blocked");
+        setFault({ kind: "mic", msg: e === "audio-capture" ? "No microphone was found. Connect one, or type your command." : "Microphone access is blocked, so ASTON can't listen. Allow it in the browser's site settings, or type your command.", action: { label: "Type instead", run: () => { setFault(null); document.getElementById("aston-input")?.focus(); } } });
+      } else if (e === "network") {
+        setFault({ kind: "mic", msg: "Speech recognition needs an internet connection.", action: { label: "Try again", run: () => { setFault(null); listen(); } } });
+      } else say(e === "no-speech" ? "I didn't hear anything. Tap the core and try again." : "I didn't catch that.", 6000);
+    };
+    r.onend = () => { setOneShot(false); setMode((m) => (m === "listening" ? "idle" : m)); if (finalText.trim()) send(finalText); else say(null); };
     recog.current = r;
-    r.start();
-  }, [mode, send]);
+    setOneShot(true);
+    try { r.start(); } catch { setOneShot(false); setMode("idle"); }
+  }, [mode, send, wake, mic, say]);
 
   // ------------------------------------------------------------ decisions
-  const act = async (action: string) => {
-    if (!current || busy) return;
-    if (action === "approve" && !window.confirm(`Approve: ${current.pendingAction?.type}?\n\n${current.pendingAction?.reason ?? ""}\n\nThis action has real consequences.`)) return;
-    setBusy(true);
+  const act = useCallback(async (inc: IncidentDTO, action: string) => {
+    if (busyId) return;
+    if (action === "approve" && !window.confirm(`Approve: ${inc.pendingAction?.type}?\n\n${inc.pendingAction?.reason ?? ""}\n\nThis action has real consequences.`)) return;
+    setBusyId(inc.id);
+    if (action === "approve") { setApproving(true); signal.current.progress = null; say("Executing workflow…"); }
     try {
-      const r = await api<{ result: string }>(`/api/aston/incidents/${current.id}`, { method: "POST", body: JSON.stringify({ action, ...(action === "approve" ? { confirm: true } : {}) }) });
-      setCaption(r.result);
+      const r = await api<{ result: string }>(`/api/aston/incidents/${inc.id}`, { method: "POST", body: JSON.stringify({ action, ...(action === "approve" ? { confirm: true } : {}) }) });
+      if (action === "approve") signal.current.flash = 1;
+      say(r.result);
       speak(r.result);
+      setFault((f) => (f?.kind === "action" ? null : f));
       await load();
     } catch (e: any) {
-      setCaption(e?.message ?? "That didn't work.");
-    } finally { setBusy(false); }
-  };
+      say(null);
+      setFault({ kind: "action", msg: e?.message ?? "That didn't work.", action: { label: "Try again", run: () => { setFault(null); act(inc, action); } } });
+    } finally { setBusyId(null); setApproving(false); }
+  }, [busyId, load, say, speak]);
 
   const enableAlerts = async () => {
     if (typeof Notification === "undefined") return;
     setPerm(await Notification.requestPermission());
   };
 
-  const shown = mode === "idle" && current && !sub ? (current.summary ?? current.title) : caption;
+  // ------------------------------------------------------------ menu + windows
+  const pick = (id: MenuId) => {
+    setMenu(false);
+    if (id === "websites") { setWin(null); setShowSites(true); return; }
+    if (id === "scripts") { setWin(null); setTele(tele?.min ? { ...tele, min: false } : { key: Date.now(), library: true }); return; }
+    setWin(id);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || builder || showSites || (tele && !tele.min)) return;
+      if (menu) setMenu(false); else if (win) setWin(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menu, win, builder, showSites, tele]);
+
+  const diag: Diag = {
+    serverOk, lastSync, serverError: fault?.kind === "server" ? fault.msg : null, ai: data?.ai ?? null, render,
+    wake: wake.state, level: mic.source, micPerm, notif: perm === "granted" ? "On" : perm === "denied" ? "Blocked" : perm === "unsupported" ? "Not supported" : "Off",
+    recognition: speechOk, synthesis: typeof window !== "undefined" && typeof speechSynthesis !== "undefined", voices, reduced: reduced || prefs.motion === "reduced", wordSync,
+  };
+
+  const cover = !!builder || showSites || (!!tele && !tele.min);
+  const idleLine = mode === "idle" && !caption && current ? (current.summary ?? current.title) : null;
+  const shown = fault && mode === "idle" ? fault.msg : caption ?? idleLine ?? defaultLine(state, hour);
+  const aiDot = !data ? "dim" : !data.ai.configured || data.ai.status !== "ok" ? "warn" : "ok";
+  const dot = state === "error" ? "bad" : state === "attention" ? "warn" : serverOk === false ? "bad" : aiDot;
+  const vars = useMemo(() => ({ ["--cx" as string]: `${geo.cx}px`, ["--cy" as string]: `${geo.cy}px`, ["--u" as string]: `${geo.u}px` }), [geo]);
+  const wakeOn = wake.state === "on" || wake.state === "capturing";
+  const radius = Math.max(96, Math.min(geo.u * 1.28, geo.cx - 46, geo.cy - 112));
 
   return (
-    <main className="aston-bg relative flex min-h-[100dvh] flex-col items-center overflow-hidden px-4 text-slate-200">
-      <div className="aston-waves pointer-events-none absolute inset-0" aria-hidden />
-      <header className="relative z-10 flex w-full max-w-6xl items-center justify-between pt-6">
-        <span className="aston-word">ASTON</span>
-        <span className="text-[11px] tracking-wide text-slate-500">{aiLine(data?.ai ?? null)}</span>
+    <main className={`ax-root ax-s-${state}${render?.quality === "lite" ? " ax-lite" : ""}${prefs.motion === "reduced" ? " ax-reduced" : ""}`} style={vars}>
+      <div className="ax-atmos" aria-hidden />
+      <AstonCore
+        state={state}
+        signal={signal}
+        paused={cover || !visible}
+        quality={prefs.quality}
+        parallax={prefs.parallax}
+        reduceMotion={prefs.motion === "reduced"}
+        onInfo={setRender}
+      />
+      <div className="ax-scan" aria-hidden />
+
+      <header className={`ax-top${menu ? " ax-hide" : ""}`}>
+        <span className="ax-word">ASTON AI</span>
+        <span className="ax-state" role="status">
+          <i className={`ax-dot ax-dot-${dot}`} aria-hidden />
+          {STATE_WORD[state]}
+          {data && (!data.ai.configured || data.ai.status !== "ok") && <span className="ax-state-note"> · AI {data.ai.configured ? "limited" : "offline"}</span>}
+        </span>
       </header>
 
-      <section className="relative z-10 flex flex-1 flex-col items-center justify-center gap-6 pb-8">
+      {geo.u > 0 && (
         <button
           type="button"
-          onClick={() => (speechOk ? listen() : document.getElementById("aston-input")?.focus())}
-          className="rounded-full outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/50"
+          className="ax-core-hit"
+          onClick={listen}
           aria-label={speechOk ? (mode === "listening" ? "Stop listening" : "Talk to ASTON") : "Type to ASTON"}
-        >
-          <AstonOrb state={state} size={400} paused={!!builder || showSites || (!!tele && !tele.min)} />
-        </button>
+          title={speechOk ? (mode === "listening" ? "Stop listening" : "Tap to talk") : "Voice input isn't supported in this browser — type below"}
+        />
+      )}
 
-        <div className="max-w-2xl text-center" aria-live="polite">
-          <p className="text-lg font-light leading-relaxed text-slate-300 sm:text-xl">{shown}</p>
-          {sub && <p className="mt-2 text-sm text-slate-500">{sub}</p>}
-          <p className="mt-4 text-[12px] tracking-wide text-slate-500">
-            Status: <span className={state === "attention" ? "font-semibold text-amber-300" : "font-semibold text-slate-200"}>{STATUS_WORD[state]}</span>
-            {open.length > 1 && <> · {focus % open.length + 1} of {open.length}</>}
-          </p>
-        </div>
-
-        {current && mode === "idle" && (
-          <div className="flex max-w-2xl flex-col items-center gap-3 text-[13px]">
-            {details && (
-              <div className="space-y-1 text-left text-slate-400">
-                {current.project && <p><span className="text-slate-500">Project</span> · {current.project}</p>}
-                <p><span className="text-slate-500">Problem</span> · {current.title}</p>
-                {current.detail && <p className="whitespace-pre-line"><span className="text-slate-500">Details</span> · {current.detail}</p>}
-                <p><span className="text-slate-500">Tried</span> · {current.recovery.length ? current.recovery.map((s) => `${s.action} (${s.ok ? "ok" : "failed"})`).join("; ") : "nothing automatic — needs you"}</p>
-                {current.recommendation && <p><span className="text-slate-500">Next</span> · {current.recommendation}</p>}
-                {current.verifyNote && <p className="text-slate-500">{current.verifyNote}</p>}
-              </div>
-            )}
-            <nav className="flex flex-wrap justify-center gap-x-5 gap-y-2 text-slate-400">
-              <button className="aston-link" onClick={() => setDetails((v) => !v)}>{details ? "Hide details" : "Details"}</button>
-              <button className="aston-link" disabled={busy} onClick={() => act("acknowledge")}>Acknowledge</button>
-              <button className="aston-link" disabled={busy} onClick={() => act("resolve")}>Resolve</button>
-              {current.pendingAction && <>
-                <button className="aston-link text-amber-300" disabled={busy} onClick={() => act("approve")}>Approve {current.pendingAction.type}</button>
-                <button className="aston-link" disabled={busy} onClick={() => act("reject")}>Decline</button>
-              </>}
-              {open.length > 1 && <button className="aston-link" onClick={() => { setFocus((f) => f + 1); setDetails(false); }}>Next</button>}
-            </nav>
+      <div className={`ax-line${menu ? " ax-hide" : ""}`} aria-live="polite">
+        <p className={`ax-caption${fault && mode === "idle" ? " ax-caption-fault" : ""}`}>{shown}</p>
+        {sub && <p className="ax-sub">{sub}</p>}
+        {fault?.action && mode === "idle" && (
+          <div className="ax-line-actions"><button className="ax-chip ax-chip-on" onClick={fault.action.run}>{fault.action.label}</button></div>
+        )}
+        {!fault && idleLine && current && (
+          <div className="ax-line-actions">
+            <button className="ax-chip ax-chip-on" onClick={() => setWin("alerts")}>Review{open.length > 1 ? ` (${open.length})` : ""}</button>
+            {current.status === "open" && <button className="ax-chip" disabled={!!busyId} onClick={() => act(current, "acknowledge")}>Acknowledge</button>}
+            {open.length > 1 && <button className="ax-chip" onClick={() => setFocus((f) => f + 1)}>Next</button>}
           </div>
         )}
-      </section>
+      </div>
 
-      <footer className="relative z-10 w-full max-w-xl pb-6">
-        <form onSubmit={(e) => { e.preventDefault(); const t = text; setText(""); send(t); }}>
+      <footer className="ax-dock">
+        <button className={`ax-orbit-btn${menu ? " ax-on" : ""}`} onClick={() => { setWin(null); setMenu((m) => !m); }} aria-label="Open ASTON systems menu" aria-expanded={menu}>
+          <Sparkles size={18} strokeWidth={1.6} aria-hidden />
+          {alertCount > 0 && <b className="ax-badge">{alertCount}</b>}
+        </button>
+        <form className="ax-bar" onSubmit={(e) => { e.preventDefault(); const t = text; setText(""); send(t); }}>
+          <button
+            type="button"
+            className={`ax-wake${wakeOn ? " ax-on" : ""}${wake.state === "denied" ? " ax-bad" : ""}`}
+            onClick={() => (wake.state === "denied" || wake.state === "needs-tap" ? wake.retry() : setPrefs({ wake: !prefs.wake }))}
+            disabled={!speechOk}
+            aria-pressed={prefs.wake}
+            aria-label={`Wake word: ${wakeOn ? "listening for ASTON" : wake.state === "denied" ? "microphone blocked" : "off"}`}
+            title={!speechOk ? "Voice isn't supported in this browser" : wakeOn ? "Wake word on — say “ASTON”. Click to turn off." : wake.state === "denied" ? "Microphone blocked — click to try again" : "Wake word off — click to listen for “ASTON”"}
+          >
+            <AudioLines size={16} strokeWidth={1.7} aria-hidden />
+          </button>
           <input
             id="aston-input"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder={speechOk ? "Tap the orb to talk, or type…" : "Type to ASTON…"}
-            className="w-full border-0 border-b border-slate-700/60 bg-transparent px-1 py-2 text-center text-sm text-slate-200 placeholder:text-slate-600 focus:border-cyan-400/60 focus:outline-none"
+            placeholder={mode === "processing" ? "Processing command…" : wakeOn ? "Say “ASTON…” or type" : "Type a command…"}
             maxLength={2000}
             autoComplete="off"
+            aria-label="Command"
           />
+          <button type="button" className={`ax-icon-btn${mode === "listening" ? " ax-live" : ""}`} onClick={listen} disabled={!speechOk} aria-label={mode === "listening" ? "Stop listening" : "Speak a command"} title={speechOk ? undefined : "Voice input isn't supported in this browser"}>
+            {mode === "listening" ? <Square size={14} aria-hidden /> : <Mic size={16} aria-hidden />}
+          </button>
+          <button type="submit" className="ax-icon-btn ax-send" disabled={!text.trim()} aria-label="Send command"><Send size={15} aria-hidden /></button>
         </form>
-        <div className="mt-3 flex justify-center gap-5 text-[11px] text-slate-600">
-          {perm === "default" && <button className="aston-link" onClick={enableAlerts}>Enable desktop alerts</button>}
-          {perm === "denied" && <span>Desktop alerts blocked in this browser</span>}
-          <button className="aston-link" onClick={() => { setVoiceOn((v) => !v); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }}>{voiceOn ? "Voice on" : "Voice off"}</button>
-          <button className="aston-link" onClick={() => setTele(tele?.min ? { ...tele, min: false } : { key: Date.now(), library: true })}>Scripts</button>
-          <button className="aston-link" onClick={() => setShowSites(true)}>Websites</button>
-          {error && <span className="text-amber-400/80">{error}</span>}
-        </div>
       </footer>
-      {builder && <SiteBuilder key={builder} siteId={builder} onClose={() => { setBuilder(null); setBuilding(false); }} onSpeak={speak} onBusy={setBuilding} />}
+
+      <RadialMenu open={menu} cx={geo.cx} cy={geo.cy} radius={radius} badges={{ alerts: alertCount }} onPick={pick} onClose={() => setMenu(false)} />
+
+      {win && (
+        <HoloWindow title={TITLES[win][0]} sub={TITLES[win][1]} origin={{ x: geo.cx, y: geo.cy }} onClose={() => setWin(null)}>
+          {win === "alerts" && <AlertsBody incidents={data?.incidents ?? null} busy={busyId} onAct={act} perm={perm} onEnableAlerts={enableAlerts} />}
+          {win === "ai" && <AiBody ai={data?.ai ?? null} />}
+          {win === "voice" && <VoiceBody prefs={prefs} setPrefs={setPrefs} wake={wake.state} onWakeRetry={wake.retry} micPerm={micPerm} onPreview={() => speak("Good evening. I'm ASTON. All systems are running normally, and I'll let you know the moment anything needs your attention.", true)} />}
+          {win === "conversation" && <ConversationBody turns={turns} onReplay={(t) => speak(t, true)} onClear={() => { history.current = []; setTurns([]); }} />}
+          {win === "activity" && <ActivityBody />}
+          {win === "diagnostics" && <DiagnosticsBody d={diag} onRefresh={() => { load(); }} />}
+          {win === "preferences" && <PrefsBody prefs={prefs} setPrefs={setPrefs} perm={perm} onEnableAlerts={enableAlerts} />}
+        </HoloWindow>
+      )}
+
+      {builder && <SiteBuilder key={builder} siteId={builder} onClose={() => { setBuilder(null); setBuilding(false); }} onSpeak={speak} onBusy={setBuilding} onProgress={onBuildProgress} />}
       {tele && (
         <Teleprompter key={tele.key} request={tele.request} library={tele.library} hidden={!!tele.min}
           onClose={() => setTele(null)} onMinimize={() => setTele((t) => (t ? { ...t, min: true } : t))} onSpeak={speak} />
@@ -297,7 +506,7 @@ export function AstonConsole() {
           <span aria-hidden>▤</span> Teleprompter
         </button>
       )}
-      {showSites && !builder && <SiteList onOpen={(id) => { setShowSites(false); setBuilder(id); }} onClose={() => setShowSites(false)} />}
+      {showSites && !builder && <SiteList onOpen={(id) => { setShowSites(false); signal.current.progress = 0; setBuilder(id); }} onClose={() => setShowSites(false)} />}
     </main>
   );
 }
