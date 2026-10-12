@@ -64,7 +64,10 @@ describe("ASTON · local Claude Code engine", () => {
   });
 
   it("is off on servers and when turned off", () => {
-    expect(disabledReason({ VERCEL: "1" })).toMatch(/your own PC/);
+    expect(disabledReason({ AWS_LAMBDA_FUNCTION_NAME: "fn" })).toMatch(/your own PC/);
+    expect(disabledReason({ LAMBDA_TASK_ROOT: "/var/task" })).toMatch(/your own PC/);
+    // `vercel env pull` puts VERCEL=1 / VERCEL_ENV into a local .env — that's still the owner's PC
+    expect(disabledReason({ VERCEL: "1", VERCEL_ENV: "production" })).toBeNull();
     expect(disabledReason({ ASTON_CLAUDE_CODE: "off" })).toMatch(/ASTON_CLAUDE_CODE=off/);
     expect(disabledReason({})).toBeNull();
   });
@@ -116,7 +119,7 @@ describe("ASTON · local Claude Code engine", () => {
     expect(await claudeStatus({ fresh: true, deps: fakeClaude({ status: { loggedIn: true, authMethod: "api_key" } }).deps })).toMatchObject({ available: false, reason: expect.stringContaining("not your Claude subscription") });
     expect(await claudeStatus({ fresh: true, deps: fakeClaude({ status: null }).deps })).toMatchObject({ available: false, reason: expect.stringContaining("isn't signed in") });
     expect(await claudeStatus({ fresh: true, deps: fakeClaude({ missing: true }).deps })).toMatchObject({ available: false, reason: expect.stringContaining("isn't installed") });
-    expect(await claudeStatus({ fresh: true, deps: { ...fakeClaude().deps, env: { VERCEL: "1" } } })).toMatchObject({ available: false });
+    expect(await claudeStatus({ fresh: true, deps: { ...fakeClaude().deps, env: { AWS_LAMBDA_FUNCTION_NAME: "fn" } } })).toMatchObject({ available: false });
   });
 });
 

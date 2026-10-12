@@ -48,7 +48,9 @@ export function childEnv(env: Env): Env {
 /** Why Claude Code can't be used in this deployment at all (null = it may be). */
 export function disabledReason(env: Env): string | null {
   if (/^(off|false|0|no)$/i.test(env.ASTON_CLAUDE_CODE ?? "")) return "Turned off with ASTON_CLAUDE_CODE=off.";
-  if (env.VERCEL || env.AWS_LAMBDA_FUNCTION_NAME) return "Claude Code only works when ASTON runs on your own PC.";
+  // A real serverless runtime (Vercel functions run on AWS Lambda). Not VERCEL / VERCEL_ENV:
+  // `vercel env pull` copies those into a local .env.local, and the app is still on the PC.
+  if (env.LAMBDA_TASK_ROOT || env.AWS_LAMBDA_FUNCTION_NAME || env.AWS_EXECUTION_ENV) return "Claude Code only works when ASTON runs on your own PC (this copy is running on a server).";
   return null;
 }
 

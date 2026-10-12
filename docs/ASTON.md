@@ -316,7 +316,7 @@ counts toward your Claude plan's normal usage limits.
   - **Usage limit reached mid-build:** if your plan's limit is hit ("resets at
     …"), the build pauses with the reason and offers **Finish with Groq
     instead** or **Resume** later.
-- **PC only:** this never runs on Vercel. There, websites use Groq.
+- **PC only:** this never runs on Vercel's servers. There, websites use Groq. (A local `.env.local` from `vercel env pull` is fine, because ASTON checks where it is actually running.)
 - **Settings in `.env`, all optional:**
   - `ASTON_SITE_ENGINE`: `auto` | `claude-code` | `groq`. This is the default
     for websites started from chat.
