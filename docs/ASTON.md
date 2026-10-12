@@ -116,6 +116,23 @@ until you ask for it.
 - **Phones:** a phone can't listen and talk at the same time, so during a
   conversation ASTON lets go of the microphone while it speaks, then listens
   again.
+- **Opening pages by voice:** say "ASTON, open JARVIS" (or type "open JARVIS").
+  ASTON says "Opening JARVIS." and switches to that page. It also works with
+  "go to …", "take me to …" and "show me …".
+
+  | You say | Opens |
+  | --- | --- |
+  | JARVIS, the dashboard, home | the JARVIS dashboard |
+  | ULTRON (or EDITH) | ULTRON |
+  | DARWIN, MIKE, RUBIN, ROBIN | that agent |
+  | Operator | Operator |
+  | my tasks, calendar | Tasks |
+  | files, notes | Files |
+  | memory, agents | Memory |
+  | settings, systems | Settings |
+
+  Only short, whole commands count. A sentence that merely mentions an agent
+  ("what is JARVIS doing?") is answered, not followed.
 - **Motion:** pointer parallax is on by default on desktop. Reduced motion follows the
   device setting, or can be forced in Preferences, and slows the core and
   removes UI animation.

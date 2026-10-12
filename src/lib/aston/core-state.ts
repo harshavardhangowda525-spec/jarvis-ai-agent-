@@ -80,3 +80,33 @@ export function isConversationEnd(heard: string): boolean {
   const t = stripWake(heard).text.toLowerCase().replace(/[^a-z' ]/g, " ").replace(/\s+/g, " ").trim();
   return /^(ok(ay)? )?(thanks?( you)?( aston)? )?(that'?s all|that is all|that'?s it|stop|stop listening|goodbye|good bye|bye|bye bye|never ?mind|nothing( else)?|no thanks|no thank you|i'?m done|we'?re done|all done|end( the)? conversation|go to sleep|you can stop|thanks|thank you|thank you aston|thanks aston)( thanks?( you)?)?$/.test(t);
 }
+
+/** Pages ASTON can open by voice ("ASTON, open JARVIS"). */
+const PAGES: { label: string; href: string; names: string[] }[] = [
+  { label: "JARVIS", href: "/dashboard", names: ["jarvis", "jarvis dashboard", "dashboard", "home", "command center", "the dashboard"] },
+  { label: "ULTRON", href: "/dashboard/ultron", names: ["ultron", "ultran", "edith"] },
+  { label: "DARWIN", href: "/dashboard/darwin", names: ["darwin"] },
+  { label: "MIKE", href: "/dashboard/mike", names: ["mike"] },
+  { label: "RUBIN", href: "/dashboard/rubin", names: ["rubin", "ruben", "reuben"] },
+  { label: "ROBIN", href: "/dashboard/robin", names: ["robin"] },
+  { label: "Operator", href: "/dashboard/operator", names: ["operator"] },
+  { label: "Tasks", href: "/dashboard/tasks", names: ["tasks", "my tasks", "task list", "calendar"] },
+  { label: "Files", href: "/dashboard/notes", names: ["files", "notes", "my files", "my notes"] },
+  { label: "Memory", href: "/dashboard/memory", names: ["memory", "database", "ai agents", "agents"] },
+  { label: "Settings", href: "/dashboard/settings", names: ["settings", "systems", "system settings", "network"] },
+];
+
+/**
+ * "open JARVIS", "go to DARWIN", "take me to my tasks", "show the dashboard" →
+ * the page to open. Only short, whole-phrase commands count, so a sentence that
+ * merely mentions an agent never navigates away.
+ */
+export function navIntent(text: string): { label: string; href: string } | null {
+  const t = stripWake(text).text.toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/^(please |can you |could you |hey )+/, "").replace(/( please| now| for me)+$/, "");
+  const m = t.match(/^(open up|open|go back to|go to|show me|show|launch|switch to|switch over to|take me to|bring up|start|load) (the )?(.+?)( page| dashboard| agent| app| screen| window)?$/);
+  if (!m) return null;
+  const name = m[3].trim();
+  const page = PAGES.find((p) => p.names.includes(name));
+  return page ? { label: page.label, href: page.href } : null;
+}

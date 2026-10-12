@@ -13,7 +13,8 @@ import {
 import { SiteBuilder, SiteList } from "./site-builder";
 import { Teleprompter } from "./teleprompter";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
-import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isConversationEnd, STATE_WORD } from "@/lib/aston/core-state";
+import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isConversationEnd, navIntent, STATE_WORD } from "@/lib/aston/core-state";
+import { useRouter } from "next/navigation";
 import { markSelfSpeech, setPreferredVoiceName } from "@/lib/aston/voice";
 import { sayLine, stopSpeaking } from "./core/speech";
 import { isOpenOnly, SCRIPT_INTENT, stripWake } from "@/lib/aston/scripts/format";
@@ -51,6 +52,7 @@ const TITLES: Record<WindowId, [string, string]> = {
  * core from the radial menu, only when asked for.
  */
 export function AstonConsole() {
+  const router = useRouter();
   const [data, setData] = useState<StateData | null>(null);
   const [serverOk, setServerOk] = useState<boolean | null>(null);
   const [lastSync, setLastSync] = useState<number | null>(null);
@@ -279,6 +281,20 @@ export function AstonConsole() {
       else setTele(isOpenOnly(msg) ? { key: Date.now() } : { key: Date.now(), request: bare });
       return;
     }
+    // "Open JARVIS", "go to DARWIN", "show my tasks": switch to that page.
+    const page = navIntent(msg);
+    if (page) {
+      const line = `Opening ${page.label}.`;
+      remember("assistant", line);
+      say(line);
+      setSub(null);
+      setMode("idle");
+      endConvoRef.current(null);
+      speak(line);
+      // let the first words play, then go (the voice carries on over the page change)
+      setTimeout(() => router.push(page.href), 450);
+      return;
+    }
     // Website requests go straight to the builder (no extra AI round-trip).
     if (WEBSITE_INTENT.test(msg)) {
       const start = async (engine: Prefs["siteEngine"]) => {
@@ -323,7 +339,7 @@ export function AstonConsole() {
       endConvoRef.current(null);
       setFault({ kind: "chat", msg: e?.message ?? "Something went wrong.", action: { label: "Try again", run: () => send(msg) } });
     }
-  }, [load, speak, tele, say, remember]);
+  }, [load, speak, tele, say, remember, router]);
 
   // ------------------------------------------------------------ listening
   const mic = useMicLevel(mode === "listening", signal);

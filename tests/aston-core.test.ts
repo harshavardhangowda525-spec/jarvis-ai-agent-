@@ -109,3 +109,24 @@ describe("ASTON voice choice", () => {
     expect(bestVoice([v("Microsoft Ravi - English (India)", "en-IN", true), v("Microsoft Zira", "en-US", true)])?.name).toBe("Microsoft Ravi - English (India)");
   });
 });
+
+describe("ASTON opens pages by voice", () => {
+  it("opens JARVIS and the agents", async () => {
+    const { navIntent } = await import("@/lib/aston/core-state");
+    expect(navIntent("open JARVIS")).toEqual({ label: "JARVIS", href: "/dashboard" });
+    expect(navIntent("ASTON, open Jarvis please")).toEqual({ label: "JARVIS", href: "/dashboard" });
+    expect(navIntent("go to the Jarvis dashboard")).toEqual({ label: "JARVIS", href: "/dashboard" });
+    expect(navIntent("take me to DARWIN")).toMatchObject({ href: "/dashboard/darwin" });
+    expect(navIntent("switch to Ultron")).toMatchObject({ href: "/dashboard/ultron" });
+    expect(navIntent("open EDITH")).toMatchObject({ href: "/dashboard/ultron" });
+    expect(navIntent("show me my tasks")).toMatchObject({ href: "/dashboard/tasks" });
+    expect(navIntent("can you open settings")).toMatchObject({ href: "/dashboard/settings" });
+  });
+  it("doesn't navigate on sentences that merely mention an agent", async () => {
+    const { navIntent } = await import("@/lib/aston/core-state");
+    expect(navIntent("what is jarvis doing")).toBeNull();
+    expect(navIntent("open a ticket for darwin's failed run")).toBeNull();
+    expect(navIntent("open the teleprompter")).toBeNull();
+    expect(navIntent("build a website for jarvis cafe")).toBeNull();
+  });
+});
