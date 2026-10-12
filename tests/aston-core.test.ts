@@ -138,3 +138,18 @@ describe("ASTON sample call by voice", () => {
     for (const t of ["call the client tomorrow", "write a cold call script", "who called me", "call me when the deploy fails"]) expect(isCallMeRequest(t), t).toBe(false);
   });
 });
+
+describe("ASTON never answers its own voice", () => {
+  it("recognises its own sentence coming back through the mic, but not a short real reply", async () => {
+    const { rememberSpoken, isEcho, markSelfSpeech } = await import("@/lib/aston/voice");
+    rememberSpoken("All systems are running normally. Your latest website is ready for review.");
+    markSelfSpeech(true);
+    markSelfSpeech(false);
+    expect(isEcho("all systems are running normally")).toBe(true);
+    expect(isEcho("your latest website is ready")).toBe(true);
+    expect(isEcho("yes")).toBe(false); // too short to judge — a real answer
+    expect(isEcho("build a website for a cafe in indiranagar")).toBe(false);
+    // long after ASTON stopped talking, nothing is treated as an echo
+    expect(isEcho("all systems are running normally", Date.now() + 10_000)).toBe(false);
+  });
+});

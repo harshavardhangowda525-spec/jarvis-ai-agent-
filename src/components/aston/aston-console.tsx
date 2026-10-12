@@ -15,7 +15,7 @@ import { Teleprompter } from "./teleprompter";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
 import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isCallMeRequest, isConversationEnd, navIntent, STATE_WORD } from "@/lib/aston/core-state";
 import { useRouter } from "next/navigation";
-import { markSelfSpeech, setPreferredVoiceName } from "@/lib/aston/voice";
+import { markSelfSpeech, rememberSpoken, setPreferredVoiceName } from "@/lib/aston/voice";
 import { sayLine, stopSpeaking } from "./core/speech";
 import { isOpenOnly, SCRIPT_INTENT, stripWake } from "@/lib/aston/scripts/format";
 import type { IncidentDTO } from "@/lib/aston/types";
@@ -83,7 +83,7 @@ export function AstonConsole() {
   const [reduced, setReduced] = useState(false);
   const [voices, setVoices] = useState(0);
   const [oneShot, setOneShot] = useState(false);
-  // phones can't listen and talk at once: the wake listener pauses while ASTON speaks
+  // the wake listener pauses while ASTON speaks, so it never hears ASTON's own voice
   const [ttsBusy, setTtsBusy] = useState(false);
   const mobileRef = useRef(false);
   const [lastSpeech, setLastSpeech] = useState<"ok" | "blocked" | "failed" | "unsupported" | null>(null);
@@ -154,10 +154,12 @@ export function AstonConsole() {
     if (!prefsRef.current.voice && !force) return false;
     let words = false;
     signal.current.wordSync = false;
-    // phones: the microphone must let go of the audio before ASTON can be heard
-    if (mobileRef.current) setTtsBusy(true);
+    // the listener pauses while ASTON talks (every device): it can't hear ASTON's own voice,
+    // and phones need the microphone to let go of the audio before ASTON can be heard
+    setTtsBusy(true);
+    rememberSpoken(line);
     const ok = sayLine(line, {
-      delayMs: mobileRef.current ? 350 : 0,
+      delayMs: mobileRef.current ? 350 : 120,
       // the online voice is blocked here: remember the on-device one so the next line starts straight away
       onFallback: (local) => { setPreferredVoiceName(local.name); },
       onStart: () => { markSelfSpeech(true); setMode("speaking"); setLastSpeech("ok"); },
@@ -166,7 +168,7 @@ export function AstonConsole() {
       onDone: (f) => {
         markSelfSpeech(false);
         signal.current.wordSync = false;
-        if (mobileRef.current) setTtsBusy(false);
+        setTtsBusy(false);
         setMode((m) => (m === "speaking" ? "idle" : m));
         if (f === "cut") return; // replaced by another line: nothing else to do
         if (!f) { setWordSync(words); then?.(); return; }
@@ -179,7 +181,7 @@ export function AstonConsole() {
         then?.();
       },
     });
-    if (!ok) { if (mobileRef.current) setTtsBusy(false); setLastSpeech("unsupported"); }
+    if (!ok) { setTtsBusy(false); setLastSpeech("unsupported"); }
     return ok;
   }, []);
 
@@ -397,7 +399,8 @@ export function AstonConsole() {
     if (!convo.current) return;
     if (modeRef.current === "processing") return;
     // on phones the listener was paused while ASTON spoke; it resumes and takes this phrase
-    if (wake.capture(mobileRef.current && prefsRef.current.wake)) { setMode("listening"); setSub(null); }
+    // the listener was paused while ASTON spoke; it resumes and takes this phrase
+    if (wake.capture(prefsRef.current.wake)) { setMode("listening"); setSub(null); }
     else endConvoRef.current(null);
   };
   // the wake word stopped (teleprompter, builder, hidden tab, turned off): so does the conversation

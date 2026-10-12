@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { wakeIntent } from "@/lib/aston/core-state";
 import { stripWake } from "@/lib/aston/scripts/format";
-import { isSelfSpeaking } from "@/lib/aston/voice";
+import { isEcho, isSelfSpeaking } from "@/lib/aston/voice";
 import type { CoreSignal } from "./geometry";
 
 const isMobile = () => typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
@@ -129,10 +129,12 @@ export function useWakeWord(enabled: boolean, h: WakeHandlers, o: { captureMs?: 
       else setState((s) => (s === "capturing" ? s : "on"));
     };
     r.onresult = (ev: any) => {
+      if (rec.current !== r) return; // a listener that was paused/replaced — what it heard is stale
       if (isSelfSpeaking()) return; // ASTON's own voice
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const res = ev.results[i];
         const top = String(res[0]?.transcript ?? "").trim();
+        if (isEcho(top)) continue; // ASTON's own sentence, handed back late by the speech service
         if (captureUntil.current) {
           if (!res.isFinal) { if (top) hs.current.onInterim(stripWake(top).text || top); continue; }
           const said = stripWake(top).text;
@@ -168,7 +170,8 @@ export function useWakeWord(enabled: boolean, h: WakeHandlers, o: { captureMs?: 
     if (enabled) start();
     else {
       if (!pendingCapture.current) endCapture();
-      try { rec.current?.stop(); } catch { /* not running */ }
+      // abort (not stop): stop() would still deliver what it heard so far — e.g. ASTON's own voice
+      try { rec.current?.abort(); } catch { /* not running */ }
       rec.current = null;
       setState((s) => (s === "unsupported" || s === "denied" ? s : "off"));
     }

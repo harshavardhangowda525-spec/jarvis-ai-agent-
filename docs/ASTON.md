@@ -113,9 +113,17 @@ until you ask for it.
   ✦ → Diagnostics → **Last spoken line** shows the latest result. The voice
   engine also works around known Chrome glitches: lines that are never spoken
   or stop halfway, and online voices that stop after about 15 seconds.
-- **Phones:** a phone can't listen and talk at the same time, so during a
-  conversation ASTON lets go of the microphone while it speaks, then listens
-  again.
+- **ASTON never answers its own voice:**
+  - **The microphone is off while ASTON talks,** on every device. ASTON switches
+    its listener off and back on around each reply, which drops anything it
+    heard.
+  - **Late echoes are dropped:** the speech service sometimes hands back a
+    phrase a second or two late. If that phrase mostly repeats what ASTON just
+    said, ASTON ignores it.
+  - **Your replies still count:** short replies like "yes, build it" always get
+    through.
+  - **Phones:** these also need the microphone off, because a phone can't listen
+    and talk at the same time.
 - **Opening pages by voice:** say "ASTON, open JARVIS" (or type "open JARVIS").
   ASTON says "Opening JARVIS." and switches to that page. It also works with
   "go to …", "take me to …" and "show me …".

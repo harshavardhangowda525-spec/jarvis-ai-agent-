@@ -72,9 +72,35 @@ export function speakableText(text: string): string {
  * trigger a command.
  */
 let selfSpeechUntil = 0;
+let lastSpeechEnd = 0;
 export function markSelfSpeech(active: boolean) {
   if (active) selfSpeechUntil = Number.POSITIVE_INFINITY;
-  else if (selfSpeechUntil === Number.POSITIVE_INFINITY) selfSpeechUntil = Date.now() + 900; // only a real end of speech leaves a tail
+  else if (selfSpeechUntil === Number.POSITIVE_INFINITY) { selfSpeechUntil = Date.now() + 1500; lastSpeechEnd = Date.now(); } // only a real end of speech leaves a tail
+}
+/** What ASTON said recently, to recognise its own words if the microphone hands them back late. */
+const spoken: { words: string[]; until: number }[] = [];
+const words = (t: string) => t.toLowerCase().replace(/[^a-z0-9' ]/g, " ").split(/\s+/).filter((w) => w.length > 1);
+export function rememberSpoken(line: string) {
+  const now = Date.now();
+  spoken.push({ words: words(line), until: now + 60_000 });
+  while (spoken.length && spoken[0].until < now) spoken.shift();
+  if (spoken.length > 8) spoken.shift();
+}
+
+/**
+ * Is this phrase ASTON's own voice coming back through the microphone? Only
+ * close to (or during) its speech, and only when most of the heard words are
+ * words ASTON just said — so a short reply like "yes, build it" still counts.
+ */
+export function isEcho(heard: string, now = Date.now()): boolean {
+  if (now > lastSpeechEnd + 4000 && selfSpeechUntil !== Number.POSITIVE_INFINITY) return false;
+  const h = words(heard);
+  if (h.length < 3) return false;
+  return spoken.some((s) => {
+    const set = new Set(s.words);
+    const hit = h.filter((w) => set.has(w)).length;
+    return hit / h.length >= 0.75;
+  });
 }
 export function isSelfSpeaking(): boolean {
   const synth = typeof speechSynthesis !== "undefined" && (speechSynthesis.speaking || speechSynthesis.pending);
