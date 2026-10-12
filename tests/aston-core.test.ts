@@ -97,3 +97,15 @@ describe("ASTON hands-free conversation", () => {
     }
   });
 });
+
+describe("ASTON voice choice", () => {
+  const v = (name: string, lang: string, localService: boolean) => ({ name, lang, localService }) as SpeechSynthesisVoice;
+  it("prefers an on-device voice over Chrome's online Google voices (they go silent behind firewalls)", async () => {
+    const { bestVoice } = await import("@/lib/aston/voice");
+    const voices = [v("Google UK English Male", "en-GB", false), v("Google UK English Female", "en-GB", false), v("Microsoft Hazel - English (United Kingdom)", "en-GB", true), v("Microsoft George - English (United Kingdom)", "en-GB", true), v("Microsoft Ravi - English (India)", "en-IN", true)];
+    expect(bestVoice(voices)?.name).toBe("Microsoft George - English (United Kingdom)");
+    expect(bestVoice(voices.slice(0, 2))?.name).toBe("Google UK English Male"); // "Female" doesn't count as male
+    expect(bestVoice([v("Google UK English Male", "en-GB", false)], { localOnly: true })).toBeNull();
+    expect(bestVoice([v("Microsoft Ravi - English (India)", "en-IN", true), v("Microsoft Zira", "en-US", true)])?.name).toBe("Microsoft Ravi - English (India)");
+  });
+});

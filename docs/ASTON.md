@@ -104,6 +104,12 @@ until you ask for it.
   - **Voice didn't start within 5 seconds:** this usually means no sound output
     or a broken voice. Check the volume, or pick another voice in ✦ → Voice.
 
+  **Offline voices first.** ASTON prefers the voices built into the device
+  (Microsoft George, Hazel or Ravi on Windows; Daniel on Apple). Chrome's
+  "Google …" voices are online, so they go silent when a firewall, antivirus or
+  network blocks them. If an online voice won't play, ASTON says the line again
+  with an offline voice and remembers it.
+
   ✦ → Diagnostics → **Last spoken line** shows the latest result. The voice
   engine also works around known Chrome glitches: lines that are never spoken
   or stop halfway, and online voices that stop after about 15 seconds.

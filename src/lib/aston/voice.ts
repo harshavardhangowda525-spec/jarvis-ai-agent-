@@ -21,12 +21,33 @@ export function englishVoices(): SpeechSynthesisVoice[] {
   return v.filter((x) => /^en/i.test(x.lang)).sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 }
 
+/**
+ * The best automatic voice: on-device voices first (Microsoft George / Hazel / Ravi
+ * on Windows, Daniel on Apple) — Chrome's online "Google" voices stream from
+ * Google's servers and go silent when a firewall, antivirus or flaky network
+ * blocks them. British English first, then Indian, then any English.
+ */
+export function bestVoice(voices: SpeechSynthesisVoice[], o: { localOnly?: boolean } = {}): SpeechSynthesisVoice | null {
+  const en = voices.filter((x) => /^en/i.test(x.lang) && (!o.localOnly || x.localService));
+  const score = (x: SpeechSynthesisVoice) =>
+    (x.localService ? 0 : 100) +
+    (/en-GB/i.test(x.lang) ? 0 : /en-IN/i.test(x.lang) ? 10 : 20) +
+    (/\b(male|george|daniel|arthur|ravi|ryan|thomas)\b/i.test(x.name) && !/female/i.test(x.name) ? 0 : 1);
+  return [...en].sort((a, b) => score(a) - score(b))[0] ?? null;
+}
+
 export function pickVoice(): SpeechSynthesisVoice | null {
   const v = typeof speechSynthesis !== "undefined" ? speechSynthesis.getVoices() : [];
   const chosen = preferredVoiceName();
   const own = chosen ? v.find((x) => x.name === chosen) : undefined;
   if (own) return own;
-  return v.find((x) => /en-GB/i.test(x.lang) && /male|daniel|arthur|george/i.test(x.name)) ?? v.find((x) => /en-GB/i.test(x.lang)) ?? v.find((x) => /^en/i.test(x.lang)) ?? null;
+  return bestVoice(v) ?? v[0] ?? null;
+}
+
+/** An on-device voice to fall back to when an online voice won't play. */
+export function offlineVoice(): SpeechSynthesisVoice | null {
+  const v = typeof speechSynthesis !== "undefined" ? speechSynthesis.getVoices() : [];
+  return bestVoice(v, { localOnly: true }) ?? v.find((x) => x.localService) ?? null;
 }
 
 export function voiceLabel(v: SpeechSynthesisVoice | null): string {

@@ -1,6 +1,6 @@
 "use client";
 
-import { pickVoice } from "@/lib/aston/voice";
+import { offlineVoice, pickVoice } from "@/lib/aston/voice";
 
 /**
  * ASTON's voice, hardened against the browser speech engine's quiet failures:
@@ -24,6 +24,10 @@ export interface SayOptions {
   onWord?: () => void;
   /** Always called once: no argument when the line was spoken, or why it wasn't. "cut" = replaced by another line. */
   onDone?: (failure?: SpeechFailure | "cut") => void;
+  /** Use this voice instead of the automatic / chosen one. */
+  voice?: SpeechSynthesisVoice | null;
+  /** Called when an online voice failed and ASTON switched to an on-device one. */
+  onFallback?: (voice: SpeechSynthesisVoice) => void;
 }
 
 const live = new Set<SpeechSynthesisUtterance>();
@@ -37,7 +41,7 @@ export function sayLine(line: string, o: SayOptions = {}): boolean {
   const busy = synth.speaking || synth.pending;
   synth.cancel();
   const u = new SpeechSynthesisUtterance(line);
-  const v = pickVoice();
+  const v = o.voice ?? pickVoice();
   if (v) { u.voice = v; u.lang = v.lang; }
   u.rate = o.rate ?? 1.02;
   u.pitch = o.pitch ?? 0.95;
@@ -51,6 +55,15 @@ export function sayLine(line: string, o: SayOptions = {}): boolean {
     live.delete(u);
     clearTimeout(watchdog);
     if (keepAlive) clearInterval(keepAlive);
+    // an online voice that never played (blocked network, firewall): try once more with an on-device voice
+    if ((f === "no-start" || f === "failed") && v && !v.localService) {
+      const local = offlineVoice();
+      if (local && local !== v) {
+        o.onFallback?.(local);
+        sayLine(line, { ...o, voice: local, delayMs: 0 });
+        return;
+      }
+    }
     o.onDone?.(f);
   };
   // nothing within 5 s (longer if we waited first): the engine never started

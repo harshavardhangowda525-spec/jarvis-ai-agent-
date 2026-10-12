@@ -14,7 +14,7 @@ import { SiteBuilder, SiteList } from "./site-builder";
 import { Teleprompter } from "./teleprompter";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
 import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isConversationEnd, STATE_WORD } from "@/lib/aston/core-state";
-import { markSelfSpeech } from "@/lib/aston/voice";
+import { markSelfSpeech, setPreferredVoiceName } from "@/lib/aston/voice";
 import { sayLine, stopSpeaking } from "./core/speech";
 import { isOpenOnly, SCRIPT_INTENT, stripWake } from "@/lib/aston/scripts/format";
 import type { IncidentDTO } from "@/lib/aston/types";
@@ -156,6 +156,8 @@ export function AstonConsole() {
     if (mobileRef.current) setTtsBusy(true);
     const ok = sayLine(line, {
       delayMs: mobileRef.current ? 350 : 0,
+      // the online voice is blocked here: remember the on-device one so the next line starts straight away
+      onFallback: (local) => { setPreferredVoiceName(local.name); },
       onStart: () => { markSelfSpeech(true); setMode("speaking"); setLastSpeech("ok"); },
       // each spoken word pulses the core (when the voice reports word timings)
       onWord: () => { words = true; signal.current.wordSync = true; signal.current.pulse = 1; },
@@ -171,7 +173,7 @@ export function AstonConsole() {
         const retry = () => { setFault(null); speak(line, true, then); };
         setFault(f === "not-allowed"
           ? { kind: "voice", msg: "The browser blocked ASTON's voice until you click on the page once.", action: { label: "Turn on voice", run: retry } }
-          : { kind: "voice", msg: "ASTON's voice didn't play. Check the sound output and volume, or pick another voice in ✦ → Voice.", action: { label: "Try again", run: retry } });
+          : { kind: "voice", msg: "ASTON's voice didn't play. Check the PC's volume and sound output (taskbar speaker icon), or pick a \"Microsoft\" voice in ✦ → Voice.", action: { label: "Try again", run: retry } });
         then?.();
       },
     });
