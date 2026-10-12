@@ -39,5 +39,26 @@ export function astonError(err: unknown): NextResponse {
   if (err instanceof SiteError) return fail(err.message, err.status);
   if (err instanceof ScriptError) return fail(err.message, err.status);
   if (err instanceof SyntaxError) return fail("Invalid JSON.", 400);
+  const setup = setupProblem(err);
+  if (setup) { console.error("[aston] setup problem:", (err as Error)?.message ?? err); return fail(setup, 503); }
   return handleError(err);
+}
+
+/**
+ * After an update, the most common failures are setup steps that didn't run.
+ * Name the fix instead of "Something went wrong".
+ */
+export function setupProblem(err: unknown): string | null {
+  const e = err as { code?: string; name?: string; message?: string } | null;
+  const msg = String(e?.message ?? "");
+  if (e?.code === "P2021" || e?.code === "P2022" || /does not exist in the current database/i.test(msg)) {
+    return "ASTON's database needs updating. In the project folder run `npm run db:migrate`, then restart ASTON (`npm run dev`).";
+  }
+  if (e?.name === "PrismaClientValidationError" && /Unknown (argument|field)/i.test(msg)) {
+    return "ASTON's database code is out of date. In the project folder run `npm install`, then restart ASTON (`npm run dev`).";
+  }
+  if (e?.code === "P1001" || e?.name === "PrismaClientInitializationError" || /Can't reach database server/i.test(msg)) {
+    return "ASTON can't reach its database. Check DATABASE_URL in .env and that the database is running, then restart ASTON.";
+  }
+  return null;
 }

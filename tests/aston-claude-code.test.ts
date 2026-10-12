@@ -203,3 +203,13 @@ d("ASTON website builder on Claude Code (database integration)", () => {
     expect(switched.engine).toBe("groq");
   });
 });
+
+describe("ASTON · setup problems are named, not 'Something went wrong'", () => {
+  it("points at the missing step", async () => {
+    const { setupProblem } = await import("@/lib/aston/ingest");
+    expect(setupProblem(Object.assign(new Error("The column `AstonSite.engine` does not exist in the current database."), { code: "P2022" }))).toMatch(/npm run db:migrate/);
+    expect(setupProblem(Object.assign(new Error("Unknown argument `engine`. Available options are marked with ?."), { name: "PrismaClientValidationError" }))).toMatch(/npm install/);
+    expect(setupProblem(Object.assign(new Error("Can't reach database server at `127.0.0.1:5432`"), { code: "P1001" }))).toMatch(/DATABASE_URL/);
+    expect(setupProblem(new Error("something else"))).toBeNull();
+  });
+});
