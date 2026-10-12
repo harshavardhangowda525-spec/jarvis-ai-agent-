@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { coreState, defaultLine, greeting, wakeIntent, clamp01 } from "@/lib/aston/core-state";
+import { coreState, defaultLine, greeting, wakeIntent, clamp01, isConversationEnd } from "@/lib/aston/core-state";
 import { coreGeometry } from "@/components/aston/core/geometry";
 
 describe("ASTON core state", () => {
@@ -82,5 +82,18 @@ describe("ASTON core geometry", () => {
     const g = coreGeometry(844, 390);
     expect(g.cy + g.u).toBeLessThan(390 - 80);
     expect(g.u).toBeGreaterThanOrEqual(60);
+  });
+});
+
+describe("ASTON hands-free conversation", () => {
+  it("ends on a natural sign-off", () => {
+    for (const t of ["that's all", "That is all.", "thanks, that's all", "Thank you ASTON", "stop", "goodbye", "bye bye", "never mind", "no thanks", "I'm done", "ASTON, that's all", "okay that's it", "end the conversation"]) {
+      expect(isConversationEnd(t), t).toBe(true);
+    }
+  });
+  it("keeps going for real requests (even ones containing those words)", () => {
+    for (const t of ["what's the status", "stop the deploy for Kerbside Bistro", "is that all the alerts", "say goodbye to the client in the script", "thanks for the update, now build a website"]) {
+      expect(isConversationEnd(t), t).toBe(false);
+    }
   });
 });

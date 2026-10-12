@@ -13,7 +13,7 @@ import {
 import { SiteBuilder, SiteList } from "./site-builder";
 import { Teleprompter } from "./teleprompter";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
-import { coreState, defaultLine, STATE_WORD } from "@/lib/aston/core-state";
+import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isConversationEnd, STATE_WORD } from "@/lib/aston/core-state";
 import { markSelfSpeech, pickVoice } from "@/lib/aston/voice";
 import { isOpenOnly, SCRIPT_INTENT, stripWake } from "@/lib/aston/scripts/format";
 import type { IncidentDTO } from "@/lib/aston/types";
@@ -80,6 +80,13 @@ export function AstonConsole() {
   const [reduced, setReduced] = useState(false);
   const [voices, setVoices] = useState(0);
   const [oneShot, setOneShot] = useState(false);
+  // hands-free conversation: after each answer ASTON listens again, no wake word needed
+  const [convoOn, setConvoOn] = useState(false);
+  const convo = useRef(false);
+  const continueRef = useRef<() => void>(() => {});
+  const endConvoRef = useRef<(line?: string | null) => void>(() => {});
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
 
   const signal = useRef(newSignal());
   const history = useRef<Turn[]>([]);
@@ -134,8 +141,9 @@ export function AstonConsole() {
   }, []);
 
   // ------------------------------------------------------------ speech out
-  const speak = useCallback((line: string, force = false) => {
-    if ((!prefsRef.current.voice && !force) || typeof speechSynthesis === "undefined") return;
+  /** Say a line. `then` runs when it has been spoken (not when it's cut off). Returns false if nothing will be spoken. */
+  const speak = useCallback((line: string, force = false, then?: () => void): boolean => {
+    if ((!prefsRef.current.voice && !force) || typeof speechSynthesis === "undefined") return false;
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(line);
     const v = pickVoice();
@@ -147,13 +155,18 @@ export function AstonConsole() {
     u.onstart = () => { markSelfSpeech(true); setMode("speaking"); };
     // each spoken word pulses the core (when the voice reports word timings)
     u.onboundary = (e: SpeechSynthesisEvent) => { if (e.name && e.name !== "word") return; words = true; signal.current.wordSync = true; signal.current.pulse = 1; };
-    u.onend = u.onerror = () => {
+    const done = (ev?: { error?: string }) => {
       markSelfSpeech(false);
       signal.current.wordSync = false;
       setWordSync(words);
       setMode((m) => (m === "speaking" ? "idle" : m));
+      // carry the conversation on — unless this line was cut off by another one
+      if (then && ev?.error !== "interrupted" && ev?.error !== "canceled") then();
     };
+    u.onend = () => done();
+    u.onerror = (e: SpeechSynthesisErrorEvent) => done({ error: e?.error });
     speechSynthesis.speak(u);
+    return true;
   }, []);
 
   // ------------------------------------------------------------ state + alerts
@@ -243,6 +256,7 @@ export function AstonConsole() {
     // Scripts / pitches → the teleprompter (checked before websites: "a script for a café that needs a website")
     const bare = stripWake(msg).text;
     if (SCRIPT_INTENT.test(bare)) {
+      endConvoRef.current(null); // the teleprompter takes over the microphone
       const line = isOpenOnly(msg) ? "Opening the teleprompter." : "Writing your script now — the teleprompter will open with it.";
       remember("assistant", line);
       say(line);
@@ -263,6 +277,7 @@ export function AstonConsole() {
         setSub(null);
         setMode("idle");
         signal.current.progress = 0;
+        endConvoRef.current(null); // the builder window takes over the screen
         setBuilder(site.id);
         speak(line);
       };
@@ -271,6 +286,7 @@ export function AstonConsole() {
       } catch (e: any) {
         setMode("idle");
         say(null);
+        endConvoRef.current(null);
         // Claude Code was asked for but isn't usable here: say why, and only use Groq if the owner taps it
         const viaGroq = e?.status === 409 ? { label: "Build with Groq instead", run: () => { setFault(null); setMode("processing"); start("groq").catch((x: any) => { setMode("idle"); setFault({ kind: "chat", msg: x?.message ?? "I couldn't start the website." }); }); } } : null;
         setFault({ kind: "chat", msg: e?.message ?? "I couldn't start the website.", action: viaGroq ?? { label: "Try again", run: () => send(msg) } });
@@ -279,17 +295,20 @@ export function AstonConsole() {
     }
     try {
       const r = await api<{ reply: string; ai: boolean; aiNote: string | null; changed: boolean; site?: string | null }>("/api/aston/chat", { method: "POST", body: JSON.stringify({ messages: history.current.map(({ role, content }) => ({ role, content })), site: { engine: prefsRef.current.siteEngine, model: prefsRef.current.claudeModel } }) });
-      if (r.site) { signal.current.progress = 0; setBuilder(r.site); }
+      if (r.site) { signal.current.progress = 0; endConvoRef.current(null); setBuilder(r.site); }
       remember("assistant", r.reply);
       say(r.reply);
       setSub(r.ai ? null : "AI unavailable — answered from stored incidents");
       setMode("idle");
-      speak(r.reply);
+      // in a hands-free conversation, listen again once the answer has been spoken
+      const next = () => continueRef.current();
+      if (!speak(r.reply, false, next)) next();
       if (r.changed) load();
     } catch (e: any) {
       setMode("idle");
       say(null);
       setSub(null);
+      endConvoRef.current(null);
       setFault({ kind: "chat", msg: e?.message ?? "Something went wrong.", action: { label: "Try again", run: () => send(msg) } });
     }
   }, [load, speak, tele, say, remember]);
@@ -297,26 +316,58 @@ export function AstonConsole() {
   // ------------------------------------------------------------ listening
   const mic = useMicLevel(mode === "listening", signal);
 
-  const wake = useWakeWord(prefs.wake && visible && !oneShot && !teleRef.current && !builder && mode !== "processing", {
-    onCommand: (t) => { setSub(null); send(t); },
-    onWake: () => { if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); setMode("listening"); say("Listening for your command…"); setSub(null); },
+  const wakeActive = prefs.wake && visible && !oneShot && !teleRef.current && !builder;
+  const startConvo = () => { if (prefsRef.current.conversation) { convo.current = true; setConvoOn(true); } };
+  const wake = useWakeWord(wakeActive, {
+    onCommand: (t) => {
+      if (modeRef.current === "processing") return; // one thing at a time
+      if (convo.current && isConversationEnd(t)) { endConvoRef.current("Okay. Say “ASTON” when you need me."); speak("Okay."); return; }
+      startConvo();
+      setSub(null);
+      send(t);
+    },
+    onWake: () => { startConvo(); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); setMode("listening"); say(convo.current ? "I'm listening…" : "Listening for your command…", CONVERSATION_LISTEN_MS + 2000); setSub(null); },
     onInterim: (t) => { setSub(`“${t}”`); mic.bump(); },
-    onTimeout: () => { setMode((m) => (m === "listening" ? "idle" : m)); say(null); setSub(null); },
-  });
+    onTimeout: () => {
+      if (convo.current) { endConvoRef.current("Conversation ended — say “ASTON” when you need me."); return; }
+      setMode((m) => (m === "listening" ? "idle" : m)); say(null); setSub(null);
+    },
+  }, { captureMs: CONVERSATION_LISTEN_MS });
+
+  /** End a hands-free conversation (optionally with a line under the core). */
+  endConvoRef.current = (line?: string | null) => {
+    const was = convo.current;
+    convo.current = false;
+    setConvoOn(false);
+    if (!was) return;
+    wake.cancel();
+    setMode((m) => (m === "listening" ? "idle" : m));
+    setSub(null);
+    if (line) say(line, 6000);
+  };
+  /** After ASTON answers in a conversation: listen for the next phrase straight away. */
+  continueRef.current = () => {
+    if (!convo.current) return;
+    if (modeRef.current === "processing") return;
+    if (wake.capture()) { setMode("listening"); setSub(null); }
+    else endConvoRef.current(null);
+  };
+  // the wake word stopped (teleprompter, builder, hidden tab, turned off): so does the conversation
+  useEffect(() => { if (!wakeActive) endConvoRef.current(null); }, [wakeActive]);
   useEffect(() => { if (wake.state === "denied") { setMicPerm("Blocked"); setFault({ kind: "mic", msg: "Microphone access is blocked, so ASTON can't listen. Allow it in the browser's site settings, or type your command.", action: { label: "Type instead", run: () => { setFault(null); document.getElementById("aston-input")?.focus(); } } }); } }, [wake.state]);
 
   const listen = useCallback(() => {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) { document.getElementById("aston-input")?.focus(); return; }
     if (mode === "listening") {
-      if (wake.state === "capturing") { wake.cancel(); setMode("idle"); say(null); setSub(null); }
+      if (wake.state === "capturing") { wake.cancel(); setMode("idle"); say(null); setSub(null); endConvoRef.current(null); }
       else recog.current?.stop();
       return;
     }
     if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
     setFault((f) => (f?.kind === "mic" ? null : f));
     // the wake-word listener is already running: take its next phrase
-    if (wake.capture()) { setMode("listening"); say("Listening for your command…"); setSub(null); return; }
+    if (wake.capture()) { startConvo(); setMode("listening"); say(convo.current ? "I'm listening…" : "Listening for your command…", CONVERSATION_LISTEN_MS + 2000); setSub(null); return; }
     const r = new SR();
     r.lang = "en-IN";
     r.interimResults = true;
@@ -442,6 +493,12 @@ export function AstonConsole() {
       <div className={`ax-line${menu ? " ax-hide" : ""}`} aria-live="polite">
         <p className={`ax-caption${fault && mode === "idle" ? " ax-caption-fault" : ""}`}>{shown}</p>
         {sub && <p className="ax-sub">{sub}</p>}
+        {convoOn && !fault && (
+          <div className="ax-line-actions">
+            <span className="ax-convo-tag"><i aria-hidden /> Conversation on — just keep talking</span>
+            <button className="ax-chip" onClick={() => { endConvoRef.current(null); setMode("idle"); say(null); }}>End</button>
+          </div>
+        )}
         {fault?.action && mode === "idle" && (
           <div className="ax-line-actions"><button className="ax-chip ax-chip-on" onClick={fault.action.run}>{fault.action.label}</button></div>
         )}
@@ -462,12 +519,12 @@ export function AstonConsole() {
         <form className="ax-bar" onSubmit={(e) => { e.preventDefault(); const t = text; setText(""); send(t); }}>
           <button
             type="button"
-            className={`ax-wake${wakeOn ? " ax-on" : ""}${wake.state === "denied" ? " ax-bad" : ""}`}
+            className={`ax-wake${wakeOn ? " ax-on" : ""}${convoOn ? " ax-convo" : ""}${wake.state === "denied" ? " ax-bad" : ""}`}
             onClick={() => (wake.state === "denied" || wake.state === "needs-tap" ? wake.retry() : setPrefs({ wake: !prefs.wake }))}
             disabled={!speechOk}
             aria-pressed={prefs.wake}
-            aria-label={`Wake word: ${wakeOn ? "listening for ASTON" : wake.state === "denied" ? "microphone blocked" : "off"}`}
-            title={!speechOk ? "Voice isn't supported in this browser" : wakeOn ? "Wake word on — say “ASTON”. Click to turn off." : wake.state === "denied" ? "Microphone blocked — click to try again" : "Wake word off — click to listen for “ASTON”"}
+            aria-label={`Hands-free: ${convoOn ? "in a conversation" : wakeOn ? "listening for ASTON" : wake.state === "denied" ? "microphone blocked" : "off"}`}
+            title={!speechOk ? "Voice isn't supported in this browser" : wakeOn ? "Hands-free on — say “ASTON”, then just keep talking. Click to turn off." : wake.state === "denied" ? "Microphone blocked — click to try again" : "Hands-free off — click to talk without touching anything"}
           >
             <AudioLines size={16} strokeWidth={1.7} aria-hidden />
           </button>

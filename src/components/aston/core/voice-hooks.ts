@@ -87,7 +87,7 @@ const CAPTURE_MS = 8000;
  * is open (it stops when the tab is hidden), and Chrome sends the audio to its
  * speech service to recognise it.
  */
-export function useWakeWord(enabled: boolean, h: WakeHandlers): { state: WakeState; retry: () => void; capture: () => boolean; cancel: () => void } {
+export function useWakeWord(enabled: boolean, h: WakeHandlers, o: { captureMs?: number } = {}): { state: WakeState; retry: () => void; capture: () => boolean; cancel: () => void } {
   const [state, setState] = useState<WakeState>("off");
   const rec = useRef<any>(null);
   const want = useRef(enabled);
@@ -95,6 +95,8 @@ export function useWakeWord(enabled: boolean, h: WakeHandlers): { state: WakeSta
   hs.current = h;
   const captureUntil = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const captureMs = useRef(o.captureMs ?? CAPTURE_MS);
+  captureMs.current = o.captureMs ?? CAPTURE_MS;
 
   const endCapture = useCallback(() => {
     captureUntil.current = 0;
@@ -104,10 +106,10 @@ export function useWakeWord(enabled: boolean, h: WakeHandlers): { state: WakeSta
   }, []);
 
   const beginCapture = useCallback(() => {
-    captureUntil.current = Date.now() + CAPTURE_MS;
+    captureUntil.current = Date.now() + captureMs.current;
     setState("capturing");
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => { if (captureUntil.current) { endCapture(); hs.current.onTimeout(); } }, CAPTURE_MS);
+    timer.current = setTimeout(() => { if (captureUntil.current) { endCapture(); hs.current.onTimeout(); } }, captureMs.current);
   }, [endCapture]);
 
   const start = useCallback(() => {

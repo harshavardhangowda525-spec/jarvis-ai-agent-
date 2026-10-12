@@ -928,6 +928,9 @@ body {
 .ax-wake { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: 50%; color: rgba(170, 195, 215, 0.45); transition: color 0.25s, background 0.25s; }
 .ax-wake.ax-on { color: rgb(var(--ax-cyan)); background: rgba(var(--ax-cyan), 0.1); filter: drop-shadow(0 0 6px rgba(var(--ax-cyan), 0.6)); }
 .ax-wake.ax-bad { color: rgb(var(--ax-red)); }
+.ax-wake.ax-convo { animation: ax-breathe 1.6s ease-in-out infinite; box-shadow: 0 0 0 1px rgba(var(--ax-cyan), 0.5), 0 0 16px rgba(var(--ax-cyan), 0.35); }
+.ax-convo-tag { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; border-radius: 999px; font-size: 12px; color: rgb(190, 245, 255); background: rgba(var(--ax-cyan), 0.08); border: 1px solid rgba(var(--ax-cyan), 0.25); }
+.ax-convo-tag i { width: 7px; height: 7px; border-radius: 50%; background: rgb(var(--ax-cyan)); box-shadow: 0 0 8px rgb(var(--ax-cyan)); animation: ax-blink 1.4s ease-in-out infinite; }
 .ax-wake:disabled { opacity: 0.4; }
 .ax-orbit-btn { display: grid; place-items: center; width: 50px; height: 50px; flex: none; border-radius: 50%; color: rgba(200, 235, 250, 0.85); transition: transform 0.45s cubic-bezier(0.2, 1.4, 0.4, 1), color 0.2s, border-color 0.2s; }
 .ax-orbit-btn:hover, .ax-orbit-btn.ax-on { color: #fff; border-color: rgba(var(--ax-cyan), 0.5); }

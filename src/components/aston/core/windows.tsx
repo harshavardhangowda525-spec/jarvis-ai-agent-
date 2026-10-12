@@ -15,8 +15,10 @@ export interface Prefs {
   voice: boolean; wake: boolean; quality: "auto" | "full" | "lite"; parallax: boolean; motion: "system" | "reduced";
   /** Who writes websites: the owner's local Claude Code (on their plan), Groq, or Claude Code when available. */
   siteEngine: "auto" | "claude-code" | "groq"; claudeModel: "opus" | "sonnet" | "haiku";
+  /** Hands-free: after answering, keep listening for the next phrase (no wake word, no tap). */
+  conversation: boolean;
 }
-export const DEFAULT_PREFS: Prefs = { voice: true, wake: false, quality: "auto", parallax: true, motion: "system", siteEngine: "auto", claudeModel: "sonnet" };
+export const DEFAULT_PREFS: Prefs = { voice: true, wake: false, quality: "auto", parallax: true, motion: "system", siteEngine: "auto", claudeModel: "sonnet", conversation: true };
 const PREFS_KEY = "aston.core.prefs";
 export function loadPrefs(): Prefs {
   try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") }; } catch { return DEFAULT_PREFS; }
@@ -167,12 +169,14 @@ export function VoiceBody({ prefs, setPrefs, wake, onWakeRetry, micPerm, onPrevi
         </>
       ) : <p className="ax-note">This browser has no speech output — ASTON&apos;s replies appear as text.</p>}
       <div className="ax-group">
-        <label className="ax-toggle"><input type="checkbox" checked={prefs.wake} onChange={(e) => setPrefs({ wake: e.target.checked })} disabled={wake === "unsupported"} /> <span>Wake word “ASTON”</span></label>
+        <label className="ax-toggle"><input type="checkbox" checked={prefs.wake} onChange={(e) => setPrefs({ wake: e.target.checked })} disabled={wake === "unsupported"} /> <span>Hands-free — listen for “ASTON”</span></label>
+        <label className="ax-toggle"><input type="checkbox" checked={prefs.conversation} onChange={(e) => setPrefs({ conversation: e.target.checked })} disabled={wake === "unsupported"} /> <span>Conversation mode — keep listening after each answer</span></label>
         <Row k="Wake word" v={wakeText[wake]} tone={wake === "on" || wake === "capturing" ? "ok" : wake === "denied" ? "bad" : "dim"} />
         <Row k="Microphone" v={micPerm} tone={micPerm === "Allowed" ? "ok" : micPerm === "Blocked" ? "bad" : "dim"} />
         {(wake === "denied" || wake === "needs-tap") && <button className="ax-btn" onClick={onWakeRetry}>Try the microphone again</button>}
         <p className="ax-dim ax-small">
-          Say “ASTON” and then your command, or “ASTON, build a website for a café”. It works while this tab is open in Chrome or Edge;
+          Say “ASTON” and then your command, or “ASTON, build a website for a café”. With conversation mode on, just keep talking after each answer —
+          no need to say “ASTON” again. Say “that&apos;s all” (or stay quiet for 10 seconds) to end the conversation. It works while this tab is open in Chrome or Edge;
           browsers don&apos;t allow listening in the background or with the tab hidden. Chrome sends what it hears to its speech service to recognise it.
           On Android, Chrome may chime each time listening restarts.
         </p>
@@ -338,7 +342,8 @@ export function PrefsBody({ prefs, setPrefs, perm, onEnableAlerts }: { prefs: Pr
   return (
     <>
       <label className="ax-toggle"><input type="checkbox" checked={prefs.voice} onChange={(e) => setPrefs({ voice: e.target.checked })} /> <span>Spoken replies</span></label>
-      <label className="ax-toggle"><input type="checkbox" checked={prefs.wake} onChange={(e) => setPrefs({ wake: e.target.checked })} /> <span>Wake word “ASTON”</span></label>
+      <label className="ax-toggle"><input type="checkbox" checked={prefs.wake} onChange={(e) => setPrefs({ wake: e.target.checked })} /> <span>Hands-free — listen for “ASTON”</span></label>
+      <label className="ax-toggle"><input type="checkbox" checked={prefs.conversation} onChange={(e) => setPrefs({ conversation: e.target.checked })} /> <span>Conversation mode — keep listening after each answer</span></label>
       <label className="ax-toggle"><input type="checkbox" checked={prefs.parallax} onChange={(e) => setPrefs({ parallax: e.target.checked })} /> <span>Parallax — the core follows your pointer</span></label>
       <label className="ax-field">
         <span>Visual quality</span>

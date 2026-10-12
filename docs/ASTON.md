@@ -78,6 +78,25 @@ until you ask for it.
   - Chrome sends the audio to its speech service to recognise it.
   - On Android, Chrome may chime each time listening restarts.
   - It's off by default.
+- **Hands-free conversation:**
+  1. Turn on hands-free with the waveform button.
+  2. Say "ASTON" once, then talk back and forth like a phone call. After each
+     answer ASTON listens again by itself, so you don't tap anything or repeat
+     "ASTON". A "Conversation on" tag and an **End** button show while it's
+     running.
+
+  **How it ends:** say "that's all", "thanks", "stop", "goodbye" or "never
+  mind", stay quiet for 10 seconds, or tap **End** or the core.
+
+  **When it pauses:** the conversation stops whenever the teleprompter or the
+  website builder opens, or the tab is hidden.
+
+  **What it hears:** during a conversation, whatever is said next is taken as
+  the next request. Outside a conversation, only phrases starting with "ASTON"
+  count, and ASTON always ignores its own voice.
+
+  **Turning it off:** turn "Conversation mode" off in Voice or Preferences to go
+  back to one command per "ASTON".
 - **Motion:** pointer parallax is on by default on desktop. Reduced motion follows the
   device setting, or can be forced in Preferences, and slows the core and
   removes UI animation.

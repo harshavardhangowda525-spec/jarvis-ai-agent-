@@ -71,3 +71,12 @@ export function wakeIntent(heard: string): WakeResult {
 
 /** Progress arcs: 0..1 when the task reports progress, null when it can't (indeterminate). */
 export const clamp01 = (v: number | null | undefined): number | null => (v == null || Number.isNaN(v) ? null : Math.min(1, Math.max(0, v)));
+
+/** Hands-free conversation: how long ASTON keeps listening for your next phrase after it answers. */
+export const CONVERSATION_LISTEN_MS = 10_000;
+
+/** "That's all", "stop", "goodbye", "never mind"… — ends a hands-free conversation. */
+export function isConversationEnd(heard: string): boolean {
+  const t = stripWake(heard).text.toLowerCase().replace(/[^a-z' ]/g, " ").replace(/\s+/g, " ").trim();
+  return /^(ok(ay)? )?(thanks?( you)?( aston)? )?(that'?s all|that is all|that'?s it|stop|stop listening|goodbye|good bye|bye|bye bye|never ?mind|nothing( else)?|no thanks|no thank you|i'?m done|we'?re done|all done|end( the)? conversation|go to sleep|you can stop|thanks|thank you|thank you aston|thanks aston)( thanks?( you)?)?$/.test(t);
+}
