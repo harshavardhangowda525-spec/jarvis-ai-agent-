@@ -13,7 +13,7 @@ import {
 import { SiteBuilder, SiteList } from "./site-builder";
 import { Teleprompter } from "./teleprompter";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
-import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isConversationEnd, navIntent, STATE_WORD } from "@/lib/aston/core-state";
+import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isCallMeRequest, isConversationEnd, navIntent, STATE_WORD } from "@/lib/aston/core-state";
 import { useRouter } from "next/navigation";
 import { markSelfSpeech, setPreferredVoiceName } from "@/lib/aston/voice";
 import { sayLine, stopSpeaking } from "./core/speech";
@@ -279,6 +279,25 @@ export function AstonConsole() {
       // "open teleprompter" brings back a minimised one exactly where you left it
       if (isOpenOnly(msg) && tele?.min) setTele({ ...tele, min: false });
       else setTele(isOpenOnly(msg) ? { key: Date.now() } : { key: Date.now(), request: bare });
+      return;
+    }
+    // "Call me" / "give me a sample call": one real call to the owner's phone
+    if (isCallMeRequest(msg)) {
+      try {
+        const r = await api<{ to: string }>("/api/aston/phone/call", { method: "POST" });
+        const line = `Calling you now on ${r.to}. Pick up to hear your sample alert.`;
+        remember("assistant", line);
+        say(line, 15000);
+        setSub(null);
+        setMode("idle");
+        speak(line);
+      } catch (e: any) {
+        setMode("idle");
+        say(null);
+        setSub(null);
+        endConvoRef.current(null);
+        setFault({ kind: "action", msg: e?.message ?? "The sample call didn't go through.", action: { label: "Open Diagnostics", run: () => { setFault(null); setWin("diagnostics"); } } });
+      }
       return;
     }
     // "Open JARVIS", "go to DARWIN", "show my tasks": switch to that page.

@@ -9,6 +9,7 @@ import { AstonForbidden } from "./auth";
 import { DecisionError } from "./decisions";
 import { SiteError } from "./site/builder";
 import { ScriptError } from "./scripts/service";
+import { PhoneTestError } from "./phone";
 import type { Parsed } from "./events";
 
 /** Which user an inbound event belongs to: the owner, or (no owner set) the named account. */
@@ -38,6 +39,7 @@ export function astonError(err: unknown): NextResponse {
   if (err instanceof DecisionError) return fail(err.message, err.status);
   if (err instanceof SiteError) return fail(err.message, err.status);
   if (err instanceof ScriptError) return fail(err.message, err.status);
+  if (err instanceof PhoneTestError) return fail(err.message, err.status);
   if (err instanceof SyntaxError) return fail("Invalid JSON.", 400);
   const setup = setupProblem(err);
   if (setup) { console.error("[aston] setup problem:", (err as Error)?.message ?? err); return fail(setup, 503); }

@@ -202,6 +202,14 @@ Tuning (optional): `ASTON_AI_DAILY_CAP` (300), `ASTON_AI_TIMEOUT_MS` (20000),
 `ASTON_PHONE_MAX_CALLS_PER_DAY` (2), `ASTON_PHONE_COOLDOWN_MINUTES` (60),
 `ASTON_PHONE_MAX_DAILY_USD` (0.50), `ASTON_PHONE_EST_COST_USD` (0.15).
 
+**Sample call:** once `ASTON_PHONE_MODE=live`, say "ASTON, call me" (or "give
+me a sample call"), or press **Place a sample call now** in ✦ → Diagnostics.
+ASTON places one real call to your number and says it's a sample. It uses the
+same guard as alert calls (daily cap, cooldown and budget) and counts toward
+them. In test mode it refuses and says why, because test mode never dials.
+Twilio trial accounts can only call **verified** numbers, and ASTON says so if
+Twilio refuses.
+
 ### Setup steps
 
 1. Set `GROQ_API_KEY` and `ASTON_OWNER_EMAIL` (Vercel → Settings → Environment

@@ -260,6 +260,39 @@ export interface Diag {
   speech: "ok" | "blocked" | "failed" | "unsupported" | null;
 }
 
+interface PhoneCheck { liveCallsWouldBeAllowed: boolean; reason: string | null; status: { enabled: boolean; mode: string; ownerNumberSet: boolean; twilioConfigured: boolean; callsLast24h: number; maxCallsPerDay: number } }
+
+/** Phone alerts: live status (no call) and a button for one real sample call. */
+function PhoneSection() {
+  const [c, setC] = useState<PhoneCheck | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const check = useCallback(async () => {
+    const r = await fetch("/api/aston/phone/test", { method: "POST" }).then((x) => x.json()).catch(() => null);
+    if (r?.ok) setC(r.data);
+  }, []);
+  useEffect(() => { check(); }, [check]);
+  const call = async () => {
+    if (!window.confirm("Place one real sample call to your phone now? It uses your Twilio balance and counts toward today's call limit.")) return;
+    setBusy(true); setMsg(null);
+    const r = await fetch("/api/aston/phone/call", { method: "POST" }).then((x) => x.json()).catch(() => null);
+    setBusy(false);
+    setMsg(r?.ok ? { ok: true, text: `Calling ${r.data.to} now — pick up.` } : { ok: false, text: r?.error ?? "The call didn't go through." });
+    check();
+  };
+  const s = c?.status;
+  return (
+    <div className="ax-group">
+      <h3>Phone alerts</h3>
+      <Row k="Phone alerts" v={!s ? "—" : !s.enabled ? "Off" : s.mode === "live" ? "On — real calls" : "Test mode — never dials"} tone={s?.enabled && s.mode === "live" ? "ok" : "dim"} />
+      {s && <Row k="Calls today" v={`${s.callsLast24h} of ${s.maxCallsPerDay}`} />}
+      {c?.reason && <p className="ax-note">{c.reason}</p>}
+      <button className="ax-btn" onClick={call} disabled={busy}>{busy ? "Calling…" : "Place a sample call now"}</button>
+      {msg && <p className={msg.ok ? "ax-small ax-ok" : "ax-note"}>{msg.text}</p>}
+    </div>
+  );
+}
+
 export function DiagnosticsBody({ d, onRefresh }: { d: Diag; onRefresh: () => void }) {
   const yes = (b: boolean) => (b ? "Available" : "Not available");
   return (
@@ -283,6 +316,7 @@ export function DiagnosticsBody({ d, onRefresh }: { d: Diag; onRefresh: () => vo
         <Row k="Desktop alerts" v={d.notif} />
         <Row k="Reduced motion" v={d.reduced ? "On" : "Off"} />
       </div>
+      <PhoneSection />
       <button className="ax-btn" onClick={onRefresh}>Refresh</button>
     </>
   );

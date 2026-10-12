@@ -18,14 +18,14 @@ import { env } from "@/lib/env";
 export interface CallProvider {
   name: string;
   live: boolean;
-  place(to: string, message: string): Promise<{ ref: string }>;
+  place(to: string, message: string, opts?: { intro?: string }): Promise<{ ref: string }>;
 }
 
 export class TestCallProvider implements CallProvider {
   name = "test";
   live = false;
   readonly placed: { to: string; message: string }[] = [];
-  async place(to: string, message: string) {
+  async place(to: string, message: string, _opts?: { intro?: string }) {
     this.placed.push({ to, message });
     return { ref: `test-${Date.now().toString(36)}` };
   }
@@ -38,9 +38,9 @@ export class TwilioCallProvider implements CallProvider {
   name = "twilio";
   live = true;
   constructor(private cfg: { accountSid: string; apiKey: string; apiSecret: string; from: string }, private fetchImpl: typeof fetch = fetch) {}
-  async place(to: string, message: string) {
+  async place(to: string, message: string, opts: { intro?: string } = {}) {
     const text = xml(message.slice(0, 600));
-    const twiml = `<Response><Say>This is ASTON with an urgent alert.</Say><Pause length="1"/><Say>${text}</Say><Pause length="1"/><Say>Repeating.</Say><Say>${text}</Say></Response>`;
+    const twiml = `<Response><Say>${xml(opts.intro ?? "This is ASTON with an urgent alert.")}</Say><Pause length="1"/><Say>${text}</Say><Pause length="1"/><Say>Repeating.</Say><Say>${text}</Say></Response>`;
     const res = await this.fetchImpl(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(this.cfg.accountSid)}/Calls.json`, {
       method: "POST",
       headers: {
@@ -106,4 +106,40 @@ export async function phoneGuard(userId: string, now = new Date()): Promise<{ al
   if (last && now.getTime() - last < env.astonPhoneCooldownMin * 60_000) return no(`Cooling down — the last call was under ${env.astonPhoneCooldownMin} minutes ago.`);
   if (env.astonPhoneMode === "live" && spend + env.astonPhoneEstCostUsd > env.astonPhoneMaxDailyUsd) return no(`Daily phone budget reached ($${env.astonPhoneMaxDailyUsd.toFixed(2)}).`);
   return { allowed: true, status };
+}
+
+export class PhoneTestError extends Error {
+  constructor(message: string, public status = 409) { super(message); this.name = "PhoneTestError"; }
+}
+
+/** "+919876543210" → "+91 ••••• •3210" (never echo the whole number). */
+export const maskNumber = (n: string) => (n.length > 6 ? `${n.slice(0, 3)} ••••• •${n.slice(-4)}` : "your number");
+
+/**
+ * One real sample call to the owner, on request. Same guard as alert calls
+ * (enabled, number, Twilio settings, daily cap, cooldown, daily budget) and it
+ * counts toward them. Never in test mode — that mode promises nothing is dialled.
+ */
+export async function placeTestCall(userId: string, provider: CallProvider | null = callProvider()): Promise<{ to: string; ref: string }> {
+  const guard = await phoneGuard(userId);
+  if (!guard.allowed) throw new PhoneTestError(`${guard.reason} Nothing was dialled.`);
+  if (env.astonPhoneMode !== "live" || !provider?.live) {
+    throw new PhoneTestError("Phone mode is \"test\", which never dials. To hear a real call, set ASTON_PHONE_MODE to \"live\" in .env and restart ASTON.");
+  }
+  const db = getDb();
+  const message = "This is a sample call. Your phone alerts are working. When something critical happens, I'll call you like this. No action is needed. Goodbye.";
+  const now = new Date();
+  // calls are recorded against an incident; this one is a closed note so it never shows as an alert
+  const inc = await db.astonIncident.create({
+    data: { userId, fingerprint: `test-call:${now.getTime()}`, source: "aston", kind: "info", priority: "normal", status: "resolved", title: "Sample phone call", summary: "Sample phone call requested by the owner.", resolvedAt: now, resolution: "Sample call placed on request." },
+  });
+  try {
+    const r = await provider.place(env.astonOwnerPhone, message, { intro: "Hello, this is ASTON." });
+    await db.astonAlert.create({ data: { incidentId: inc.id, userId, channel: "phone", status: "delivered", attempts: 1, deliveredAt: new Date(), providerRef: r.ref, testMode: false, costUsd: env.astonPhoneEstCostUsd } });
+    return { to: maskNumber(env.astonOwnerPhone), ref: r.ref };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    await db.astonAlert.create({ data: { incidentId: inc.id, userId, channel: "phone", status: "gave_up", attempts: 1, lastError: msg.slice(0, 400), testMode: false } });
+    throw new PhoneTestError(`${msg.slice(0, 220)}${/21219|unverified/i.test(msg) ? " — on a Twilio trial, verify your mobile under Phone Numbers → Verified Caller IDs." : /21215|geo/i.test(msg) ? " — allow India under Voice → Settings → Geo permissions." : ""}`, 502);
+  }
 }

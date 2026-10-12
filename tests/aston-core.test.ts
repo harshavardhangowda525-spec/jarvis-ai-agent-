@@ -130,3 +130,11 @@ describe("ASTON opens pages by voice", () => {
     expect(navIntent("build a website for jarvis cafe")).toBeNull();
   });
 });
+
+describe("ASTON sample call by voice", () => {
+  it("recognises a request for a sample call, and nothing else", async () => {
+    const { isCallMeRequest } = await import("@/lib/aston/core-state");
+    for (const t of ["call me", "ASTON, give me a sample call now", "make a test call", "test the phone call", "please call me", "give me a call"]) expect(isCallMeRequest(t), t).toBe(true);
+    for (const t of ["call the client tomorrow", "write a cold call script", "who called me", "call me when the deploy fails"]) expect(isCallMeRequest(t), t).toBe(false);
+  });
+});

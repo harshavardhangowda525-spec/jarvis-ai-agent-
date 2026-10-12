@@ -110,3 +110,9 @@ export function navIntent(text: string): { label: string; href: string } | null 
   const page = PAGES.find((p) => p.names.includes(name));
   return page ? { label: page.label, href: page.href } : null;
 }
+
+/** "call me", "give me a sample call", "make a test call" → place one sample phone call. */
+export function isCallMeRequest(text: string): boolean {
+  const t = stripWake(text).text.toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim().replace(/^(please |can you |could you )+/, "").replace(/( please| now| right now)+$/, "");
+  return /^(call me|ring me|phone me|give me a (test |sample |quick )?(phone )?call|(make|place|do) a (test |sample )?(phone )?call( to me)?|test (the )?(phone )?(call|calls|calling|alerts?))$/.test(t);
+}
