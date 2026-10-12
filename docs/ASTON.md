@@ -256,6 +256,60 @@ preview beside it.
 - **Not included yet:** real photos (illustrations are SVG/CSS), multi-page
   sites, and publishing. Publishing would be a separate, approval-gated step.
 
+### Building with your own Claude Code (free on your Claude plan)
+
+When ASTON runs on your PC, and Claude Code is installed and signed in there
+with your Claude account, ASTON can hand each build step to **your local Claude
+Code** instead of Groq. There's no API key and no extra charge: each website
+counts toward your Claude plan's normal usage limits.
+
+- **Setup, once:**
+  1. Install Claude Code (claude.com/code).
+  2. Run `claude` in a terminal and log in with your Claude account.
+  3. Restart ASTON.
+
+  ✦ → **Preferences** → **Website builder** shows "Claude Code on this PC:
+  Ready".
+- **Choosing the engine:** pick it under Preferences → **Who writes your
+  websites**:
+  - **Claude Code when available, otherwise Groq** (the default)
+  - **Always Claude Code**
+  - **Always Groq**
+
+  Pick the model under **Claude model**: Sonnet (recommended), Opus (best
+  design, uses more of your plan) or Haiku. The builder window always says which
+  engine is writing the site.
+- **Your plan, never a bill.** ASTON removes `ANTHROPIC_API_KEY`,
+  `ANTHROPIC_AUTH_TOKEN` and cloud-provider switches from Claude Code's
+  environment. In `claude -p` mode an API key would otherwise take priority and
+  be billed. If Claude Code is signed in with an API key instead of your Claude
+  account, ASTON refuses to use it and tells you how to switch with `/login`.
+- **Text only, isolated:**
+  - Each step is one `claude -p` run with every tool turned off, a single turn
+    and no MCP servers.
+  - Nothing is saved to Claude Code's session history.
+  - It runs from an empty temporary folder, so your projects and CLAUDE.md files
+    aren't read.
+  - The prompt goes in on stdin, and the reply streams into the builder window.
+- **No silent switching:**
+  - **Claude Code not available:** if you chose "Always Claude Code" and it
+    isn't available, ASTON says why and offers **Build with Groq instead**.
+  - **Usage limit reached mid-build:** if your plan's limit is hit ("resets at
+    …"), the build pauses with the reason and offers **Finish with Groq
+    instead** or **Resume** later.
+- **PC only:** this never runs on Vercel. There, websites use Groq.
+- **Settings in `.env`, all optional:**
+  - `ASTON_SITE_ENGINE`: `auto` | `claude-code` | `groq`. This is the default
+    for websites started from chat.
+  - `ASTON_CLAUDE_MODEL`: `sonnet` | `opus` | `haiku`.
+  - `ASTON_CLAUDE_CODE=off`: turns the feature off entirely.
+  - `CLAUDE_CODE_PATH`: the full path to `claude.exe`, if `claude` isn't on
+    your PATH.
+- **Terms:** this is meant for your own work, on your own PC, with your own
+  subscription. Anthropic's terms don't allow routing other people's requests
+  through a Claude subscription. If ASTON ever serves clients directly, use an
+  API key instead.
+
 ## Teleprompter (sales scripts)
 
 Say or type **"ASTON, create a sales script for a restaurant"**. Other examples:

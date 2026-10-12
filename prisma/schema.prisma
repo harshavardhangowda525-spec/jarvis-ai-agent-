@@ -1284,6 +1284,8 @@ model AstonSite {
   sections    Json?
   error       String?   @db.Text
   revisions   Int       @default(0)
+  /// "groq" or "claude-code:<opus|sonnet|haiku>" (the owner's local Claude Code, on their plan).
+  engine      String    @default("groq")
   lockedUntil DateTime?
   startedAt   DateTime  @default(now())
   completedAt DateTime?

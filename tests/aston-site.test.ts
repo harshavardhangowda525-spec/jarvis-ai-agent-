@@ -3,6 +3,7 @@ const H = vi.hoisted(() => {
   process.env.ASTON_OWNER_EMAIL = "aston-site-owner@example.com";
   process.env.GROQ_API_KEY = "gsk_site_test_key_000000000000000000000";
   process.env.ASTON_AI_MAX_RETRIES = "2";
+  process.env.ASTON_SITE_ENGINE = "groq"; // these tests are about the Groq pipeline
   class UnauthorizedError extends Error {}
   return { user: null as null | { id: string; email: string }, UnauthorizedError };
 });

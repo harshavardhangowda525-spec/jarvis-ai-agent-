@@ -11,8 +11,12 @@ import type { RenderInfo } from "./aston-core";
 export interface AiStatus { configured: boolean; model: string; status: string; blockedUntil: string | null; requestsToday: number; dailyCap: number; lastError: string | null }
 export interface Turn { role: "user" | "assistant"; content: string; at?: number }
 
-export interface Prefs { voice: boolean; wake: boolean; quality: "auto" | "full" | "lite"; parallax: boolean; motion: "system" | "reduced" }
-export const DEFAULT_PREFS: Prefs = { voice: true, wake: false, quality: "auto", parallax: true, motion: "system" };
+export interface Prefs {
+  voice: boolean; wake: boolean; quality: "auto" | "full" | "lite"; parallax: boolean; motion: "system" | "reduced";
+  /** Who writes websites: the owner's local Claude Code (on their plan), Groq, or Claude Code when available. */
+  siteEngine: "auto" | "claude-code" | "groq"; claudeModel: "opus" | "sonnet" | "haiku";
+}
+export const DEFAULT_PREFS: Prefs = { voice: true, wake: false, quality: "auto", parallax: true, motion: "system", siteEngine: "auto", claudeModel: "sonnet" };
 const PREFS_KEY = "aston.core.prefs";
 export function loadPrefs(): Prefs {
   try { return { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}") }; } catch { return DEFAULT_PREFS; }
@@ -278,6 +282,57 @@ export function DiagnosticsBody({ d, onRefresh }: { d: Diag; onRefresh: () => vo
   );
 }
 
+/* ------------------------------------------------------------------ website engine */
+interface Engines { claude: { available: boolean; reason: string | null; account: string | null; defaultModel: string }; groq: { available: boolean; status: string } }
+
+export function EngineSettings({ prefs, setPrefs }: { prefs: Prefs; setPrefs: (p: Partial<Prefs>) => void }) {
+  const [e, setE] = useState<Engines | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const check = useCallback(async (fresh: boolean) => {
+    setChecking(true); setErr(null);
+    try {
+      const r = await fetch(`/api/aston/engines${fresh ? "?fresh=1" : ""}`, { cache: "no-store" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      setE(j.data);
+    } catch (x: any) { setErr(x?.message ?? "Couldn't check."); } finally { setChecking(false); }
+  }, []);
+  useEffect(() => { check(false); }, [check]);
+  const c = e?.claude;
+  const uses = prefs.siteEngine === "groq" ? "Groq" : c?.available ? `Claude Code (${prefs.claudeModel})` : prefs.siteEngine === "claude-code" ? "Claude Code — not available" : "Groq (Claude Code not available)";
+  return (
+    <div className="ax-group">
+      <h3>Website builder</h3>
+      <Row k="Claude Code on this PC" v={!e ? (err ? "—" : "Checking…") : c?.available ? `Ready${c.account ? ` · ${c.account}` : ""}` : "Not available"} tone={!e ? "dim" : c?.available ? "ok" : "warn"} />
+      {c && !c.available && c.reason && <p className="ax-note">{c.reason}</p>}
+      {err && <p className="ax-note">{err}</p>}
+      <label className="ax-field">
+        <span>Who writes your websites</span>
+        <select value={prefs.siteEngine} onChange={(ev) => setPrefs({ siteEngine: ev.target.value as Prefs["siteEngine"] })}>
+          <option value="auto">Claude Code when available, otherwise Groq</option>
+          <option value="claude-code">Always Claude Code (ask me if it&apos;s not available)</option>
+          <option value="groq">Always Groq (free)</option>
+        </select>
+      </label>
+      <label className="ax-field">
+        <span>Claude model</span>
+        <select value={prefs.claudeModel} onChange={(ev) => setPrefs({ claudeModel: ev.target.value as Prefs["claudeModel"] })} disabled={prefs.siteEngine === "groq"}>
+          <option value="sonnet">Sonnet — fast, great sites (recommended)</option>
+          <option value="opus">Opus — best design, uses more of your plan</option>
+          <option value="haiku">Haiku — quickest, simpler sites</option>
+        </select>
+      </label>
+      <Row k="Next website uses" v={uses} />
+      <button className="ax-btn" onClick={() => check(true)} disabled={checking}>{checking ? "Checking…" : "Check Claude Code again"}</button>
+      <p className="ax-dim ax-small">
+        Claude Code runs on your Claude plan — no API key and no extra charge; each website uses part of your plan&apos;s usage.
+        It works when ASTON runs on this PC with Claude Code installed and signed in. If your plan&apos;s limit is reached, ASTON stops and asks before using Groq.
+      </p>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ preferences */
 export function PrefsBody({ prefs, setPrefs, perm, onEnableAlerts }: { prefs: Prefs; setPrefs: (p: Partial<Prefs>) => void; perm: NotificationPermission | "unsupported"; onEnableAlerts: () => void }) {
   return (
@@ -300,6 +355,7 @@ export function PrefsBody({ prefs, setPrefs, perm, onEnableAlerts }: { prefs: Pr
           <option value="reduced">Reduced motion</option>
         </select>
       </label>
+      <EngineSettings prefs={prefs} setPrefs={setPrefs} />
       <div className="ax-group">
         <Row k="Desktop alerts" v={perm === "granted" ? "On" : perm === "denied" ? "Blocked in this browser" : perm === "unsupported" ? "Not supported" : "Off"} tone={perm === "granted" ? "ok" : "dim"} />
         {perm === "default" && <button className="ax-btn" onClick={onEnableAlerts}>Enable desktop alerts</button>}

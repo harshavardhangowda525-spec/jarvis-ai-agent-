@@ -8,12 +8,13 @@ interface SiteDTO {
   id: string; title: string; brief: string; status: string; error: string | null;
   plan: SitePlan | null; css: string | null; sections: SiteSection[];
   revisions: number; startedAt: string; completedAt: string | null;
+  engine?: string; engineLabel?: string;
 }
 type StepInfo = { kind: "plan" | "css" | "section"; id?: string; title: string; file: string; index: number; total: number };
 type Ev =
   | { t: "step"; step: StepInfo } | { t: "d"; d: string }
   | { t: "saved" | "complete"; site: SiteDTO }
-  | { t: "wait"; until: string; message: string } | { t: "error"; message: string };
+  | { t: "wait"; until: string; message: string } | { t: "error"; message: string; engine?: "claude-code"; kind?: string };
 
 const FILES = ["plan.json", "styles.css", "index.html", "script.js"] as const;
 type File = (typeof FILES)[number];
@@ -67,6 +68,9 @@ export function SiteBuilder({ siteId, onClose, onSpeak, onBusy, onProgress }: { 
   const [running, setRunning] = useState(false);
   const [waitUntil, setWaitUntil] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // the last error came from Claude Code (limit, sign-in, not installed): offer Groq for the rest
+  const [claudeFailed, setClaudeFailed] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [view, setView] = useState<"code" | "preview">("code");
   const [srcDoc, setSrcDoc] = useState("");
@@ -100,6 +104,7 @@ export function SiteBuilder({ siteId, onClose, onSpeak, onBusy, onProgress }: { 
       setWaitUntil(Date.parse(ev.until));
     } else if (ev.t === "error") {
       setError(ev.message);
+      setClaudeFailed(ev.engine === "claude-code");
     }
   }, [follow]);
 
@@ -109,6 +114,7 @@ export function SiteBuilder({ siteId, onClose, onSpeak, onBusy, onProgress }: { 
     stopRef.current = false;
     setRunning(true);
     setError(null);
+    setClaudeFailed(false);
     try {
       for (let guard = 0; guard < 40 && !stopRef.current; guard++) {
         const res = await fetch(`/api/aston/sites/${siteId}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -141,6 +147,18 @@ export function SiteBuilder({ siteId, onClose, onSpeak, onBusy, onProgress }: { 
       if (alive.current) setRunning(false);
     }
   }, [onEvent, onSpeak, running, siteId]);
+
+  // only on the owner's click: from here on this site is written by Groq
+  const toGroq = async (resume: boolean) => {
+    setSwitching(true);
+    const r = await fetch(`/api/aston/sites/${siteId}/engine`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ engine: "groq" }) }).then((x) => x.json()).catch(() => null);
+    setSwitching(false);
+    if (!r?.ok) { setError(r?.error ?? "Couldn't switch to Groq."); return; }
+    setSite(r.data);
+    setClaudeFailed(false);
+    setError(null);
+    if (resume) run("next");
+  };
 
   // load, then start (or resume) the build
   useEffect(() => {
@@ -202,7 +220,7 @@ export function SiteBuilder({ siteId, onClose, onSpeak, onBusy, onProgress }: { 
         <div className="lg-sheen" aria-hidden />
         <header className="lg-head">
           <div className="min-w-0">
-            <p className="lg-kicker">ASTON · Website builder</p>
+            <p className="lg-kicker">ASTON · Website builder{site?.engineLabel ? <> · <span className="lg-engine">{site.engineLabel}</span></> : null}</p>
             <h2 className="lg-title">{plan?.siteName ?? site?.title ?? "Preparing…"}</h2>
           </div>
           <div className="lg-meta">
@@ -243,13 +261,19 @@ export function SiteBuilder({ siteId, onClose, onSpeak, onBusy, onProgress }: { 
               <form className="lg-ask" onSubmit={(e) => { e.preventDefault(); const a = ask.trim(); if (a.length >= 3) { setAsk(""); run("revise", { instruction: a }); } }}>
                 <input value={ask} onChange={(e) => setAsk(e.target.value)} placeholder="Ask for a change — “make the hero darker”" maxLength={800} disabled={running} />
               </form>
+              {claudeFailed && !running && <button className="lg-btn" disabled={switching} onClick={() => toGroq(false)}>{switching ? "Switching…" : "Use Groq for changes"}</button>}
               <a className="lg-btn" href={`/api/aston/sites/${siteId}/html`} target="_blank" rel="noopener noreferrer">Open full screen</a>
               <a className="lg-btn lg-btn-primary" href={`/api/aston/sites/${siteId}/html?download=1`}>Download</a>
             </>
           ) : running ? (
             <button className="lg-btn" onClick={() => { stopRef.current = true; }}>Pause after this step</button>
           ) : (
-            <button className="lg-btn lg-btn-primary" onClick={() => run("next")}>Resume</button>
+            <>
+              {claudeFailed && (
+                <button className="lg-btn" disabled={switching} onClick={() => toGroq(true)}>{switching ? "Switching…" : "Finish with Groq instead"}</button>
+              )}
+              <button className="lg-btn lg-btn-primary" onClick={() => run("next")}>Resume</button>
+            </>
           )}
         </footer>
       </div>

@@ -6,7 +6,8 @@ import { AstonAiUnavailable, groqChat, type GroqDeps } from "./groq";
 import { getIncident, listIncidents, toDTO } from "./incidents";
 import { decide, requestApproval, ACTIONS, DecisionError } from "./decisions";
 import { probe, probeAllowed } from "./probe";
-import { createSite, SiteError } from "./site/builder";
+import { createSite, SiteError, type EngineChoice } from "./site/builder";
+import type { ClaudeModel } from "./site/claude-code";
 import type { IncidentDTO } from "./types";
 
 /**
@@ -40,10 +41,12 @@ const SYSTEM =
 
 const brief = (i: IncidentDTO) => ({ id: i.id, priority: i.priority, status: i.status, project: i.project, title: i.title, summary: i.summary, next: i.recommendation, pendingApproval: i.pendingAction, seen: i.occurrences, since: i.firstSeenAt });
 
-async function runTool(userId: string, name: string, args: Record<string, unknown>, fetchImpl?: typeof fetch): Promise<{ out: unknown; changed?: boolean; site?: string }> {
+export interface SitePrefs { engine?: EngineChoice; model?: ClaudeModel }
+
+async function runTool(userId: string, name: string, args: Record<string, unknown>, fetchImpl?: typeof fetch, sitePrefs?: SitePrefs): Promise<{ out: unknown; changed?: boolean; site?: string }> {
   switch (name) {
     case "build_website": {
-      const site = await createSite(userId, String(args.brief ?? ""));
+      const site = await createSite(userId, String(args.brief ?? ""), sitePrefs);
       return { out: { ok: true, building: true, note: "The builder window is open and writing the site live (about 5 minutes)." }, site: site.id };
     }
     case "list_incidents":
@@ -89,7 +92,7 @@ async function offlineReply(userId: string, note: string): Promise<string> {
   return `${head} ${open.length} open item${open.length === 1 ? "" : "s"}. ${top}.`;
 }
 
-export async function chat(userId: string, history: ChatTurn[], o: { groq?: Partial<GroqDeps>; fetchImpl?: typeof fetch } = {}): Promise<ChatResult> {
+export async function chat(userId: string, history: ChatTurn[], o: { groq?: Partial<GroqDeps>; fetchImpl?: typeof fetch; site?: SitePrefs } = {}): Promise<ChatResult> {
   const open = (await listIncidents(userId, { limit: 8 })).filter((i) => i.status !== "resolved" && i.status !== "dismissed");
   const messages: Msg[] = [
     { role: "system", content: `${SYSTEM}\nNow: ${new Date().toISOString()}. Open incidents: ${JSON.stringify(open.map(brief))}` },
@@ -109,7 +112,7 @@ export async function chat(userId: string, history: ChatTurn[], o: { groq?: Part
         let out: unknown;
         try {
           const args = JSON.parse(c.function.arguments || "{}") as Record<string, unknown>;
-          const r = await runTool(userId, c.function.name, args, o.fetchImpl);
+          const r = await runTool(userId, c.function.name, args, o.fetchImpl, o.site);
           out = r.out; changed ||= !!r.changed; site = r.site ?? site;
         } catch (e) {
           out = { error: e instanceof DecisionError || e instanceof SiteError ? e.message : "The tool failed." };

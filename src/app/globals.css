@@ -1071,6 +1071,7 @@ body {
 .lg-window { width: min(1240px, 100%); height: min(800px, calc(100dvh - 32px)); display: flex; flex-direction: column; padding: 18px 20px 16px; gap: 10px; }
 .lg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .lg-kicker { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(186, 230, 253, 0.7); }
+.lg-engine { color: rgba(253, 230, 186, 0.85); letter-spacing: 0.12em; }
 .lg-title { font-size: 20px; font-weight: 500; letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lg-meta { display: flex; align-items: center; gap: 14px; font-variant-numeric: tabular-nums; font-size: 14px; color: #cbd5e1; }
 .lg-x { width: 32px; height: 32px; border-radius: 999px; font-size: 20px; line-height: 1; color: #e2e8f0; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.14); }

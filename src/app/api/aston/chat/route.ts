@@ -10,14 +10,16 @@ export const maxDuration = 60;
 
 const schema = z.object({
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(4000) })).min(1).max(30),
+  /** Which engine a website started from chat should use (the owner's preference). */
+  site: z.object({ engine: z.enum(["auto", "groq", "claude-code"]).optional(), model: z.enum(["opus", "sonnet", "haiku"]).optional() }).optional(),
 });
 
 export async function POST(req: Request) {
   try {
     const user = await requireOwner();
     if (!rateLimit(`aston:chat:${user.id}`, 20, 60_000).allowed) return fail("Slow down a little — too many messages.", 429);
-    const { messages } = schema.parse(await req.json());
-    return ok(await chat(user.id, messages));
+    const { messages, site } = schema.parse(await req.json());
+    return ok(await chat(user.id, messages, { site }));
   } catch (err) {
     return astonError(err);
   }

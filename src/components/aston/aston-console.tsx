@@ -255,9 +255,9 @@ export function AstonConsole() {
     }
     // Website requests go straight to the builder (no extra AI round-trip).
     if (WEBSITE_INTENT.test(msg)) {
-      try {
-        const site = await api<{ id: string }>("/api/aston/sites", { method: "POST", body: JSON.stringify({ brief: msg }) });
-        const line = "On it. I'm building the website now — watch the code as I write it.";
+      const start = async (engine: Prefs["siteEngine"]) => {
+        const site = await api<{ id: string; engineLabel?: string }>("/api/aston/sites", { method: "POST", body: JSON.stringify({ brief: msg, engine, model: prefsRef.current.claudeModel }) });
+        const line = `On it. I'm building the website now${site.engineLabel ? ` with ${site.engineLabel.replace(" · your Claude Code", " on your Claude Code")}` : ""} — watch the code as I write it.`;
         remember("assistant", line);
         say(line);
         setSub(null);
@@ -265,15 +265,20 @@ export function AstonConsole() {
         signal.current.progress = 0;
         setBuilder(site.id);
         speak(line);
+      };
+      try {
+        await start(prefsRef.current.siteEngine);
       } catch (e: any) {
         setMode("idle");
         say(null);
-        setFault({ kind: "chat", msg: e?.message ?? "I couldn't start the website.", action: { label: "Try again", run: () => send(msg) } });
+        // Claude Code was asked for but isn't usable here: say why, and only use Groq if the owner taps it
+        const viaGroq = e?.status === 409 ? { label: "Build with Groq instead", run: () => { setFault(null); setMode("processing"); start("groq").catch((x: any) => { setMode("idle"); setFault({ kind: "chat", msg: x?.message ?? "I couldn't start the website." }); }); } } : null;
+        setFault({ kind: "chat", msg: e?.message ?? "I couldn't start the website.", action: viaGroq ?? { label: "Try again", run: () => send(msg) } });
       }
       return;
     }
     try {
-      const r = await api<{ reply: string; ai: boolean; aiNote: string | null; changed: boolean; site?: string | null }>("/api/aston/chat", { method: "POST", body: JSON.stringify({ messages: history.current.map(({ role, content }) => ({ role, content })) }) });
+      const r = await api<{ reply: string; ai: boolean; aiNote: string | null; changed: boolean; site?: string | null }>("/api/aston/chat", { method: "POST", body: JSON.stringify({ messages: history.current.map(({ role, content }) => ({ role, content })), site: { engine: prefsRef.current.siteEngine, model: prefsRef.current.claudeModel } }) });
       if (r.site) { signal.current.progress = 0; setBuilder(r.site); }
       remember("assistant", r.reply);
       say(r.reply);
