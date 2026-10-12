@@ -87,18 +87,21 @@ const CAPTURE_MS = 8000;
  * is open (it stops when the tab is hidden), and Chrome sends the audio to its
  * speech service to recognise it.
  */
-export function useWakeWord(enabled: boolean, h: WakeHandlers, o: { captureMs?: number } = {}): { state: WakeState; retry: () => void; capture: () => boolean; cancel: () => void } {
+export function useWakeWord(enabled: boolean, h: WakeHandlers, o: { captureMs?: number } = {}): { state: WakeState; retry: () => void; capture: (resuming?: boolean) => boolean; cancel: () => void } {
   const [state, setState] = useState<WakeState>("off");
   const rec = useRef<any>(null);
   const want = useRef(enabled);
   const hs = useRef(h);
   hs.current = h;
   const captureUntil = useRef(0);
+  // a capture asked for while the listener was paused (e.g. a phone, while ASTON spoke): starts with it
+  const pendingCapture = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const captureMs = useRef(o.captureMs ?? CAPTURE_MS);
   captureMs.current = o.captureMs ?? CAPTURE_MS;
 
   const endCapture = useCallback(() => {
+    pendingCapture.current = false;
     captureUntil.current = 0;
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
@@ -121,7 +124,10 @@ export function useWakeWord(enabled: boolean, h: WakeHandlers, o: { captureMs?: 
     r.continuous = true;
     r.interimResults = true;
     r.maxAlternatives = 3;
-    r.onstart = () => setState((s) => (s === "capturing" ? s : "on"));
+    r.onstart = () => {
+      if (pendingCapture.current) { pendingCapture.current = false; beginCapture(); }
+      else setState((s) => (s === "capturing" ? s : "on"));
+    };
     r.onresult = (ev: any) => {
       if (isSelfSpeaking()) return; // ASTON's own voice
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
@@ -161,7 +167,7 @@ export function useWakeWord(enabled: boolean, h: WakeHandlers, o: { captureMs?: 
     want.current = enabled;
     if (enabled) start();
     else {
-      endCapture();
+      if (!pendingCapture.current) endCapture();
       try { rec.current?.stop(); } catch { /* not running */ }
       rec.current = null;
       setState((s) => (s === "unsupported" || s === "denied" ? s : "off"));
@@ -172,11 +178,25 @@ export function useWakeWord(enabled: boolean, h: WakeHandlers, o: { captureMs?: 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
   /** A tap on the core while the wake word is running: take the next phrase as the command. */
-  const capture = useCallback(() => {
-    if (!rec.current || state === "denied" || state === "unsupported") return false;
+  /**
+   * Take the next phrase as a command. `resuming`: the listener is paused for a
+   * moment (a phone lets go of the mic while ASTON speaks) — start listening as
+   * soon as it's back.
+   */
+  const capture = useCallback((resuming = false) => {
+    if (state === "denied" || state === "unsupported") return false;
+    if (!rec.current) {
+      if (!resuming) return false;
+      pendingCapture.current = true;
+      setState("capturing");
+      if (timer.current) clearTimeout(timer.current);
+      // if it never comes back, give up like a normal silence
+      timer.current = setTimeout(() => { if (pendingCapture.current) { endCapture(); hs.current.onTimeout(); } }, captureMs.current + 3000);
+      return true;
+    }
     beginCapture();
     return true;
-  }, [beginCapture, state]);
+  }, [beginCapture, endCapture, state]);
 
   const retry = useCallback(() => { want.current = true; setState("off"); start(); }, [start]);
   return { state, retry, capture, cancel: endCapture };

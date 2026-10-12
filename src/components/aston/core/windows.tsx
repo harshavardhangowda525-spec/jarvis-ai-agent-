@@ -257,6 +257,7 @@ export interface Diag {
   serverOk: boolean | null; lastSync: number | null; serverError: string | null;
   ai: AiStatus | null; render: RenderInfo | null; wake: WakeState; level: LevelSource;
   micPerm: string; notif: string; recognition: boolean; synthesis: boolean; voices: number; reduced: boolean; wordSync: boolean | null;
+  speech: "ok" | "blocked" | "failed" | "unsupported" | null;
 }
 
 export function DiagnosticsBody({ d, onRefresh }: { d: Diag; onRefresh: () => void }) {
@@ -275,6 +276,7 @@ export function DiagnosticsBody({ d, onRefresh }: { d: Diag; onRefresh: () => vo
         <Row k="Core renderer" v={d.render ? (d.render.mode === "webgl" ? `WebGL · ${d.render.quality === "full" ? "full quality" : "lite"} · ${d.render.fps} fps` : "Still image (no WebGL)") : "—"} />
         <Row k="Speech recognition" v={yes(d.recognition)} tone={d.recognition ? "ok" : "warn"} />
         <Row k="Speech output" v={d.synthesis ? `${d.voices} voice${d.voices === 1 ? "" : "s"}` : "Not available"} tone={d.synthesis ? "ok" : "warn"} />
+        <Row k="Last spoken line" v={d.speech == null ? "Nothing spoken yet" : d.speech === "ok" ? "Played" : d.speech === "blocked" ? "Blocked until you click the page" : d.speech === "failed" ? "Didn't play — check sound output" : "This browser can't speak"} tone={d.speech === "ok" ? "ok" : d.speech ? "bad" : "dim"} />
         <Row k="Microphone" v={d.micPerm} tone={d.micPerm === "Allowed" ? "ok" : d.micPerm === "Blocked" ? "bad" : "dim"} />
         <Row k="Listening level" v={d.level === "microphone" ? "Live microphone level" : d.level === "speech-events" ? "From speech events" : "Idle"} />
         <Row k="Speech sync" v={d.wordSync == null ? "Not measured yet" : d.wordSync ? "Word by word" : "Start and end only (this voice has no word timings)"} />

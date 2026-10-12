@@ -97,6 +97,19 @@ until you ask for it.
 
   **Turning it off:** turn "Conversation mode" off in Voice or Preferences to go
   back to one command per "ASTON".
+- **If ASTON doesn't speak**, it says why under the core instead of staying
+  silent:
+  - **Blocked by the browser:** browsers block speech until you've clicked on
+    the page once. Tap **Turn on voice**.
+  - **Voice didn't start within 5 seconds:** this usually means no sound output
+    or a broken voice. Check the volume, or pick another voice in ✦ → Voice.
+
+  ✦ → Diagnostics → **Last spoken line** shows the latest result. The voice
+  engine also works around known Chrome glitches: lines that are never spoken
+  or stop halfway, and online voices that stop after about 15 seconds.
+- **Phones:** a phone can't listen and talk at the same time, so during a
+  conversation ASTON lets go of the microphone while it speaks, then listens
+  again.
 - **Motion:** pointer parallax is on by default on desktop. Reduced motion follows the
   device setting, or can be forced in Preferences, and slows the core and
   removes UI animation.

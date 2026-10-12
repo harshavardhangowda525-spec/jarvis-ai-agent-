@@ -14,13 +14,14 @@ import { SiteBuilder, SiteList } from "./site-builder";
 import { Teleprompter } from "./teleprompter";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
 import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isConversationEnd, STATE_WORD } from "@/lib/aston/core-state";
-import { markSelfSpeech, pickVoice } from "@/lib/aston/voice";
+import { markSelfSpeech } from "@/lib/aston/voice";
+import { sayLine, stopSpeaking } from "./core/speech";
 import { isOpenOnly, SCRIPT_INTENT, stripWake } from "@/lib/aston/scripts/format";
 import type { IncidentDTO } from "@/lib/aston/types";
 
 interface BrowserAlert { id: string; incidentId: string; priority: string; title: string; summary: string; project: string | null }
 interface StateData { incidents: IncidentDTO[]; browserAlerts: BrowserAlert[]; ai: AiStatus }
-interface Fault { kind: "server" | "mic" | "chat" | "action"; msg: string; action?: { label: string; run: () => void } }
+interface Fault { kind: "server" | "mic" | "chat" | "action" | "voice"; msg: string; action?: { label: string; run: () => void } }
 
 const POLL_MS = 15_000;
 const TICK_MS = 2 * 60_000;
@@ -80,6 +81,10 @@ export function AstonConsole() {
   const [reduced, setReduced] = useState(false);
   const [voices, setVoices] = useState(0);
   const [oneShot, setOneShot] = useState(false);
+  // phones can't listen and talk at once: the wake listener pauses while ASTON speaks
+  const [ttsBusy, setTtsBusy] = useState(false);
+  const mobileRef = useRef(false);
+  const [lastSpeech, setLastSpeech] = useState<"ok" | "blocked" | "failed" | "unsupported" | null>(null);
   // hands-free conversation: after each answer ASTON listens again, no wake word needed
   const [convoOn, setConvoOn] = useState(false);
   const convo = useRef(false);
@@ -110,6 +115,7 @@ export function AstonConsole() {
     const p = loadPrefs();
     setPrefsState(p);
     setHour(new Date().getHours());
+    mobileRef.current = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
     const fit = () => setGeo(coreGeometry(window.innerWidth, window.innerHeight));
     fit();
     window.addEventListener("resize", fit);
@@ -125,7 +131,7 @@ export function AstonConsole() {
 
   const setPrefs = useCallback((p: Partial<Prefs>) => {
     setPrefsState((cur) => { const next = { ...cur, ...p }; savePrefs(next); return next; });
-    if (p.voice === false && typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    if (p.voice === false) stopSpeaking();
   }, []);
 
   /** The line under the core. Replies stay for a while, then the greeting returns. */
@@ -143,30 +149,34 @@ export function AstonConsole() {
   // ------------------------------------------------------------ speech out
   /** Say a line. `then` runs when it has been spoken (not when it's cut off). Returns false if nothing will be spoken. */
   const speak = useCallback((line: string, force = false, then?: () => void): boolean => {
-    if ((!prefsRef.current.voice && !force) || typeof speechSynthesis === "undefined") return false;
-    speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(line);
-    const v = pickVoice();
-    if (v) u.voice = v;
-    u.rate = 1.02;
-    u.pitch = 0.95;
+    if (!prefsRef.current.voice && !force) return false;
     let words = false;
     signal.current.wordSync = false;
-    u.onstart = () => { markSelfSpeech(true); setMode("speaking"); };
-    // each spoken word pulses the core (when the voice reports word timings)
-    u.onboundary = (e: SpeechSynthesisEvent) => { if (e.name && e.name !== "word") return; words = true; signal.current.wordSync = true; signal.current.pulse = 1; };
-    const done = (ev?: { error?: string }) => {
-      markSelfSpeech(false);
-      signal.current.wordSync = false;
-      setWordSync(words);
-      setMode((m) => (m === "speaking" ? "idle" : m));
-      // carry the conversation on — unless this line was cut off by another one
-      if (then && ev?.error !== "interrupted" && ev?.error !== "canceled") then();
-    };
-    u.onend = () => done();
-    u.onerror = (e: SpeechSynthesisErrorEvent) => done({ error: e?.error });
-    speechSynthesis.speak(u);
-    return true;
+    // phones: the microphone must let go of the audio before ASTON can be heard
+    if (mobileRef.current) setTtsBusy(true);
+    const ok = sayLine(line, {
+      delayMs: mobileRef.current ? 350 : 0,
+      onStart: () => { markSelfSpeech(true); setMode("speaking"); setLastSpeech("ok"); },
+      // each spoken word pulses the core (when the voice reports word timings)
+      onWord: () => { words = true; signal.current.wordSync = true; signal.current.pulse = 1; },
+      onDone: (f) => {
+        markSelfSpeech(false);
+        signal.current.wordSync = false;
+        if (mobileRef.current) setTtsBusy(false);
+        setMode((m) => (m === "speaking" ? "idle" : m));
+        if (f === "cut") return; // replaced by another line: nothing else to do
+        if (!f) { setWordSync(words); then?.(); return; }
+        // never stay silent without saying why
+        setLastSpeech(f === "not-allowed" ? "blocked" : "failed");
+        const retry = () => { setFault(null); speak(line, true, then); };
+        setFault(f === "not-allowed"
+          ? { kind: "voice", msg: "The browser blocked ASTON's voice until you click on the page once.", action: { label: "Turn on voice", run: retry } }
+          : { kind: "voice", msg: "ASTON's voice didn't play. Check the sound output and volume, or pick another voice in ✦ → Voice.", action: { label: "Try again", run: retry } });
+        then?.();
+      },
+    });
+    if (!ok) { if (mobileRef.current) setTtsBusy(false); setLastSpeech("unsupported"); }
+    return ok;
   }, []);
 
   // ------------------------------------------------------------ state + alerts
@@ -316,7 +326,7 @@ export function AstonConsole() {
   // ------------------------------------------------------------ listening
   const mic = useMicLevel(mode === "listening", signal);
 
-  const wakeActive = prefs.wake && visible && !oneShot && !teleRef.current && !builder;
+  const wakeActive = prefs.wake && visible && !oneShot && !ttsBusy && !teleRef.current && !builder;
   const startConvo = () => { if (prefsRef.current.conversation) { convo.current = true; setConvoOn(true); } };
   const wake = useWakeWord(wakeActive, {
     onCommand: (t) => {
@@ -326,7 +336,7 @@ export function AstonConsole() {
       setSub(null);
       send(t);
     },
-    onWake: () => { startConvo(); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); setMode("listening"); say(convo.current ? "I'm listening…" : "Listening for your command…", CONVERSATION_LISTEN_MS + 2000); setSub(null); },
+    onWake: () => { startConvo(); stopSpeaking(); setMode("listening"); say(convo.current ? "I'm listening…" : "Listening for your command…", CONVERSATION_LISTEN_MS + 2000); setSub(null); },
     onInterim: (t) => { setSub(`“${t}”`); mic.bump(); },
     onTimeout: () => {
       if (convo.current) { endConvoRef.current("Conversation ended — say “ASTON” when you need me."); return; }
@@ -349,11 +359,13 @@ export function AstonConsole() {
   continueRef.current = () => {
     if (!convo.current) return;
     if (modeRef.current === "processing") return;
-    if (wake.capture()) { setMode("listening"); setSub(null); }
+    // on phones the listener was paused while ASTON spoke; it resumes and takes this phrase
+    if (wake.capture(mobileRef.current && prefsRef.current.wake)) { setMode("listening"); setSub(null); }
     else endConvoRef.current(null);
   };
   // the wake word stopped (teleprompter, builder, hidden tab, turned off): so does the conversation
-  useEffect(() => { if (!wakeActive) endConvoRef.current(null); }, [wakeActive]);
+  const wakeStopped = !(prefs.wake && visible && !oneShot && !teleRef.current && !builder);
+  useEffect(() => { if (wakeStopped) endConvoRef.current(null); }, [wakeStopped]);
   useEffect(() => { if (wake.state === "denied") { setMicPerm("Blocked"); setFault({ kind: "mic", msg: "Microphone access is blocked, so ASTON can't listen. Allow it in the browser's site settings, or type your command.", action: { label: "Type instead", run: () => { setFault(null); document.getElementById("aston-input")?.focus(); } } }); } }, [wake.state]);
 
   const listen = useCallback(() => {
@@ -364,7 +376,7 @@ export function AstonConsole() {
       else recog.current?.stop();
       return;
     }
-    if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel();
+    stopSpeaking();
     setFault((f) => (f?.kind === "mic" ? null : f));
     // the wake-word listener is already running: take its next phrase
     if (wake.capture()) { startConvo(); setMode("listening"); say(convo.current ? "I'm listening…" : "Listening for your command…", CONVERSATION_LISTEN_MS + 2000); setSub(null); return; }
@@ -445,7 +457,7 @@ export function AstonConsole() {
   const diag: Diag = {
     serverOk, lastSync, serverError: fault?.kind === "server" ? fault.msg : null, ai: data?.ai ?? null, render,
     wake: wake.state, level: mic.source, micPerm, notif: perm === "granted" ? "On" : perm === "denied" ? "Blocked" : perm === "unsupported" ? "Not supported" : "Off",
-    recognition: speechOk, synthesis: typeof window !== "undefined" && typeof speechSynthesis !== "undefined", voices, reduced: reduced || prefs.motion === "reduced", wordSync,
+    recognition: speechOk, synthesis: typeof window !== "undefined" && typeof speechSynthesis !== "undefined", voices, reduced: reduced || prefs.motion === "reduced", wordSync, speech: lastSpeech,
   };
 
   const cover = !!builder || showSites || (!!tele && !tele.min);
