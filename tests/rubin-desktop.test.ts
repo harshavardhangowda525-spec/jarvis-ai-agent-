@@ -179,3 +179,13 @@ describe("RUBEN on this PC: what needs your Yes", () => {
     expect(await PC.runConfirmed({ action: { op: "keys", id: "11", keys: "x" } }, { powershell })).toMatchObject({ ok: false });
   });
 });
+
+describe("when the CRM can't open, RUBEN says why", () => {
+  it("names the real reason", () => {
+    expect(L.offlineReason("down", null)).toMatch(/isn't running on this PC/);
+    expect(L.offlineReason("old", null)).toMatch(/older version/);
+    expect(L.offlineReason("down", "old")).toMatch(/online JARVIS hasn't been updated/);
+    expect(L.offlineReason("down", "down")).toMatch(/or online/);
+    expect(L.offlineReason("up", "down")).toBe("");
+  });
+});

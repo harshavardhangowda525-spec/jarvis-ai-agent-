@@ -6,22 +6,42 @@
 <title>RUBEN</title>
 <style>
   html, body { margin: 0; background: transparent; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; }
-  .stage { display: flex; justify-content: center; padding-top: 12px; }
-  button { position: relative; width: 252px; height: 36px; border-radius: 999px; border: 1.5px solid #64748b; background: rgba(4,6,12,.86);
+  .stage { display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 10px; }
+  #b { position: relative; min-width: 252px; height: 36px; padding: 0 18px; border-radius: 999px; border: 1.5px solid #64748b; background: rgba(4,6,12,.86);
     color: #cbd5e1; font: inherit; font-size: 12.5px; cursor: pointer; }
-  button:focus-visible { outline: 2px solid #93c5fd; outline-offset: 3px; }
+  #b:focus-visible, button:focus-visible { outline: 2px solid #93c5fd; outline-offset: 3px; }
+  #card { display: none; width: 380px; box-sizing: border-box; padding: 14px 16px; border-radius: 18px; color: #e2e8f0; font-size: 13px; line-height: 1.45;
+    background: linear-gradient(165deg, rgba(10,37,64,.9), rgba(3,10,22,.94)); border: 1px solid rgba(147,197,253,.22); box-shadow: 0 18px 40px rgba(0,0,0,.45); }
+  #card.on { display: block; }
+  #card .row { display: flex; gap: 8px; margin-top: 12px; }
+  #card button { font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid #2563EB88; background: #2563EB22; color: #dbeafe; cursor: pointer; }
+  #card .k { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: #93c5fd; margin-bottom: 6px; }
 </style>
 </head>
 <body>
   <div class="stage">
-    <!-- shown by the desktop app when JARVIS can't be reached; it keeps retrying on its own -->
-    <button id="b" type="button" title="Retry now">JARVIS offline · retrying</button>
+    <!-- shown by the desktop app when no JARVIS can show the CRM; it keeps retrying on its own -->
+    <button id="b" type="button" aria-expanded="false">JARVIS offline · click for details</button>
+    <div id="card" role="dialog" aria-label="Why the CRM can't open">
+      <div class="k">Why the CRM can't open</div>
+      <div id="why"></div>
+      <div class="row"><button id="retry" type="button">Try again now</button><button id="hide" type="button">Close</button></div>
+    </div>
   </div>
   <script>
-    const b = document.getElementById("b");
-    b.addEventListener("mouseenter", () => window.rubinDesktop && window.rubinDesktop.setInteractive(true));
-    b.addEventListener("mouseleave", () => window.rubinDesktop && window.rubinDesktop.setInteractive(false));
-    b.addEventListener("click", () => { b.textContent = "Connecting…"; window.rubinDesktop && window.rubinDesktop.retry(); });
+    const d = window.rubinDesktop;
+    const why = new URLSearchParams(location.search).get("why") || "JARVIS isn't answering. Start it with npm run local.";
+    document.getElementById("why").textContent = why;
+    const b = document.getElementById("b"), card = document.getElementById("card");
+    const show = (on) => { card.classList.toggle("on", on); b.setAttribute("aria-expanded", String(on)); d && d.setOpen(on); };
+    for (const el of [b, card]) {
+      el.addEventListener("mouseenter", () => d && d.setInteractive(true));
+      el.addEventListener("mouseleave", () => d && !card.classList.contains("on") && d.setInteractive(false));
+    }
+    b.addEventListener("click", () => show(!card.classList.contains("on")));
+    document.getElementById("hide").addEventListener("click", () => show(false));
+    document.getElementById("retry").addEventListener("click", () => { document.getElementById("why").textContent = "Connecting…"; d && d.retry(); });
+    addEventListener("keydown", (e) => { if (e.key === "Escape") show(false); });
   </script>
 </body>
 </html>

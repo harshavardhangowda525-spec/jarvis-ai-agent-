@@ -113,6 +113,17 @@ function pickServer(localUp, cloudUp, local, cloud) {
   return null;
 }
 
+/** What to tell you when no JARVIS can show the island (local/cloud: "up" | "old" | "down" | null = not set). */
+function offlineReason(local, cloud) {
+  if (local === "old") return "The JARVIS on this PC is an older version — stop it and run npm run local again to update it.";
+  if (cloud === "old") return local === "down"
+    ? "JARVIS isn't running on this PC, and your online JARVIS hasn't been updated with RUBEN yet. Start npm run local."
+    : "Your online JARVIS hasn't been updated with RUBEN yet.";
+  if (local === "down" && cloud === "down") return "Can't reach JARVIS on this PC or online. Start npm run local, or check your internet.";
+  if (local === "down") return "JARVIS isn't running on this PC. Start it with npm run local (or set an online JARVIS: APP_URL).";
+  return "";
+}
+
 /** After signing in / unlocking in the auth window: has JARVIS let us through? */
 function authFinished(url, jarvisUrl) {
   if (!sameOrigin(url, jarvisUrl)) return false;
@@ -125,4 +136,4 @@ function authPath(p) {
   return p === "/login" || p === "/unlock" ? p : null;
 }
 
-module.exports = { pickServer, WIDTH, COLLAPSED_H, OPEN_H, OPEN_W, resizeAround, EDGE, DEFAULTS, readSettings, pagePatch, isHttpUrl, sameOrigin, displayFor, clampToWorkArea, initialBounds, authFinished, authPath };
+module.exports = { offlineReason, pickServer, WIDTH, COLLAPSED_H, OPEN_H, OPEN_W, resizeAround, EDGE, DEFAULTS, readSettings, pagePatch, isHttpUrl, sameOrigin, displayFor, clampToWorkArea, initialBounds, authFinished, authPath };

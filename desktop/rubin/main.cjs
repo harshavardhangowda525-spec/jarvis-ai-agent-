@@ -35,11 +35,19 @@ function save() {
 let island = null, authWin = null, tray = null;
 let isOpen = false, onJarvis = false, retryTimer = null, dragTimer = null, offlineTries = 0;
 
-const healthy = (u) => net.fetch(`${u}/api/health`, { signal: AbortSignal.timeout(3500) }).then((r) => r.status < 500).catch(() => false);
+/** "up" = that JARVIS answers AND has RUBEN's island page (an older deployment doesn't). */
+async function probe(u) {
+  try {
+    const r = await net.fetch(`${u}/island`, { signal: AbortSignal.timeout(10_000), redirect: "manual" });
+    return r.status === 200 ? "up" : r.status === 404 ? "old" : "down";
+  } catch { return "down"; }
+}
+let offlineWhy = "";
 /** This PC's JARVIS if it answers, else the online one; null if neither does. */
 async function chooseServer() {
-  const [local, cloud] = await Promise.all([healthy(settings.url), settings.cloudUrl ? healthy(settings.cloudUrl) : Promise.resolve(false)]);
-  return L.pickServer(local, cloud, settings.url, settings.cloudUrl);
+  const [local, cloud] = await Promise.all([probe(settings.url), settings.cloudUrl ? probe(settings.cloudUrl) : Promise.resolve(null)]);
+  offlineWhy = L.offlineReason(local, cloud);
+  return L.pickServer(local === "up", cloud === "up", settings.url, settings.cloudUrl);
 }
 const send = (cmd) => { if (island && !island.isDestroyed()) island.webContents.send("rubin:command", cmd); };
 
@@ -96,7 +104,7 @@ function goOffline() {
   if (!island || island.isDestroyed()) return;
   onJarvis = false;
   if (isOpen) setOpen(false);
-  island.loadFile(path.join(__dirname, "offline.html")).catch(() => {});
+  island.loadFile(path.join(__dirname, "offline.html"), { query: { why: offlineWhy || L.offlineReason("down", settings.cloudUrl ? "down" : null) } }).catch(() => {});
   updateTray();
   const wait = () => {
     clearTimeout(retryTimer);
