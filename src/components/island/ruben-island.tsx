@@ -534,6 +534,7 @@ function Settings({ settings, mics, onChange, isDesktop }: { settings: DesktopSe
       {isDesktop && <>
         <label className="ri-chk"><input type="checkbox" checked={settings.launchAtLogin} onChange={(e) => onChange({ launchAtLogin: e.target.checked })} /> Start RUBEN when I sign in to Windows</label>
         <p className="ri-note">Shortcuts: {settings.shortcut} opens/closes · {settings.talkShortcut} talk</p>
+        <button type="button" className="ri-quit" onClick={() => desktop()?.quit?.()}>Quit RUBEN</button>
       </>}
     </div>
   );
@@ -647,6 +648,7 @@ html, body { background: transparent !important; background-image: none !importa
 .ri-note { margin: 8px 2px 0; font-size: 11px; color: #64748b; }
 .ri-set { display: flex; flex-direction: column; gap: 8px; font-size: 12.5px; }
 .ri-set select { display: block; width: 100%; margin-top: 4px; font: inherit; padding: 5px 8px; border-radius: 8px; background: rgba(2,6,23,.6); color: #f1f5f9; border: 1px solid rgba(148,163,184,.25); }
+.ri-quit { align-self: flex-start; font: inherit; font-size: 12px; padding: 5px 12px; border-radius: 999px; border: 1px solid #f8717188; background: #7f1d1d33; color: #fecaca; cursor: pointer; }
 .ri-chk { display: flex; gap: 8px; align-items: center; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) {

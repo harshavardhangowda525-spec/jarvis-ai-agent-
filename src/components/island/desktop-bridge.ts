@@ -23,6 +23,8 @@ export interface RubinDesktop {
   onCommand(cb: (c: DesktopCommand) => void): () => void;
   /** Hand over the words you said/typed; the desktop app decides if they're about an app on this PC (and asks you itself before anything risky). */
   pc?(text: string): Promise<{ handled: boolean; ok?: boolean; say?: string; hint?: string; app?: string }>;
+  /** Close RUBEN completely. */
+  quit?(): void;
   version: string;
 }
 

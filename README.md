@@ -1594,6 +1594,14 @@ system tray. You can close the terminal; RUBEN keeps running until you choose
 - If JARVIS is on another address: `npm run rubin -- --url http://192.168.1.20:3000`.
 - To see RUBEN's log: `npm run rubin -- --foreground`.
 
+**Close it completely.** Use any of these:
+
+- `npm run rubin -- --quit`
+- the tray icon (a blue circle near the clock; click **^** if it's hidden) → **Quit RUBEN**
+- ⚙ in the CRM → **Quit RUBEN**
+
+Closing the CRM pop-up only shrinks RUBEN back to the outline.
+
 **Sign in.** The first time, the island says *Sign in to use RUBEN*. Click it
 and a normal-sized window opens for the usual JARVIS sign-in. If face/PIN
 unlock is set up, you unlock there too. The window closes by itself once you're

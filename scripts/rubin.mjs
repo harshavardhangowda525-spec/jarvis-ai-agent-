@@ -12,6 +12,7 @@
  *   npm run rubin                    JARVIS at http://localhost:3000 (or JARVIS_LOCAL_PORT)
  *   npm run rubin -- --url http://192.168.1.20:3000
  *   npm run rubin -- --foreground    keep it attached to this terminal (see its log)
+ *   npm run rubin -- --quit          close RUBEN completely
  */
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -63,7 +64,24 @@ function electronBinary() {
   try { return createRequire(path.join(APP, "package.json"))("electron"); } catch { return null; }
 }
 
+/** Close RUBEN: ask the running copy to quit, then make sure only RUBEN's own Electron is gone (not VS Code, Discord …). */
+function quitRuben(bin) {
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
+  if (bin && fs.existsSync(bin)) spawnSync(bin, [APP, "--quit"], { cwd: APP, stdio: "ignore", timeout: 15_000, env });
+  const left = () => {
+    if (process.platform !== "win32") return 0;
+    const ps = `$p = @(Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $env:RUBIN_BIN }); $p | Stop-Process -Force -ErrorAction SilentlyContinue; $p.Count`;
+    const r = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", env: { ...process.env, RUBIN_BIN: bin || "" }, windowsHide: true });
+    return Number(String(r.stdout || "0").trim()) || 0;
+  };
+  spawnSync(process.execPath, ["-e", "setTimeout(()=>{},2500)"]); // give it a moment to close by itself
+  const forced = left();
+  console.log(forced ? "RUBEN closed (it had to be stopped)." : "RUBEN closed.");
+}
+
 function main() {
+  if (args.includes("--quit")) { quitRuben(electronBinary()); return; }
   let url;
   try { url = jarvisUrl(); } catch (e) { console.error(e.message); process.exit(1); }
   let bin = electronBinary();
@@ -89,6 +107,7 @@ function main() {
   console.log(`JARVIS address: ${url}${flag("--url") ? "" : "  (change with: npm run rubin -- --url http://host:port)"}`);
   console.log(cloud ? `When JARVIS isn't running on this PC, RUBEN uses your online JARVIS: ${cloud}` : `No online JARVIS found (APP_URL in .env.local) — RUBEN needs  npm run local  running.`);
   console.log(`Shortcuts: Ctrl+Shift+Space opens/closes the CRM · Ctrl+Shift+R talk · right-click the island to talk`);
+  console.log(`To close RUBEN completely: npm run rubin -- --quit  (or right-click its tray icon → Quit RUBEN)`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

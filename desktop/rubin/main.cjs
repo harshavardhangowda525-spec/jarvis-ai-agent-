@@ -31,7 +31,10 @@ const PC = require("./pc.cjs");
  * code, and the running copy restarts itself when its code has changed.
  */
 const CODE = L.codeFingerprint(["main.cjs", "pc.cjs", "preload.cjs", "lib.cjs", "offline.html"].map((f) => { try { return fs.readFileSync(path.join(__dirname, f)); } catch { return ""; } }));
-if (!app.requestSingleInstanceLock({ code: CODE })) { app.quit(); process.exit(0); }
+// `npm run rubin -- --quit` (or `electron . --quit`) asks the running RUBEN to quit
+const QUIT = process.argv.includes("--quit");
+if (!app.requestSingleInstanceLock({ code: CODE, quit: QUIT })) { app.quit(); process.exit(0); }
+if (QUIT) { console.log("RUBEN wasn't running."); app.quit(); process.exit(0); }
 app.setAppUserModelId("ai.jarvis.ruben");
 
 const SETTINGS_FILE = path.join(app.getPath("userData"), "settings.json");
@@ -253,6 +256,7 @@ ipcMain.on("rubin:interactive", (e, on) => { if (fromIsland(e) && !dragTimer) se
 ipcMain.on("rubin:drag", (e, on) => { if (!fromIsland(e)) return; if (on) startDrag(); else stopDrag(); });
 ipcMain.on("rubin:auth", (e, p) => { if (fromIsland(e) && L.authPath(p)) openAuth(L.authPath(p)); });
 ipcMain.on("rubin:retry", (e) => { if (fromIsland(e)) loadIsland(); });
+ipcMain.on("rubin:quit", (e) => { if (fromIsland(e)) { log("quit from the island's settings"); app.quit(); } });
 const pageSettings = () => ({ wake: settings.wake, voiceReplies: settings.voiceReplies, micId: settings.micId, launchAtLogin: settings.launchAtLogin,
   shortcut: settings.shortcut.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl"),
   talkShortcut: settings.talkShortcut.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl") });
@@ -336,6 +340,7 @@ function lockPermissions() {
 
 // ---------- lifecycle ----------
 app.on("second-instance", (_e, _argv, _cwd, data) => {
+  if (data && data.quit) { log("asked to quit (npm run rubin -- --quit)"); app.quit(); return; }
   if (data && data.code && data.code !== CODE) {
     log("updated code found — restarting to use it");
     app.relaunch();
