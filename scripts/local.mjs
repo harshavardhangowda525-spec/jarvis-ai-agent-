@@ -162,6 +162,13 @@ if (!googleGone.length) say("  Google (Gmail, Calendar, Drive): client ID and se
 else say(`  Note: ${googleGone.join(" and ")} ${googleGone.length > 1 ? "aren't" : "isn't"} in ${path.basename(envFile)} — Google (Gmail, Calendar, Drive) shows "Not configured" on this PC.\n        Copy the value${googleGone.length > 1 ? "s" : ""} from Google Cloud Console → APIs & Services → Credentials → your OAuth client, then restart.`);
 // DARWIN's web searches (confirm "no website" — more searches, more leads a day)
 const searches = [["SEARXNG_URL", "SearXNG"], ["BRAVE_SEARCH_API_KEY", "Brave"], ["SEARCH_API_KEY", "Tavily"], ["SERPER_API_KEY", "Serper"]].filter(([k]) => !isPlaceholder(appEnv[k])).map(([, n]) => n);
+{
+  // what RUBEN / the voice features will hear you with (the island needs one of these)
+  const has = (k) => [appEnv[k], edithEnv[k]].some((v) => v && !isPlaceholder(v));
+  say(has("ELEVENLABS_API_KEY") ? "  Voice input: ElevenLabs ✓"
+    : has("GROQ_API_KEY") ? "  Voice input: Groq Whisper ✓ (no ELEVENLABS_API_KEY — replies use the Windows voice)"
+    : "  ! Voice input is off — add GROQ_API_KEY (free at console.groq.com) or ELEVENLABS_API_KEY to .env.local to talk to RUBEN.");
+}
 say(searches.length ? `  DARWIN web search: ${searches.join(", ")} ✓` : "  Note: no web search for DARWIN — run  npm run searxng  (free, unlimited) or set SERPER_API_KEY / BRAVE_SEARCH_API_KEY in .env.local so it can confirm leads.");
 // your own SearXNG (npm run searxng) on this PC: start it if it isn't running
 const searxUrl = isPlaceholder(appEnv.SEARXNG_URL) ? "" : appEnv.SEARXNG_URL.trim().replace(/\/+$/, "");
