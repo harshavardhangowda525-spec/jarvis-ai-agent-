@@ -4,12 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { IslandCard, IslandLead, IslandPending, IslandReply } from "@/lib/robin/island-types";
 import { capturePhrase, speak, transcribe, wakeCommand, type Capture, type Speech } from "./voice";
 import { desktop, type DesktopSettings } from "./desktop-bridge";
+import { CrmDashboard, CRM_CSS, type CrmHandle } from "./crm-dashboard";
 
 /**
  * RUBEN — the Dynamic Island CRM assistant. By default only a thin blue outline;
- * click it (or say "Open CRM") for a liquid-glass pop-up that shows just the
- * card for what you asked. Everything it shows comes from the real CRM through
- * /api/robin/island; nothing is sent to a lead from here.
+ * click it (or say "Open CRM") and the CRM dashboard grows out of it as one
+ * liquid-glass surface. Voice and typed commands drive the same dashboard.
+ * Everything comes from the real CRM (/api/robin/island, /api/robin/…);
+ * nothing is sent to a lead from here. Closing keeps the dashboard's state, so
+ * it reopens where you left it.
  */
 
 type Mode = "idle" | "listening" | "processing" | "speaking" | "working" | "notice";
@@ -61,6 +64,10 @@ export function RubenIsland() {
   const openRef = useRef(open); openRef.current = open;
   const settingsRef = useRef(settings); settingsRef.current = settings;
   const inputRef = useRef<HTMLInputElement>(null);
+  const crm = useRef<CrmHandle>(null);
+  // the glass stays mounted after the first open (last state kept); "shown" drives the animation
+  const [mounted, setMounted] = useState(false);
+  const [shown, setShown] = useState(false);
 
   // ---- settings (desktop app keeps them; a browser tab uses local storage) ----
   useEffect(() => {
@@ -75,7 +82,18 @@ export function RubenIsland() {
   }, []);
 
   // ---- window sizing / click-through (desktop only) ----
-  useEffect(() => { bridge.current?.setOpen(open); if (open) bridge.current?.setInteractive(true); }, [open]);
+  useEffect(() => {
+    if (open) {
+      bridge.current?.setOpen(true); // the window grows first, then the glass expands into it
+      bridge.current?.setInteractive(true);
+      setMounted(true);
+      const raf = requestAnimationFrame(() => setShown(true));
+      return () => cancelAnimationFrame(raf);
+    }
+    setShown(false); // the glass shrinks back into the outline, then the window follows
+    const t = setTimeout(() => bridge.current?.setOpen(false), window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 280);
+    return () => clearTimeout(t);
+  }, [open]);
   const hover = (on: boolean) => () => bridge.current?.setInteractive(on);
 
   // ---- reaching JARVIS: signed in? unlocked? online? + notices ----
@@ -185,8 +203,18 @@ export function RubenIsland() {
     else if (opts.leadId) leadId.current = opts.leadId;
     pending.current = reply.pending ?? null;
     setSay(reply.say);
+    // the dashboard shows the answer: lists become the list, a lead opens in the detail pane
+    const c = reply.card;
+    if (c?.type === "leads") crm.current?.showResults(c.title, c.leads);
+    else if (c?.type === "lead") crm.current?.openLead(c.lead.id);
+    else if (c?.type === "followups") crm.current?.showFollowups();
+    else if (c?.type === "done") { if (c.lead) crm.current?.openLead(c.lead.id); else crm.current?.refresh(); }
     if (reply.open === false) { setCard(null); setShowSettings(false); }
-    else { if (reply.card || reply.open) setCard(reply.card); if (reply.open || reply.card) setOpen(true); }
+    else {
+      // only answers that aren't already on the dashboard stay as a banner
+      if (reply.card || reply.open) setCard(c && ["confirm", "error", "text"].includes(c.type) ? c : null);
+      if (reply.open || reply.card) setOpen(true);
+    }
     busy.current = false;
     await talk(reply.say);
     if (reply.open === false) setOpen(false);
@@ -316,7 +344,7 @@ export function RubenIsland() {
 
   return (
     <div className="ri-root">
-      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+      <style dangerouslySetInnerHTML={{ __html: CSS + CRM_CSS }} />
       <div className="ri-stage">
         <button
           type="button"
@@ -344,34 +372,40 @@ export function RubenIsland() {
         </button>
         <span className="sr-only" aria-live="polite">{say}</span>
 
-        {open && !away && (
-          <section className="ri-pop" role="dialog" aria-label="RUBEN CRM" onPointerEnter={hover(true)} onPointerLeave={hover(false)}>
+        {mounted && !away && (
+          <section className={`ri-pop ${shown ? "in" : "out"}`} role="dialog" aria-label="RUBEN CRM" aria-hidden={!open}
+            onPointerEnter={hover(true)} onPointerLeave={hover(false)}>
             <header className="ri-head">
               <button type="button" className={`ri-mic ${mode === "listening" ? "on" : ""}`} onClick={() => void listen()} aria-label={mode === "listening" ? "Stop listening" : "Speak a command"}>
                 <MicIcon />
               </button>
               <div className="ri-heard">
-                <div className="ri-k">{mode === "listening" ? "Listening…" : mode === "processing" || mode === "working" ? "Thinking…" : transcript ? "You said" : "RUBEN"}</div>
-                <div className="ri-t">{transcript || (mode === "listening" ? "" : "Say or type a CRM command")}</div>
+                <div className="ri-k">{mode === "listening" ? "Listening…" : mode === "processing" || mode === "working" ? "Working on it…" : transcript ? "You said" : "RUBEN · CRM"}</div>
+                <div className="ri-t">{transcript || (mode === "listening" ? "" : "Say or type a command — “Show my interested leads”")}{say && <span className="ri-ans"> — {say}</span>}</div>
               </div>
-              <button type="button" className="ri-icon" onClick={() => setShowSettings((s) => !s)} aria-label="Island settings" aria-expanded={showSettings}><GearIcon /></button>
+              <button type="button" className="ri-icon" onClick={() => setShowSettings((v) => !v)} aria-label="Island settings" aria-expanded={showSettings}><GearIcon /></button>
               <button type="button" className="ri-icon" onClick={() => { void send("close crm"); }} aria-label="Close CRM">✕</button>
             </header>
 
             {micError && <p className="ri-warn">{micError}</p>}
-            {say && <p className="ri-say">{say}</p>}
+            {card && !showSettings && (
+              <div className="ri-banner">
+                <CardView card={card} onLead={(id) => crm.current?.openLead(id)} onSay={(t, id) => void send(t, id ? { leadId: id } : {})} />
+                <button type="button" className="ri-x" aria-label="Dismiss" onClick={() => setCard(null)}>✕</button>
+              </div>
+            )}
 
             {showSettings ? (
               <Settings settings={settings} mics={mics} onChange={updateSettings} isDesktop={!!bridge.current} />
             ) : (
-              card && <CardView card={card} onLead={(id) => void send("open the details for this business", { leadId: id })} onSay={(t, id) => void send(t, id ? { leadId: id } : {})} />
+              <CrmDashboard ref={crm} active={open} onSelectLead={(id) => { leadId.current = id; }} onCommand={(t, id) => void send(t, id ? { leadId: id } : {})} />
             )}
 
             <form className="ri-type" onSubmit={(e) => { e.preventDefault(); const t = typed; setTyped(""); void send(t); }}>
-              <input ref={inputRef} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="e.g. Which clients need follow-up today?" aria-label="Type a command" />
+              <input ref={inputRef} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Ask RUBEN — e.g. Mark this lead as ready to purchase" aria-label="Type a command" />
               <button type="submit" disabled={!typed.trim()}>Go</button>
             </form>
-            {!bridge.current && <p className="ri-note">Browser preview — install the RUBEN desktop app (npm run rubin) to keep the island on top of other apps.</p>}
+            {!bridge.current && <p className="ri-note">Browser preview — the RUBEN desktop app (npm run rubin) keeps the island on top of other apps.</p>}
           </section>
         )}
       </div>
@@ -494,7 +528,7 @@ const CSS = `
 html, body { background: transparent !important; background-image: none !important; min-height: 0 !important; overflow: hidden; }
 @property --ri-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
 .ri-root { position: fixed; inset: 0; display: flex; justify-content: center; pointer-events: none; font-family: "Barlow", system-ui, sans-serif; color: #e6edf7; }
-.ri-stage { display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 10px; width: 100%; max-width: 420px; }
+.ri-stage { display: flex; flex-direction: column; align-items: center; padding-top: 12px; gap: 10px; width: 100%; height: 100%; box-sizing: border-box; }
 .ri-capsule { pointer-events: auto; position: relative; border: 0; padding: 0; background: transparent; border-radius: 999px; cursor: pointer; touch-action: none; user-select: none;
   transition: width .38s cubic-bezier(.2,.9,.25,1.15), height .38s cubic-bezier(.2,.9,.25,1.15); }
 .ri-capsule:focus-visible { outline: 2px solid #93c5fd; outline-offset: 3px; }
@@ -519,11 +553,24 @@ html, body { background: transparent !important; background-image: none !importa
 .ri-prog { width: 120px; height: 2px; border-radius: 2px; background: ${BLUE}33; position: relative; overflow: hidden; }
 .ri-prog::after { content: ""; position: absolute; inset: 0; width: 40%; background: #60a5fa; animation: ri-ind 1.2s ease-in-out infinite; }
 @keyframes ri-ind { from { transform: translateX(-100%) } to { transform: translateX(260%) } }
-.ri-pop { pointer-events: auto; width: calc(100% - 20px); max-height: calc(100vh - 80px); overflow: auto; border-radius: 22px; padding: 12px 14px 12px;
-  background: linear-gradient(160deg, rgba(30,41,59,.55), rgba(6,10,20,.78)); backdrop-filter: blur(26px) saturate(1.6); -webkit-backdrop-filter: blur(26px) saturate(1.6);
-  border: 1px solid rgba(147,197,253,.22); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 18px 50px rgba(0,0,0,.45), 0 0 0 1px ${BLUE}22;
-  animation: ri-in .28s cubic-bezier(.2,.9,.25,1.1); }
-@keyframes ri-in { from { opacity: 0; transform: translateY(-8px) scale(.97) } }
+/* the CRM: one floating liquid-glass surface that grows out of the outline */
+.ri-pop { pointer-events: auto; box-sizing: border-box; width: min(900px, calc(100vw - 16px)); flex: 1; min-height: 0; max-height: calc(100vh - 66px);
+  display: flex; flex-direction: column; gap: 10px; border-radius: 26px; padding: 14px 16px 12px; margin-bottom: 8px; overflow: hidden; position: relative;
+  background: linear-gradient(165deg, rgba(10,37,64,.78) 0%, rgba(6,22,42,.84) 45%, rgba(3,10,22,.9) 100%);
+  backdrop-filter: blur(28px) saturate(1.7); -webkit-backdrop-filter: blur(28px) saturate(1.7);
+  border: 1px solid rgba(147,197,253,.2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.14), inset 0 0 0 1px rgba(37,99,235,.08), 0 24px 60px rgba(0,0,0,.5), 0 0 34px rgba(37,99,235,.16);
+  transform-origin: 50% -40px;
+  transition: transform .34s cubic-bezier(.2,.9,.25,1.05), opacity .26s ease, border-radius .34s ease, visibility 0s linear 0s; }
+/* a soft reflection across the top of the glass */
+.ri-pop::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 46%; pointer-events: none; border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,0) 70%); }
+.ri-pop.out { transform: translateY(-34px) scale(.16, .05); opacity: 0; border-radius: 999px; visibility: hidden; pointer-events: none;
+  transition: transform .28s cubic-bezier(.5,0,.75,0), opacity .22s ease .04s, border-radius .28s ease, visibility 0s linear .28s; }
+.ri-pop > * { position: relative; }
+.ri-ans { color: #93c5fd; }
+.ri-banner { position: relative; } .ri-banner .ri-card { margin-top: 0; padding-right: 34px; }
+.ri-x { position: absolute; top: 8px; right: 10px; background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 12px; }
 .ri-head { display: flex; align-items: center; gap: 10px; }
 .ri-mic { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid ${BLUE}88; background: ${BLUE}22; color: #bfdbfe; display: grid; place-items: center; cursor: pointer; }
 .ri-mic.on { background: ${BLUE}; color: #fff; box-shadow: 0 0 0 4px ${BLUE}44; }
@@ -560,7 +607,7 @@ html, body { background: transparent !important; background-image: none !importa
 .ri-chk { display: flex; gap: 8px; align-items: center; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) {
-  .ri-capsule { transition: none; } .ri-pop { animation: none; }
+  .ri-capsule { transition: none; } .ri-pop, .ri-pop.out { transition: none; }
   .ri-processing .ri-ring, .ri-working .ri-ring { animation: none; background: linear-gradient(90deg, ${BLUE}, #93c5fd, ${BLUE}); }
   .ri-dots i, .ri-prog::after { animation: none; } .ri-dots i { opacity: .8; } .ri-prog::after { width: 100%; opacity: .5; }
 }

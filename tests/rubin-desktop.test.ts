@@ -24,6 +24,15 @@ describe("RUBEN desktop: placement", () => {
     // the open pop-up on a short screen shrinks to fit
     expect(L.clampToWorkArea({ x: 2000, y: 200, width: 420, height: 900 }, right.workArea)).toEqual({ x: 2000, y: 0, width: 420, height: 680 });
   });
+  it("the dashboard grows around the outline's centre and fits a laptop screen", () => {
+    const outline = { x: 750, y: 4, width: 420, height: L.COLLAPSED_H };
+    expect(L.resizeAround(outline, true, primary.workArea)).toEqual({ x: 500, y: 4, width: 920, height: 680 });
+    expect(L.resizeAround({ x: 500, y: 4, width: 920, height: 680 }, false, primary.workArea)).toEqual(outline);
+    // small laptop screen (1366×728 work area): narrower and shorter, still fully on screen
+    const laptop = { x: 0, y: 0, width: 1366, height: 728 };
+    expect(L.resizeAround({ x: 1300, y: 4, width: 420, height: 76 }, true, laptop)).toEqual({ x: 446, y: 4, width: 920, height: 680 });
+    expect(L.resizeAround({ x: 10, y: 4, width: 420, height: 76 }, true, { x: 0, y: 0, width: 800, height: 600 })).toEqual({ x: 0, y: 4, width: 784, height: 584 });
+  });
   it("picks the monitor under the pointer while dragging", () => {
     expect(L.displayFor([primary, right], { x: 2500, y: 100 }).id).toBe(2);
     expect(L.displayFor([primary, right], { x: 2500, y: 900 }).id).toBe(2); // below the shorter screen → nearest

@@ -1629,13 +1629,47 @@ browser profile, just as it would in a browser.
   remembers where you left it. If that monitor is unplugged, it comes back to
   the main screen.
 
-The pop-up shows only what you asked for:
+**The CRM dashboard.** Opening the island grows a single liquid-glass surface
+out of the outline, in deep navy with electric-blue accents. It holds your
+actual CRM:
+
+- **The three sales statuses, with live counts:** Ready to purchase,
+  Interested (follow up) and Rejected. Open, Won and All are there too. Click
+  one to filter the list.
+- **Follow-ups:** what's due today and what's overdue, each with a **Done**
+  button.
+- **A pipeline bar and progress line:** demos upcoming and done, proposals out
+  and accepted, clients, and what was logged today.
+- **Search:** find any lead by name, number, phone, email, Instagram, website,
+  city or address.
+- **The lead's full record:**
+  - phone, WhatsApp and email;
+  - Instagram and website links, which open in your browser;
+  - progress (Contacted → Interested → Follow-up/demo → Proposal → Ready to
+    purchase → Client);
+  - follow-ups, interaction history, demos, quotations, client status and
+    stage history.
+- **Actions on the lead:**
+  - Ready to purchase, Interested, Rejected and Won (Rejected and Won ask
+    first);
+  - Follow up tomorrow;
+  - Prepare pitch.
+- **With no lead open:** today's activity and the next follow-ups.
+
+Everything is read from the database. A change shows the server's real
+answer, either "Saved — …" or the reason it wasn't saved. Closing (✕, Esc,
+"Close CRM" or Ctrl+Shift+Space) shrinks the glass back into the outline.
+RUBEN keeps running, and the dashboard reopens where you left it. On a small
+laptop screen the dashboard shrinks to fit.
+
+Voice and typed commands drive the same dashboard. A list command fills the
+list, "open …" opens the lead, and follow-up questions switch to Follow-ups:
 
 | You say | You get |
 |---|---|
 | "Show my interested prospects" | Interested (follow up) leads |
 | "Find leads ready to purchase" | Leads at the new **Ready to purchase** stage |
-| "Which clients need follow-up today?" | Today's and overdue follow-ups |
+| "Which clients need follow-up today?" / "Find clients who need follow-up" | Today's and overdue follow-ups |
 | "Open the details for this business" | The contact card of the lead you're on (click any row for the same) |
 | "Mark this lead as interested" / "…as ready to purchase" | The change and a confirmation |
 | "Mark this lead as rejected" | First asks *Mark … as Rejected?* Nothing changes until you say "yes" or press **Yes** |

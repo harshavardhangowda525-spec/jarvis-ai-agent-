@@ -38,3 +38,26 @@ export interface IslandReply {
   leadId?: string | null;
   pending?: IslandPending | null;
 }
+
+/** The CRM dashboard inside the island pop-up (one request, all real data). */
+export type IslandStatus = "all" | "ready" | "interested" | "rejected" | "open" | "won";
+export interface IslandDashboard {
+  counts: { total: number; open: number; ready: number; interested: number; rejected: number; won: number; dueToday: number; overdue: number };
+  pipeline: { id: string; label: string; count: number }[];
+  progress: { demosUpcoming: number; demosDone: number; proposalsOut: number; proposalsAccepted: number; clients: number };
+  followups: IslandFollowUp[];
+  activity: { id: string; when: string; text: string; leadId: string | null }[];
+  today: string;
+  list: { status: IslandStatus; q: string; total: number; leads: IslandLead[] };
+}
+
+/** Everything about one lead, for the dashboard's detail pane. */
+export interface IslandLeadFull extends IslandLeadDetail {
+  mapsUrl: string | null; potentialValue: number | null; serviceInterest: string | null;
+  interactions: { id: string; when: string; channel: string; direction: string; outcome: string | null; notes: string | null }[];
+  followUpsAll: { id: string; when: string; action: string; status: string; overdue: boolean; notes: string | null }[];
+  stageHistory: { when: string; from: string | null; to: string }[];
+  demos: { id: string; when: string; type: string; status: string }[];
+  quotations: { id: string; number: string; status: string; total: number; currency: string; when: string }[];
+  client: { status: string; paymentStatus: string; amount: number; currency: string; project: string | null } | null;
+}

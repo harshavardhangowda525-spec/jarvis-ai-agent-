@@ -38,7 +38,7 @@ export async function defaultAsk(userId: string, text: string, leadContext: stri
 }
 
 const MAX_ROWS = 12;
-const toLead = (l: RobinLead, tz: string): IslandLead => ({
+export const toLead = (l: RobinLead, tz: string): IslandLead => ({
   id: l.id, number: l.number, name: l.businessName, category: l.category, city: l.city, stage: l.stage,
   stageLabel: isStage(l.stage) ? labelOf(l.stage) : l.stage, phone: l.phone,
   lastContact: l.lastContactAt ? fmtWhen(l.lastContactAt, tz) : null, nextFollowUp: l.nextFollowUpAt ? fmtWhen(l.nextFollowUpAt, tz) : null,
@@ -119,6 +119,10 @@ export async function runIslandCommand(userId: string, input: { text: string; le
   }
 
   // ---- lists the island answers directly
+  // "find clients who need follow-up", "who's due for a follow-up?" → today's (and overdue) follow-ups
+  if (/\b(?:need|needs|due for|waiting for|pending)\b.*\bfollow[- ]?ups?\b/.test(low) && !/^(?:schedule|set up|book|add|create|plan|mark)\b/.test(low)) {
+    return runIslandCommand(userId, { ...input, text: "show today's follow-ups" }, deps);
+  }
   if (/\b(?:ready to (?:purchase|buy)|about to buy|hot (?:leads|prospects))\b/.test(low) && /\b(?:show|find|list|which|who|give|any|what)\b/.test(low)) {
     return listReply("Ready to purchase", await leadsWhere(userId, tz, { stages: ["ready_to_purchase"] }), "No leads are marked ready to purchase.");
   }

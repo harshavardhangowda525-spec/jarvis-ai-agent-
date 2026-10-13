@@ -106,7 +106,7 @@ function setOpen(open) {
   isOpen = open;
   const cur = island.getBounds();
   const d = screen.getDisplayMatching(cur);
-  const b = L.clampToWorkArea({ x: cur.x, y: cur.y, width: L.WIDTH, height: open ? L.OPEN_H : L.COLLAPSED_H }, d.workArea);
+  const b = L.resizeAround(cur, open, d.workArea);
   island.setBounds(b);
   if (open) { if (!island.isVisible()) island.showInactive(); island.focus(); setInteractive(true); }
   updateTray();

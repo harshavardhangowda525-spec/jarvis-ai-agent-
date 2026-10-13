@@ -71,6 +71,7 @@ d("RUBEN's island — spoken commands drive the real CRM", () => {
     expect(f.dueAt.getTime()).toBeGreaterThan(Date.now());
     const today = await say("Which clients need follow-up today?");
     expect(today.card).toMatchObject({ type: "text", text: "No follow-ups due today." }); // it's tomorrow
+    expect((await say("Find clients who need follow-up")).card).toMatchObject({ type: "text", text: "No follow-ups due today." }); // same queue
     const all = await say("show my follow-ups");
     expect(all.card).toMatchObject({ type: "followups", items: [{ name: "Brew House Cafe" }] });
   });

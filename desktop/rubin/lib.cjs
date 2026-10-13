@@ -6,7 +6,9 @@
 
 const WIDTH = 420; // the island window; the capsule is centred at its top
 const COLLAPSED_H = 76; // room for the widest capsule state + its glow
-const OPEN_H = 640; // capsule + liquid-glass pop-up
+const OPEN_H = 680; // capsule + the liquid-glass CRM dashboard
+const OPEN_W = 920;
+const MARGIN = 8;
 const EDGE = 4;
 
 const DEFAULTS = Object.freeze({
@@ -84,6 +86,18 @@ function initialBounds(saved, displays, primary, height = COLLAPSED_H) {
   return clampToWorkArea({ x: w.x + Math.round((w.width - WIDTH) / 2), y: w.y + EDGE, width: WIDTH, height }, w);
 }
 
+/**
+ * The window for the open dashboard (or back to the outline): it grows around
+ * the outline's centre, so the glass seems to come out of the outline, and is
+ * kept inside the screen (laptop screens get a smaller dashboard).
+ */
+function resizeAround(cur, open, workArea) {
+  const width = open ? Math.min(OPEN_W, workArea.width - MARGIN * 2) : WIDTH;
+  const height = open ? Math.min(OPEN_H, workArea.height - MARGIN * 2) : COLLAPSED_H;
+  const cx = cur.x + cur.width / 2;
+  return clampToWorkArea({ x: Math.round(cx - width / 2), y: cur.y, width, height }, workArea);
+}
+
 /** After signing in / unlocking in the auth window: has JARVIS let us through? */
 function authFinished(url, jarvisUrl) {
   if (!sameOrigin(url, jarvisUrl)) return false;
@@ -96,4 +110,4 @@ function authPath(p) {
   return p === "/login" || p === "/unlock" ? p : null;
 }
 
-module.exports = { WIDTH, COLLAPSED_H, OPEN_H, EDGE, DEFAULTS, readSettings, pagePatch, isHttpUrl, sameOrigin, displayFor, clampToWorkArea, initialBounds, authFinished, authPath };
+module.exports = { WIDTH, COLLAPSED_H, OPEN_H, OPEN_W, resizeAround, EDGE, DEFAULTS, readSettings, pagePatch, isHttpUrl, sameOrigin, displayFor, clampToWorkArea, initialBounds, authFinished, authPath };
