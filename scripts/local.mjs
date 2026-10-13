@@ -182,7 +182,12 @@ if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(searxUrl) && fs.existsS
 }
 // keys that are almost right (a typo, or SerpApi's name instead of Serper's) and a file Notepad saved as .txt
 const SEARCH_KEYS = ["SEARXNG_URL", "BRAVE_SEARCH_API_KEY", "SEARCH_API_KEY", "SERPER_API_KEY"];
-for (const k of Object.keys(appEnv).filter((k) => /SERP|BRAVE|SEARX/i.test(k) && !SEARCH_KEYS.includes(k) && !isPlaceholder(appEnv[k]))) {
+// monthly budgets — real settings that take a number, not a key
+const SEARCH_BUDGETS = ["DARWIN_BRAVE_MONTHLY", "DARWIN_SERPER_MONTHLY", "DARWIN_SEARCH_MONTHLY_CREDITS"];
+for (const k of SEARCH_BUDGETS.filter((k) => appEnv[k] && !isPlaceholder(appEnv[k]) && !/^\s*(\d+|0|off|none|unlimited)\s*$/i.test(appEnv[k]))) {
+  say(`  ! ${k} in .env.local is the monthly search budget and takes a number (e.g. 2000) — if you pasted an API key there, move it to ${/BRAVE/.test(k) ? "BRAVE_SEARCH_API_KEY" : "SERPER_API_KEY"}.`);
+}
+for (const k of Object.keys(appEnv).filter((k) => /SERP|BRAVE|SEARX/i.test(k) && !SEARCH_KEYS.includes(k) && !SEARCH_BUDGETS.includes(k) && !isPlaceholder(appEnv[k]))) {
   say(`  ! ${k} in .env.local isn't a name DARWIN reads — ${/SERPAPI/i.test(k) ? "SerpApi (serpapi.com) is a different service; DARWIN uses Serper (serper.dev): " : ""}rename it to ${/BRAVE/i.test(k) ? "BRAVE_SEARCH_API_KEY" : /SEARX/i.test(k) ? "SEARXNG_URL" : "SERPER_API_KEY"}.`);
 }
 for (const f of [".env.local.txt", ".env.txt"]) {
