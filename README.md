@@ -1678,9 +1678,11 @@ voice credits. Leave it off and use the shortcut if you'd rather not.
 - **Microphone access:** RUBEN asks for the microphone only for JARVIS's own
   pages, and for audio only.
 - **Speech:**
-  - speech-to-text and RUBEN's voice use the same ElevenLabs setup as the rest
-    of JARVIS;
-  - without it, replies use the computer's own voice and typing still works.
+  - speech-to-text uses ElevenLabs. Without `ELEVENLABS_API_KEY` it uses Groq's
+    Whisper with the `GROQ_API_KEY` JARVIS already has;
+  - RUBEN's voice uses ElevenLabs. Without it, replies use the computer's own
+    voice;
+  - typing always works.
 - **Low resource use:** when idle the island runs no animation loop. It checks
   JARVIS for due follow-ups once a minute.
 - **Reduced motion:** the island honours your system's "reduce motion"

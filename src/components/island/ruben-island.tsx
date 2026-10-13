@@ -220,10 +220,15 @@ export function RubenIsland() {
     if (!blob) { setMode("idle"); setTranscript(""); return; }
     setMode("processing");
     const res = await transcribe(blob);
-    if ("error" in res) { setMode("idle"); setCard({ type: "error", text: res.error }); return; }
+    if ("error" in res) {
+      // say it too — a silent card is easy to miss when you're talking, not looking
+      setSay("I couldn't hear that — type it below instead."); setCard({ type: "error", text: res.error });
+      await talk("I couldn't understand the audio. You can type the command instead.");
+      setMode("idle"); return;
+    }
     if (!res.text) { setMode("idle"); setSay("I didn't catch that."); return; }
     await send(res.text);
-  }, [getMic, send, stopSpeaking]);
+  }, [getMic, send, stopSpeaking, talk]);
 
   // ---- wake phrase ("Open CRM" / "Hey Ruben …"): only while idle and collapsed ----
   useEffect(() => {
