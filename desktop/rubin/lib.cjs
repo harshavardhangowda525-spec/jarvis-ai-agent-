@@ -113,6 +113,13 @@ function pickServer(localUp, cloudUp, local, cloud) {
   return null;
 }
 
+/** A short fingerprint of RUBEN's code files (to notice an update). */
+function codeFingerprint(buffers) {
+  const h = require("node:crypto").createHash("sha256");
+  for (const b of buffers) h.update(b || "");
+  return h.digest("hex").slice(0, 16);
+}
+
 /** What to tell you when no JARVIS can show the island (local/cloud: "up" | "old" | "down" | null = not set). */
 function offlineReason(local, cloud) {
   if (local === "old") return "The JARVIS on this PC is an older version — stop it and run npm run local again to update it.";
@@ -136,4 +143,4 @@ function authPath(p) {
   return p === "/login" || p === "/unlock" ? p : null;
 }
 
-module.exports = { offlineReason, pickServer, WIDTH, COLLAPSED_H, OPEN_H, OPEN_W, resizeAround, EDGE, DEFAULTS, readSettings, pagePatch, isHttpUrl, sameOrigin, displayFor, clampToWorkArea, initialBounds, authFinished, authPath };
+module.exports = { codeFingerprint, offlineReason, pickServer, WIDTH, COLLAPSED_H, OPEN_H, OPEN_W, resizeAround, EDGE, DEFAULTS, readSettings, pagePatch, isHttpUrl, sameOrigin, displayFor, clampToWorkArea, initialBounds, authFinished, authPath };

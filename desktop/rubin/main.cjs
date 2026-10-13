@@ -13,9 +13,25 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, shell, net, powerMonitor, dialog } = require("electron");
 const L = require("./lib.cjs");
+/** RUBEN's own log (…\\RUBEN\\rubin.log): what it was asked to do on the PC and what happened. */
+function log(...a) {
+  try {
+    const f = path.join(app.getPath("userData"), "rubin.log");
+    if (fs.existsSync(f) && fs.statSync(f).size > 512 * 1024) fs.renameSync(f, f + ".old");
+    fs.appendFileSync(f, `${new Date().toISOString()} ${a.join(" ")}\n`);
+  } catch { /* logging must never break RUBEN */ }
+  console.log("RUBEN:", ...a);
+}
 const PC = require("./pc.cjs");
 
-if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
+/**
+ * One RUBEN at a time. Starting it again normally just opens the CRM, but
+ * after an update (git pull) the copy already running in the tray would
+ * still run the old code. So the new start passes a fingerprint of the
+ * code, and the running copy restarts itself when its code has changed.
+ */
+const CODE = L.codeFingerprint(["main.cjs", "pc.cjs", "preload.cjs", "lib.cjs", "offline.html"].map((f) => { try { return fs.readFileSync(path.join(__dirname, f)); } catch { return ""; } }));
+if (!app.requestSingleInstanceLock({ code: CODE })) { app.quit(); process.exit(0); }
 app.setAppUserModelId("ai.jarvis.ruben");
 
 const SETTINGS_FILE = path.join(app.getPath("userData"), "settings.json");
@@ -258,8 +274,19 @@ ipcMain.handle("rubin:settings:set", (e, patch) => {
 // here and asks you itself, in a Windows dialog, before it closes an app,
 // types or presses keys. The page can't answer that dialog.
 let pcBusy = false;
+/**
+ * RUBEN's own question, attached to the island so it can't open hidden behind
+ * other windows. No answer within a minute counts as Cancel.
+ */
+async function ask(opts) {
+  const parent = island && !island.isDestroyed() ? island : null;
+  if (parent && !parent.isVisible()) parent.showInactive();
+  const o = { noLink: true, ...opts, signal: AbortSignal.timeout(60_000) };
+  try { return await (parent ? dialog.showMessageBox(parent, o) : dialog.showMessageBox(o)); }
+  catch { return { response: opts.cancelId ?? 0 }; }
+}
 async function askConsent() {
-  const r = await dialog.showMessageBox({
+  const r = await ask({
     type: "question", title: "RUBEN", buttons: ["Not now", "Allow"], defaultId: 1, cancelId: 0, noLink: true,
     message: "Let RUBEN open and control apps on this PC?",
     detail: "RUBEN will open installed apps and switch, minimise or maximise their windows when you ask. Before it closes an app, types or presses keys, it always asks you here first.\n\nYou can turn this off any time in RUBEN's tray menu.",
@@ -272,20 +299,23 @@ ipcMain.handle("rubin:pc", async (e, text) => {
   if (!fromIsland(e) || !onJarvis || typeof text !== "string" || text.length > 600) return { handled: false };
   const cmd = PC.parsePcCommand(text);
   if (!cmd) return { handled: false };
+  log(`pc: "${text.slice(0, 120)}" → ${cmd.kind}${cmd.app ? ` "${cmd.app}"` : ""}`);
   if (pcBusy) return { handled: true, ok: false, say: "One moment — I'm still on the last one." };
   pcBusy = true;
   try {
     if (settings.pcControl === false) return cmd.explicit ? { handled: true, ok: false, say: "App control is off — turn it on in RUBEN's tray menu." } : { handled: false };
     if (settings.pcControl == null && !(await askConsent())) return { handled: true, ok: false, say: "Okay — I won't control apps." };
     const plan = await PC.planPc(text, { selfPids: [process.pid, ...app.getAppMetrics().map((m) => m.pid)] });
+    log(`pc:   ${plan.confirm ? `needs a yes — ${plan.confirm.question}` : plan.handled ? `${plan.ok ? "ok" : "failed"} — ${plan.say}` : `not an app — left to the CRM${plan.hint ? ` (${plan.hint})` : ""}`}`);
     if (!plan.confirm) return plan;
-    const r = await dialog.showMessageBox({
+    const r = await ask({
       type: "warning", title: "RUBEN — please confirm", buttons: ["Cancel", "Yes, do it"], defaultId: 0, cancelId: 0, noLink: true,
       message: plan.confirm.question, detail: plan.confirm.detail || "",
     });
     if (r.response !== 1) return { handled: true, ok: true, say: "Okay — I didn't do it." };
     return { handled: true, ...(await PC.runConfirmed(plan.confirm)) };
   } catch (err) {
+    log(`pc:   error — ${err?.stack || err}`);
     return { handled: true, ok: false, say: `That didn't work: ${String(err?.message || err).slice(0, 160)}` };
   } finally {
     pcBusy = false;
@@ -305,7 +335,15 @@ function lockPermissions() {
 }
 
 // ---------- lifecycle ----------
-app.on("second-instance", () => { if (island) { island.showInactive(); setOpen(true); send("open"); } });
+app.on("second-instance", (_e, _argv, _cwd, data) => {
+  if (data && data.code && data.code !== CODE) {
+    log("updated code found — restarting to use it");
+    app.relaunch();
+    app.exit(0);
+    return;
+  }
+  if (island) { island.showInactive(); setOpen(true); send("open"); }
+});
 app.whenReady().then(() => {
   if (process.platform === "darwin") app.dock?.hide();
   lockPermissions();
@@ -320,6 +358,7 @@ app.whenReady().then(() => {
   screen.on("display-metrics-changed", reclamp);
   powerMonitor.on("resume", () => (onJarvis ? send("refresh") : loadIsland()));
   powerMonitor.on("unlock-screen", () => send("refresh"));
+  log(`started (code ${CODE}), app control: ${settings.pcControl == null ? "not asked yet" : settings.pcControl ? "on" : "off"}`);
   console.log(`RUBEN is running — island on top, icon in the system tray. JARVIS: ${settings.url}${settings.cloudUrl ? `, online fallback: ${settings.cloudUrl}` : ""}`);
 }).catch((e) => { dialog.showErrorBox("RUBEN couldn't start", String(e?.message || e)); app.quit(); });
 

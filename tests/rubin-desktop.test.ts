@@ -150,7 +150,7 @@ describe("RUBEN on this PC: what needs your Yes", () => {
 
   it("opens installed apps; 'open ABC Cafe' isn't an app, so the CRM gets it", async () => {
     expect(await PC.planPc("open Spotify", o)).toEqual({ handled: true, ok: true, say: "Opening Spotify." });
-    expect(await PC.planPc("open Moonlight", o)).toEqual({ handled: false });
+    expect(await PC.planPc("open Moonlight", o)).toMatchObject({ handled: false, app: "Moonlight" });
     expect(await PC.planPc("launch Moonlight", o)).toMatchObject({ handled: true, ok: false });
   });
   it("switching and minimising happen straight away", async () => {
@@ -187,5 +187,18 @@ describe("when the CRM can't open, RUBEN says why", () => {
     expect(L.offlineReason("down", "old")).toMatch(/online JARVIS hasn't been updated/);
     expect(L.offlineReason("down", "down")).toMatch(/or online/);
     expect(L.offlineReason("up", "down")).toBe("");
+  });
+});
+
+describe("updates reach the RUBEN already running", () => {
+  it("the code fingerprint changes when RUBEN's code changes", () => {
+    const a = L.codeFingerprint([Buffer.from("main v1"), Buffer.from("pc v1")]);
+    expect(a).toMatch(/^[0-9a-f]{16}$/);
+    expect(L.codeFingerprint([Buffer.from("main v1"), Buffer.from("pc v1")])).toBe(a);
+    expect(L.codeFingerprint([Buffer.from("main v1"), Buffer.from("pc v2")])).not.toBe(a);
+  });
+  it("'open Moonlight' with no such app comes back with a hint for the CRM's answer", async () => {
+    const appsModule = { listApps: async () => [{ name: "Spotify" }], findApp: () => ({ app: null, suggestions: ["Moonlighter"] }), openApp: async () => ({ ok: false }), matchScore: () => 0, normalizeName: (s: string) => s };
+    expect(await PC.planPc("open Moonlight", { appsModule, windows: [], platform: "win32" })).toEqual({ handled: false, hint: 'no installed app called "Moonlight" (closest: Moonlighter)', app: "Moonlight" });
   });
 });

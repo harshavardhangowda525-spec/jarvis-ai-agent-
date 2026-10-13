@@ -206,6 +206,10 @@ export function RubenIsland() {
       else if (r.status === 423) { setAccess("locked"); reply = { say: "JARVIS is locked. Unlock it first.", card: { type: "error", text: "JARVIS is locked." } }; }
       else if (!r.ok || !j?.data) reply = { say: "That didn't work.", card: { type: "error", text: j?.error || `JARVIS answered ${r.status}. Nothing was changed — try again.` } };
       else reply = j.data as IslandReply;
+      // "open X": neither an installed app nor a lead — say both, not just "no lead"
+      if (pc && !pc.handled && pc.app && reply.card?.type === "error") {
+        reply = { ...reply, say: `I couldn't find "${pc.app}" — it isn't an app on this PC or a lead in your CRM.`, card: { type: "error", text: `Not an app on this PC (${pc.hint ?? "no match"}), and no lead matches "${pc.app}".` } };
+      }
     } catch {
       setAccess("offline");
       reply = { say: "I can't reach JARVIS right now.", card: { type: "error", text: "JARVIS isn't reachable. Check that it's running — nothing was changed." } };

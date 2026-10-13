@@ -210,7 +210,7 @@ async function planPc(text, o = {}) {
     let installed = [];
     try { installed = await A.listApps(); } catch { installed = []; }
     const hit = A.findApp(cmd.app, installed);
-    if (!hit.app && !cmd.explicit) return { handled: false }; // "open ABC Cafe" is a lead, not an app
+    if (!hit.app && !cmd.explicit) return { handled: false, hint: `no installed app called "${cmd.app}"${hit.suggestions?.length ? ` (closest: ${hit.suggestions.join(", ")})` : ""}`, app: cmd.app }; // "open ABC Cafe" may be a lead
     const r = await A.openApp(cmd.app);
     return { handled: true, ok: !!r.ok, say: r.ok ? r.message : `${r.message}${r.suggestions?.length ? ` Did you mean ${r.suggestions.join(" or ")}?` : ""}` };
   }

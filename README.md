@@ -1720,6 +1720,18 @@ shows which one it's using.
 | "Type hello world in Notepad" | **Asks first**, showing the exact text, then types it there |
 | "Press Ctrl+S in Word" / "Press Enter in WhatsApp" | **Asks first**, then presses it. Pressing Enter can send a message, and the question says so |
 
+If an app doesn't open:
+
+- **After an update, start RUBEN again with `npm run rubin`.** The copy
+  already running in the tray notices the new code and restarts itself.
+- **The first app command asks "Let RUBEN open and control apps?"** It
+  appears in front of the island. If you clicked **Not now**, turn it on in
+  the tray menu with **Let RUBEN open and control apps**.
+- **Say the app's name as it appears in the Start menu.** If no app and no
+  lead has that name, RUBEN says so and suggests the closest app names.
+- **Check RUBEN's log.** `%APPDATA%\RUBEN\rubin.log` lists each app command
+  and what happened.
+
 How it stays safe:
 
 - The first time you use an app command, RUBEN asks once whether it may control
