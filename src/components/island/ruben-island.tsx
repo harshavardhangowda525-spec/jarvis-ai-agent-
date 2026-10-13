@@ -33,7 +33,7 @@ function saveLocal(s: DesktopSettings) {
 }
 
 const SIZE: Record<Mode | "away", [number, number]> = {
-  idle: [128, 34], listening: [176, 40], processing: [212, 38], speaking: [204, 40], working: [224, 38], notice: [380, 44], away: [252, 36],
+  idle: [176, 36], listening: [176, 40], processing: [212, 38], speaking: [204, 40], working: [224, 38], notice: [380, 44], away: [252, 36],
 };
 
 export function RubenIsland() {
@@ -382,45 +382,49 @@ export function RubenIsland() {
             {mode === "processing" && !away && <span className="ri-dots" aria-hidden><i /><i /><i /></span>}
             {mode === "working" && !away && <span className="ri-work"><span>Working</span><span className="ri-prog" aria-hidden /></span>}
             {label && <span className="ri-label">{label}</span>}
+            {mode === "idle" && !away && <span className="ri-label ri-ready"><b>RUBEN</b><i aria-hidden /> {access === "checking" ? "Connecting" : "Ready"}</span>}
           </span>
         </button>
         <span className="sr-only" aria-live="polite">{say}</span>
 
         {mounted && !away && (
-          <section className={`ri-pop ${shown ? "in" : "out"}`} role="dialog" aria-label="RUBEN CRM" aria-hidden={!open}
-            onPointerEnter={hover(true)} onPointerLeave={hover(false)}>
-            <header className="ri-head">
-              <button type="button" className={`ri-mic ${mode === "listening" ? "on" : ""}`} onClick={() => void listen()} aria-label={mode === "listening" ? "Stop listening" : "Speak a command"}>
-                <MicIcon />
-              </button>
-              <div className="ri-heard">
-                <div className="ri-k">{mode === "listening" ? "Listening…" : mode === "processing" || mode === "working" ? "Working on it…" : transcript ? "You said" : "RUBEN · CRM"}</div>
-                <div className="ri-t">{transcript || (mode === "listening" ? "" : "Say or type a command — “Show my interested leads”")}{say && <span className="ri-ans"> — {say}</span>}</div>
-              </div>
-              <button type="button" className="ri-icon" onClick={() => setShowSettings((v) => !v)} aria-label="Island settings" aria-expanded={showSettings}><GearIcon /></button>
-              <button type="button" className="ri-icon" onClick={() => { void send("close crm"); }} aria-label="Close CRM">✕</button>
-            </header>
-
-            {micError && <p className="ri-warn">{micError}</p>}
-            {card && !showSettings && (
-              <div className="ri-banner">
-                <CardView card={card} onLead={(id) => crm.current?.openLead(id)} onSay={(t, id) => void send(t, id ? { leadId: id } : {})} />
-                <button type="button" className="ri-x" aria-label="Dismiss" onClick={() => setCard(null)}>✕</button>
-              </div>
-            )}
-
-            {showSettings ? (
-              <Settings settings={settings} mics={mics} onChange={updateSettings} isDesktop={!!bridge.current} />
-            ) : (
-              <CrmDashboard ref={crm} active={open} onSelectLead={(id) => { leadId.current = id; }} onCommand={(t, id) => void send(t, id ? { leadId: id } : {})} />
-            )}
-
-            <form className="ri-type" onSubmit={(e) => { e.preventDefault(); const t = typed; setTyped(""); void send(t); }}>
-              <input ref={inputRef} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Ask RUBEN — e.g. Mark this lead as ready to purchase" aria-label="Type a command" />
-              <button type="submit" disabled={!typed.trim()}>Go</button>
+          <>
+            <button type="button" className={`ri-closechip ${shown ? "in" : "out"}`} onClick={() => { void send("close crm"); }} onPointerEnter={hover(true)} aria-hidden={!open} tabIndex={open ? 0 : -1}>
+              Close CRM <span aria-hidden>✕</span>
+            </button>
+            <section className={`ri-pop ${shown ? "in" : "out"}`} role="dialog" aria-label="RUBEN CRM" aria-hidden={!open}
+              onPointerEnter={hover(true)} onPointerLeave={hover(false)}>
+              {card && !showSettings && (
+                <div className="ri-banner">
+                  <CardView card={card} onLead={(id) => crm.current?.openLead(id)} onSay={(t, id) => void send(t, id ? { leadId: id } : {})} />
+                  <button type="button" className="ri-x" aria-label="Dismiss" onClick={() => setCard(null)}>✕</button>
+                </div>
+              )}
+              {showSettings && (
+                <div className="ri-settings">
+                  <button type="button" className="ri-x" aria-label="Close settings" onClick={() => setShowSettings(false)}>✕</button>
+                  <Settings settings={settings} mics={mics} onChange={updateSettings} isDesktop={!!bridge.current} />
+                </div>
+              )}
+              <CrmDashboard ref={crm} active={open} micOn={mode === "listening"} onMic={() => void listen()}
+                onSettings={() => setShowSettings((v) => !v)} onClose={() => { void send("close crm"); }}
+                onSelectLead={(id) => { leadId.current = id; }} onCommand={(t, id) => void send(t, id ? { leadId: id } : {})} />
+            </section>
+            {/* what RUBEN heard / is doing — and a place to type */}
+            <form className={`ri-pill ${shown ? "in" : "out"}`} aria-hidden={!open} onPointerEnter={hover(true)}
+              onSubmit={(e) => { e.preventDefault(); const t = typed; setTyped(""); void send(t); }}>
+              {mode === "listening" || mode === "processing" || mode === "working" || (transcript && !typed && document.activeElement !== inputRef.current) ? (
+                <button type="button" className="ri-pill-say" onClick={() => setTimeout(() => inputRef.current?.focus(), 0)}>
+                  <span className="k">{mode === "listening" ? "Listening…" : mode === "processing" || mode === "working" ? "Working on it…" : "Heard"}</span>
+                  {transcript ? <span className="q">“{transcript}”</span> : null}
+                  {say && mode !== "listening" ? <span className="a">{say}</span> : null}
+                </button>
+              ) : null}
+              {micError && !transcript && <span className="ri-pill-warn" role="status">{micError}</span>}
+              <input ref={inputRef} value={typed} onChange={(e) => setTyped(e.target.value)} placeholder="Ask RUBEN — “Show my interested leads”" aria-label="Type a command" tabIndex={open ? 0 : -1} />
             </form>
-            {!bridge.current && <p className="ri-note">Browser preview — the RUBEN desktop app (npm run rubin) keeps the island on top of other apps.</p>}
-          </section>
+            {!bridge.current && open && <p className="ri-note">Browser preview — the RUBEN desktop app (npm run rubin) keeps the island on top of other apps.</p>}
+          </>
         )}
       </div>
     </div>
@@ -568,8 +572,8 @@ html, body { background: transparent !important; background-image: none !importa
 .ri-prog::after { content: ""; position: absolute; inset: 0; width: 40%; background: #60a5fa; animation: ri-ind 1.2s ease-in-out infinite; }
 @keyframes ri-ind { from { transform: translateX(-100%) } to { transform: translateX(260%) } }
 /* the CRM: one floating liquid-glass surface that grows out of the outline */
-.ri-pop { pointer-events: auto; box-sizing: border-box; width: min(900px, calc(100vw - 16px)); flex: 1; min-height: 0; max-height: calc(100vh - 66px);
-  display: flex; flex-direction: column; gap: 10px; border-radius: 26px; padding: 14px 16px 12px; margin-bottom: 8px; overflow: hidden; position: relative;
+.ri-pop { pointer-events: auto; box-sizing: border-box; width: min(900px, calc(100vw - 16px)); flex: 1; min-height: 0;
+  display: flex; flex-direction: column; border-radius: 22px; padding: 0; overflow: hidden; position: relative; border-color: rgba(96,165,250,.45) !important;
   background: linear-gradient(165deg, rgba(10,37,64,.78) 0%, rgba(6,22,42,.84) 45%, rgba(3,10,22,.9) 100%);
   backdrop-filter: blur(28px) saturate(1.7); -webkit-backdrop-filter: blur(28px) saturate(1.7);
   border: 1px solid rgba(147,197,253,.2);
@@ -583,6 +587,27 @@ html, body { background: transparent !important; background-image: none !importa
   transition: transform .28s cubic-bezier(.5,0,.75,0), opacity .22s ease .04s, border-radius .28s ease, visibility 0s linear .28s; }
 .ri-pop > * { position: relative; }
 .ri-ans { color: #93c5fd; }
+.ri-ready { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: #cbd5e1; letter-spacing: .04em; }
+.ri-ready b { color: #93c5fd; font-weight: 700; letter-spacing: .12em; } .ri-ready i { width: 1px; height: 12px; background: rgba(148,163,184,.5); }
+.ri-stage { gap: 6px !important; }
+.ri-closechip { pointer-events: auto; align-self: flex-end; margin-right: max(8px, calc((100vw - 900px) / 2)); display: inline-flex; gap: 8px; align-items: center;
+  font: inherit; font-size: 12px; color: #e2e8f0; padding: 5px 12px; border-radius: 10px; cursor: pointer;
+  background: rgba(10,37,64,.82); border: 1px solid rgba(147,197,253,.3); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  transition: opacity .25s ease, transform .3s ease; }
+.ri-closechip span { color: #93c5fd; } .ri-closechip:hover, .ri-closechip:focus-visible { border-color: #60a5fa; outline: none; }
+.ri-closechip.out, .ri-pill.out { opacity: 0; transform: translateY(-10px); pointer-events: none; visibility: hidden; }
+.ri-pill { pointer-events: auto; flex: none; display: flex; align-items: center; gap: 8px; width: min(520px, calc(100vw - 32px)); margin-bottom: 6px; padding: 5px 6px 5px 14px; border-radius: 14px;
+  background: rgba(10,37,64,.85); border: 1px solid rgba(147,197,253,.28); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); box-shadow: 0 10px 26px rgba(0,0,0,.4);
+  transition: opacity .25s ease, transform .3s ease; }
+.ri-pill-say { flex: none; max-width: 60%; display: flex; gap: 6px; align-items: baseline; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: text; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ri-pill-say .k { font-size: 12.5px; color: #cbd5e1; } .ri-pill-say .q { font-size: 12.5px; color: #f1f5f9; overflow: hidden; text-overflow: ellipsis; } .ri-pill-say .a { font-size: 12px; color: #93c5fd; overflow: hidden; text-overflow: ellipsis; }
+.ri-pill-warn { flex: none; max-width: 45%; font-size: 11.5px; color: #fcd34d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ri-pill input { flex: 1; min-width: 0; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 9px; border: 0; background: transparent; color: #f1f5f9; }
+.ri-pill input:focus { outline: none; background: rgba(2,8,20,.45); }
+.ri-pill:has(.ri-pill-say) input:not(:focus) { flex: 0 0 34px; } .ri-pill:has(.ri-pill-say) input:not(:focus)::placeholder { color: transparent; }
+.ri-settings { position: absolute; z-index: 6; top: 54px; right: 16px; width: 320px; padding: 12px; border-radius: 14px; background: rgba(6,20,40,.97); border: 1px solid rgba(147,197,253,.25); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+.ri-settings .ri-card { margin-top: 0; }
+.ri-banner { position: absolute; z-index: 6; left: 68px; right: 16px; bottom: 14px; } .ri-banner .ri-card { background: rgba(6,20,40,.96); border-color: rgba(147,197,253,.3); box-shadow: 0 12px 30px rgba(0,0,0,.45); max-height: 220px; overflow: auto; }
 .ri-banner { position: relative; } .ri-banner .ri-card { margin-top: 0; padding-right: 34px; }
 .ri-x { position: absolute; top: 8px; right: 10px; background: none; border: 0; color: #94a3b8; cursor: pointer; font-size: 12px; }
 .ri-head { display: flex; align-items: center; gap: 10px; }

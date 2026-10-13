@@ -42,7 +42,15 @@ export interface IslandReply {
 /** The CRM dashboard inside the island pop-up (one request, all real data). */
 export type IslandStatus = "all" | "ready" | "interested" | "rejected" | "open" | "won";
 export interface IslandDashboard {
-  counts: { total: number; open: number; ready: number; interested: number; rejected: number; won: number; dueToday: number; overdue: number };
+  counts: { total: number; open: number; ready: number; interested: number; rejected: number; won: number; dueToday: number; overdue: number; new: number; qualified: number; inProgress: number };
+  /** Most recently touched businesses, with their contact details. */
+  recent: { id: string; name: string; number: number | null; email: string | null; phone: string | null; instagram: string | null; website: string | null; stage: string; stageLabel: string }[];
+  /** The three sales statuses, most important leads first. */
+  columns: { ready: IslandLead[]; interested: IslandLead[]; rejected: IslandLead[] };
+  /** Won ÷ (won + rejected) — null until something has been decided. */
+  winRate: { won: number; decided: number; pct: number | null };
+  /** Latest interactions across all leads. */
+  interactions: { id: string; leadId: string; name: string; when: string; channel: string; direction: string; outcome: string | null; notes: string | null }[];
   pipeline: { id: string; label: string; count: number }[];
   progress: { demosUpcoming: number; demosDone: number; proposalsOut: number; proposalsAccepted: number; clients: number };
   followups: IslandFollowUp[];

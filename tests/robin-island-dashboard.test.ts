@@ -37,6 +37,14 @@ d("RUBEN's island dashboard — counts, lists, search and lead detail from the d
     expect(r.followups.map((f) => f.name)).toEqual(["Brew House Cafe"]);
     expect(r.pipeline.find((p) => p.id === "lost")!.count).toBe(1);
     expect(r.today).toMatch(/1 interaction logged/);
+    // the overview's tiles, status columns, recent businesses and history — all real rows
+    expect(r.counts).toMatchObject({ new: 1, qualified: 0, inProgress: 2 });
+    expect(r.columns.ready.map((l) => l.name)).toEqual(["Iron Den Gym"]);
+    expect(r.columns.interested.map((l) => l.name)).toEqual(["Brew House Cafe"]);
+    expect(r.columns.rejected.map((l) => l.name)).toEqual(["Glow Salon"]);
+    expect(r.winRate).toEqual({ won: 0, decided: 1, pct: 0 });
+    expect(r.recent).toHaveLength(4);
+    expect(r.interactions[0]).toMatchObject({ name: "Iron Den Gym", channel: "call", notes: "wants a booking site" });
   });
 
   it("filters by status and searches names, phones and Instagram", async () => {

@@ -83,7 +83,8 @@ function createIsland() {
   island.webContents.setWindowOpenHandler(({ url }) => {
     const p = L.sameOrigin(url, activeUrl) ? L.authPath(new URL(url).pathname) : null;
     if (p) openAuth(p);
-    else if (/^https?:/.test(url)) void shell.openExternal(url);
+    // links open in your browser; "Draft Email" opens a draft in your mail app (you send it yourself)
+    else if (/^https?:/.test(url) || /^mailto:[^\s]+$/i.test(url)) void shell.openExternal(url);
     return { action: "deny" };
   });
   loadIsland();

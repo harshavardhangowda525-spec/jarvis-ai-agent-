@@ -44,7 +44,8 @@ export async function islandDashboard(userId: string, o: { status?: IslandStatus
   const { start, end } = dayBounds(tz, now);
 
   const listWhere: Prisma.RobinLeadWhereInput = { userId, ...STATUS_WHERE[status], ...(searchWhere(q) ?? {}) };
-  const [byStage, listRows, listTotal, queue, demosUpcoming, demosDone, proposalsOut, proposalsAccepted, clients, acts, todayInteractions, todayMoves, todayDone] = await Promise.all([
+  const COLUMN_STAGES = { ready: ["ready_to_purchase"], interested: ["interested", "follow_up", "demo_scheduled", "demo_completed"], rejected: REJECTED };
+  const [byStage, listRows, listTotal, queue, demosUpcoming, demosDone, proposalsOut, proposalsAccepted, clients, acts, todayInteractions, todayMoves, todayDone, recentRows, colRows, lastInteractions] = await Promise.all([
     db.robinLead.groupBy({ by: ["stage"], where: { userId }, _count: { _all: true } }),
     db.robinLead.findMany({ where: listWhere, take: 400 }),
     db.robinLead.count({ where: listWhere }),
@@ -58,6 +59,9 @@ export async function islandDashboard(userId: string, o: { status?: IslandStatus
     db.robinInteraction.count({ where: { userId, occurredAt: { gte: start, lt: end } } }),
     db.robinStageChange.count({ where: { userId, createdAt: { gte: start, lt: end } } }),
     db.robinFollowUp.count({ where: { userId, status: "done", completedAt: { gte: start, lt: end } } }),
+    db.robinLead.findMany({ where: { userId }, orderBy: { updatedAt: "desc" }, take: 5 }),
+    db.robinLead.findMany({ where: { userId, stage: { in: [...COLUMN_STAGES.ready, ...COLUMN_STAGES.interested, ...COLUMN_STAGES.rejected] } }, orderBy: { stageChangedAt: "desc" }, take: 300 }),
+    db.robinInteraction.findMany({ where: { userId }, orderBy: { occurredAt: "desc" }, take: 8, include: { lead: { select: { businessName: true } } } }),
   ]);
 
   const n = (stages: string[]) => byStage.filter((r) => stages.includes(r.stage)).reduce((a, r) => a + r._count._all, 0);
@@ -76,8 +80,14 @@ export async function islandDashboard(userId: string, o: { status?: IslandStatus
     todayDone ? `${todayDone} follow-up${todayDone === 1 ? "" : "s"} done` : null,
   ].filter(Boolean);
 
+  const col = (stages: string[]) => colRows.filter((l) => stages.includes(l.stage)).sort((a, b) => attention(b, now) - attention(a, now)).slice(0, 6).map((l) => toLead(l, tz));
+  const won = n(["won"]), rejected = n(REJECTED);
   return {
-    counts: { total, open: total - n(CLOSED), ready: n(["ready_to_purchase"]), interested: n(["interested", "follow_up", "demo_scheduled", "demo_completed"]), rejected: n(REJECTED), won: n(["won"]), dueToday: queue.today.length, overdue: queue.overdue.length },
+    recent: recentRows.map((l) => ({ id: l.id, name: l.businessName, number: l.number, email: l.email, phone: l.phone, instagram: l.instagram, website: l.website, stage: l.stage, stageLabel: label(l.stage) })),
+    columns: { ready: col(COLUMN_STAGES.ready), interested: col(COLUMN_STAGES.interested), rejected: col(COLUMN_STAGES.rejected) },
+    winRate: { won, decided: won + rejected, pct: won + rejected ? Math.round((won / (won + rejected)) * 100) : null },
+    interactions: lastInteractions.map((i) => ({ id: i.id, leadId: i.leadId, name: i.lead.businessName, when: fmtWhen(i.occurredAt, tz), channel: i.channel, direction: i.direction, outcome: i.outcome, notes: i.notes })),
+    counts: { new: n(["new"]), qualified: n(["qualified"]), inProgress: total - n(CLOSED) - n(["new", "qualified"]), total, open: total - n(CLOSED), ready: n(["ready_to_purchase"]), interested: n(["interested", "follow_up", "demo_scheduled", "demo_completed"]), rejected: n(REJECTED), won: n(["won"]), dueToday: queue.today.length, overdue: queue.overdue.length },
     pipeline,
     progress: { demosUpcoming, demosDone, proposalsOut, proposalsAccepted, clients },
     followups,
