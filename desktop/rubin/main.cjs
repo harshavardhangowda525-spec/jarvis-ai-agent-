@@ -13,6 +13,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, shell, net, powerMonitor, dialog } = require("electron");
 const L = require("./lib.cjs");
+const PC = require("./pc.cjs");
 
 if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 app.setAppUserModelId("ai.jarvis.ruben");
@@ -21,6 +22,10 @@ const SETTINGS_FILE = path.join(app.getPath("userData"), "settings.json");
 let settings = L.readSettings(fs.existsSync(SETTINGS_FILE) ? fs.readFileSync(SETTINGS_FILE, "utf8") : "");
 // RUBIN_JARVIS_URL (set by `npm run rubin`) wins over the saved address
 if (process.env.RUBIN_JARVIS_URL && L.isHttpUrl(process.env.RUBIN_JARVIS_URL)) settings.url = process.env.RUBIN_JARVIS_URL.replace(/\/+$/, "");
+// your online JARVIS (from APP_URL in .env.local, passed by `npm run rubin`): used when this PC's isn't running
+if (process.env.RUBIN_CLOUD_URL && L.isHttpUrl(process.env.RUBIN_CLOUD_URL)) settings.cloudUrl = process.env.RUBIN_CLOUD_URL.replace(/\/+$/, "");
+/** The JARVIS the island is using right now: this PC's, or the online one. */
+let activeUrl = settings.url;
 const START_HIDDEN = process.argv.includes("--hidden");
 
 function save() {
@@ -30,7 +35,12 @@ function save() {
 let island = null, authWin = null, tray = null;
 let isOpen = false, onJarvis = false, retryTimer = null, dragTimer = null, offlineTries = 0;
 
-const islandUrl = () => `${settings.url}/island`;
+const healthy = (u) => net.fetch(`${u}/api/health`, { signal: AbortSignal.timeout(3500) }).then((r) => r.status < 500).catch(() => false);
+/** This PC's JARVIS if it answers, else the online one; null if neither does. */
+async function chooseServer() {
+  const [local, cloud] = await Promise.all([healthy(settings.url), settings.cloudUrl ? healthy(settings.cloudUrl) : Promise.resolve(false)]);
+  return L.pickServer(local, cloud, settings.url, settings.cloudUrl);
+}
 const send = (cmd) => { if (island && !island.isDestroyed()) island.webContents.send("rubin:command", cmd); };
 
 // ---------- the island window ----------
@@ -50,20 +60,20 @@ function createIsland() {
   island.once("ready-to-show", () => { if (!START_HIDDEN) island.showInactive(); });
   island.webContents.on("did-fail-load", (_e, code, _desc, url, isMain) => {
     if (!isMain || code === -3) return; // -3 = navigation replaced, not a failure
-    if (L.sameOrigin(url, settings.url)) goOffline();
+    if (L.sameOrigin(url, activeUrl)) goOffline();
   });
-  island.webContents.on("did-navigate", (_e, url) => { onJarvis = L.sameOrigin(url, settings.url); if (onJarvis) offlineTries = 0; updateTray(); });
+  island.webContents.on("did-navigate", (_e, url) => { onJarvis = L.sameOrigin(url, activeUrl); if (onJarvis) offlineTries = 0; updateTray(); });
   island.webContents.on("render-process-gone", () => setTimeout(loadIsland, 1000));
   island.webContents.on("unresponsive", () => island.webContents.reload());
   // the island never navigates away; sign-in pages open in their own window
   island.webContents.on("will-navigate", (e, url) => {
-    if (L.sameOrigin(url, settings.url) && new URL(url).pathname === "/island") return;
+    if (L.sameOrigin(url, activeUrl) && new URL(url).pathname === "/island") return;
     e.preventDefault();
-    const p = L.sameOrigin(url, settings.url) ? L.authPath(new URL(url).pathname) : null;
+    const p = L.sameOrigin(url, activeUrl) ? L.authPath(new URL(url).pathname) : null;
     if (p) openAuth(p);
   });
   island.webContents.setWindowOpenHandler(({ url }) => {
-    const p = L.sameOrigin(url, settings.url) ? L.authPath(new URL(url).pathname) : null;
+    const p = L.sameOrigin(url, activeUrl) ? L.authPath(new URL(url).pathname) : null;
     if (p) openAuth(p);
     else if (/^https?:/.test(url)) void shell.openExternal(url);
     return { action: "deny" };
@@ -71,10 +81,14 @@ function createIsland() {
   loadIsland();
 }
 
-function loadIsland() {
+async function loadIsland() {
   clearTimeout(retryTimer);
   if (!island || island.isDestroyed()) return;
-  island.loadURL(islandUrl()).catch(() => { /* did-fail-load handles it */ });
+  const target = await chooseServer();
+  if (!target) return goOffline();
+  if (target !== activeUrl) console.log(`RUBEN: using ${target === settings.url ? "JARVIS on this PC" : "your online JARVIS"} (${target})`);
+  activeUrl = target;
+  island.loadURL(`${activeUrl}/island`).catch(() => { /* did-fail-load handles it */ });
 }
 
 /** JARVIS isn't answering: show the offline capsule and keep trying (5 s, backing off to 60 s). */
@@ -88,8 +102,7 @@ function goOffline() {
     clearTimeout(retryTimer);
     retryTimer = setTimeout(async () => {
       offlineTries++;
-      const up = await net.fetch(`${settings.url}/api/health`).then((r) => r.status < 500).catch(() => false);
-      if (up) loadIsland(); else wait();
+      if (await chooseServer()) void loadIsland(); else wait();
     }, Math.min(60_000, 5000 * 2 ** Math.min(offlineTries, 4)));
   };
   wait();
@@ -141,17 +154,17 @@ function reclamp() {
 
 // ---------- sign-in / unlock (a normal window; the island can't fit a login form) ----------
 function openAuth(p) {
-  const target = `${settings.url}${p}?next=/island`;
+  const target = `${activeUrl}${p}?next=/island`;
   if (authWin && !authWin.isDestroyed()) { authWin.loadURL(target); authWin.show(); authWin.focus(); return; }
   authWin = new BrowserWindow({
     width: 520, height: 760, title: "Sign in — RUBEN", autoHideMenuBar: true, icon: path.join(__dirname, "assets", "icon.png"),
     webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   // JARVIS's sign-in finishes with a client-side route change, so watch both kinds of navigation
-  const done = (_e, url) => { if (authWin && L.authFinished(url, settings.url)) { authWin.close(); loadIsland(); } };
+  const done = (_e, url) => { if (authWin && L.authFinished(url, activeUrl)) { authWin.close(); loadIsland(); } };
   authWin.webContents.on("did-navigate", done);
   authWin.webContents.on("did-navigate-in-page", done);
-  authWin.webContents.on("will-navigate", (e, url) => { if (!L.sameOrigin(url, settings.url)) { e.preventDefault(); void shell.openExternal(url); } });
+  authWin.webContents.on("will-navigate", (e, url) => { if (!L.sameOrigin(url, activeUrl)) { e.preventDefault(); void shell.openExternal(url); } });
   authWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) void shell.openExternal(url); return { action: "deny" }; });
   authWin.on("closed", () => { authWin = null; send("refresh"); });
   authWin.loadURL(target);
@@ -167,7 +180,8 @@ function trayImage() {
 function updateTray() {
   if (!tray) return;
   const visible = island && !island.isDestroyed() && island.isVisible();
-  tray.setToolTip(onJarvis ? "RUBEN — CRM assistant" : `RUBEN — waiting for JARVIS at ${settings.url}`);
+  const where = activeUrl === settings.url ? "JARVIS on this PC" : "online JARVIS";
+  tray.setToolTip(onJarvis ? `RUBEN — CRM assistant (${where})` : `RUBEN — waiting for JARVIS (${[settings.url, settings.cloudUrl].filter(Boolean).join(" or ")})`);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: isOpen ? "Close CRM" : "Open CRM", click: () => { if (!isOpen) { island.showInactive(); setOpen(true); send("open"); } else send("close"); } },
     { label: "Talk to RUBEN", accelerator: settings.talkShortcut, click: () => { island.showInactive(); send("listen"); } },
@@ -175,11 +189,13 @@ function updateTray() {
     { type: "separator" },
     { label: "Wake phrase (“Open CRM”, “Hey Ruben”)", type: "checkbox", checked: settings.wake, click: (i) => { settings.wake = i.checked; save(); send(i.checked ? "wake-on" : "wake-off"); } },
     { label: "Start RUBEN when I sign in", type: "checkbox", checked: settings.launchAtLogin, click: (i) => setLaunchAtLogin(i.checked) },
+    { label: "Let RUBEN open and control apps", type: "checkbox", checked: settings.pcControl === true, click: (i) => { settings.pcControl = i.checked; save(); updateTray(); } },
     { type: "separator" },
     { label: "Sign in to JARVIS…", click: () => openAuth("/login") },
     { label: "Unlock JARVIS…", click: () => openAuth("/unlock") },
     { label: "Reconnect", click: () => loadIsland() },
-    { label: `JARVIS address: ${settings.url}`, enabled: false },
+    { label: `Using: ${where} — ${activeUrl}`, enabled: false },
+    ...(settings.cloudUrl ? [{ label: `Online JARVIS: ${settings.cloudUrl}`, enabled: false }] : [{ label: "No online JARVIS set (APP_URL in .env.local)", enabled: false }]),
     { label: "Reset island position", click: () => { settings.pos = null; save(); island.setBounds(L.initialBounds(null, screen.getAllDisplays(), screen.getPrimaryDisplay(), island.getBounds().height)); } },
     { type: "separator" },
     { label: "Quit RUBEN", click: () => app.quit() },
@@ -228,16 +244,55 @@ ipcMain.handle("rubin:settings:set", (e, patch) => {
   return pageSettings();
 });
 
+// ---------- apps on this PC ----------
+// The page sends only the words you said or typed. RUBEN works out the action
+// here and asks you itself, in a Windows dialog, before it closes an app,
+// types or presses keys. The page can't answer that dialog.
+let pcBusy = false;
+async function askConsent() {
+  const r = await dialog.showMessageBox({
+    type: "question", title: "RUBEN", buttons: ["Not now", "Allow"], defaultId: 1, cancelId: 0, noLink: true,
+    message: "Let RUBEN open and control apps on this PC?",
+    detail: "RUBEN will open installed apps and switch, minimise or maximise their windows when you ask. Before it closes an app, types or presses keys, it always asks you here first.\n\nYou can turn this off any time in RUBEN's tray menu.",
+  });
+  settings.pcControl = r.response === 1;
+  save(); updateTray();
+  return settings.pcControl;
+}
+ipcMain.handle("rubin:pc", async (e, text) => {
+  if (!fromIsland(e) || !onJarvis || typeof text !== "string" || text.length > 600) return { handled: false };
+  const cmd = PC.parsePcCommand(text);
+  if (!cmd) return { handled: false };
+  if (pcBusy) return { handled: true, ok: false, say: "One moment — I'm still on the last one." };
+  pcBusy = true;
+  try {
+    if (settings.pcControl === false) return cmd.explicit ? { handled: true, ok: false, say: "App control is off — turn it on in RUBEN's tray menu." } : { handled: false };
+    if (settings.pcControl == null && !(await askConsent())) return { handled: true, ok: false, say: "Okay — I won't control apps." };
+    const plan = await PC.planPc(text, { selfPids: [process.pid, ...app.getAppMetrics().map((m) => m.pid)] });
+    if (!plan.confirm) return plan;
+    const r = await dialog.showMessageBox({
+      type: "warning", title: "RUBEN — please confirm", buttons: ["Cancel", "Yes, do it"], defaultId: 0, cancelId: 0, noLink: true,
+      message: plan.confirm.question, detail: plan.confirm.detail || "",
+    });
+    if (r.response !== 1) return { handled: true, ok: true, say: "Okay — I didn't do it." };
+    return { handled: true, ...(await PC.runConfirmed(plan.confirm)) };
+  } catch (err) {
+    return { handled: true, ok: false, say: `That didn't work: ${String(err?.message || err).slice(0, 160)}` };
+  } finally {
+    pcBusy = false;
+  }
+});
+
 // ---------- microphone & other permissions: JARVIS's own pages only, microphone only ----------
 function lockPermissions() {
   const ok = (wc, permission, details) => {
     const origin = details?.requestingUrl || details?.securityOrigin || wc?.getURL() || "";
-    if (!L.sameOrigin(origin, settings.url)) return false;
+    if (!L.sameOrigin(origin, activeUrl)) return false;
     if (permission === "media") return !details?.mediaTypes || details.mediaTypes.every((t) => t === "audio");
     return permission === "clipboard-sanitized-write" || permission === "speaker-selection";
   };
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => cb(ok(wc, permission, details)));
-  session.defaultSession.setPermissionCheckHandler((wc, permission, origin, details) => ok(wc, permission, { ...details, requestingUrl: origin }) || (permission === "media" && L.sameOrigin(origin, settings.url)));
+  session.defaultSession.setPermissionCheckHandler((wc, permission, origin, details) => ok(wc, permission, { ...details, requestingUrl: origin }) || (permission === "media" && L.sameOrigin(origin, activeUrl)));
 }
 
 // ---------- lifecycle ----------
@@ -256,7 +311,7 @@ app.whenReady().then(() => {
   screen.on("display-metrics-changed", reclamp);
   powerMonitor.on("resume", () => (onJarvis ? send("refresh") : loadIsland()));
   powerMonitor.on("unlock-screen", () => send("refresh"));
-  console.log(`RUBEN is running — island on top, icon in the system tray. JARVIS: ${settings.url}`);
+  console.log(`RUBEN is running — island on top, icon in the system tray. JARVIS: ${settings.url}${settings.cloudUrl ? `, online fallback: ${settings.cloudUrl}` : ""}`);
 }).catch((e) => { dialog.showErrorBox("RUBEN couldn't start", String(e?.message || e)); app.quit(); });
 
 // closing every window doesn't quit — RUBEN lives in the tray until you choose Quit

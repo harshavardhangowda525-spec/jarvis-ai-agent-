@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
 import { wakeCommand } from "@/components/island/voice";
-import { jarvisUrl } from "../scripts/rubin.mjs";
+import { jarvisUrl, cloudUrl } from "../scripts/rubin.mjs";
 
 const L = createRequire(import.meta.url)("../desktop/rubin/lib.cjs");
+const PC = createRequire(import.meta.url)("../desktop/rubin/pc.cjs");
 
 const primary = { id: 1, workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
 const right = { id: 2, workArea: { x: 1920, y: 0, width: 1280, height: 680 } }; // 2nd monitor, different size/scale
@@ -45,7 +46,7 @@ describe("RUBEN desktop: settings and pages", () => {
     expect(L.readSettings("")).toEqual({ ...L.DEFAULTS });
     expect(L.readSettings("{not json")).toEqual({ ...L.DEFAULTS });
     const s = L.readSettings(JSON.stringify({ url: "javascript:alert(1)", wake: "yes", voiceReplies: false, pos: { x: 10.4, y: "a" }, shortcut: "Alt+R" }));
-    expect(s).toMatchObject({ url: L.DEFAULTS.url, wake: false, voiceReplies: false, pos: null, shortcut: "Alt+R" });
+    expect(s).toMatchObject({ url: L.DEFAULTS.url, wake: true, voiceReplies: false, pos: null, shortcut: "Alt+R" });
     expect(L.readSettings(JSON.stringify({ url: "http://192.168.1.5:3000/" })).url).toBe("http://192.168.1.5:3000");
   });
   it("the island page can only change its own options (not the JARVIS address or shortcuts)", () => {
@@ -82,5 +83,99 @@ describe("wake phrase", () => {
   it("ignores ordinary talk", () => {
     expect(wakeCommand("I'll call Ruben's gym later").woke).toBe(false);
     expect(wakeCommand("the weather is nice").woke).toBe(false);
+  });
+});
+
+describe("RUBEN without JARVIS on this PC", () => {
+  it("uses this PC's JARVIS when it answers, else the online one, else neither", () => {
+    expect(L.pickServer(true, true, "http://localhost:3000", "https://jarvis.example.com")).toBe("http://localhost:3000");
+    expect(L.pickServer(false, true, "http://localhost:3000", "https://jarvis.example.com")).toBe("https://jarvis.example.com");
+    expect(L.pickServer(false, false, "http://localhost:3000", "https://jarvis.example.com")).toBeNull();
+    expect(L.pickServer(false, true, "http://localhost:3000", null)).toBeNull();
+  });
+  it("finds the online JARVIS in .env.local (public https only)", () => {
+    expect(cloudUrl([], {}, 'APP_URL="https://my-jarvis.vercel.app/"\n')).toBe("https://my-jarvis.vercel.app");
+    expect(cloudUrl([], {}, "APP_URL=http://localhost:3000")).toBeNull();
+    expect(cloudUrl([], {}, "")).toBeNull();
+    expect(cloudUrl(["--cloud-url", "https://a.example.com"], { RUBIN_CLOUD_URL: "https://b.example.com" }, "APP_URL=https://c.example.com")).toBe("https://a.example.com");
+  });
+  it("'Hey Rubin' is on by default, and only RUBEN itself can switch app control on", () => {
+    expect(L.readSettings("")).toMatchObject({ wake: true, pcControl: null, cloudUrl: null });
+    expect(L.pagePatch({ pcControl: true, cloudUrl: "https://evil.example" })).toEqual({});
+  });
+});
+
+describe("RUBEN on this PC: understanding the words", () => {
+  const p = PC.parsePcCommand;
+  it("reads app commands", () => {
+    expect(p("Open Spotify")).toEqual({ kind: "open", app: "Spotify", explicit: false });
+    expect(p("hey rubin, launch the calculator app")).toEqual({ kind: "open", app: "calculator", explicit: true });
+    expect(p("switch to Chrome")).toEqual({ kind: "focus", app: "Chrome", explicit: true });
+    expect(p("minimise WhatsApp")).toMatchObject({ kind: "minimize", app: "WhatsApp" });
+    expect(p("maximize the word window")).toMatchObject({ kind: "maximize", app: "word" });
+    expect(p("close Notepad.")).toEqual({ kind: "close", app: "Notepad", explicit: true });
+    expect(p('type "hello there" in Notepad')).toEqual({ kind: "type", text: "hello there", app: "Notepad", explicit: true });
+    expect(p("press ctrl+s in Word")).toMatchObject({ kind: "key", keys: "^s", app: "Word" });
+    expect(p("press enter in notepad")).toMatchObject({ kind: "key", keys: "{ENTER}" });
+    expect(p("what apps are open")).toMatchObject({ kind: "list" });
+    expect(p("show desktop")).toMatchObject({ kind: "desktop" });
+  });
+  it("leaves CRM commands to the CRM", () => {
+    for (const t of ["Open CRM", "Close CRM", "open the details for this business", "open lead 7", "open 12", "Open ABC Cafe", "close this lead",
+      "show my interested leads", "Prepare a pitch for this gym", "mark this lead as rejected", "Find clients who need follow-up", "start a follow-up"]) {
+      expect([t, p(t)]).toEqual([t, null]);
+    }
+  });
+  it("turns keys and text into safe SendKeys", () => {
+    expect(PC.keysFor("control shift t")).toBe("^+t");
+    expect(PC.keysFor("alt f4")).toBe("%{F4}");
+    expect(PC.keysFor("a")).toBeNull(); // a bare letter is typing
+    expect(PC.keysFor("ctrl+banana")).toBeNull();
+    expect(PC.literalKeys("50% off (today) {x} ^+~")).toBe("50{%} off {(}today{)} {{}x{}} {^}{+}{~}");
+  });
+});
+
+describe("RUBEN on this PC: what needs your Yes", () => {
+  const appsModule = {
+    listApps: async () => [{ name: "Spotify" }, { name: "Notepad" }],
+    findApp: (q: string, list: { name: string }[]) => ({ app: list.find((a) => a.name.toLowerCase() === q.toLowerCase()) ?? null, suggestions: [] }),
+    openApp: async (q: string) => (q.toLowerCase() === "spotify" ? { ok: true, message: "Opening Spotify." } : { ok: false, message: `I couldn't find "${q}" installed on this computer.` }),
+    matchScore: (q: string, n: string) => (n.toLowerCase().includes(q.toLowerCase()) ? 90 : 0),
+    normalizeName: (s: string) => String(s).toLowerCase().trim(),
+  };
+  const windows = [{ id: 11, name: "notepad", title: "notes.txt - Notepad" }, { id: 22, name: "chrome", title: "Inbox - Google Chrome" }];
+  const ran: unknown[] = [];
+  const powershell = async (a: unknown) => { ran.push(a); return { ok: true }; };
+  const o = { appsModule, windows, powershell, platform: "win32" };
+
+  it("opens installed apps; 'open ABC Cafe' isn't an app, so the CRM gets it", async () => {
+    expect(await PC.planPc("open Spotify", o)).toEqual({ handled: true, ok: true, say: "Opening Spotify." });
+    expect(await PC.planPc("open Moonlight", o)).toEqual({ handled: false });
+    expect(await PC.planPc("launch Moonlight", o)).toMatchObject({ handled: true, ok: false });
+  });
+  it("switching and minimising happen straight away", async () => {
+    ran.length = 0;
+    expect(await PC.planPc("switch to chrome", o)).toMatchObject({ ok: true, say: "Switched to Google Chrome." });
+    expect(ran).toEqual([{ op: "focus", id: 22 }]);
+  });
+  it("closing, typing and keys only come back as a question — nothing runs", async () => {
+    ran.length = 0;
+    const close = await PC.planPc("close notepad", o);
+    expect(close.confirm).toMatchObject({ question: "Close Notepad?", action: { op: "close", id: 11 } });
+    const type = await PC.planPc("type 50% off in notepad", o);
+    expect(type.confirm).toMatchObject({ question: "Type this into Notepad?", action: { op: "keys", id: 11, keys: "50{%} off" } });
+    const enter = await PC.planPc("press enter in chrome", o);
+    expect(enter.confirm.detail).toMatch(/can send a message/);
+    expect(ran).toEqual([]);
+    expect(await PC.runConfirmed(close.confirm, { powershell })).toEqual({ ok: true, say: "Asked Notepad to close." });
+    expect(ran).toEqual([{ op: "close", id: 11, keys: undefined }]);
+  });
+  it("won't type without a target, or into an app that isn't open", async () => {
+    expect(await PC.planPc("type hello", o)).toMatchObject({ handled: true, ok: false, say: expect.stringMatching(/Which app/) });
+    expect(await PC.planPc("type hello in Excel", o)).toMatchObject({ handled: true, ok: false, say: expect.stringMatching(/isn't open/) });
+  });
+  it("only close and keys can ever be confirmed", async () => {
+    expect(await PC.runConfirmed({ action: { op: "focus", id: 11 } }, { powershell })).toMatchObject({ ok: false });
+    expect(await PC.runConfirmed({ action: { op: "keys", id: "11", keys: "x" } }, { powershell })).toMatchObject({ ok: false });
   });
 });

@@ -13,7 +13,13 @@ const EDGE = 4;
 
 const DEFAULTS = Object.freeze({
   url: "http://localhost:3000",
-  wake: false,
+  // your online JARVIS (same database) — used when the one on this PC isn't running
+  cloudUrl: null,
+  // "Hey Rubin" works while the island is collapsed or hidden
+  wake: true,
+  // open / switch / control apps: null = not asked yet, then your answer.
+  // Only the tray menu and RUBEN's own consent dialog can change it — never the page.
+  pcControl: null,
   voiceReplies: true,
   micId: null,
   launchAtLogin: false,
@@ -29,6 +35,8 @@ function readSettings(raw) {
   if (!s || typeof s !== "object" || Array.isArray(s)) s = {};
   const out = { ...DEFAULTS };
   if (typeof s.url === "string" && isHttpUrl(s.url)) out.url = s.url.replace(/\/+$/, "");
+  if (typeof s.cloudUrl === "string" && isHttpUrl(s.cloudUrl)) out.cloudUrl = s.cloudUrl.replace(/\/+$/, "");
+  if (typeof s.pcControl === "boolean") out.pcControl = s.pcControl;
   for (const k of ["wake", "voiceReplies", "launchAtLogin"]) if (typeof s[k] === "boolean") out[k] = s[k];
   for (const k of ["shortcut", "talkShortcut"]) if (typeof s[k] === "string" && s[k].trim()) out[k] = s[k].trim();
   if (typeof s.micId === "string" && s.micId) out.micId = s.micId;
@@ -98,6 +106,13 @@ function resizeAround(cur, open, workArea) {
   return clampToWorkArea({ x: Math.round(cx - width / 2), y: cur.y, width, height }, workArea);
 }
 
+/** The JARVIS to use: this PC's if it answers, else your online one (null = neither answers). */
+function pickServer(localUp, cloudUp, local, cloud) {
+  if (localUp) return local;
+  if (cloud && cloudUp) return cloud;
+  return null;
+}
+
 /** After signing in / unlocking in the auth window: has JARVIS let us through? */
 function authFinished(url, jarvisUrl) {
   if (!sameOrigin(url, jarvisUrl)) return false;
@@ -110,4 +125,4 @@ function authPath(p) {
   return p === "/login" || p === "/unlock" ? p : null;
 }
 
-module.exports = { WIDTH, COLLAPSED_H, OPEN_H, OPEN_W, resizeAround, EDGE, DEFAULTS, readSettings, pagePatch, isHttpUrl, sameOrigin, displayFor, clampToWorkArea, initialBounds, authFinished, authPath };
+module.exports = { pickServer, WIDTH, COLLAPSED_H, OPEN_H, OPEN_W, resizeAround, EDGE, DEFAULTS, readSettings, pagePatch, isHttpUrl, sameOrigin, displayFor, clampToWorkArea, initialBounds, authFinished, authPath };

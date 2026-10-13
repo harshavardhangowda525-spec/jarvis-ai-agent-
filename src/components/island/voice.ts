@@ -21,7 +21,7 @@ function rmsOf(an: AnalyserNode, buf: Float32Array<ArrayBuffer>): number {
  * Record one phrase from `stream`: starts at the first speech, ends after
  * `silenceMs` of quiet (or `maxMs`). Resolves null if nobody spoke within `waitMs`.
  */
-export function capturePhrase(stream: MediaStream, o: { silenceMs?: number; maxMs?: number; waitMs?: number; minSpeechMs?: number } = {}): Capture {
+export function capturePhrase(stream: MediaStream, o: { silenceMs?: number; maxMs?: number; waitMs?: number; minSpeechMs?: number; dropAtMax?: boolean } = {}): Capture {
   const silenceMs = o.silenceMs ?? 1100, maxMs = o.maxMs ?? 12_000, waitMs = o.waitMs ?? 7000, minSpeechMs = o.minSpeechMs ?? 350;
   const ctx = new AudioContext();
   const src = ctx.createMediaStreamSource(stream);
@@ -54,7 +54,9 @@ export function capturePhrase(stream: MediaStream, o: { silenceMs?: number; maxM
     if (loud) { lastLoud = now; if (!speechAt) speechAt = now; }
     if (!speechAt && now - t0 > waitMs) return finish(false);
     if (speechAt && now - lastLoud > silenceMs) return finish(now - speechAt >= minSpeechMs);
-    if (now - t0 > maxMs) return finish(!!speechAt);
+    // still talking at the limit: keep it — or, for the wake phrase, drop it (that's conversation, not "Hey Rubin")
+    if (speechAt && now - speechAt > maxMs) return finish(!o.dropAtMax);
+    if (now - t0 > Math.max(maxMs, waitMs) + maxMs) return finish(!!speechAt && !o.dropAtMax);
   }, 50);
   return { stop: () => finish(!!speechAt), level: () => level, done };
 }

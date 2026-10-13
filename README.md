@@ -1688,11 +1688,53 @@ Friday", "add a note…", "show lead 12" and "briefing".
 - If something fails, you see the real error and nothing is changed.
 - "Won", "Rejected" and "Do not contact" always ask for your "yes" first.
 
-**Wake phrase (optional, off by default).** Turn it on with ⚙ in the pop-up
-or from the tray menu. Then "Open CRM" or "Hey Ruben, …" opens the CRM
-hands-free. While it's on, each phrase spoken near the microphone is sent to
-JARVIS's speech-to-text (ElevenLabs) to check for the wake phrase, which uses
-voice credits. Leave it off and use the shortcut if you'd rather not.
+**"Hey Rubin" (on by default).** RUBEN listens for "Hey Rubin" or "Open CRM"
+even while the island is collapsed or hidden from the tray. Say "Hey Rubin" on
+its own and it opens and listens. Say "Hey Rubin, open Spotify" or "Hey
+Rubin, which clients need follow-up today?" and it does that straight away.
+
+- Only short phrases, under about 4½ seconds, are sent to speech-to-text to
+  check for the wake words. Longer talk around you is never sent.
+- Each short phrase still uses a little voice credit.
+- Turn it off with ⚙ in the pop-up or from the tray menu.
+
+**Without JARVIS running on this PC.** `npm run rubin` reads `APP_URL` from
+`.env.local`, which is your online JARVIS with the same database. Whenever the
+JARVIS on this PC isn't answering, RUBEN uses the online one instead. The tray
+shows which one it's using.
+
+- The first time on the online JARVIS, you sign in there once.
+- The online JARVIS must be deployed with this version (it needs `/island`).
+- Without `APP_URL`, set it with `npm run rubin -- --cloud-url https://your-jarvis.vercel.app`.
+
+**Apps on this PC.** RUBEN can open and control your apps (Windows):
+
+| You say | RUBEN does |
+|---|---|
+| "Open Spotify" / "Launch Calculator" | Opens the installed app |
+| "Switch to Chrome" / "Go to WhatsApp" | Brings that window to the front |
+| "Minimise Word" / "Maximise Excel" / "Restore Notepad" | Exactly that |
+| "Show desktop" | Minimises everything |
+| "What apps are open?" | Lists them |
+| "Close Notepad" | **Asks first**, then asks the app to close. The app still asks you to save |
+| "Type hello world in Notepad" | **Asks first**, showing the exact text, then types it there |
+| "Press Ctrl+S in Word" / "Press Enter in WhatsApp" | **Asks first**, then presses it. Pressing Enter can send a message, and the question says so |
+
+How it stays safe:
+
+- The first time you use an app command, RUBEN asks once whether it may control
+  apps. Change your answer any time in the tray menu with **Let RUBEN open and
+  control apps**.
+- **Asking first** means a Windows dialog from RUBEN itself, with Cancel as the
+  default. Only your click on **Yes, do it** carries the action out. A spoken
+  "yes" doesn't, and neither can the web page.
+- RUBEN types only if that app really came to the front. It never types into
+  whatever else has focus.
+- RUBEN opens only installed apps, using ULTRON's app list, and controls only
+  windows that are open right now.
+- There is no mouse control, and nothing runs on its own.
+- CRM phrases still go to the CRM: "Open ABC Cafe" opens the lead if no app has
+  that name, and "Close CRM" closes the CRM.
 
 **Settings**
 

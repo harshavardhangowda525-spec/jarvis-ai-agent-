@@ -20,4 +20,6 @@ contextBridge.exposeInMainWorld("rubinDesktop", {
     return () => ipcRenderer.removeListener("rubin:command", h);
   },
   retry: () => ipcRenderer.send("rubin:retry"),
+  /** Hand RUBEN the words you said/typed; it decides (and asks you) itself. */
+  pc: (text) => ipcRenderer.invoke("rubin:pc", String(text)),
 });

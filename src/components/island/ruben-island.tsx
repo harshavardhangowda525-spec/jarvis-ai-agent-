@@ -23,7 +23,7 @@ const BLUE = "#2563EB";
 const NOTICE_MS = 6000;
 const POLL_MS = 60_000;
 
-const DEFAULTS: DesktopSettings = { wake: false, voiceReplies: true, micId: null, launchAtLogin: false, shortcut: "Ctrl+Shift+Space", talkShortcut: "Ctrl+Shift+R" };
+const DEFAULTS: DesktopSettings = { wake: true, voiceReplies: true, micId: null, launchAtLogin: false, shortcut: "Ctrl+Shift+Space", talkShortcut: "Ctrl+Shift+R" };
 
 function loadLocal(): DesktopSettings {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("ruben-island") || "{}") }; } catch { return DEFAULTS; }
@@ -181,6 +181,19 @@ export function RubenIsland() {
     stopSpeaking();
     setTranscript(t);
     setMode("processing");
+    // an app on this PC? ("open Spotify", "switch to Chrome", "type … in Notepad") — the desktop app decides
+    const pc = bridge.current?.pc ? await bridge.current.pc(t).catch(() => null) : null;
+    if (pc?.handled) {
+      const msg = pc.say || (pc.ok ? "Done." : "That didn't work.");
+      setSay(msg);
+      if (openRef.current) setCard(pc.ok ? { type: "text", title: "On this PC", text: msg } : { type: "error", text: msg });
+      else { setNotice({ id: `pc-${Date.now()}`, text: msg }); }
+      busy.current = false;
+      await talk(msg);
+      if (!openRef.current) { setMode("notice"); setTimeout(() => { setMode((m) => (m === "notice" ? "idle" : m)); setNotice(null); }, 4000); }
+      else setMode((m) => (m === "speaking" || m === "processing" ? "idle" : m));
+      return;
+    }
     const slow = setTimeout(() => setMode((m) => (m === "processing" ? "working" : m)), 1200);
     let reply: IslandReply;
     try {
@@ -266,7 +279,8 @@ export function RubenIsland() {
       try { stream = await getMic(); } catch { setMicError("Wake phrase needs the microphone."); return; }
       while (alive) {
         if (busy.current || openRef.current || modeRef.current !== "idle" || capture.current) { await new Promise((r) => setTimeout(r, 500)); continue; }
-        cur = capturePhrase(stream, { waitMs: 60_000, maxMs: 6000, minSpeechMs: 400, silenceMs: 800 });
+        // only short phrases are checked ("Hey Rubin", "Hey Rubin, open Spotify") — longer talk around you is never sent
+        cur = capturePhrase(stream, { waitMs: 60_000, maxMs: 4500, minSpeechMs: 400, silenceMs: 800, dropAtMax: true });
         const blob = await cur.done;
         cur = null;
         if (!alive || !blob || busy.current || openRef.current) continue;
