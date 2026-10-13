@@ -68,7 +68,10 @@ async function chooseServer() {
   offlineWhy = L.offlineReason(local, cloud);
   return L.pickServer(local === "up", cloud === "up", settings.url, settings.cloudUrl);
 }
-const send = (cmd) => { if (island && !island.isDestroyed()) island.webContents.send("rubin:command", cmd); };
+/** The island window if it still exists (it may have been closed with Alt+F4 or Task Manager). */
+const alive = () => !!island && !island.isDestroyed();
+const showIsland = () => { if (alive() && !island.isVisible()) island.showInactive(); return alive(); };
+const send = (cmd) => { if (alive()) island.webContents.send("rubin:command", cmd); };
 
 // ---------- the island window ----------
 function createIsland() {
@@ -84,7 +87,8 @@ function createIsland() {
   island.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   setInteractive(false);
 
-  island.once("ready-to-show", () => { if (!START_HIDDEN) island.showInactive(); });
+  island.once("ready-to-show", () => { if (!START_HIDDEN && alive()) island.showInactive(); });
+  island.on("closed", () => { island = null; log("island window closed — quitting"); app.quit(); });
   island.webContents.on("did-fail-load", (_e, code, _desc, url, isMain) => {
     if (!isMain || code === -3) return; // -3 = navigation replaced, not a failure
     if (L.sameOrigin(url, activeUrl)) goOffline();
@@ -211,9 +215,9 @@ function updateTray() {
   const where = activeUrl === settings.url ? "JARVIS on this PC" : "online JARVIS";
   tray.setToolTip(onJarvis ? `RUBEN — CRM assistant (${where})` : `RUBEN — waiting for JARVIS (${[settings.url, settings.cloudUrl].filter(Boolean).join(" or ")})`);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: isOpen ? "Close CRM" : "Open CRM", click: () => { if (!isOpen) { island.showInactive(); setOpen(true); send("open"); } else send("close"); } },
-    { label: "Talk to RUBEN", accelerator: settings.talkShortcut, click: () => { island.showInactive(); send("listen"); } },
-    { label: visible ? "Hide the island" : "Show the island", click: () => { if (visible) island.hide(); else island.showInactive(); updateTray(); } },
+    { label: isOpen ? "Close CRM" : "Open CRM", click: () => { if (!isOpen) { if (showIsland()) { setOpen(true); send("open"); } } else send("close"); } },
+    { label: "Talk to RUBEN", accelerator: settings.talkShortcut, click: () => { if (showIsland()) send("listen"); } },
+    { label: visible ? "Hide the island" : "Show the island", click: () => { if (!alive()) return; if (visible) island.hide(); else island.showInactive(); updateTray(); } },
     { type: "separator" },
     { label: "Wake phrase (“Open CRM”, “Hey Ruben”)", type: "checkbox", checked: settings.wake, click: (i) => { settings.wake = i.checked; save(); send(i.checked ? "wake-on" : "wake-off"); } },
     { label: "Start RUBEN when I sign in", type: "checkbox", checked: settings.launchAtLogin, click: (i) => setLaunchAtLogin(i.checked) },
@@ -224,7 +228,7 @@ function updateTray() {
     { label: "Reconnect", click: () => loadIsland() },
     { label: `Using: ${where} — ${activeUrl}`, enabled: false },
     ...(settings.cloudUrl ? [{ label: `Online JARVIS: ${settings.cloudUrl}`, enabled: false }] : [{ label: "No online JARVIS set (APP_URL in .env.local)", enabled: false }]),
-    { label: "Reset island position", click: () => { settings.pos = null; save(); island.setBounds(L.initialBounds(null, screen.getAllDisplays(), screen.getPrimaryDisplay(), island.getBounds().height)); } },
+    { label: "Reset island position", click: () => { settings.pos = null; save(); if (alive()) island.setBounds(L.initialBounds(null, screen.getAllDisplays(), screen.getPrimaryDisplay(), island.getBounds().height)); } },
     { type: "separator" },
     { label: "Quit RUBEN", click: () => app.quit() },
   ]));
@@ -244,13 +248,13 @@ function registerShortcuts() {
   globalShortcut.unregisterAll();
   const failed = [];
   const reg = (acc, fn) => { try { if (!globalShortcut.register(acc, fn)) failed.push(acc); } catch { failed.push(acc); } };
-  reg(settings.shortcut, () => { if (!island.isVisible()) island.showInactive(); send("toggle"); });
-  reg(settings.talkShortcut, () => { if (!island.isVisible()) island.showInactive(); send("listen"); });
+  reg(settings.shortcut, () => { if (showIsland()) send("toggle"); });
+  reg(settings.talkShortcut, () => { if (showIsland()) send("listen"); });
   if (failed.length) console.warn(`RUBEN: another app already uses ${failed.join(", ")} — change it in ${SETTINGS_FILE}`);
 }
 
 // ---------- page ↔ desktop ----------
-const fromIsland = (e) => island && e.sender === island.webContents;
+const fromIsland = (e) => alive() && e.sender === island.webContents;
 ipcMain.on("rubin:open", (e, open) => { if (fromIsland(e)) setOpen(!!open); });
 ipcMain.on("rubin:interactive", (e, on) => { if (fromIsland(e) && !dragTimer) setInteractive(!!on); });
 ipcMain.on("rubin:drag", (e, on) => { if (!fromIsland(e)) return; if (on) startDrag(); else stopDrag(); });
@@ -283,7 +287,7 @@ let pcBusy = false;
  * other windows. No answer within a minute counts as Cancel.
  */
 async function ask(opts) {
-  const parent = island && !island.isDestroyed() ? island : null;
+  const parent = alive() ? island : null;
   if (parent && !parent.isVisible()) parent.showInactive();
   const o = { noLink: true, ...opts, signal: AbortSignal.timeout(60_000) };
   try { return await (parent ? dialog.showMessageBox(parent, o) : dialog.showMessageBox(o)); }
@@ -347,14 +351,14 @@ app.on("second-instance", (_e, _argv, _cwd, data) => {
     app.exit(0);
     return;
   }
-  if (island) { island.showInactive(); setOpen(true); send("open"); }
+  if (showIsland()) { setOpen(true); send("open"); }
 });
 app.whenReady().then(() => {
   if (process.platform === "darwin") app.dock?.hide();
   lockPermissions();
   createIsland();
   tray = new Tray(trayImage());
-  tray.on("click", () => { if (!island.isVisible()) island.showInactive(); send("toggle"); });
+  tray.on("click", () => { if (showIsland()) send("toggle"); });
   updateTray();
   registerShortcuts();
   if (settings.launchAtLogin !== app.getLoginItemSettings().openAtLogin) setLaunchAtLogin(settings.launchAtLogin);
