@@ -8,6 +8,7 @@
     "local": "node scripts/local.mjs",
     "searxng": "node scripts/searxng.mjs",
     "ev:check-video": "node scripts/magichour-check.mjs",
+    "aston:check-groq": "node scripts/aston-groq-check.mjs",
     "use:ollama": "node scripts/switch-provider.mjs ollama",
     "use:groq": "node scripts/switch-provider.mjs groq",
     "use:gemini": "node scripts/switch-provider.mjs gemini",
