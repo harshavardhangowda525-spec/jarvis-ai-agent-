@@ -65,16 +65,19 @@ function electronBinary() {
 }
 
 /** Close RUBEN: ask the running copy to quit, then make sure only RUBEN's own Electron is gone (not VS Code, Discord …). */
+/** Stop any RUBEN still running — only RUBEN's own Electron (matched by its exact path), never VS Code, Discord … */
+function stopLeftovers(bin) {
+  if (process.platform !== "win32" || !bin) return 0;
+  const ps = `$p = @(Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $env:RUBIN_BIN }); $p | Stop-Process -Force -ErrorAction SilentlyContinue; $p.Count`;
+  const r = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", env: { ...process.env, RUBIN_BIN: bin }, windowsHide: true });
+  return Number(String(r.stdout || "0").trim()) || 0;
+}
+
 function quitRuben(bin) {
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   if (bin && fs.existsSync(bin)) spawnSync(bin, [APP, "--quit"], { cwd: APP, stdio: "ignore", timeout: 15_000, env });
-  const left = () => {
-    if (process.platform !== "win32") return 0;
-    const ps = `$p = @(Get-Process electron -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $env:RUBIN_BIN }); $p | Stop-Process -Force -ErrorAction SilentlyContinue; $p.Count`;
-    const r = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", env: { ...process.env, RUBIN_BIN: bin || "" }, windowsHide: true });
-    return Number(String(r.stdout || "0").trim()) || 0;
-  };
+  const left = () => stopLeftovers(bin);
   spawnSync(process.execPath, ["-e", "setTimeout(()=>{},2500)"]); // give it a moment to close by itself
   const forced = left();
   console.log(forced ? "RUBEN closed (it had to be stopped)." : "RUBEN closed.");
@@ -96,6 +99,11 @@ function main() {
     bin = electronBinary();
     if (!bin || !fs.existsSync(bin)) { console.error("RUBEN: Electron didn't install correctly. Delete desktop/rubin/node_modules and try again."); process.exit(1); }
   }
+  // an older RUBEN still running (or stuck on an error box) would take over this start — close it first
+  const stopped = stopLeftovers(bin);
+  if (stopped) { console.log(`Closed the RUBEN that was already running (${stopped} process${stopped === 1 ? "" : "es"}).`); spawnSync(process.execPath, ["-e", "setTimeout(()=>{},1500)"]); }
+  const version = (() => { try { return spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: ROOT, encoding: "utf8" }).stdout.trim(); } catch { return ""; } })();
+  if (version) console.log(`RUBEN version: ${version}`);
   const fg = args.includes("--foreground");
   const cloud = cloudUrl();
   const env = { ...process.env, RUBIN_JARVIS_URL: url, ...(cloud ? { RUBIN_CLOUD_URL: cloud } : {}) };

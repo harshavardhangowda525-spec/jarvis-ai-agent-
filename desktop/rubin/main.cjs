@@ -33,6 +33,9 @@ const PC = require("./pc.cjs");
 const CODE = L.codeFingerprint(["main.cjs", "pc.cjs", "preload.cjs", "lib.cjs", "offline.html"].map((f) => { try { return fs.readFileSync(path.join(__dirname, f)); } catch { return ""; } }));
 // `npm run rubin -- --quit` (or `electron . --quit`) asks the running RUBEN to quit
 const QUIT = process.argv.includes("--quit");
+// a bug must never freeze RUBEN behind an error box — write it to the log and carry on
+process.on("uncaughtException", (e) => { log(`error: ${e && e.stack || e}`); });
+process.on("unhandledRejection", (e) => { log(`error (async): ${e && e.stack || e}`); });
 if (!app.requestSingleInstanceLock({ code: CODE, quit: QUIT })) { app.quit(); process.exit(0); }
 if (QUIT) { console.log("RUBEN wasn't running."); app.quit(); process.exit(0); }
 app.setAppUserModelId("ai.jarvis.ruben");
