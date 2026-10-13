@@ -59,7 +59,8 @@ function isHttpUrl(u) {
 
 /** Same scheme + host + port as JARVIS. */
 function sameOrigin(a, b) {
-  try { return new URL(a).origin === new URL(b).origin; } catch { return false; }
+  // compare scheme + host + port ourselves: for RUBEN's own rubin:// pages, URL.origin is just "null"
+  try { const x = new URL(a), y = new URL(b); return x.protocol === y.protocol && x.host === y.host && x.host !== ""; } catch { return false; }
 }
 
 /** The display a point is on (nearest one when it's between screens). */

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createRequire } from "node:module";
 import { wakeCommand } from "@/components/island/voice";
-import { jarvisUrl, cloudUrl } from "../scripts/rubin.mjs";
+import { jarvisUrl, cloudUrl, parseEnvFiles } from "../scripts/rubin.mjs";
+import { asksForCrm } from "@/components/island/ruben-island";
 
 const L = createRequire(import.meta.url)("../desktop/rubin/lib.cjs");
 const PC = createRequire(import.meta.url)("../desktop/rubin/pc.cjs");
@@ -200,5 +201,22 @@ describe("updates reach the RUBEN already running", () => {
   it("'open Moonlight' with no such app comes back with a hint for the CRM's answer", async () => {
     const appsModule = { listApps: async () => [{ name: "Spotify" }], findApp: () => ({ app: null, suggestions: ["Moonlighter"] }), openApp: async () => ({ ok: false }), matchScore: () => 0, normalizeName: (s: string) => s };
     expect(await PC.planPc("open Moonlight", { appsModule, windows: [], platform: "win32" })).toEqual({ handled: false, hint: 'no installed app called "Moonlight" (closest: Moonlighter)', app: "Moonlight" });
+  });
+});
+
+describe("RUBEN on its own", () => {
+  it("reads its settings from .env then .env.local (local wins)", () => {
+    expect(parseEnvFiles(['DATABASE_URL="postgres://a"\nGROQ_API_KEY=gsk_1 # comment\n', "export GROQ_API_KEY='gsk_2'\n# x=y\nBAD LINE"]))
+      .toEqual({ DATABASE_URL: "postgres://a", GROQ_API_KEY: "gsk_2" });
+  });
+  it("its own rubin://app pages count as one origin; nothing else does", () => {
+    expect(L.sameOrigin("rubin://app/index.html", "rubin://app")).toBe(true);
+    expect(L.sameOrigin("rubin://other/x", "rubin://app")).toBe(false);
+    expect(L.sameOrigin("https://evil.example/", "rubin://app")).toBe(false);
+    expect(L.sameOrigin("http://localhost:3000/island", "http://localhost:3000")).toBe(true);
+  });
+  it("the CRM opens only when you ask for it", () => {
+    for (const t of ["Open CRM", "hey rubin open my crm", "show the CRM", "bring up the dashboard"]) expect([t, asksForCrm(t)]).toEqual([t, true]);
+    for (const t of ["show my interested leads", "open notepad", "maximise chrome", "which clients need follow-up today", "close CRM"]) expect([t, asksForCrm(t)]).toEqual([t, false]);
   });
 });

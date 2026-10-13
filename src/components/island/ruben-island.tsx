@@ -32,6 +32,11 @@ function saveLocal(s: DesktopSettings) {
   try { localStorage.setItem("ruben-island", JSON.stringify(s)); } catch { /* storage unavailable — settings last for this session */ }
 }
 
+/** "Open CRM", "show the CRM", "Hey Rubin open my CRM" — the only words that open the dashboard. */
+export function asksForCrm(text: string): boolean {
+  return /\b(?:open|show|launch|start|bring up|pull up)\s+(?:the\s+|my\s+)?(?:crm|dashboard)\b/i.test(text);
+}
+
 const SIZE: Record<Mode | "away", [number, number]> = {
   idle: [176, 36], listening: [176, 40], processing: [212, 38], speaking: [204, 40], working: [224, 38], notice: [380, 44], away: [252, 36],
 };
@@ -173,6 +178,13 @@ export function RubenIsland() {
     if (speech.current === s) speech.current = null;
   }, []);
 
+  /** A short message in the outline (when the CRM is closed). */
+  const flash = useCallback((text: string) => {
+    setNotice({ id: `m-${Date.now()}`, text: text.length > 90 ? `${text.slice(0, 88)}…` : text });
+    setMode("notice");
+    setTimeout(() => { setMode((m) => (m === "notice" ? "idle" : m)); setNotice(null); }, NOTICE_MS);
+  }, []);
+
   // ---- commands ----
   const send = useCallback(async (text: string, opts: { leadId?: string | null } = {}) => {
     const t = text.trim();
@@ -227,16 +239,18 @@ export function RubenIsland() {
     else if (c?.type === "followups") crm.current?.showFollowups();
     else if (c?.type === "done") { if (c.lead) crm.current?.openLead(c.lead.id); else crm.current?.refresh(); }
     if (reply.open === false) { setCard(null); setShowSettings(false); }
-    else {
+    else if (reply.card || reply.open) {
       // only answers that aren't already on the dashboard stay as a banner
-      if (reply.card || reply.open) setCard(c && ["confirm", "error", "text"].includes(c.type) ? c : null);
-      if (reply.open || reply.card) setOpen(true);
+      setCard(c && ["confirm", "error", "text"].includes(c.type) ? c : null);
     }
+    // the CRM opens only when you ask for it ("Open CRM", a click, the shortcut) — never by itself
+    if (asksForCrm(t)) setOpen(true);
     busy.current = false;
     await talk(reply.say);
     if (reply.open === false) setOpen(false);
     setMode((m) => (m === "speaking" || m === "processing" || m === "working" ? "idle" : m));
-  }, [stopSpeaking, talk]);
+    if (!openRef.current && reply.open !== false && reply.say) flash(reply.say);
+  }, [stopSpeaking, talk, flash]);
 
   const getMic = useCallback(async () => {
     const id = settingsRef.current.micId;
@@ -252,9 +266,9 @@ export function RubenIsland() {
     let stream: MediaStream;
     try { stream = await getMic(); } catch {
       setMicError("Microphone blocked or missing — type below, or allow the mic.");
-      setOpen(true); return;
+      if (!openRef.current) flash("Microphone blocked or missing.");
+      return;
     }
-    setOpen(true);
     setTranscript("");
     setMode("listening");
     const c = capturePhrase(stream);
@@ -269,11 +283,13 @@ export function RubenIsland() {
       // say it too — a silent card is easy to miss when you're talking, not looking
       setSay("I couldn't hear that — type it below instead."); setCard({ type: "error", text: res.error });
       await talk("I couldn't understand the audio. You can type the command instead.");
-      setMode("idle"); return;
+      setMode("idle");
+      if (!openRef.current) flash(res.error);
+      return;
     }
-    if (!res.text) { setMode("idle"); setSay("I didn't catch that."); return; }
+    if (!res.text) { setMode("idle"); setSay("I didn't catch that."); if (!openRef.current) flash("I didn't catch that."); return; }
     await send(res.text);
-  }, [getMic, send, stopSpeaking, talk]);
+  }, [getMic, send, stopSpeaking, talk, flash]);
 
   // ---- wake phrase ("Open CRM" / "Hey Ruben …"): only while idle and collapsed ----
   useEffect(() => {
@@ -292,9 +308,9 @@ export function RubenIsland() {
         if (!alive || "error" in res) { if ("error" in res) await new Promise((r) => setTimeout(r, 10_000)); continue; }
         const w = wakeCommand(res.text);
         if (!w.woke) continue;
-        setOpen(true);
-        if (w.rest && !/^open (?:the |my )?crm$/i.test(w.rest)) await send(w.rest);
-        else { setSay("CRM open. What do you need?"); await talk("Yes?"); setMode("idle"); void listen(); }
+        if (/\bopen (?:the |my )?crm\b/i.test(res.text) && !w.rest.replace(/^open (?:the |my )?crm$/i, "")) { setOpen(true); setSay("CRM open. What do you need?"); await talk("CRM open."); setMode("idle"); continue; }
+        if (w.rest) await send(w.rest); // "Hey Rubin, open Notepad" — done without opening the CRM
+        else { await talk("Yes?"); setMode("idle"); void listen(); } // "Hey Rubin" — listening, CRM stays closed
       }
     })();
     return () => { alive = false; cur?.stop(); stream?.getTracks().forEach((t) => t.stop()); };
@@ -357,7 +373,7 @@ export function RubenIsland() {
   const away = access !== "ok" && access !== "checking";
   const [w, h] = SIZE[away ? "away" : mode];
   const label = away
-    ? access === "signed_out" ? "Sign in to use RUBEN" : access === "locked" ? "JARVIS is locked — unlock" : "JARVIS offline · retrying"
+    ? access === "signed_out" ? "Sign in to use RUBEN" : access === "locked" ? "JARVIS is locked — unlock" : "CRM offline · retrying"
     : mode === "notice" && notice ? notice.text : "";
 
   return (

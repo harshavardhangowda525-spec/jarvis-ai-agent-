@@ -11,7 +11,18 @@
  */
 const path = require("node:path");
 const fs = require("node:fs");
-const { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, shell, net, powerMonitor, dialog } = require("electron");
+const { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, shell, net, powerMonitor, dialog, protocol } = require("electron");
+const { pathToFileURL } = require("node:url");
+
+/**
+ * Standalone (the default): RUBEN runs on its own. Its screen is built into
+ * the app (rubin://app) and its backend (dist/server.cjs) talks to your CRM
+ * database directly, so JARVIS doesn't need to be running.
+ * RUBIN_MODE=jarvis brings back the old way (the island page served by JARVIS).
+ */
+const STANDALONE = process.env.RUBIN_MODE !== "jarvis";
+const LOCAL = "rubin://app";
+protocol.registerSchemesAsPrivileged([{ scheme: "rubin", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }]);
 const L = require("./lib.cjs");
 /** RUBEN's own log (…\\RUBEN\\rubin.log): what it was asked to do on the PC and what happened. */
 function log(...a) {
@@ -23,6 +34,7 @@ function log(...a) {
   console.log("RUBEN:", ...a);
 }
 const PC = require("./pc.cjs");
+PC.setLogger((m) => log(m));
 
 /**
  * One RUBEN at a time. Starting it again normally just opens the CRM, but
@@ -30,7 +42,7 @@ const PC = require("./pc.cjs");
  * still run the old code. So the new start passes a fingerprint of the
  * code, and the running copy restarts itself when its code has changed.
  */
-const CODE = L.codeFingerprint(["main.cjs", "pc.cjs", "preload.cjs", "lib.cjs", "offline.html"].map((f) => { try { return fs.readFileSync(path.join(__dirname, f)); } catch { return ""; } }));
+const CODE = L.codeFingerprint(["main.cjs", "pc.cjs", "pc.ps1", "preload.cjs", "lib.cjs", "offline.html"].map((f) => { try { return fs.readFileSync(path.join(__dirname, f)); } catch { return ""; } }));
 // `npm run rubin -- --quit` (or `electron . --quit`) asks the running RUBEN to quit
 const QUIT = process.argv.includes("--quit");
 // a bug must never freeze RUBEN behind an error box — write it to the log and carry on
@@ -47,7 +59,7 @@ if (process.env.RUBIN_JARVIS_URL && L.isHttpUrl(process.env.RUBIN_JARVIS_URL)) s
 // your online JARVIS (from APP_URL in .env.local, passed by `npm run rubin`): used when this PC's isn't running
 if (process.env.RUBIN_CLOUD_URL && L.isHttpUrl(process.env.RUBIN_CLOUD_URL)) settings.cloudUrl = process.env.RUBIN_CLOUD_URL.replace(/\/+$/, "");
 /** The JARVIS the island is using right now: this PC's, or the online one. */
-let activeUrl = settings.url;
+let activeUrl = STANDALONE ? LOCAL : settings.url;
 const START_HIDDEN = process.argv.includes("--hidden");
 
 function save() {
@@ -101,7 +113,7 @@ function createIsland() {
   island.webContents.on("unresponsive", () => island.webContents.reload());
   // the island never navigates away; sign-in pages open in their own window
   island.webContents.on("will-navigate", (e, url) => {
-    if (L.sameOrigin(url, activeUrl) && new URL(url).pathname === "/island") return;
+    if (L.sameOrigin(url, activeUrl) && ["/island", "/index.html", "/"].includes(new URL(url).pathname)) return;
     e.preventDefault();
     const p = L.sameOrigin(url, activeUrl) ? L.authPath(new URL(url).pathname) : null;
     if (p) openAuth(p);
@@ -119,6 +131,7 @@ function createIsland() {
 async function loadIsland() {
   clearTimeout(retryTimer);
   if (!island || island.isDestroyed()) return;
+  if (STANDALONE) { island.loadURL(`${LOCAL}/index.html`).catch(() => {}); return; }
   const target = await chooseServer();
   if (!target) return goOffline();
   if (target !== activeUrl) console.log(`RUBEN: using ${target === settings.url ? "JARVIS on this PC" : "your online JARVIS"} (${target})`);
@@ -215,7 +228,7 @@ function trayImage() {
 function updateTray() {
   if (!tray) return;
   const visible = island && !island.isDestroyed() && island.isVisible();
-  const where = activeUrl === settings.url ? "JARVIS on this PC" : "online JARVIS";
+  const where = STANDALONE ? "on its own" : activeUrl === settings.url ? "JARVIS on this PC" : "online JARVIS";
   tray.setToolTip(onJarvis ? `RUBEN — CRM assistant (${where})` : `RUBEN — waiting for JARVIS (${[settings.url, settings.cloudUrl].filter(Boolean).join(" or ")})`);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: isOpen ? "Close CRM" : "Open CRM", click: () => { if (!isOpen) { if (showIsland()) { setOpen(true); send("open"); } } else send("close"); } },
@@ -226,11 +239,11 @@ function updateTray() {
     { label: "Start RUBEN when I sign in", type: "checkbox", checked: settings.launchAtLogin, click: (i) => setLaunchAtLogin(i.checked) },
     { label: "Let RUBEN open and control apps", type: "checkbox", checked: settings.pcControl === true, click: (i) => { settings.pcControl = i.checked; save(); updateTray(); } },
     { type: "separator" },
-    { label: "Sign in to JARVIS…", click: () => openAuth("/login") },
-    { label: "Unlock JARVIS…", click: () => openAuth("/unlock") },
+    ...(STANDALONE ? [] : [{ label: "Sign in to JARVIS…", click: () => openAuth("/login") }, { label: "Unlock JARVIS…", click: () => openAuth("/unlock") }]),
     { label: "Reconnect", click: () => loadIsland() },
-    { label: `Using: ${where} — ${activeUrl}`, enabled: false },
-    ...(settings.cloudUrl ? [{ label: `Online JARVIS: ${settings.cloudUrl}`, enabled: false }] : [{ label: "No online JARVIS set (APP_URL in .env.local)", enabled: false }]),
+    ...(STANDALONE ? [{ label: "Running on its own — your CRM database directly", enabled: false }] : [
+      { label: `Using: ${where} — ${activeUrl}`, enabled: false },
+      ...(settings.cloudUrl ? [{ label: `Online JARVIS: ${settings.cloudUrl}`, enabled: false }] : [{ label: "No online JARVIS set (APP_URL in .env.local)", enabled: false }])]),
     { label: "Reset island position", click: () => { settings.pos = null; save(); if (alive()) island.setBounds(L.initialBounds(null, screen.getAllDisplays(), screen.getPrimaryDisplay(), island.getBounds().height)); } },
     { type: "separator" },
     { label: "Quit RUBEN", click: () => app.quit() },
@@ -356,8 +369,33 @@ app.on("second-instance", (_e, _argv, _cwd, data) => {
   }
   if (showIsland()) { setOpen(true); send("open"); }
 });
+// ---------- RUBEN's own screen + backend (standalone) ----------
+let server = null, serverError = null;
+function backend() {
+  if (server || serverError) return server;
+  try { server = require("./dist/server.cjs"); }
+  catch (e) { serverError = e; log(`backend didn't load: ${e && e.stack || e}`); }
+  return server;
+}
+function serveLocal() {
+  const files = { "/": "ui/index.html", "/index.html": "ui/index.html", "/ui.js": "dist/ui.js" };
+  protocol.handle("rubin", async (req) => {
+    const u = new URL(req.url);
+    if (u.host !== "app") return new Response("Not found", { status: 404 });
+    if (u.pathname.startsWith("/api/")) {
+      const s = backend();
+      if (!s) return new Response(JSON.stringify({ ok: false, error: `RUBEN's backend didn't start: ${String(serverError?.message || serverError).slice(0, 200)} — run npm run rubin again.` }), { status: 503, headers: { "Content-Type": "application/json" } });
+      return s.handle(req);
+    }
+    const f = files[u.pathname];
+    if (!f) return new Response("Not found", { status: 404 });
+    return net.fetch(pathToFileURL(path.join(__dirname, f)).href);
+  });
+}
+
 app.whenReady().then(() => {
   if (process.platform === "darwin") app.dock?.hide();
+  if (STANDALONE) serveLocal();
   lockPermissions();
   createIsland();
   tray = new Tray(trayImage());
@@ -376,4 +414,4 @@ app.whenReady().then(() => {
 
 // closing every window doesn't quit — RUBEN lives in the tray until you choose Quit
 app.on("window-all-closed", () => {});
-app.on("will-quit", () => globalShortcut.unregisterAll());
+app.on("will-quit", () => { globalShortcut.unregisterAll(); if (server) void server.shutdown(); });

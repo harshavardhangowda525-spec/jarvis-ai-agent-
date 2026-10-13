@@ -123,56 +123,25 @@ const labelOf = (w) => (String(w.title || "").split(" - ").pop() || w.name || "t
 
 // ---------------- doing it (Windows) ----------------
 
-const PS = `
-$ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [Text.Encoding]::UTF8
-$a = $env:RUBIN_PC_ARGS | ConvertFrom-Json
-if ($a.op -eq 'list') {
-  $w = @(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle } | ForEach-Object { [pscustomobject]@{ id = $_.Id; name = $_.ProcessName; title = $_.MainWindowTitle } })
-  ConvertTo-Json -InputObject $w -Compress; exit
-}
-if ($a.op -eq 'desktop') { (New-Object -ComObject Shell.Application).MinimizeAll(); '{"ok":true}'; exit }
-Add-Type @"
-using System; using System.Runtime.InteropServices;
-public static class RubinW {
-  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
-  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
-  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern void keybd_event(byte b, byte s, uint f, UIntPtr e);
-}
-"@
-$p = Get-Process -Id ([int]$a.id) -ErrorAction SilentlyContinue
-if (-not $p -or $p.MainWindowHandle -eq 0) { '{"ok":false,"error":"That window is no longer open."}'; exit }
-$h = $p.MainWindowHandle
-function Front {
-  if ([RubinW]::IsIconic($h)) { [RubinW]::ShowWindow($h, 9) | Out-Null }
-  [RubinW]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [RubinW]::SetForegroundWindow($h) | Out-Null; [RubinW]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
-}
-switch ($a.op) {
-  'focus'    { Front }
-  'minimize' { [RubinW]::ShowWindow($h, 6) | Out-Null }
-  'maximize' { [RubinW]::ShowWindow($h, 3) | Out-Null; Front }
-  'restore'  { [RubinW]::ShowWindow($h, 9) | Out-Null; Front }
-  'close'    { $p.CloseMainWindow() | Out-Null }
-  'keys'     {
-    Front; Start-Sleep -Milliseconds 400
-    # only type if that window really is in front — never into whatever else has focus
-    if ([RubinW]::GetForegroundWindow() -ne $h) { '{"ok":false,"error":"Windows wouldn''t bring that app to the front, so nothing was typed."}'; exit }
-    Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait([string]$a.keys)
-  }
-}
-'{"ok":true}'
-`;
+// The PowerShell side lives in pc.ps1 next to this file (plain, readable) and runs with -File:
+// passing it inline on the command line let Windows' quoting mangle it.
+const PS_FILE = path.join(__dirname, "pc.ps1");
+const PS = (() => { try { return require("node:fs").readFileSync(PS_FILE, "utf8"); } catch { return ""; } })();
+
+let logger = () => {};
+/** main.cjs passes RUBEN's log, so a failure on your PC shows up in rubin.log. */
+function setLogger(fn) { logger = typeof fn === "function" ? fn : () => {}; }
+
 
 function powershell(args) {
   return new Promise((resolve) => {
-    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", PS],
+    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", PS_FILE],
       { timeout: 20_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, RUBIN_PC_ARGS: JSON.stringify(args) } },
       (err, stdout, stderr) => {
         const out = String(stdout || "").trim().replace(/^﻿/, "");
+        if (stderr && String(stderr).trim()) logger(`powershell ${args.op}: ${String(stderr).trim().slice(0, 400)}`);
         try { resolve(JSON.parse(out.split(/\r?\n/).pop() || "null")); }
-        catch { resolve({ ok: false, error: String(stderr || err?.message || "Windows didn't answer").trim().slice(0, 200) }); }
+        catch { logger(`powershell ${args.op}: no answer (${err?.message || "empty output"})`); resolve({ ok: false, error: String(stderr || err?.message || "Windows didn't answer").trim().slice(0, 200) }); }
       });
   });
 }
@@ -254,4 +223,4 @@ async function runConfirmed(c, o = {}) {
   return { ok: !!r?.ok, say: r?.ok ? c.done : `That didn't work: ${r?.error || "Windows refused"}.` };
 }
 
-module.exports = { parsePcCommand, keysFor, literalKeys, pickWindow, planPc, runConfirmed };
+module.exports = { setLogger, PS, parsePcCommand, keysFor, literalKeys, pickWindow, planPc, runConfirmed };

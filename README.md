@@ -1577,22 +1577,25 @@ Env (all optional):
 RUBEN (RUBIN) can also run as a small app on your laptop: a thin blue outline,
 shaped like a pill, that floats above your other windows. There is no
 dashboard, sidebar or full window. It's a real desktop window (Electron) that
-stays on top of other apps, not a browser tab. All of its data comes from your
-running JARVIS.
+stays on top of other apps, not a browser tab. It runs on its own, reading
+your CRM straight from its database.
 
-**Start it.** Start JARVIS first (`npm run local`), then in a second terminal:
+**Start it.** RUBEN runs on its own; JARVIS doesn't need to be running.
 
 ```
 npm run rubin
 ```
 
-The first run installs Electron, about 100 MB, once. After that the island
-appears at the top-centre of your screen and RUBEN's icon appears in the
-system tray. You can close the terminal; RUBEN keeps running until you choose
-**Quit** in the tray menu.
-
-- If JARVIS is on another address: `npm run rubin -- --url http://192.168.1.20:3000`.
-- To see RUBEN's log: `npm run rubin -- --foreground`.
+- The first run installs Electron (about 100 MB, once).
+- Each run builds RUBEN's own screen and backend from this code. That takes a
+  few seconds, and only after an update.
+- RUBEN connects straight to your CRM database, using the same `DATABASE_URL`
+  from `.env.local` that JARVIS uses. Your keys (`GROQ_API_KEY`,
+  `ELEVENLABS_API_KEY`) come from `.env.local` too. They're given to RUBEN
+  only while it runs and are never saved anywhere else.
+- If several accounts share that database, set `RUBIN_USER_EMAIL=you@…` in
+  `.env.local` to pick yours.
+- To run RUBEN through JARVIS the old way, use `npm run rubin -- --with-jarvis`.
 
 **Close it completely.** Use any of these:
 
@@ -1601,12 +1604,6 @@ system tray. You can close the terminal; RUBEN keeps running until you choose
 - ⚙ in the CRM → **Quit RUBEN**
 
 Closing the CRM pop-up only shrinks RUBEN back to the outline.
-
-**Sign in.** The first time, the island says *Sign in to use RUBEN*. Click it
-and a normal-sized window opens for the usual JARVIS sign-in. If face/PIN
-unlock is set up, you unlock there too. The window closes by itself once you're
-in. RUBEN keeps no passwords. Your JARVIS session lives in the app's own
-browser profile, just as it would in a browser.
 
 **What it looks like**
 
@@ -1619,6 +1616,13 @@ browser profile, just as it would in a browser.
 | Working | A small "Working" bar, for slower commands |
 | Notification | A short message such as "FOLLOW-UP · Iron Temple Gym (today, 4:00 pm)", shown for about 6 seconds. Click it to see the follow-ups |
 | JARVIS offline / locked / signed out | A grey outline that says so. Offline, it keeps retrying on its own |
+
+**The CRM opens only when you ask.** Click the outline, say "Open CRM" (or
+"Hey Rubin, open CRM"), or press Ctrl+Shift+Space.
+
+Other commands work without opening it. "Hey Rubin, open Notepad" or "Hey
+Rubin, which clients need follow-up today?" are answered out loud and in the
+outline.
 
 **Use it**
 

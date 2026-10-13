@@ -18,7 +18,7 @@ import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const APP = path.join(ROOT, "desktop", "rubin");
@@ -56,6 +56,26 @@ export function cloudUrl(argv = args, env = process.env, envFileText = readEnvLo
   }
   return null;
 }
+/**
+ * Settings RUBEN's own backend needs (DATABASE_URL, GROQ_API_KEY, ELEVENLABS_API_KEY …), read from
+ * .env then .env.local. They're handed to the RUBEN process only — never written anywhere.
+ * @param {string[]} texts
+ */
+export function parseEnvFiles(texts) {
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const text of texts) {
+    for (const line of String(text || "").split(/\r?\n/)) {
+      const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
+      if (!m) continue;
+      let v = m[2].trim();
+      if (/^(["']).*\1$/.test(v)) v = v.slice(1, -1); else v = v.replace(/\s+#.*$/, "");
+      out[m[1]] = v;
+    }
+  }
+  return out;
+}
+
 function readEnvLocal() {
   try { return fs.readFileSync(path.join(ROOT, ".env.local"), "utf8"); } catch { return ""; }
 }
@@ -83,7 +103,7 @@ function quitRuben(bin) {
   console.log(forced ? "RUBEN closed (it had to be stopped)." : "RUBEN closed.");
 }
 
-function main() {
+async function main() {
   if (args.includes("--quit")) { quitRuben(electronBinary()); return; }
   let url;
   try { url = jarvisUrl(); } catch (e) { console.error(e.message); process.exit(1); }
@@ -106,16 +126,28 @@ function main() {
   if (version) console.log(`RUBEN version: ${version}`);
   const fg = args.includes("--foreground");
   const cloud = cloudUrl();
-  const env = { ...process.env, RUBIN_JARVIS_URL: url, ...(cloud ? { RUBIN_CLOUD_URL: cloud } : {}) };
+  const read = (f) => { try { return fs.readFileSync(path.join(ROOT, f), "utf8"); } catch { return ""; } };
+  const fileEnv = parseEnvFiles([read(".env"), read(".env.local")]);
+  const withJarvis = args.includes("--with-jarvis");
+  if (!withJarvis) {
+    if (!fileEnv.DATABASE_URL && !process.env.DATABASE_URL) {
+      console.error("RUBEN needs DATABASE_URL (your CRM database) in .env.local — the same one JARVIS uses.");
+      process.exit(1);
+    }
+    // RUBEN's own screen + backend, built from the JARVIS source (only when it changed)
+    try { const { buildStandalone } = await import(pathToFileURL(path.join(APP, "build.mjs")).href); await buildStandalone(); }
+    catch (e) { console.error(`RUBEN: building its screen/backend failed: ${e.message}`); process.exit(1); }
+  }
+  const env = { ...fileEnv, ...process.env, RUBIN_JARVIS_URL: url, ...(cloud ? { RUBIN_CLOUD_URL: cloud } : {}), ...(withJarvis ? { RUBIN_MODE: "jarvis" } : {}) };
   delete env.ELECTRON_RUN_AS_NODE; // would start Electron as plain Node
   const child = spawn(bin, [APP], { cwd: APP, env, stdio: fg ? "inherit" : "ignore", detached: !fg, windowsHide: false });
   if (fg) { child.on("exit", (c) => process.exit(c ?? 0)); return; }
   child.unref();
   console.log(`RUBEN is starting — the island appears at the top of your screen and its icon in the system tray (right-click → Quit).`);
-  console.log(`JARVIS address: ${url}${flag("--url") ? "" : "  (change with: npm run rubin -- --url http://host:port)"}`);
-  console.log(cloud ? `When JARVIS isn't running on this PC, RUBEN uses your online JARVIS: ${cloud}` : `No online JARVIS found (APP_URL in .env.local) — RUBEN needs  npm run local  running.`);
+  if (withJarvis) console.log(`Using JARVIS at ${url} for the CRM.`);
+  else console.log("RUBEN runs on its own — JARVIS doesn't need to be running. (Your CRM database: DATABASE_URL in .env.local.)");
   console.log(`Shortcuts: Ctrl+Shift+Space opens/closes the CRM · Ctrl+Shift+R talk · right-click the island to talk`);
   console.log(`To close RUBEN completely: npm run rubin -- --quit  (or right-click its tray icon → Quit RUBEN)`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().catch((e) => { console.error(e.message); process.exit(1); });
