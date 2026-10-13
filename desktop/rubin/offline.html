@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>RUBEN</title>
+<style>
+  html, body { margin: 0; background: transparent; overflow: hidden; font-family: "Segoe UI", system-ui, sans-serif; }
+  .stage { display: flex; justify-content: center; padding-top: 12px; }
+  button { position: relative; width: 252px; height: 36px; border-radius: 999px; border: 1.5px solid #64748b; background: rgba(4,6,12,.86);
+    color: #cbd5e1; font: inherit; font-size: 12.5px; cursor: pointer; }
+  button:focus-visible { outline: 2px solid #93c5fd; outline-offset: 3px; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <!-- shown by the desktop app when JARVIS can't be reached; it keeps retrying on its own -->
+    <button id="b" type="button" title="Retry now">JARVIS offline · retrying</button>
+  </div>
+  <script>
+    const b = document.getElementById("b");
+    b.addEventListener("mouseenter", () => window.rubinDesktop && window.rubinDesktop.setInteractive(true));
+    b.addEventListener("mouseleave", () => window.rubinDesktop && window.rubinDesktop.setInteractive(false));
+    b.addEventListener("click", () => { b.textContent = "Connecting…"; window.rubinDesktop && window.rubinDesktop.retry(); });
+  </script>
+</body>
+</html>

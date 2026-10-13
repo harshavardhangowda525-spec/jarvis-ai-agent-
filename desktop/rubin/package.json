@@ -1,0 +1,14 @@
+{
+  "name": "rubin-island",
+  "productName": "RUBEN",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RUBEN — JARVIS's CRM assistant as a floating Dynamic Island on your desktop.",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "44.5.1"
+  }
+}

@@ -1,0 +1,264 @@
+"use strict";
+/**
+ * RUBEN desktop — JARVIS's CRM assistant as a floating "Dynamic Island".
+ *
+ * A real desktop window (Electron), not a web page pretending: frameless,
+ * transparent, always on top of other apps, in every workspace, out of the
+ * taskbar, with a tray icon, global shortcuts and an optional start-at-login.
+ * It shows JARVIS's /island page; everything the island knows comes from your
+ * running JARVIS (npm run local) — RUBEN keeps no data and no passwords itself.
+ * Your JARVIS sign-in lives in this app's own browser profile, like a browser.
+ */
+const path = require("node:path");
+const fs = require("node:fs");
+const { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, shell, net, powerMonitor, dialog } = require("electron");
+const L = require("./lib.cjs");
+
+if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
+app.setAppUserModelId("ai.jarvis.ruben");
+
+const SETTINGS_FILE = path.join(app.getPath("userData"), "settings.json");
+let settings = L.readSettings(fs.existsSync(SETTINGS_FILE) ? fs.readFileSync(SETTINGS_FILE, "utf8") : "");
+// RUBIN_JARVIS_URL (set by `npm run rubin`) wins over the saved address
+if (process.env.RUBIN_JARVIS_URL && L.isHttpUrl(process.env.RUBIN_JARVIS_URL)) settings.url = process.env.RUBIN_JARVIS_URL.replace(/\/+$/, "");
+const START_HIDDEN = process.argv.includes("--hidden");
+
+function save() {
+  try { fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true }); fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2)); } catch (e) { console.error("RUBEN: couldn't save settings:", e.message); }
+}
+
+let island = null, authWin = null, tray = null;
+let isOpen = false, onJarvis = false, retryTimer = null, dragTimer = null, offlineTries = 0;
+
+const islandUrl = () => `${settings.url}/island`;
+const send = (cmd) => { if (island && !island.isDestroyed()) island.webContents.send("rubin:command", cmd); };
+
+// ---------- the island window ----------
+function createIsland() {
+  const b = L.initialBounds(settings.pos, screen.getAllDisplays(), screen.getPrimaryDisplay());
+  island = new BrowserWindow({
+    ...b, frame: false, transparent: true, backgroundColor: "#00000000", resizable: false, movable: false, minimizable: false, maximizable: false,
+    fullscreenable: false, skipTaskbar: true, hasShadow: false, alwaysOnTop: true, show: false, title: "RUBEN",
+    icon: path.join(__dirname, "assets", "icon.png"),
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false },
+  });
+  // above normal windows (and full-screen apps on macOS), on every desktop
+  island.setAlwaysOnTop(true, "screen-saver");
+  island.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  setInteractive(false);
+
+  island.once("ready-to-show", () => { if (!START_HIDDEN) island.showInactive(); });
+  island.webContents.on("did-fail-load", (_e, code, _desc, url, isMain) => {
+    if (!isMain || code === -3) return; // -3 = navigation replaced, not a failure
+    if (L.sameOrigin(url, settings.url)) goOffline();
+  });
+  island.webContents.on("did-navigate", (_e, url) => { onJarvis = L.sameOrigin(url, settings.url); if (onJarvis) offlineTries = 0; updateTray(); });
+  island.webContents.on("render-process-gone", () => setTimeout(loadIsland, 1000));
+  island.webContents.on("unresponsive", () => island.webContents.reload());
+  // the island never navigates away; sign-in pages open in their own window
+  island.webContents.on("will-navigate", (e, url) => {
+    if (L.sameOrigin(url, settings.url) && new URL(url).pathname === "/island") return;
+    e.preventDefault();
+    const p = L.sameOrigin(url, settings.url) ? L.authPath(new URL(url).pathname) : null;
+    if (p) openAuth(p);
+  });
+  island.webContents.setWindowOpenHandler(({ url }) => {
+    const p = L.sameOrigin(url, settings.url) ? L.authPath(new URL(url).pathname) : null;
+    if (p) openAuth(p);
+    else if (/^https?:/.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  loadIsland();
+}
+
+function loadIsland() {
+  clearTimeout(retryTimer);
+  if (!island || island.isDestroyed()) return;
+  island.loadURL(islandUrl()).catch(() => { /* did-fail-load handles it */ });
+}
+
+/** JARVIS isn't answering: show the offline capsule and keep trying (5 s, backing off to 60 s). */
+function goOffline() {
+  if (!island || island.isDestroyed()) return;
+  onJarvis = false;
+  if (isOpen) setOpen(false);
+  island.loadFile(path.join(__dirname, "offline.html")).catch(() => {});
+  updateTray();
+  const wait = () => {
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(async () => {
+      offlineTries++;
+      const up = await net.fetch(`${settings.url}/api/health`).then((r) => r.status < 500).catch(() => false);
+      if (up) loadIsland(); else wait();
+    }, Math.min(60_000, 5000 * 2 ** Math.min(offlineTries, 4)));
+  };
+  wait();
+}
+
+function setInteractive(on) {
+  if (!island || island.isDestroyed()) return;
+  // forward:true keeps hover events flowing to the page while clicks pass through
+  island.setIgnoreMouseEvents(!on, { forward: true });
+}
+
+function setOpen(open) {
+  if (!island || island.isDestroyed()) return;
+  isOpen = open;
+  const cur = island.getBounds();
+  const d = screen.getDisplayMatching(cur);
+  const b = L.clampToWorkArea({ x: cur.x, y: cur.y, width: L.WIDTH, height: open ? L.OPEN_H : L.COLLAPSED_H }, d.workArea);
+  island.setBounds(b);
+  if (open) { if (!island.isVisible()) island.showInactive(); island.focus(); setInteractive(true); }
+  updateTray();
+}
+
+// drag: follow the pointer from the main process (exact under any DPI / across monitors)
+function startDrag() {
+  if (!island || dragTimer) return;
+  const start = screen.getCursorScreenPoint(), from = island.getBounds();
+  dragTimer = setInterval(() => {
+    if (!island || island.isDestroyed()) return stopDrag();
+    const c = screen.getCursorScreenPoint();
+    const d = L.displayFor(screen.getAllDisplays(), c);
+    island.setBounds(L.clampToWorkArea({ x: from.x + c.x - start.x, y: from.y + c.y - start.y, width: from.width, height: from.height }, d.workArea));
+  }, 16);
+}
+function stopDrag() {
+  clearInterval(dragTimer); dragTimer = null;
+  if (!island || island.isDestroyed()) return;
+  const b = island.getBounds();
+  settings.pos = { x: b.x, y: b.y };
+  save();
+}
+
+/** Screens plugged / unplugged / rescaled: keep the island on a screen that exists. */
+function reclamp() {
+  if (!island || island.isDestroyed()) return;
+  const cur = island.getBounds();
+  const onScreen = screen.getAllDisplays().some((d) => { const w = d.workArea; const cx = cur.x + cur.width / 2; return cx >= w.x && cx <= w.x + w.width && cur.y >= w.y - 10 && cur.y <= w.y + w.height; });
+  island.setBounds(onScreen ? L.clampToWorkArea(cur, screen.getDisplayMatching(cur).workArea) : L.initialBounds(null, screen.getAllDisplays(), screen.getPrimaryDisplay(), cur.height));
+}
+
+// ---------- sign-in / unlock (a normal window; the island can't fit a login form) ----------
+function openAuth(p) {
+  const target = `${settings.url}${p}?next=/island`;
+  if (authWin && !authWin.isDestroyed()) { authWin.loadURL(target); authWin.show(); authWin.focus(); return; }
+  authWin = new BrowserWindow({
+    width: 520, height: 760, title: "Sign in — RUBEN", autoHideMenuBar: true, icon: path.join(__dirname, "assets", "icon.png"),
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+  });
+  // JARVIS's sign-in finishes with a client-side route change, so watch both kinds of navigation
+  const done = (_e, url) => { if (authWin && L.authFinished(url, settings.url)) { authWin.close(); loadIsland(); } };
+  authWin.webContents.on("did-navigate", done);
+  authWin.webContents.on("did-navigate-in-page", done);
+  authWin.webContents.on("will-navigate", (e, url) => { if (!L.sameOrigin(url, settings.url)) { e.preventDefault(); void shell.openExternal(url); } });
+  authWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) void shell.openExternal(url); return { action: "deny" }; });
+  authWin.on("closed", () => { authWin = null; send("refresh"); });
+  authWin.loadURL(target);
+}
+
+// ---------- tray ----------
+function trayImage() {
+  const img = nativeImage.createFromPath(path.join(__dirname, "assets", "tray.png"));
+  const hi = nativeImage.createFromPath(path.join(__dirname, "assets", "tray@2x.png"));
+  if (!hi.isEmpty()) img.addRepresentation({ scaleFactor: 2, buffer: hi.toPNG() });
+  return img;
+}
+function updateTray() {
+  if (!tray) return;
+  const visible = island && !island.isDestroyed() && island.isVisible();
+  tray.setToolTip(onJarvis ? "RUBEN — CRM assistant" : `RUBEN — waiting for JARVIS at ${settings.url}`);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: isOpen ? "Close CRM" : "Open CRM", click: () => { if (!isOpen) { island.showInactive(); setOpen(true); send("open"); } else send("close"); } },
+    { label: "Talk to RUBEN", accelerator: settings.talkShortcut, click: () => { island.showInactive(); send("listen"); } },
+    { label: visible ? "Hide the island" : "Show the island", click: () => { if (visible) island.hide(); else island.showInactive(); updateTray(); } },
+    { type: "separator" },
+    { label: "Wake phrase (“Open CRM”, “Hey Ruben”)", type: "checkbox", checked: settings.wake, click: (i) => { settings.wake = i.checked; save(); send(i.checked ? "wake-on" : "wake-off"); } },
+    { label: "Start RUBEN when I sign in", type: "checkbox", checked: settings.launchAtLogin, click: (i) => setLaunchAtLogin(i.checked) },
+    { type: "separator" },
+    { label: "Sign in to JARVIS…", click: () => openAuth("/login") },
+    { label: "Unlock JARVIS…", click: () => openAuth("/unlock") },
+    { label: "Reconnect", click: () => loadIsland() },
+    { label: `JARVIS address: ${settings.url}`, enabled: false },
+    { label: "Reset island position", click: () => { settings.pos = null; save(); island.setBounds(L.initialBounds(null, screen.getAllDisplays(), screen.getPrimaryDisplay(), island.getBounds().height)); } },
+    { type: "separator" },
+    { label: "Quit RUBEN", click: () => app.quit() },
+  ]));
+}
+
+function setLaunchAtLogin(on) {
+  settings.launchAtLogin = on;
+  save();
+  // unpackaged (npm run rubin): start Electron with this folder; packaged: just the app
+  const opts = app.isPackaged ? { openAtLogin: on, args: ["--hidden"] } : { openAtLogin: on, path: process.execPath, args: [app.getAppPath(), "--hidden"] };
+  try { app.setLoginItemSettings(opts); } catch (e) { console.error("RUBEN: launch at login isn't supported here:", e.message); }
+  updateTray();
+}
+
+// ---------- shortcuts ----------
+function registerShortcuts() {
+  globalShortcut.unregisterAll();
+  const failed = [];
+  const reg = (acc, fn) => { try { if (!globalShortcut.register(acc, fn)) failed.push(acc); } catch { failed.push(acc); } };
+  reg(settings.shortcut, () => { if (!island.isVisible()) island.showInactive(); send("toggle"); });
+  reg(settings.talkShortcut, () => { if (!island.isVisible()) island.showInactive(); send("listen"); });
+  if (failed.length) console.warn(`RUBEN: another app already uses ${failed.join(", ")} — change it in ${SETTINGS_FILE}`);
+}
+
+// ---------- page ↔ desktop ----------
+const fromIsland = (e) => island && e.sender === island.webContents;
+ipcMain.on("rubin:open", (e, open) => { if (fromIsland(e)) setOpen(!!open); });
+ipcMain.on("rubin:interactive", (e, on) => { if (fromIsland(e) && !dragTimer) setInteractive(!!on); });
+ipcMain.on("rubin:drag", (e, on) => { if (!fromIsland(e)) return; if (on) startDrag(); else stopDrag(); });
+ipcMain.on("rubin:auth", (e, p) => { if (fromIsland(e) && L.authPath(p)) openAuth(L.authPath(p)); });
+ipcMain.on("rubin:retry", (e) => { if (fromIsland(e)) loadIsland(); });
+const pageSettings = () => ({ wake: settings.wake, voiceReplies: settings.voiceReplies, micId: settings.micId, launchAtLogin: settings.launchAtLogin,
+  shortcut: settings.shortcut.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl"),
+  talkShortcut: settings.talkShortcut.replace("CommandOrControl", process.platform === "darwin" ? "Cmd" : "Ctrl") });
+ipcMain.handle("rubin:settings:get", (e) => (fromIsland(e) ? pageSettings() : null));
+ipcMain.handle("rubin:settings:set", (e, patch) => {
+  if (!fromIsland(e)) return null;
+  const p = L.pagePatch(patch);
+  const login = p.launchAtLogin;
+  delete p.launchAtLogin;
+  Object.assign(settings, p);
+  save();
+  if (typeof login === "boolean" && login !== settings.launchAtLogin) setLaunchAtLogin(login);
+  updateTray();
+  return pageSettings();
+});
+
+// ---------- microphone & other permissions: JARVIS's own pages only, microphone only ----------
+function lockPermissions() {
+  const ok = (wc, permission, details) => {
+    const origin = details?.requestingUrl || details?.securityOrigin || wc?.getURL() || "";
+    if (!L.sameOrigin(origin, settings.url)) return false;
+    if (permission === "media") return !details?.mediaTypes || details.mediaTypes.every((t) => t === "audio");
+    return permission === "clipboard-sanitized-write" || permission === "speaker-selection";
+  };
+  session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => cb(ok(wc, permission, details)));
+  session.defaultSession.setPermissionCheckHandler((wc, permission, origin, details) => ok(wc, permission, { ...details, requestingUrl: origin }) || (permission === "media" && L.sameOrigin(origin, settings.url)));
+}
+
+// ---------- lifecycle ----------
+app.on("second-instance", () => { if (island) { island.showInactive(); setOpen(true); send("open"); } });
+app.whenReady().then(() => {
+  if (process.platform === "darwin") app.dock?.hide();
+  lockPermissions();
+  createIsland();
+  tray = new Tray(trayImage());
+  tray.on("click", () => { if (!island.isVisible()) island.showInactive(); send("toggle"); });
+  updateTray();
+  registerShortcuts();
+  if (settings.launchAtLogin !== app.getLoginItemSettings().openAtLogin) setLaunchAtLogin(settings.launchAtLogin);
+  screen.on("display-added", reclamp);
+  screen.on("display-removed", reclamp);
+  screen.on("display-metrics-changed", reclamp);
+  powerMonitor.on("resume", () => (onJarvis ? send("refresh") : loadIsland()));
+  powerMonitor.on("unlock-screen", () => send("refresh"));
+  console.log(`RUBEN is running — island on top, icon in the system tray. JARVIS: ${settings.url}`);
+}).catch((e) => { dialog.showErrorBox("RUBEN couldn't start", String(e?.message || e)); app.quit(); });
+
+// closing every window doesn't quit — RUBEN lives in the tray until you choose Quit
+app.on("window-all-closed", () => {});
+app.on("will-quit", () => globalShortcut.unregisterAll());

@@ -6,14 +6,14 @@
 
 export const STAGES = [
   "new", "qualified", "contacted", "interested", "follow_up", "demo_scheduled", "demo_completed",
-  "quotation_sent", "negotiating", "won", "lost", "not_interested", "do_not_contact",
+  "quotation_sent", "negotiating", "ready_to_purchase", "won", "lost", "not_interested", "do_not_contact",
 ] as const;
 export type Stage = (typeof STAGES)[number];
 
 export const STAGE_LABEL: Record<Stage, string> = {
   new: "New", qualified: "Qualified", contacted: "Contacted", interested: "Interested", follow_up: "Follow-up",
   demo_scheduled: "Demo scheduled", demo_completed: "Demo completed", quotation_sent: "Quotation sent",
-  negotiating: "Negotiating", won: "Won", lost: "Lost", not_interested: "Not interested", do_not_contact: "Do not contact",
+  negotiating: "Negotiating", ready_to_purchase: "Ready to purchase", won: "Won", lost: "Lost", not_interested: "Not interested", do_not_contact: "Do not contact",
 };
 
 /** Closed stages: a lead here is no longer in the active pipeline. */
@@ -33,7 +33,7 @@ export const NODES = [
   { id: "qualified", label: "QUALIFIED", stages: ["qualified"] },
   { id: "interested", label: "INTERESTED", stages: ["interested"] },
   { id: "follow_up", label: "FOLLOW-UP", stages: ["follow_up", "demo_scheduled", "demo_completed"] },
-  { id: "proposal", label: "PROPOSAL SENT", stages: ["quotation_sent", "negotiating"] },
+  { id: "proposal", label: "PROPOSAL SENT", stages: ["quotation_sent", "negotiating", "ready_to_purchase"] },
   { id: "won", label: "WON", stages: ["won"] },
   { id: "lost", label: "REJECTED", stages: ["lost", "not_interested", "do_not_contact"] },
 ] as const satisfies readonly { id: string; label: string; stages: readonly Stage[] }[];
@@ -44,7 +44,7 @@ export const nodeStage = (id: NodeId): Stage => NODES.find((n) => n.id === id)!.
 /** Order of the journey (used for "forward only" automatic moves). */
 export const STAGE_ORDER: Record<Stage, number> = {
   new: 0, qualified: 1, contacted: 2, interested: 3, follow_up: 4, demo_scheduled: 5, demo_completed: 6,
-  quotation_sent: 7, negotiating: 8, won: 9, lost: 10, not_interested: 10, do_not_contact: 10,
+  quotation_sent: 7, negotiating: 8, ready_to_purchase: 8.5, won: 9, lost: 10, not_interested: 10, do_not_contact: 10,
 };
 export const isStage = (s: string): s is Stage => (STAGES as readonly string[]).includes(s);
 

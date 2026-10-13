@@ -1571,3 +1571,122 @@ Env (all optional):
   can use to send a new lead or a reply. Requests are signed with
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
   `x-robin-timestamp`, and must be no more than 5 minutes old.
+
+## RUBEN desktop island — the CRM on top of your screen
+
+RUBEN (RUBIN) can also run as a small app on your laptop: a thin blue outline,
+shaped like a pill, that floats above your other windows. There is no
+dashboard, sidebar or full window. It's a real desktop window (Electron) that
+stays on top of other apps, not a browser tab. All of its data comes from your
+running JARVIS.
+
+**Start it.** Start JARVIS first (`npm run local`), then in a second terminal:
+
+```
+npm run rubin
+```
+
+The first run installs Electron, about 100 MB, once. After that the island
+appears at the top-centre of your screen and RUBEN's icon appears in the
+system tray. You can close the terminal; RUBEN keeps running until you choose
+**Quit** in the tray menu.
+
+- If JARVIS is on another address: `npm run rubin -- --url http://192.168.1.20:3000`.
+- To see RUBEN's log: `npm run rubin -- --foreground`.
+
+**Sign in.** The first time, the island says *Sign in to use RUBEN*. Click it
+and a normal-sized window opens for the usual JARVIS sign-in. If face/PIN
+unlock is set up, you unlock there too. The window closes by itself once you're
+in. RUBEN keeps no passwords. Your JARVIS session lives in the app's own
+browser profile, just as it would in a browser.
+
+**What it looks like**
+
+| State | What you see |
+|---|---|
+| Idle | Only the outline |
+| Listening | It widens, and bars follow your voice |
+| Processing | A light travels around the outline |
+| Speaking | A waveform that follows RUBEN's voice |
+| Working | A small "Working" bar, for slower commands |
+| Notification | A short message such as "FOLLOW-UP · Iron Temple Gym (today, 4:00 pm)", shown for about 6 seconds. Click it to see the follow-ups |
+| JARVIS offline / locked / signed out | A grey outline that says so. Offline, it keeps retrying on its own |
+
+**Use it**
+
+- **Open the pop-up:**
+  - click the outline;
+  - press **Ctrl+Shift+Space**;
+  - click the tray icon;
+  - or say **"Open CRM"** (needs the wake phrase, below).
+- **Close it:** say "Close CRM", press **Esc**, or click ✕. It goes back to the outline.
+- **Talk:** press **Ctrl+Shift+R**, right-click the outline, or press the mic
+  button in the pop-up. Speak; RUBEN stops listening when you pause. Your words
+  appear once they're recognised, and then the answer.
+- **Type:** there is a text box at the bottom of the pop-up.
+- **Move it:** drag the outline. It stays inside the screen and out from under
+  the taskbar, works across several monitors and display scaling, and
+  remembers where you left it. If that monitor is unplugged, it comes back to
+  the main screen.
+
+The pop-up shows only what you asked for:
+
+| You say | You get |
+|---|---|
+| "Show my interested prospects" | Interested (follow up) leads |
+| "Find leads ready to purchase" | Leads at the new **Ready to purchase** stage |
+| "Which clients need follow-up today?" | Today's and overdue follow-ups |
+| "Open the details for this business" | The contact card of the lead you're on (click any row for the same) |
+| "Mark this lead as interested" / "…as ready to purchase" | The change and a confirmation |
+| "Mark this lead as rejected" | First asks *Mark … as Rejected?* Nothing changes until you say "yes" or press **Yes** |
+| "Prepare a pitch for this gym" | A pitch written by RUBIN's AI from the lead's real details, with Copy |
+| "Summarize today's client interactions" | What was actually logged today |
+| "Schedule a follow-up for tomorrow" | A follow-up for the lead you're on, at the time you said |
+| "Close CRM" | Back to the outline |
+
+Every other RUBIN command works as well, for example "follow up with 7 on
+Friday", "add a note…", "show lead 12" and "briefing".
+
+**What RUBEN won't do**
+
+- It never sends a message to anyone: no WhatsApp, email or call from the island.
+- It never shows made-up leads or a success it didn't get from JARVIS.
+- If something fails, you see the real error and nothing is changed.
+- "Won", "Rejected" and "Do not contact" always ask for your "yes" first.
+
+**Wake phrase (optional, off by default).** Turn it on with ⚙ in the pop-up
+or from the tray menu. Then "Open CRM" or "Hey Ruben, …" opens the CRM
+hands-free. While it's on, each phrase spoken near the microphone is sent to
+JARVIS's speech-to-text (ElevenLabs) to check for the wake phrase, which uses
+voice credits. Leave it off and use the shortcut if you'd rather not.
+
+**Settings**
+
+- In ⚙ in the pop-up:
+  - which microphone to use;
+  - wake phrase;
+  - spoken replies;
+  - start RUBEN when you sign in to Windows.
+- The JARVIS address, shortcuts and position are kept in RUBEN's
+  `settings.json`, in `%APPDATA%\RUBEN` on Windows. The island page
+  can't change the address or the shortcuts.
+- If another app already uses a shortcut, RUBEN prints a warning. Change the
+  shortcut in that file.
+
+**Notes**
+
+- **Microphone access:** RUBEN asks for the microphone only for JARVIS's own
+  pages, and for audio only.
+- **Speech:**
+  - speech-to-text and RUBEN's voice use the same ElevenLabs setup as the rest
+    of JARVIS;
+  - without it, replies use the computer's own voice and typing still works.
+- **Low resource use:** when idle the island runs no animation loop. It checks
+  JARVIS for due follow-ups once a minute.
+- **Reduced motion:** the island honours your system's "reduce motion"
+  setting.
+- **Keyboard:** everything works from the keyboard: Tab, Enter and Esc.
+- **Your existing RUBIN console stays as it was:** `/dashboard/robin` and
+  "Activate Rubin" in JARVIS, and the DARWIN → RUBIN lead hand-over.
+- **Opening `/island` in a browser:** it works as a preview and says so. Only
+  the desktop app floats above other apps.
