@@ -13,7 +13,7 @@ import {
 import { SiteBuilder, SiteList } from "./site-builder";
 import { Teleprompter } from "./teleprompter";
 import { WEBSITE_INTENT } from "@/lib/aston/site/assemble";
-import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isCallMeRequest, isConversationEnd, navIntent, STATE_WORD } from "@/lib/aston/core-state";
+import { CONVERSATION_LISTEN_MS, coreState, defaultLine, isCallMeRequest, isConversationEnd, navIntent, phraseSilenceMs, STATE_WORD } from "@/lib/aston/core-state";
 import { useRouter } from "next/navigation";
 import { markSelfSpeech, rememberSpoken, setPreferredVoiceName } from "@/lib/aston/voice";
 import { sayLine, stopSpeaking } from "./core/speech";
@@ -423,18 +423,24 @@ export function AstonConsole() {
     const r = new SR();
     r.lang = "en-IN";
     r.interimResults = true;
-    r.continuous = false;
+    // continuous + our own end-of-speech detection: Chrome's single-shot mode stops at the first short pause
+    r.continuous = true;
     let finalText = "";
-    r.onstart = () => { setMode("listening"); say("Listening for your command…"); setSub(null); };
+    let quiet: ReturnType<typeof setTimeout> | null = null;
+    const stopAfter = (ms: number) => { if (quiet) clearTimeout(quiet); quiet = setTimeout(() => { try { r.stop(); } catch { /* ended */ } }, ms); };
+    r.onstart = () => { setMode("listening"); say("Listening for your command…"); setSub(null); stopAfter(8000); /* nothing said at all */ };
     r.onsoundstart = () => mic.bump(0.35);
     r.onresult = (ev: any) => {
       let interim = "";
       for (let i = ev.resultIndex; i < ev.results.length; i++) {
         const t = ev.results[i][0].transcript;
-        if (ev.results[i].isFinal) finalText += t; else interim += t;
+        if (ev.results[i].isFinal) finalText += " " + t; else interim += " " + t;
       }
       mic.bump();
-      setSub(`“${(finalText + interim).trim()}”`);
+      const soFar = (finalText + interim).trim();
+      setSub(`“${soFar}”`);
+      // finished once you pause properly (longer after "for", "and", "with"…)
+      stopAfter(phraseSilenceMs(soFar));
     };
     r.onerror = (ev: any) => {
       setOneShot(false);
@@ -447,7 +453,7 @@ export function AstonConsole() {
         setFault({ kind: "mic", msg: "Speech recognition needs an internet connection.", action: { label: "Try again", run: () => { setFault(null); listen(); } } });
       } else say(e === "no-speech" ? "I didn't hear anything. Tap the core and try again." : "I didn't catch that.", 6000);
     };
-    r.onend = () => { setOneShot(false); setMode((m) => (m === "listening" ? "idle" : m)); if (finalText.trim()) send(finalText); else say(null); };
+    r.onend = () => { if (quiet) clearTimeout(quiet); setOneShot(false); setMode((m) => (m === "listening" ? "idle" : m)); if (finalText.trim()) send(finalText); else say(null); };
     recog.current = r;
     setOneShot(true);
     try { r.start(); } catch { setOneShot(false); setMode("idle"); }

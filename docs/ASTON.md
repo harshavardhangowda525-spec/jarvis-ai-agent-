@@ -113,6 +113,15 @@ until you ask for it.
   ✦ → Diagnostics → **Last spoken line** shows the latest result. The voice
   engine also works around known Chrome glitches: lines that are never spoken
   or stop halfway, and online voices that stop after about 15 seconds.
+- **ASTON lets you finish:** speech recognition splits what you say at every
+  short pause. ASTON keeps collecting the pieces and only acts once you've
+  actually stopped:
+  - It waits about 1.5 seconds of quiet, or about 2.6 seconds if your last word
+    clearly isn't the end, like "for", "and", "with" or "the".
+  - The sphere reacts as soon as it hears "ASTON", and your words appear under
+    it while you talk.
+  - This works the same with the wake word, in a conversation, and with
+    tap-to-talk.
 - **ASTON never answers its own voice:**
   - **The microphone is off while ASTON talks,** on every device. ASTON switches
     its listener off and back on around each reply, which drops anything it

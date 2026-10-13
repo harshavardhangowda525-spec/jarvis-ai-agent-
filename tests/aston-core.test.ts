@@ -153,3 +153,21 @@ describe("ASTON never answers its own voice", () => {
     expect(isEcho("all systems are running normally", Date.now() + 10_000)).toBe(false);
   });
 });
+
+describe("ASTON lets you finish", () => {
+  it("waits longer when the last word clearly isn't the end", async () => {
+    const { phraseSilenceMs, PHRASE_SILENCE_MS } = await import("@/lib/aston/core-state");
+    expect(phraseSilenceMs("build a website for")).toBeGreaterThan(PHRASE_SILENCE_MS);
+    expect(phraseSilenceMs("ASTON")).toBeGreaterThan(PHRASE_SILENCE_MS);
+    expect(phraseSilenceMs("a café with")).toBeGreaterThan(PHRASE_SILENCE_MS);
+    expect(phraseSilenceMs("build a website for a cafe in indiranagar")).toBe(PHRASE_SILENCE_MS);
+  });
+});
+
+describe("ASTON lets you finish · sentence endings", () => {
+  it("doesn't over-wait on words that often end a sentence", async () => {
+    const { phraseSilenceMs, PHRASE_SILENCE_MS } = await import("@/lib/aston/core-state");
+    expect(phraseSilenceMs("how many alerts are open")).toBe(PHRASE_SILENCE_MS);
+    expect(phraseSilenceMs("open settings")).toBe(PHRASE_SILENCE_MS);
+  });
+});

@@ -116,3 +116,11 @@ export function isCallMeRequest(text: string): boolean {
   const t = stripWake(text).text.toLowerCase().replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim().replace(/^(please |can you |could you )+/, "").replace(/( please| now| right now)+$/, "");
   return /^(call me|ring me|phone me|give me a (test |sample |quick )?(phone )?call|(make|place|do) a (test |sample )?(phone )?call( to me)?|test (the )?(phone )?(call|calls|calling|alerts?))$/.test(t);
 }
+
+/** How long a pause means "I've finished speaking". Longer after a word that clearly isn't the end. */
+export const PHRASE_SILENCE_MS = 1500;
+export function phraseSilenceMs(soFar: string): number {
+  const last = soFar.toLowerCase().replace(/[^a-z' ]/g, " ").trim().split(/\s+/).pop() ?? "";
+  const dangling = /^(a|an|the|for|and|or|but|with|to|of|in|on|at|from|my|me|our|your|about|like|that|which|who|build|create|make|write|is|are|called|named|um|uh|aston)$/.test(last);
+  return dangling ? 2600 : PHRASE_SILENCE_MS;
+}
