@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys } from "./local-helpers.mjs";
+import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys, prismaClientMatches } from "./local-helpers.mjs";
 import { ensureSecret, searxngAnswers, startDocker } from "./searxng.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -207,13 +207,41 @@ for (const [dir, label] of [[ROOT, "JARVIS"], [EDITH, "ULTRON"]]) {
   if (missing.length) runStep(`Installing ${label} packages (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? "…" : ""})`, "npm install --no-save --no-audit --no-fund", dir);
 }
 
+/** prisma generate, tolerating a locked engine file when the client is already current. */
+async function prismaGenerate() {
+  const cmd = `"${process.execPath}" "${path.join(ROOT, "node_modules", "prisma", "build", "index.js")}" generate`;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    say("  Preparing the database client…");
+    const r = spawnSync(cmd, { cwd: ROOT, shell: true, encoding: "utf8", env: process.env });
+    if (r.status === 0) return;
+    const out = `${r.stdout ?? ""}${r.stderr ?? ""}`;
+    const locked = /EPERM|EBUSY|operation not permitted|resource busy/i.test(out);
+    const read = (f) => { try { return fs.readFileSync(f, "utf8"); } catch { return ""; } };
+    if (locked && prismaClientMatches(read(path.join(ROOT, "prisma", "schema.prisma")), read(path.join(ROOT, "node_modules", ".prisma", "client", "schema.prisma")))) {
+      say("  Database client is already up to date (its file is in use by another program — that's fine).");
+      return;
+    }
+    if (locked && attempt === 1) { say("  The database client file is in use — waiting a moment and trying again…"); await new Promise((r) => setTimeout(r, 4000)); continue; }
+    process.stdout.write(out);
+    if (locked) die("Windows won't let JARVIS update node_modules\\.prisma\\client — another program has it open.\n  Close other JARVIS / \"npm run local\" / \"npm run dev\" windows and Prisma Studio (or open Task Manager and end the \"Node.js JavaScript Runtime\" tasks), then run npm run local again. Restarting the PC also clears it.");
+    die("Preparing the database client failed (see the output above).");
+  }
+}
+
 // ---- 3. build when the code changed -------------------------------------------------------
 const head = (() => { try { return spawnSync("git rev-parse HEAD", { cwd: ROOT, shell: true, encoding: "utf8" }).stdout.trim(); } catch { return ""; } })();
 const stampFile = path.join(ROOT, ".next", "LOCAL_BUILD_COMMIT");
 const built = fs.existsSync(path.join(ROOT, ".next", "BUILD_ID"));
 const stamp = fs.existsSync(stampFile) ? fs.readFileSync(stampFile, "utf8").trim() : "";
 if (!built || (head && stamp !== head) || process.argv.includes("--rebuild")) {
-  runStep("Building JARVIS (a few minutes the first time, and after each update)", "npm run build", ROOT);
+  // A JARVIS left running from an earlier window keeps Prisma's engine file open,
+  // and Windows then refuses to replace it (EPERM … query_engine-windows.dll.node).
+  if (stopPort(PORT)) {
+    say(`  Stopped the JARVIS that was still running on port ${PORT} from before.`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  await prismaGenerate();
+  runStep("Building JARVIS (a few minutes the first time, and after each update)", `node scripts/copy-vision-assets.mjs && "${process.execPath}" "${path.join(ROOT, "node_modules", "next", "dist", "bin", "next")}" build`, ROOT);
   if (head) fs.writeFileSync(stampFile, head);
 }
 

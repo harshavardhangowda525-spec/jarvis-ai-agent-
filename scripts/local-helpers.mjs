@@ -111,3 +111,13 @@ export function cloudAiKeys(appEnv, edithEnv) {
   }
   return { values, borrowed };
 }
+
+/**
+ * Is the generated Prisma client already built from this schema? (pure — tested)
+ * Prisma reformats its copy, so whitespace is ignored.
+ */
+export function prismaClientMatches(schema, generated) {
+  if (!schema || !generated) return false;
+  const norm = (t) => String(t).replace(/\s+/g, " ").trim();
+  return norm(schema) === norm(generated);
+}
