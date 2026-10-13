@@ -110,7 +110,7 @@ export const CrmDashboard = forwardRef<CrmHandle, Props>(function CrmDashboard({
     // results land where you're looking: the overview's business panel, or the lead list
     showResults: (title, leads) => { setResults({ title, leads }); setView("leads"); },
     showFollowups: () => { setView("followups"); setResults(null); void load(); setFuIdx(0); setLeadId(null); setLead(null); onSelectLead(null); },
-  }), [load, loadLead, leadId]);
+  }), [load, loadLead, leadId, onSelectLead]);
 
   // load when opened, then keep fresh while open (the last state stays while collapsed)
   useEffect(() => {
