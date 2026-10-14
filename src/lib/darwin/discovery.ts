@@ -74,7 +74,7 @@ const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
 export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
   const key = env.geoapifyApiKey;
-  if (!key) throw new GeoapifyError("Geoapify API key is not configured.", "no_key");
+  if (!key) throw new GeoapifyError("Geoapify API key is not configured — add GEOAPIFY_API_KEY to .env.local (on this PC; restart npm run local) or to the Vercel environment variables (online), then try again.", "no_key");
   const db = getDb();
   const limit = Math.min(Math.max(Math.round(p.limit) || 20, 1), 50);
   const baseRadiusM = Math.min(Math.max(Math.round((p.radiusKm ?? 5) * 1000), 500), MAX_RADIUS_M);

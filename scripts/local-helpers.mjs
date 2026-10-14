@@ -121,3 +121,35 @@ export function prismaClientMatches(schema, generated) {
   const norm = (t) => String(t).replace(/\s+/g, " ").trim();
   return norm(schema) === norm(generated);
 }
+
+/**
+ * Where each API key really is (pure — tested). Settings files are checked in
+ * order (e.g. .env.local, .env, .env.txt), and the first NON-EMPTY value wins.
+ * Vercel leaves "Sensitive" keys empty when pulled, and that empty line in
+ * .env.local must not hide the real key you put in .env. A near-miss name
+ * (GEOPIFY_API_KEY, GEOAPIFY_KEY …) is used too, and reported so you can
+ * rename it.
+ * @param {{ name: string, env: Record<string, string> }[]} sources
+ * @param {Record<string, RegExp>} keys  wanted name → pattern for near-miss names
+ */
+export function resolveKeys(sources, keys) {
+  const empty = (v) => !v || !String(v).trim() || /^\[sensitive\]$/i.test(String(v).trim());
+  /** @type {Record<string, string>} */ const values = {};
+  /** @type {Record<string, string>} */ const from = {};
+  /** @type {{ key: string, wrong: string, file: string }[]} */ const misnamed = [];
+  /** @type {{ key: string, file: string, real: string }[]} */ const hidden = [];
+  for (const [key, near] of Object.entries(keys)) {
+    let blankIn = null;
+    for (const src of sources) {
+      if (key in src.env && empty(src.env[key]) && !blankIn) blankIn = src.name;
+      if (!empty(src.env[key])) { values[key] = String(src.env[key]).trim(); from[key] = src.name; break; }
+    }
+    if (values[key] && blankIn && blankIn !== from[key]) hidden.push({ key, file: blankIn, real: from[key] });
+    if (values[key]) continue;
+    for (const src of sources) {
+      const wrong = Object.keys(src.env).find((k) => k !== key && near.test(k) && !empty(src.env[k]));
+      if (wrong) { values[key] = String(src.env[wrong]).trim(); from[key] = src.name; misnamed.push({ key, wrong, file: src.name }); break; }
+    }
+  }
+  return { values, from, misnamed, hidden };
+}

@@ -71,7 +71,7 @@ ${DARWIN_OPPORTUNITIES.join(", ")}.
 # Sources & discovery
 ${ctx.discoveryAvailable
   ? "- Discovery runs on Geoapify Places. For 'find 20 gyms in Bangalore without a website' call darwin_search {category:'gyms', location:'Bangalore', limit:20, filter:'no_website'}. When the user wants numbers / people to call among businesses without a website, use filter:'no_website_phone' (no website listed AND a listed phone). Relay its message exactly (e.g. 'Found 18 new leads · 7 previously discovered leads skipped'). If fewer than requested come back, report the true count — never pad."
-  : "- Geoapify API key is not configured, so live discovery is unavailable. Say so plainly and suggest adding GEOAPIFY_API_KEY in the Vercel environment variables. Never invent leads."}
+  : "- Geoapify API key is not configured, so live discovery is unavailable. Say so plainly and suggest adding GEOAPIFY_API_KEY to .env.local on this PC (then restart npm run local) or to the Vercel environment variables for the online app. Never invent leads."}
 - Leads with a phone number are the priority for sales calls. The user calls from the dashboard (CALL / COPY NUMBER) — you never place calls.
 - CRM statuses: NEW, CONTACTED, FOLLOW-UP, INTERESTED, NOT INTERESTED, CONVERTED.
 

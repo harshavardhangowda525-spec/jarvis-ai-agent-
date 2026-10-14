@@ -70,7 +70,8 @@ export function parseEnvFiles(texts) {
       if (!m) continue;
       let v = m[2].trim();
       if (/^(["']).*\1$/.test(v)) v = v.slice(1, -1); else v = v.replace(/\s+#.*$/, "");
-      out[m[1]] = v;
+      // an empty value (Vercel's "Sensitive" keys) never hides a real one from another file
+      if (v.trim() || !(m[1] in out)) out[m[1]] = v;
     }
   }
   return out;

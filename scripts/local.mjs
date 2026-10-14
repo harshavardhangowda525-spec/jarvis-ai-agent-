@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys, prismaClientMatches } from "./local-helpers.mjs";
+import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys, prismaClientMatches, resolveKeys } from "./local-helpers.mjs";
 import { ensureSecret, searxngAnswers, startDocker } from "./searxng.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -152,9 +152,23 @@ if (!/^postgres(ql)?:\/\//i.test(dbUrl)) {
   );
 }
 say(`  Settings: ${path.basename(envFile)} (same database as your Vercel app)`);
+// Keys found where they really are: an empty line in .env.local (Vercel's "Sensitive" values come
+// through empty) must not hide the real key in .env; a misspelt name or a .env.txt still counts.
+const keyFiles = [[".env.local", path.join(ROOT, ".env.local")], [".env", path.join(ROOT, ".env")], [".env.local.txt", path.join(ROOT, ".env.local.txt")], [".env.txt", path.join(ROOT, ".env.txt")]]
+  .filter(([, f]) => fs.existsSync(f)).map(([name, f]) => ({ name, env: readEnv(f) }));
+const keys = resolveKeys(keyFiles, {
+  GEOAPIFY_API_KEY: /^GEO_?A?P?I?FY(_API)?(_KEY)?$|^GEOAPIFY_?(API_?)?KEY$|^GEOAPIFY$|^GEOAPI(_KEY)?$|^GEOPIFY_API_KEY$/i,
+  ELEVENLABS_API_KEY: /^ELEVEN_?LABS?(_API)?_KEY$/i,
+  GROQ_API_KEY: /^GROQ_?(API_?)?KEY$/i,
+  GEMINI_API_KEY: /^(GOOGLE_)?GEMINI_?(API_?)?KEY$/i,
+});
+for (const m of keys.misnamed) say(`  ! ${m.wrong} in ${m.file} looks like ${m.key} — using it for now; rename it to ${m.key}.`);
+for (const h of keys.hidden) say(`  Note: ${h.key} is empty in ${h.file} — using the one in ${h.real}.`);
+for (const [k, f] of Object.entries(keys.from)) if (/\.txt$/.test(f)) say(`  ! Using ${k} from ${f} — rename that file so Windows doesn't hide it.`);
+say(keys.values.GEOAPIFY_API_KEY ? `  DARWIN lead discovery (Geoapify): key found in ${keys.from.GEOAPIFY_API_KEY} ✓` : "  ! DARWIN can't discover leads: no GEOAPIFY_API_KEY in .env.local or .env (free at myprojects.geoapify.com).");
 // Other keys that came through blank (Sensitive on Vercel) — worth copying by hand.
 const IMPORTANT = ["GROQ_API_KEY", "GEMINI_API_KEY", "ELEVENLABS_API_KEY", "GEOAPIFY_API_KEY", "GOOGLE_CLIENT_SECRET", "INSTAGRAM_ACCESS_TOKEN", "MAGIC_HOUR_API_KEY", "OLLAMA_API_KEY"];
-const blank = IMPORTANT.filter((k) => k in appEnv && isPlaceholder(appEnv[k]));
+const blank = IMPORTANT.filter((k) => k in appEnv && isPlaceholder(appEnv[k]) && !keys.values[k]);
 if (blank.length) say(`  Note: these came through empty (marked Sensitive on Vercel): ${blank.join(", ")}.\n        Copy their values into .env.local if you want those features on this PC.`);
 // Google (Gmail for DARWIN's emails, Calendar, Drive) needs both OAuth values on this PC too
 const googleGone = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"].filter((k) => isPlaceholder(appEnv[k]));
@@ -375,6 +389,8 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
       BRAIN_PRIORITY: appEnv.BRAIN_PRIORITY || "first",        // only matters with JARVIS_PROVIDER=auto
     } : {}),
     ...aiKeys.values,
+    // the keys exactly where they were found (an empty line elsewhere can't hide them)
+    ...keys.values,
     // EV's images must stay publicly reachable for Instagram — keep the Vercel address.
     APP_URL: appEnv.APP_URL || edithEnv.JARVIS_URL || "",
     DATABASE_URL: dbUrl,
