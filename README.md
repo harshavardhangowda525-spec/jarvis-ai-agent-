@@ -1572,6 +1572,17 @@ Env (all optional):
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
   `x-robin-timestamp`, and must be no more than 5 minutes old.
 
+## Starting on Windows by double-click
+
+In the `jarvis-ai-agent-` folder, double-click **`start-jarvis.cmd`** to start
+JARVIS, or **`start-rubin.cmd`** to start RUBEN. Each one:
+
+- finds Node.js, or installs it with winget if it's missing;
+- puts Node.js back on your PATH if Windows lost it (this fixes
+  "'npm' is not recognized");
+- installs the packages the first time;
+- then starts.
+
 ## RUBEN desktop island — the CRM on top of your screen
 
 RUBEN (RUBIN) can also run as a small app on your laptop: a thin blue outline,
