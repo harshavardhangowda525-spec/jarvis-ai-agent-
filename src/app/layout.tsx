@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { RegisterServiceWorker } from "@/components/app-install/register-sw";
 
 export const metadata: Metadata = {
   title: "JARVIS",
@@ -7,6 +8,10 @@ export const metadata: Metadata = {
     "JARVIS — Just A Really Very Intelligent System. A general-purpose personal AI assistant with realtime voice, memory, and tools.",
   applicationName: "JARVIS",
   robots: { index: false, follow: false },
+  // installable on phones: Android uses the web app manifest; iPhone uses these
+  appleWebApp: { capable: true, title: "JARVIS", statusBarStyle: "black-translucent" },
+  icons: { icon: [{ url: "/app/icon-192.png", sizes: "192x192" }], apple: [{ url: "/app/apple-touch-icon.png", sizes: "180x180" }] },
+  formatDetection: { telephone: false },
 };
 
 export const viewport: Viewport = {
@@ -14,6 +19,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -31,7 +37,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="jarvis-bg antialiased">{children}</body>
+      <body className="jarvis-bg antialiased">{children}<RegisterServiceWorker /></body>
     </html>
   );
 }

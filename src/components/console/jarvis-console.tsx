@@ -1219,6 +1219,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                 ))}
                 <button onClick={() => { setMenuOpen(false); openHumanoid(); }} className="rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">Humanoid</button>
                 {/* the agents' chat screens (the side nav is folded away on this screen) */}
+                <a href="/app" onClick={() => setMenuOpen(false)} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Phone app</a>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/jobs"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Agent tasks</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/crm"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">DARWIN CRM</button>
                 <span className="col-span-2 mt-2 px-3 text-[10px] uppercase tracking-[0.25em] text-white/35">Agent chats</span>

@@ -44,6 +44,7 @@ registering a **tool** — the agent loop never changes.
 - [Gesture control](#gesture-control)
 - [DARWIN daily lead search](#darwin-daily-lead-search)
 - [MIKE — market intelligence](#mike--market-intelligence)
+- [JARVIS on your phone](#jarvis-on-your-phone)
 
 ---
 
@@ -389,6 +390,26 @@ Every check is done for real, at that moment:
 Nothing is changed, sent or spent. The steps arrive from the server as they
 happen (`POST /api/system/analyze`, NDJSON), and the screen plays them at a
 readable pace. It can run at most 3 times a minute.
+
+## JARVIS on your phone
+
+JARVIS installs on your phone as an app (a PWA — no Play Store needed). It's
+your **online** JARVIS (the Vercel deployment), so it works anywhere with
+internet, even when your PC is off. PC-only agents (ULTRON, opening apps on
+the PC) still need the PC.
+
+1. On the phone, open `https://<your-jarvis>.vercel.app/app` in **Chrome**
+   (Android) or **Safari** (iPhone). On the PC you can open `/app` and scan
+   the QR code instead.
+2. Android: tap **Install JARVIS** (or Chrome ⋮ → *Install app*).
+   iPhone: Share → *Add to Home Screen*.
+3. Open JARVIS from the home screen, sign in once, allow the microphone.
+
+Long-press the icon for shortcuts: DARWIN CRM, Agent tasks, DARWIN and RUBIN
+chats. Offline, the app shows an "offline" screen — nothing is cached or sent
+while offline. A link from the PC (`localhost`/LAN address) only works on the
+same network; use the Vercel address for anywhere access. Install from the
+Systems menu → **Phone app**.
 
 ## Previous-day briefing
 

@@ -17,7 +17,7 @@ anything not verifiable from here is marked so.
 | **ASTON** (website/app builder, teleprompter) | — | **does not exist** |
 | **WhatsApp sending** (Business Platform API) | — | **not integrated** — only `wa.me` links that open the chat |
 | **Central notification service / queue** | — | **does not exist** (RUBIN emails reminders; JARVIS speaks) |
-| **Android companion app** | — | **does not exist** (JARVIS is a responsive web app) |
+| **Android companion app** | `/app`, `app/manifest.ts`, `public/sw.js` | **installable PWA done** (home-screen app, shortcuts, offline screen); no native APK yet |
 | Email sending | Gmail OAuth / SMTP (`src/lib/google/*`, DARWIN auto-email) | working when connected |
 | Google Calendar | `src/lib/google/*` (DARWIN Workspace) | working when connected |
 | Scheduler | Vercel Cron (`vercel.json`) + `npm run local` ticks | working |
@@ -102,8 +102,8 @@ database lives on Neon (online), ~6 MB in the test copy.
 6. **ASTON** (website demos with previews) — a new agent; scope to agree.
 7. **WhatsApp notifications** — needs a WhatsApp Business Platform account
    (Meta) or Twilio, an approved template and a phone number.
-8. **Android** — recommend an installable PWA first (push, voice, deep links,
-   dialler `tel:` links); a native app needs Android Studio and Play/APK setup.
+8. **Android** — ✅ installable PWA shipped (`/app` install page + QR). Still
+   open: push notifications, and a native APK/TWA wrapper if wanted.
 
 ## 6. Decisions needed from you
 
