@@ -67,7 +67,7 @@ export function reminderEmail(items: ReminderItem[], tz: string, now: Date, appU
       `  ${i.what} · ${dayOf(i.dueAt, tz, now)} at ${timeOf(i.dueAt, tz)} (${inWords(+i.dueAt - +now)})`,
       ...(i.lead.phone ? [`  Phone: ${i.lead.phone}`] : []),
       notes.length ? `  Your notes: ${notes.join("; ")}` : "  Your notes: none",
-      ...(appUrl ? [`  Open: ${appUrl.replace(/\/+$/, "")}/dashboard/rubin?lead=${i.leadId}`] : []),
+      ...(appUrl ? [`  Open: ${appUrl.replace(/\/+$/, "")}/dashboard/chat/robin`] : []),
     ].join("\n");
   });
   const body = [

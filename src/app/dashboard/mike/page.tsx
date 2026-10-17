@@ -1,12 +1,8 @@
-import { MikeConsole } from "@/components/console/mike/mike-console";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "MIKE — JARVIS" };
 
-/**
- * MIKE — Market Intelligence & Knowledge Engine. Evidence-based market
- * analysis from real data; a decision-support system, never a profit promise.
- */
-export default function MikePage() {
-  return <MikeConsole />;
+/** The agents now live in their chats — old links (bookmarks, reminder emails) land there. */
+export default function OldMikePage() {
+  redirect("/dashboard/chat/mike");
 }

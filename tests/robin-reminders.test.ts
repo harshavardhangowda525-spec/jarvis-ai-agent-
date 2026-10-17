@@ -7,7 +7,7 @@ describe("RUBIN reminder email (pure)", () => {
     const now = new Date("2026-10-02T09:30:00Z"); // 3:00 PM IST
     const one = reminderEmail([{ kind: "followup", id: "f1", leadId: "L7", dueAt: new Date("2026-10-02T10:30:00Z"), what: "Call", lead: { number: 7, businessName: "ABC Café", phone: "+91 98450 11111" }, notes: "wants an online menu\nprefers WhatsApp" }], "Asia/Kolkata", now, "https://jarvis.example.app");
     expect(one.subject).toBe("Reminder: Follow-up with lead 7, ABC Café — call in 1 hours (4:00 PM)".replace("1 hours", "1 hour"));
-    expect(one.body).toContain("• Follow-up with lead 7, ABC Café\n  Call · today at 4:00 PM (in 1 hour)\n  Phone: +91 98450 11111\n  Your notes: wants an online menu; prefers WhatsApp\n  Open: https://jarvis.example.app/dashboard/rubin?lead=L7");
+    expect(one.body).toContain("• Follow-up with lead 7, ABC Café\n  Call · today at 4:00 PM (in 1 hour)\n  Phone: +91 98450 11111\n  Your notes: wants an online menu; prefers WhatsApp\n  Open: https://jarvis.example.app/dashboard/chat/robin");
     expect(one.body).toMatch(/tell Rubin how it went \(e\.g\. "done with 7, …"\)/);
     expect(inWords(25 * 60_000)).toBe("in 25 min");
     expect(inWords(90 * 60_000)).toBe("in 1 hour 30 min");

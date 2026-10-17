@@ -1,13 +1,8 @@
-import { DarwinConsole } from "@/components/console/darwin-console";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "DARWIN — JARVIS" };
 
-/**
- * DARWIN — real lead-generation, CRM & follow-up agent for Infinity Web & Apps.
- * Sci-fi command center: central hologram + minimal HUD + lead explorer. Shows
- * REAL leads only; when no source is connected it says so.
- */
-export default function DarwinPage() {
-  return <DarwinConsole />;
+/** The agents now live in their chats — old links (bookmarks, reminder emails) land there. */
+export default function OldDarwinPage() {
+  redirect("/dashboard/chat/darwin");
 }

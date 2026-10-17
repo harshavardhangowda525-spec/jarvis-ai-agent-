@@ -213,8 +213,8 @@ const chartSchema = z.object({
 export const mikeChartTool: ToolDefinition<z.infer<typeof chartSchema>> = {
   name: "mike_chart",
   description:
-    "Pull up the LIVE price chart of any market (stocks on any exchange, indices, crypto, forex, commodities, ETFs, futures) on MIKE's screen — candlesticks, volume, indicators. " +
-    "Use for 'show me the chart of X', 'pull up Tesla', 'open the Bitcoin chart', 'chart gold on the daily'. It only shows the chart; it makes no trade call. Opens MIKE if needed.",
+    "Read the LIVE price of any market (stocks on any exchange, indices, crypto, forex, commodities, ETFs, futures): last price, timeframe and how fresh the data is. " +
+    "Use for 'show me the chart of X', 'pull up Tesla', 'what's Bitcoin at', 'chart gold on the daily'. It makes no trade call; for a full read use mike_analyze.",
   schema: chartSchema,
   activityLabel: "Pulling up the chart",
   async execute(input) {
@@ -225,7 +225,6 @@ export const mikeChartTool: ToolDefinition<z.infer<typeof chartSchema>> = {
     const status = s.freshness === "live" ? "LIVE" : s.freshness === "unavailable" ? "LIVE DATA UNAVAILABLE" : s.freshness.toUpperCase();
     return {
       data: {
-        navigate: `/dashboard/mike?chart=${encodeURIComponent(asset.symbol)}&tf=${timeframe}`,
         asset: asset.display, name: asset.name ?? null, exchange: s.asset.exchange, timeframe: TF_LABEL[timeframe],
         data: status, note: s.note, lastPrice: last ? fmtPrice(last.c) : null, currency: s.currency ?? null,
       },

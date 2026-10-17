@@ -113,7 +113,6 @@ export const robinLeadTool: ToolDefinition<z.infer<typeof leadSchema>> = {
         demos: w.demos.slice(0, 3).map((d) => ({ at: d.scheduledAt.toISOString(), status: d.status })),
         quotations: w.quotations.slice(0, 3).map((q) => ({ number: q.number, total: q.total, status: q.status })),
         timeline: w.activities.slice(0, 8).map((a) => `${a.createdAt.toISOString().slice(0, 16)} ${a.detail}`),
-        navigate: `/dashboard/rubin?lead=${l.id}`,
       },
       summary: `Opened ${l.businessName}`,
     };
@@ -180,7 +179,7 @@ export const robinFollowUpsTool: ToolDefinition<z.infer<typeof fuListSchema>> = 
     const q = await followUpQueue(ctx.userId);
     const row = (f: (typeof q.today)[number]) => ({ id: f.id, leadNumber: f.lead.number, lead: f.lead.businessName, action: f.action, due: fmtWhen(f.dueAt, q.tz), priority: f.priority, note: f.notes, interested: ["interested", "negotiating", "quotation_sent", "demo_completed"].includes(f.lead.stage) });
     const breakdown = followUpBreakdown(q, { which: input.which ?? "all" });
-    return { data: { breakdown, overdue: q.overdue.map(row), today: q.today.map(row), upcoming: q.upcoming.slice(0, 10).map(row), navigate: "/dashboard/rubin?view=followups" }, summary: `${q.today.length} today · ${q.overdue.length} overdue` };
+    return { data: { breakdown, overdue: q.overdue.map(row), today: q.today.map(row), upcoming: q.upcoming.slice(0, 10).map(row) }, summary: `${q.today.length} today · ${q.overdue.length} overdue` };
   },
 };
 
@@ -257,7 +256,7 @@ export const robinQuotationTool: ToolDefinition<z.infer<typeof quoteSchema>> = {
   async execute(input, ctx) {
     const l = await lead(ctx, input.lead);
     const q = await run(() => createQuotation(ctx.userId, l.id, { items: input.items.map((i) => ({ service: i.service, unitPrice: i.price ?? null, quantity: i.quantity, description: i.description })), discount: input.discount }, "voice"));
-    return { data: { lead: l.businessName, number: q.number, total: money(q.total, q.currency), status: "draft — not sent", items: q.items.map((i) => `${i.service} ${money(i.amount, q.currency)}`), navigate: `/dashboard/rubin?lead=${l.id}` }, summary: `Draft ${q.number} for ${l.businessName}: ${money(q.total, q.currency)}` };
+    return { data: { lead: l.businessName, number: q.number, total: money(q.total, q.currency), status: "draft — not sent", items: q.items.map((i) => `${i.service} ${money(i.amount, q.currency)}`) }, summary: `Draft ${q.number} for ${l.businessName}: ${money(q.total, q.currency)}` };
   },
 };
 
@@ -328,17 +327,5 @@ export const robinReportTool: ToolDefinition<z.infer<typeof reportSchema>> = {
       },
       summary: "Rubin's pipeline report",
     };
-  },
-};
-
-const openSchema = z.object({ lead: z.string().max(120).optional(), view: z.enum(["pipeline", "funnel", "revenue", "followups", "quotations", "clients", "analytics"]).optional() });
-export const robinOpenTool: ToolDefinition<z.infer<typeof openSchema>> = {
-  name: "robin_open",
-  description: "Open RUBIN's sales command center (optionally a lead or a view: pipeline, funnel, revenue, followups, quotations, clients, analytics).",
-  schema: openSchema, inputSchema: json(openSchema), activityLabel: "Opening Rubin",
-  async execute(input, ctx) {
-    let q = input.view ? `?view=${input.view}` : "";
-    if (input.lead) { const l = await lead(ctx, input.lead); q = `?lead=${l.id}`; }
-    return { data: { navigate: `/dashboard/rubin${q}` }, summary: "Opening Rubin" };
   },
 };

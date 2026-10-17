@@ -132,8 +132,8 @@ export function TodayContent({ daily, onAction, onClose }: {
               {p?.readyLate && <span className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2 py-0.5 text-[9px] tracking-[0.2em] text-amber-100">READY LATE</span>}
             </div>
           </div>
-          <button onClick={onClose} title="Back to the studio" className="ev-glass flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] tracking-[0.18em] text-white/70 transition hover:text-white">
-            <X className="h-3.5 w-3.5" /> STUDIO
+          <button onClick={onClose} title="Back to the chat" className="ev-glass flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3 text-[11px] tracking-[0.18em] text-white/70 transition hover:text-white">
+            <X className="h-3.5 w-3.5" /> CLOSE
           </button>
         </div>
 

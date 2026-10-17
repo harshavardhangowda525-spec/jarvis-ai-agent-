@@ -189,8 +189,8 @@ export function UltronPanel() {
       if (/\b(deactivate|shut ?down|stand ?down|close|exit|leave)\b.*\b(ultron|ultra ?on)\b|^(deactivate|exit|close|stand ?down)[\s!.,]*$|\b(back to|go to|open|return to|switch to) jarvis\b/.test(low)) {
         e.speak("Handing you back to JARVIS."); setTimeout(() => router.push("/dashboard"), 900); return;
       }
-      if (/\b(open|go to|switch to|launch|activate)\s+darwin\b/.test(low)) { router.push("/dashboard/darwin"); return; }
-      if (isMikeActivation(low)) { router.push("/dashboard/mike"); return; }
+      if (/\b(open|go to|switch to|launch|activate)\s+darwin\b/.test(low)) { router.push("/dashboard/chat/darwin"); return; }
+      if (isMikeActivation(low)) { router.push("/dashboard/chat/mike"); return; }
       if (/\b(stop|halt|cancel|abort)\b/.test(low)) { e.stop(); return; }
       if (e.conn !== "connected") { setPairMsg("ULTRON isn't connected yet — start it with `npm run ultron` in the edith folder, then pair."); return; }
       // Echo guard: the mic picking up what ULTRON just said is not a new goal.

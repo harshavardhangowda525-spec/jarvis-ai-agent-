@@ -187,20 +187,20 @@ export function GestureProvider({ children }: { children: React.ReactNode }) {
         return "JARVIS";
       }
       case "darwin":
-        if (pathname.startsWith("/dashboard/darwin")) return "ALREADY IN DARWIN";
-        router.push("/dashboard/darwin");
+        if (pathname.startsWith("/dashboard/chat/darwin")) return "ALREADY IN DARWIN";
+        router.push("/dashboard/chat/darwin");
         return "DARWIN";
       case "ultron":
         if (pathname.startsWith("/dashboard/ultron")) return "ALREADY IN ULTRON";
         router.push("/dashboard/ultron");
         return "ULTRON";
       case "rubin":
-        if (pathname.startsWith("/dashboard/rubin")) return "ALREADY IN RUBIN";
-        router.push("/dashboard/rubin");
+        if (pathname.startsWith("/dashboard/chat/robin")) return "ALREADY IN RUBIN";
+        router.push("/dashboard/chat/robin");
         return "RUBIN";
       case "ev":
-        // EV lives inside the JARVIS console — it opens EV when it sees ?open=ev
-        router.push("/dashboard?open=ev");
+        if (pathname.startsWith("/dashboard/chat/ev")) return "ALREADY IN EV";
+        router.push("/dashboard/chat/ev");
         return "EV";
       case "wake": return "JARVIS ACTIVE";
       case "approve": case "reject": return "NOTHING WAITING FOR APPROVAL";

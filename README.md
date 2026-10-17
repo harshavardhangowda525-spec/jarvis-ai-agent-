@@ -1273,6 +1273,10 @@ with automatic fallback.
 
 ## MIKE — market intelligence
 
+> **Note:** this agent no longer has its own console screen. Talk to it in its
+> chat (`/dashboard/chat/mike`) — see "Chat with the agents" below. The engine
+> described here is unchanged.
+
 MIKE (**Market Intelligence & Knowledge Engine**) is JARVIS's trading-analysis
 specialist: a decision-support system that analyses real market data and tells
 you when the evidence lines up — and, just as often, that it doesn't. It never
@@ -1360,6 +1364,10 @@ database). With a separate local database, run `npm run db:migrate`.
 
 
 ## RUBIN — sales & CRM
+
+> **Note:** this agent no longer has its own console screen. Talk to it in its
+> chat (`/dashboard/chat/robin`) — see "Chat with the agents" below. The engine
+> described here is unchanged.
 
 *RUBIN was called ROBIN before. "Robin" still works as a voice command, old
 `/dashboard/robin` links open RUBIN, and the old `ROBIN_*` settings names still
@@ -1574,8 +1582,11 @@ Env (all optional):
 
 ## Chat with the agents (DARWIN, RUBIN, EV, MIKE)
 
-JARVIS stays voice-first in its own console. Every other agent now opens as a
-chat, like ChatGPT or Gemini. To open one:
+JARVIS stays voice-first in its own console. Every other agent is a chat, like
+ChatGPT or Gemini — there are no separate agent consoles any more. To open one:
+- **say or type it to JARVIS:** "open DARWIN", "activate Mike", "Rubin", "open
+  EV". "Rubin, show today's follow-ups" opens RUBIN's chat and asks it straight
+  away. The hand gestures (→ DARWIN, ↓ RUBIN, ↑ EV) open the chats too;
 - from JARVIS's own screen, click the **Systems** button (the grid icon, top
   right) and pick the agent under **Agent chats**;
 - on any other page, pick it in the left menu;
@@ -1600,8 +1611,15 @@ chat, like ChatGPT or Gemini. To open one:
   Esc goes back.
 - **Voice needs a speech key:** `ELEVENLABS_API_KEY` or `GROQ_API_KEY`. Without
   one, typing still works and voice mode says what's missing.
-- **The old consoles** (DARWIN's map, RUBIN's pipeline, MIKE's charts) are one
-  click away: **Open console** at the top of the chat.
+- **EV's Today's content:** the day's post + Reel waiting for your approval opens
+  from **Today's content** at the top of EV's chat (or "show today's content" to
+  JARVIS). Approve, reject or change it there, or by voice in JARVIS ("approve
+  today's content"). Nothing is published without your approval.
+- **The old console addresses** (`/dashboard/darwin`, `/dashboard/rubin`,
+  `/dashboard/robin`, `/dashboard/mike`) and reminder-email links now open the
+  agent's chat. DARWIN's map, RUBIN's pipeline screen and MIKE's live chart
+  screen were removed; MIKE gives prices and analysis in the chat, and RUBEN's
+  desktop island has the CRM.
 
 ## Starting on Windows by double-click
 
@@ -1837,7 +1855,7 @@ How it stays safe:
 - **Reduced motion:** the island honours your system's "reduce motion"
   setting.
 - **Keyboard:** everything works from the keyboard: Tab, Enter and Esc.
-- **Your existing RUBIN console stays as it was:** `/dashboard/robin` and
-  "Activate Rubin" in JARVIS, and the DARWIN → RUBIN lead hand-over.
+- **RUBIN in JARVIS** ("Activate Rubin") opens RUBIN's chat; the DARWIN →
+  RUBIN lead hand-over is unchanged.
 - **Opening `/island` in a browser:** it works as a preview and says so. Only
   the desktop app floats above other apps.

@@ -2,9 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isVoiceSilent, setVoiceSilent, typedMute } from "@/lib/voice/silence";
-import { MikeLaunchOverlay } from "@/components/console/mike/launch-overlay";
 import { isMikeActivation } from "@/lib/mike/wake";
-import { RobinLaunchOverlay } from "@/components/console/robin/launch-overlay";
 import { isRobinActivation, robinCommand } from "@/lib/robin/wake";
 import { BriefingPopup } from "@/components/console/briefing-popup";
 import type { Briefing } from "@/lib/briefing/build";
@@ -28,7 +26,6 @@ import { useRenderWatch } from "@/hooks/useRenderWatch";
 import { useWakeWord } from "@/hooks/useWakeWord";
 import { useScreenVision } from "@/hooks/useScreenVision";
 import { HumanoidView } from "@/components/console/humanoid-view";
-import { EvView, type EvState } from "@/components/console/ev-view";
 import { useDailyContent, type DailyUiAction } from "@/components/console/ev/today-content";
 import { parseDailyCommand } from "@/lib/ev/daily/intent";
 import { useGesture, useGestureHandler } from "@/components/gesture/gesture-provider";
@@ -44,13 +41,7 @@ import { JarvisMotion, type JarvisMotionHandle, type JState, type AgentName, typ
 import { KineticStage, KineticWord, type KineticStyle } from "./jarvis/kinetic";
 import { HoloPanel } from "./jarvis/holo-panel";
 import { cn } from "@/lib/utils";
-import { CHAT_AGENTS } from "@/lib/agents/catalog";
-
-// "publish" / "post it" / "publish with caption …" while an EV image is open.
-const EV_PUBLISH_RE = /^(please\s+)?(publish|post|upload|share)\b|\b(publish|post|upload) (it|this|that|now|the (image|post|picture|photo|video|reel))\b|\bgo ahead( and (publish|post))?\b|\b(publish|post|put it) (to|on) (instagram|insta|ig)\b/i;
-// …but not requests for NEW content ("publish a post about X tomorrow").
-const EV_NEW_CONTENT_RE = /\b(about|schedule|tomorrow|later|next week|idea|ideas|another|new|create|make|generate)\b/i;
-const captionFromCommand = (t: string) => t.match(/\bcaption\s*[:\-]?\s*(?:is\s+|as\s+)?(.+)$/i)?.[1]?.trim();
+import { CHAT_AGENTS, type ChatAgentId } from "@/lib/agents/catalog";
 
 // Weather intents ("what's the weather", "forecast for Tokyo", "will it rain").
 const WEATHER_RE = /\b(weather|forecast|temperature|humidity|how (hot|cold|warm)|(will|is|does|gonna) it (be )?(going to |gonna )?(rain|raining|snow|snowing|sunny|cloudy|cold|hot|windy|storm)|need an umbrella)\b/i;
@@ -148,17 +139,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [voiceStarted, setVoiceStarted] = useState(false);
   const [launchingUltron, setLaunchingUltron] = useState(false);
   const [humanoidPhase, setHumanoidPhase] = useState<"off" | "in" | "active" | "out">("off");
-  // EV marketing agent — cinematic overlay presentation of the same JARVIS brain.
-  const [evPhase, setEvPhase] = useState<"off" | "in" | "active" | "out">("off");
-  const [evCommand, setEvCommand] = useState("");
-  const [evAwaitingApproval, setEvAwaitingApproval] = useState(false);
-  const [evPulse, setEvPulse] = useState<null | "success" | "error">(null);
-  const [evImage, setEvImage] = useState<{ url: string } | null>(null);
-  const evImageRef = useRef<{ url: string } | null>(null);
-  evImageRef.current = evImage;
-  // "publish" voice/text → bumps this; the EV image message performs the real post.
-  const [evPublishSignal, setEvPublishSignal] = useState(0);
-  const [evCaptionOverride, setEvCaptionOverride] = useState<string | undefined>();
   const [weather, setWeather] = useState<WeatherData | null>(null);
   // JARVIS's glass browser pop-up — links open here instead of a new tab
   const [browser, setBrowser] = useState<BrowserTarget | null>(null);
@@ -166,8 +146,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   browserRef.current = browser;
   const showInJarvis = useCallback((site: SiteTarget) => { setBrowser({ url: site.url, label: site.label, key: Date.now() }); }, []);
   const fetchWeatherRef = useRef<(place?: string) => void>(() => {});
-  const evActiveRef = useRef(false);
-  const evPulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [input, setInput] = useState("");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -205,25 +183,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
   const onNavigate = useCallback((path: string) => {
     if (!path.startsWith("/dashboard") || path === "/dashboard") return;
-    // MIKE (e.g. "show me the Tesla chart") opens through its launch iris
-    if (path.startsWith("/dashboard/mike")) { setMikeLaunch(true); setTimeout(() => router.push(path), 1050); return; }
-    // RUBIN (e.g. "open ABC Café in Rubin") opens through its own launch
-    if (path.startsWith("/dashboard/rubin")) { setRobinLaunch(true); setTimeout(() => router.push(path), 1000); return; }
     router.push(path);
   }, [router]);
 
-  const flashEv = useCallback((kind: "success" | "error") => {
-    if (evPulseTimer.current) clearTimeout(evPulseTimer.current);
-    setEvPulse(kind);
-    if (kind === "success") motion.current?.agentReturn("EV");
-    evPulseTimer.current = setTimeout(() => setEvPulse(null), kind === "success" ? 1500 : 1300);
-  }, []);
-
-  // EV runs inside this console; while it's active JARVIS speaks in EV's voice.
   const voice = useVoice({
     onTranscript: (t) => sendRef.current(t),
     autoListen: true,
-    voiceProfile: evPhase === "off" ? "jarvis" : "ev",
+    voiceProfile: "jarvis",
   });
   // The reply is spoken sentence by sentence while it streams in, so JARVIS
   // starts talking after the first sentence rather than the whole answer.
@@ -234,7 +200,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const nios = useNiosWatch({ speak: (t) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } } });
   // EV daily content: today's post + Reel. The hook keeps the pipeline moving
   // while JARVIS is open and tells us when something real changes.
-  const [evToday, setEvToday] = useState(false);
   const dailyAskedAt = useRef(0);
   const sayRef = useRef<(t: string) => void>(() => {});
   /** The open system analysis (a new number = a new run), 0 = closed. */
@@ -246,10 +211,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       const p = v.pkg;
       if (kind === "ready") {
         dailyAskedAt.current = Date.now();
-        sayRef.current(evActiveRef.current ? "Today's content is ready. Would you like me to publish it?" : "EV has today's Instagram content ready for your approval.");
-      } else if (kind === "published") { flashEv("success"); sayRef.current("Today's content is published on Instagram."); }
-      else if (kind === "publish_error" && p?.publishError) { flashEv("error"); sayRef.current(`It's approved, but it isn't published yet. ${p.publishError}`); }
-      else if (kind === "failed" && evActiveRef.current) sayRef.current(v.spoken);
+        sayRef.current("EV has today's Instagram content ready for your approval.");
+      } else if (kind === "published") sayRef.current("Today's content is published on Instagram.");
+      else if (kind === "publish_error" && p?.publishError) sayRef.current(`It's approved, but it isn't published yet. ${p.publishError}`);
     },
   });
   const dailyRef = useRef(daily); dailyRef.current = daily;
@@ -266,11 +230,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       speechRef.current.push(delta);
     },
     onAssistantComplete: (text) => {
-      // EV prepares content by presenting "CONTENT READY …" — that's the signal
-      // it's waiting for the user's approval before any external action.
-      if (evActiveRef.current && /content ready|awaiting (your )?approval|for your approval/i.test(text)) {
-        setEvAwaitingApproval(true);
-      }
       const stream = speechRef.current;
       speechRef.current = null;
       if (stream) stream.end();
@@ -283,29 +242,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       holdExecuting();
       if (t.status === "ok") turnTool.current = true;
       else if (!turnFailed.current) { turnFailed.current = true; motion.current?.anomaly(); }
-      if (!evActiveRef.current) return;
-      if (t.status === "error") { flashEv("error"); return; }
-      if (/waiting for (your )?approval|ready for (your )?approval|for your approval|is ready for your approval/i.test(t.summary)) {
-        setEvAwaitingApproval(true);
-      }
-      if (/✅|\bpublished\b|\bscheduled\b|\bapproved\b/i.test(t.summary)) {
-        setEvAwaitingApproval(false);
-        flashEv("success");
-      }
     },
     onNavigate,
     onOpenApp: (names) => { void openAppsRef.current("", names); },
     // A Magic Hour render still going — watched in the background, shown when done.
     onPendingMedia: (p) => watchRenderRef.current(p),
     onOpen: (url) => {
-      // An EV-generated image reveals as a liquid-glass message inside the EV
-      // dashboard rather than hijacking a tab.
-      if (evActiveRef.current && /\/api\/ev\/media\//.test(url)) {
-        setEvImage({ url });
-        flashEv("success");
-        return;
-      }
-      // Otherwise open it right here, in JARVIS's glass browser (never hijack
+      // Open it right here, in JARVIS's glass browser (never hijack
       // this tab, and no pop-up blocker in the way).
       let label = url;
       try { label = new URL(url).hostname.replace(/^www\./, ""); } catch { /* keep */ }
@@ -317,7 +260,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const renders = useRenderWatch({
     onReady: (r) => {
       const what = r.kind === "video" ? "video" : "image";
-      if (evActiveRef.current) { setEvImage({ url: r.url }); flashEv("success"); }
       const msg = `Your ${what} is ready${r.label ? ` — ${r.label}` : ""}.`;
       agentRef.current.appendLocalExchange("", msg, [{ url: r.url, label: r.kind === "video" ? "View video" : "View image" }], { note: true });
       sayRef.current(`Your ${what} is ready.`);
@@ -327,7 +269,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       sayRef.current(note);
     },
     onFailed: (r) => {
-      if (evActiveRef.current) flashEv("error");
       agentRef.current.appendLocalExchange("", `The ${r.kind} didn't render. ${r.error}`, undefined, { note: true });
       sayRef.current(`The ${r.kind} didn't render. ${r.error}`);
     },
@@ -423,28 +364,21 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Bringing ULTRON online.");
     setTimeout(() => router.push("/dashboard/ultron"), 3200);
   }, [router, voice, voiceStarted, launchingUltron]);
-  const launchDarwin = useCallback(() => {
-    motion.current?.activateAgent("DARWIN");
-    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Opening DARWIN. Lead systems online.");
-    setTimeout(() => router.push("/dashboard/darwin"), 1000);
+  // Every agent (DARWIN, RUBIN, EV, MIKE) opens as a chat. "Rubin, show today's
+  // follow-ups" opens RUBIN's chat and asks it straight away.
+  const openChat = useCallback((id: ChatAgentId, ask?: string) => {
+    const a = CHAT_AGENTS[id];
+    logActivity({ category: "agent", agent: a.name, action: `Opened ${a.name}`, importance: 1 });
+    if (id === "darwin" || id === "ev") motion.current?.activateAgent(id === "darwin" ? "DARWIN" : "EV");
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak(`Opening ${a.name}.`);
+    router.push(`/dashboard/chat/${id}${ask ? `?ask=${encodeURIComponent(ask)}` : ""}`);
   }, [router, voice, voiceStarted]);
-  const [mikeLaunch, setMikeLaunch] = useState(false);
-  const launchMike = useCallback(() => {
-    // MIKE takes over the trading-analysis interface: an iris opens onto MIKE's
-    // floor, then MIKE's own boot sequence runs.
-    logActivity({ category: "agent", agent: "MIKE", action: "Activated MIKE", importance: 1 });
-    setMikeLaunch(true);
-    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Activating MIKE.");
-    setTimeout(() => router.push("/dashboard/mike"), 1050);
-  }, [router, voice, voiceStarted]);
-  const [robinLaunch, setRobinLaunch] = useState(false);
-  const launchRobin = useCallback((cmd?: string) => {
-    // RUBIN takes over the sales command center; Rubin greets you once it's online.
-    // "Rubin, show today's follow-ups" opens Rubin and runs the command there.
-    logActivity({ category: "agent", agent: "RUBIN", action: "Activated RUBIN", importance: 1 });
-    setRobinLaunch(true);
-    setTimeout(() => router.push(`/dashboard/rubin${cmd ? `?cmd=${encodeURIComponent(cmd)}` : ""}`), 1000);
-  }, [router]);
+  const launchDarwin = useCallback(() => openChat("darwin"), [openChat]);
+  const launchMike = useCallback(() => openChat("mike"), [openChat]);
+  const launchRobin = useCallback((cmd?: string) => openChat("robin", cmd), [openChat]);
+  const openEv = useCallback(() => openChat("ev"), [openChat]);
+  /** EV's chat with TODAY'S CONTENT (the post + Reel waiting for your approval) open. */
+  const openEvToday = useCallback(() => router.push("/dashboard/chat/ev?today=1"), [router]);
   const openHumanoid = useCallback(() => {
     logActivity({ category: "agent", agent: "HUMANOID", action: "Opened Humanoid View", importance: 1 });
     setHumanoidPhase("in");
@@ -455,32 +389,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     setHumanoidPhase("out");
     if (voiceStarted && !voice.muted && voice.enabled) voice.speak("Returning to the normal interface.");
     setTimeout(() => setHumanoidPhase("off"), 900);
-  }, [voice, voiceStarted]);
-  const openEv = useCallback(() => {
-    logActivity({ category: "agent", agent: "EV", action: "Opened EV", importance: 1 });
-    motion.current?.activateAgent("EV");
-    evActiveRef.current = true;
-    setEvAwaitingApproval(false);
-    setEvCommand("");
-    setEvPhase("in");
-    // Opening EV shows TODAY'S CONTENT first, and EV says where it really stands.
-    const v = dailyRef.current.view;
-    if (v?.pkg) setEvToday(true);
-    const st = v?.pkg?.status;
-    if (st === "ready") dailyAskedAt.current = Date.now();
-    const line = st === "ready" ? "EV online. Today's content is ready. Would you like me to publish it?"
-      : v?.pkg && st !== "published" ? `EV online. ${v.spoken}`
-      : "EV online. Marketing systems ready.";
-    if (voiceStarted && !voice.muted && voice.enabled) voice.speak(line);
-    setTimeout(() => setEvPhase("active"), 1400);
-  }, [voice, voiceStarted]);
-  const closeEv = useCallback(() => {
-    evActiveRef.current = false;
-    setEvImage(null);
-    setEvToday(false);
-    setEvPhase("out");
-    if (voiceStarted && !voice.muted && voice.enabled) voice.speak("EV standing down. Back to JARVIS.");
-    setTimeout(() => setEvPhase("off"), 900);
   }, [voice, voiceStarted]);
 
   // Real weather → liquid-glass popup with a live animated scene.
@@ -555,7 +463,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
             const j = await r.json().catch(() => ({}));
             const d = j?.data;
             if (!r.ok || !d) { reply(j?.error || "I couldn't reach my memory just now — say it again in a moment."); return; }
-            if (!d.handled) { agent.send(t, evActiveRef.current ? { agent: "ev" } : undefined); return; }
+            if (!d.handled) { agent.send(t); return; }
             if (d.kind === "list" && d.memories?.length) {
               agent.appendLocalExchange(t, `${d.message}\n\n${(d.memories as string[]).map((m) => `• ${m}`).join("\n")}`);
               if (voiceStarted && !voice.muted && voice.enabled) voice.speak(d.message);
@@ -629,53 +537,40 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
       if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) { sleep(); return; }
 
-      // ===== EV marketing agent =====
-      // Deactivate first (only meaningful while EV is active).
-      if (evActiveRef.current &&
-          (/\b(close|exit|deactivate|shut ?down)\s+ev\b|\bback to jarvis\b|\bev[,\s]+(stand down|close|exit)\b/.test(low) || /^(close|exit)[\s!.,]*$/.test(low))) {
-        closeEv();
-        return;
-      }
-      // Activate EV.
-      if (evPhase === "off" &&
-          (/\b(activate|open|start|launch|bring up|switch to|go to)\s+ev\b|\bev\s+mode\b|^ev[\s!.,]*$/.test(low))) {
+      // ===== EV marketing agent: "open EV", "activate EV" → EV's chat =====
+      if (/\b(activate|open|start|launch|bring up|switch to|go to)\s+ev\b|\bev\s+mode\b|^ev[\s!.,]*$/.test(low)) {
         openEv();
         return;
       }
-      // ===== EV daily content (TODAY'S CONTENT) =====
+      // ===== EV daily content (TODAY'S CONTENT) — approve / reject by voice from here =====
       const dc = parseDailyCommand(t);
       const dv = dailyRef.current.view;
       const dp = dv?.pkg ?? null;
       const mentionsToday = /\btoday'?s?\b|\bdaily\b/.test(low);
-      if (dc && !evImageRef.current && (evActiveRef.current || mentionsToday)) {
+      if (dc && mentionsToday) {
         const recentlyAsked = Date.now() - dailyAskedAt.current < 3 * 60_000;
-        const panel = evActiveRef.current && evToday;
         const run = (a: DailyUiAction) => {
-          if (!evActiveRef.current) openEv();
-          setEvToday(true);
           void dailyRef.current.act(a).then((r) => {
-            if (!r.ok) flashEv("error");
             agent.appendLocalExchange(t, r.message);
             sayRef.current(r.message);
           });
         };
         if (dc.action === "show" || dc.action === "status") {
-          if (!evActiveRef.current) openEv();
-          setEvToday(true);
-          if (dc.action === "status" || evActiveRef.current) { const line = dv?.spoken ?? "Loading today's content."; agent.appendLocalExchange(t, line); sayRef.current(line); }
+          if (dc.action === "status") { const line = dv?.spoken ?? "Loading today's content."; agent.appendLocalExchange(t, line); sayRef.current(line); }
+          else openEvToday();
           if (dp?.status === "ready") dailyAskedAt.current = Date.now();
           return;
         }
         if (dc.action === "decline" && recentlyAsked && dp?.status === "ready") {
           dailyAskedAt.current = 0;
-          reply("Okay — I'll keep it ready. Say \"publish it\" whenever you want.");
+          reply("Okay — I'll keep it ready. Say \"publish today's content\" whenever you want.");
           return;
         }
         if (dc.action === "approve" && dp && (!dc.weak || recentlyAsked)) {
           if (dp.status === "ready" || (dp.status === "approved" && dp.publishError)) { dailyAskedAt.current = 0; run({ action: "approve" }); return; }
-          if (panel || mentionsToday) { reply(dv!.spoken); return; }
+          reply(dv!.spoken); return;
         }
-        if (dp && (panel || mentionsToday || recentlyAsked)) {
+        if (dp) {
           switch (dc.action) {
             case "reject": case "regenerate": case "another": case "video": case "retry":
               run({ action: dc.action }); return;
@@ -685,27 +580,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
               run({ action: "tone", tone: dc.tone, instruction: dc.instruction }); return;
           }
         }
-        if (!dp && dv && (dc.action === "approve" || mentionsToday) && !("weak" in dc && dc.weak)) {
-          if (!evActiveRef.current) openEv();
-          setEvToday(true);
-          reply(dv.spoken);
-          return;
-        }
-      }
-      // "publish" with an EV image on screen → post THAT image + caption to
-      // Instagram directly (your words are the approval), no model round-trip.
-      if (evActiveRef.current && evImageRef.current && EV_PUBLISH_RE.test(low) && !EV_NEW_CONTENT_RE.test(low.replace(/caption.*$/, ""))) {
-        setEvCommand(t);
-        setEvCaptionOverride(captionFromCommand(t));
-        setEvPublishSignal((n) => n + 1);
-        return;
-      }
-      // While EV is active, everything else goes to EV's marketing brain.
-      if (evActiveRef.current) {
-        setEvCommand(t);
-        setEvAwaitingApproval(false);
-        agent.send(t, { agent: "ev" });
-        return;
+        if (!dp && dv && !("weak" in dc && dc.weak)) { reply(dv.spoken); return; }
       }
 
       // Humanoid View mode switch (works from either mode).
@@ -768,14 +643,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         return;
       }
       // "open that link", "open the second link" → a link already in the chat.
-      const ref = evActiveRef.current ? null : parseOpenLinkRef(t);
+      const ref = parseOpenLinkRef(t);
       if (ref) {
         const link = pickLink(agent.messages, ref);
         if (link) openWebRef.current(t, { url: link.url, label: link.label.replace(/^Open\s+/i, "") });
         else { const msg = "There's no link in our conversation yet — tell me the site or paste the address."; agent.appendLocalExchange(t, msg); sayRef.current(msg); }
         return;
       }
-      const apps = evActiveRef.current ? null : parseOpenApp(t);
+      const apps = parseOpenApp(t);
       if (apps) {
         const strong = !/^\s*(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:start|run)\b/i.test(t);
         void openAppsRef.current(t, apps, { strong, fallback: () => agent.send(t) });
@@ -784,7 +659,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // "Open Amazon", "go to youtube.com", "search Flipkart for shoes" → open the
       // site right now, while the keypress/click still allows a new tab (an AI
       // round trip first — especially on the PC brain — gets it pop-up-blocked).
-      const site = evActiveRef.current ? null : parseOpenSite(t, { india: inIndia() });
+      const site = parseOpenSite(t, { india: inIndia() });
       if (site) {
         openWebRef.current(t, site);
         return;
@@ -801,8 +676,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         return;
       }
       // Time, date and plain arithmetic are answered right here — instantly,
-      // with no AI round trip (EV keeps its own conversation).
-      const instant = evActiveRef.current ? null : instantAnswer(t);
+      // with no AI round trip.
+      const instant = instantAnswer(t);
       if (instant) {
         agent.appendLocalExchange(t, instant);
         if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(instant); } catch { /* ignore */ } }
@@ -810,7 +685,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchUltron, launchDarwin, launchMike, launchRobin, openHumanoid, closeHumanoid, openEv, closeEv, evPhase, evToday, flashEv, voice, voiceStarted]);
+  }, [agent, sleep, launchUltron, launchDarwin, launchMike, launchRobin, openHumanoid, closeHumanoid, openEv, openEvToday, voice, voiceStarted]);
 
   // Voice was on in the agent you just left → switch it back on here.
   const resumingVoice = useResumeVoice(enableVoice);
@@ -850,31 +725,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (voice.status === "listening") return "listening";
     return "idle";
   })();
-
-  // EV operating state — derived from the SAME real voice + agent signals.
-  const evState: EvState = (() => {
-    if (evPulse === "error" || voice.status === "denied" || voice.status === "error") return "ERROR";
-    if (evPulse === "success") return "SUCCESS";
-    if (evAwaitingApproval && !agent.streaming) return "WAITING_FOR_APPROVAL";
-    if (agent.streaming) {
-      const act = agent.activity[0];
-      if (act?.kind === "tool") return "EXECUTING";
-      if (/content|idea|caption|reel|post|story|\bad\b|draft|writ|generat/i.test(act?.label ?? "")) return "GENERATING";
-      return "THINKING";
-    }
-    if (voice.status === "speaking") return "GENERATING";
-    if (voice.status === "recording" || voice.status === "listening") return "LISTENING";
-    if (voice.status === "processing") return "THINKING";
-    return "IDLE";
-  })();
-  const evActivity = agent.streaming
-    ? (agent.activity[0]?.label ?? "Thinking…")
-    : evState === "WAITING_FOR_APPROVAL" ? "Waiting for approval…"
-    : evState === "LISTENING" ? "Listening…"
-    : evState === "SUCCESS" ? "Done."
-    : evState === "ERROR" ? "Something went wrong."
-    : voice.status === "speaking" ? "Speaking…"
-    : "Idle";
 
   async function enableVoice() { const ok = await voice.init(); if (ok) setVoiceStarted(true); return ok; }
   const focusCommand = useCallback((prefill?: string) => {
@@ -932,7 +782,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     if (!intro.done) return;
     const key = `jarvis.briefing.${yesterdayIn(browserTz())}`;
     try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch { /* private mode: still brief */ }
-    const t = setTimeout(() => { if (evPhase === "off" && humanoidPhase === "off") void openBriefing(); }, 700);
+    const t = setTimeout(() => { if (humanoidPhase === "off") void openBriefing(); }, 700);
     return () => clearTimeout(t);
   }, [intro.done]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -941,7 +791,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     const t = input.trim(); if (!t) return;
     // The command dissolves into particles that fly up into the environment.
     const rect = inputRef.current?.getBoundingClientRect();
-    if (rect && evPhase === "off" && humanoidPhase === "off") motion.current?.commandToParticles(t, rect);
+    if (rect && humanoidPhase === "off") motion.current?.commandToParticles(t, rect);
     setInput("");
     // Route typed commands through the same handler as voice, so "open ULTRON",
     // "read my screen", "go to sleep" etc. trigger their shortcuts too.
@@ -983,8 +833,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const lastUserMsg = [...agent.messages].reverse().find((m) => m.role === "user");
   const subtitle = lastAssistant?.content ?? "";
   const subtitleLinks = lastAssistant?.links ?? [];
-  // The caption under a creative on EV's screen is EV's own words — never a note like "your video is ready".
-  const evCaption = evImage ? ([...agent.messages].reverse().find((m) => m.role === "assistant" && !m.note)?.content ?? "") : subtitle;
   const hasMessages = agent.messages.length > 0;
 
   // ================= what the motion OS shows =================
@@ -1021,7 +869,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const kineticFinal: { word: string | null; style: KineticStyle } = jState === "speaking" && !buildLabel ? { word: "SPEAKING", style: "wave" } : kinetic;
   const opLabel = agent.streaming && latest?.kind === "activity" && !/understanding request/i.test(latest.label) ? latest.label : "";
 
-  const panelOpen = evPhase === "off" && !!(subtitle || subtitleLinks.length) && lastAssistant?.id !== dismissedId;
+  const panelOpen = !!(subtitle || subtitleLinks.length) && lastAssistant?.id !== dismissedId;
 
   // pointer → parallax / reflections on every glass layer
   const ptrRaf = useRef(0);
@@ -1059,14 +907,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     return () => window.removeEventListener("jarvis-gesture", on);
   }, []);
 
-  // Arriving with ?open=ev (swipe up from DARWIN or ULTRON) opens EV straight away.
-  const openEvRef = useRef(openEv); openEvRef.current = openEv;
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("open") !== "ev") return;
-    router.replace("/dashboard");
-    const t = setTimeout(() => { if (!evActiveRef.current) openEvRef.current(); }, 400);
-    return () => clearTimeout(t);
-  }, [router]);
 
   // ===== gestures → the same command router / actions as voice =====
   useGestureHandler((ev) => {
@@ -1091,53 +931,44 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         if (brief) closeBriefing();
         if (browserRef.current) setBrowser(null);
         if (weather) setWeather(null);
-        if (evActiveRef.current) closeEv();
         if (humanoidPhase !== "off") closeHumanoid();
         return "JARVIS";
       }
       case "approve": {
         if (pendingShutdown.current) return "SAY “YES” TO CONFIRM SHUTDOWN";
-        if (evActiveRef.current && evImageRef.current) { sendRef.current("publish it"); return "APPROVED · PUBLISHING"; }
-        if (dailyWaiting) { sendRef.current(evActiveRef.current ? "Approved" : "Approve today's content"); return "APPROVED"; }
-        if (evActiveRef.current && evAwaitingApproval) { sendRef.current("Approve it"); return "APPROVED"; }
+        if (dailyWaiting) { sendRef.current("Approve today's content"); return "APPROVED"; }
         return undefined;
       }
       case "reject": {
         if (pendingShutdown.current) { sendRef.current("no"); return "SHUTDOWN CANCELLED"; }
-        if (evActiveRef.current && evImageRef.current) { setEvImage(null); return "DISMISSED"; }
-        if (dp && (dp.status === "ready" || dp.status === "approved") && (evActiveRef.current || dailyWaiting)) {
-          sendRef.current(evActiveRef.current ? "Reject it" : "Reject today's content");
+        if (dp && dailyWaiting) {
+          sendRef.current("Reject today's content");
           return "REJECTED · NEW VERSION";
         }
-        if (evActiveRef.current && evAwaitingApproval) { sendRef.current("Reject it"); return "REJECTED"; }
         return undefined;
       }
       // open hand: → DARWIN, ← ULTRON, ↑ EV, ↓ RUBIN
       case "rubin": {
         if (brief) closeBriefing();
-        if (evActiveRef.current) closeEv();
         if (humanoidPhase !== "off") closeHumanoid();
         launchRobin();
         return "RUBIN";
       }
       case "darwin": {
         if (brief) closeBriefing();
-        if (evActiveRef.current) closeEv();
         if (humanoidPhase !== "off") closeHumanoid();
         launchDarwin();
         return "DARWIN";
       }
       case "ultron": {
         if (brief) closeBriefing();
-        if (evActiveRef.current) closeEv();
         if (humanoidPhase !== "off") closeHumanoid();
         launchUltron();
         return "ULTRON";
       }
       case "ev": {
-        if (evActiveRef.current) return "ALREADY IN EV";
         if (brief) closeBriefing();
-        if (humanoidPhase !== "off") { closeHumanoid(); setTimeout(openEv, 950); return "EV"; }
+        if (humanoidPhase !== "off") closeHumanoid();
         openEv();
         return "EV";
       }
@@ -1149,42 +980,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   return (
     <div ref={stageRef} onPointerMove={onStageMove} onClick={() => { if (!intro.done) motion.current?.skipIntro(); }}
       className="jarvis-os relative h-[calc(100dvh-4rem)] select-none overflow-hidden bg-[#020306] text-white">
-      {evPhase !== "off" && (
-        <EvView
-          state={evState}
-          activity={evActivity}
-          command={evCommand}
-          level={voice.level}
-          phase={evPhase === "in" ? "in" : evPhase === "out" ? "out" : "active"}
-          image={evImage}
-          caption={evCaption}
-          onDismissImage={() => setEvImage(null)}
-          publishSignal={evPublishSignal}
-          captionOverride={evCaptionOverride}
-          onPublishResult={(r) => {
-            flashEv(r.ok ? "success" : "error");
-            if (r.ok) setEvAwaitingApproval(false);
-            if (voiceStarted && !voice.muted && voice.enabled) voice.speak(r.message);
-          }}
-          onCommand={(t) => sendRef.current(t)}
-          input={input}
-          onInput={setInput}
-          onSubmit={() => handleSend()}
-          voiceStarted={voiceStarted}
-          muted={voice.muted}
-          onMic={() => (voiceStarted ? voice.toggleMute() : enableVoice())}
-          onSleep={sleep}
-          daily={daily}
-          todayOpen={evToday}
-          onToggleToday={setEvToday}
-          onDailyAction={(a) => {
-            void daily.act(a).then((r) => {
-              if (!r.ok) flashEv("error");
-              if (voiceStarted && !voice.muted && voice.enabled) voice.speak(r.message);
-            });
-          }}
-        />
-      )}
       {humanoidPhase !== "off" && (
         <HumanoidView
           userName={userName}
@@ -1228,18 +1023,16 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           onReplay={() => { void speakBriefing(true); }}
           onSkip={closeBriefing}
           onAsk={() => { closeBriefing(); focusCommand(""); }}
-          onOpenEv={() => { closeBriefing(); openEv(); setEvToday(true); }}
+          onOpenEv={() => { closeBriefing(); openEvToday(); }}
           onForget={(id) => { void forgetEvent(id); }}
         />
       )}
       {emails.current && <EmailComposePopup key={emails.current.id} email={emails.current} waiting={emails.waiting} onClose={emails.close} />}
-      {mikeLaunch && <MikeLaunchOverlay />}
-      {robinLaunch && <RobinLaunchOverlay />}
 
       {/* the living environment */}
       <JarvisMotion ref={motion} className="absolute inset-0" cssTarget={stageRef}
         state={jState} micLevel={voice.status === "recording" ? voice.level : 0} voiceLevel={voice.getOutputLevel}
-        paused={evPhase === "active" || humanoidPhase === "active"}
+        paused={humanoidPhase === "active"}
         onIntro={(p) => setIntro((s) => ({ ...s, [p]: true }))}
         onLayout={setLayout}
         onProcessing={() => setProcessing(true)}

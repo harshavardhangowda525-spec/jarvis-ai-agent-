@@ -80,10 +80,10 @@ export function AppShell({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // JARVIS, DARWIN and ULTRON are full-immersion screens — the nav rails fold
+  // JARVIS, ULTRON and the agent chats are full-immersion screens — the nav rails fold
   // away so the cinematic interface owns the whole viewport (JARVIS has its own
   // systems menu).
-  const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/chat") || pathname.startsWith("/dashboard/darwin") || pathname.startsWith("/dashboard/ultron") || pathname.startsWith("/dashboard/mike") || pathname.startsWith("/dashboard/rubin");
+  const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/chat") || pathname.startsWith("/dashboard/ultron");
 
   const name = user.displayName || user.email.split("@")[0];
 

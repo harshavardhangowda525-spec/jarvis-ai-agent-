@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Radar, X } from "lucide-react";
 import type { DarwinDailyView } from "@/lib/darwin/daily/run";
-import { DailyReportModal } from "./darwin/daily-target";
+import { DailyReportModal } from "./darwin-daily-report";
 
 /**
  * JARVIS side of DARWIN's daily search: keeps an unfinished run moving while

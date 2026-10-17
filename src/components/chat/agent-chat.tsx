@@ -7,6 +7,7 @@ import { CHAT_AGENTS, type ChatAgent, type ChatAgentId } from "@/lib/agents/cata
 import { Markdown } from "./markdown";
 import { VoiceMode } from "./voice-mode";
 import { capturePhrase, transcribe } from "@/components/island/voice";
+import { TodayContent, useDailyContent } from "@/components/console/ev/today-content";
 
 /**
  * The chat screen every agent except JARVIS uses (JARVIS keeps its own
@@ -43,6 +44,8 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
   const [voice, setVoice] = useState(false);
   const [dictating, setDictating] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  // EV: TODAY'S CONTENT (the day's post + Reel waiting for your approval)
+  const [today, setToday] = useState(() => agent.id === "ev" && params.get("today") === "1");
   const [me, setMe] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const activeRef = useRef<string | null>(null); activeRef.current = activeId;
@@ -164,6 +167,16 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
   }, [agent.id, loadList]);
 
   const sendRef = useRef(send); sendRef.current = send;
+
+  // "Rubin, show today's follow-ups" from JARVIS opens this chat with ?ask=… — asked once, straight away
+  const asked = useRef(false);
+  useEffect(() => {
+    const q = params.get("ask")?.trim();
+    if (!q || asked.current) return;
+    asked.current = true;
+    router.replace(`/dashboard/chat/${agent.id}`);
+    void sendRef.current(q);
+  }, [params, router, agent.id]);
   const onAsk = useCallback((t: string, d: (s: string) => void) => sendRef.current(t, d), []);
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
@@ -246,10 +259,11 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
       {side && <button type="button" className="ac-scrim" aria-label="Close menu" onClick={() => setSide(false)} />}
 
       <section className="ac-main">
+        {today && <EvToday onClose={() => setToday(false)} />}
         <header className="ac-head">
           <button type="button" className="ac-menu" onClick={() => setSide((s) => !s)} aria-label="Chats and agents" aria-expanded={side}><Burger /></button>
           <div className="ac-title"><b>{agent.name}</b><span>{agent.role}</span></div>
-          {agent.console && <Link href={agent.console} className="ac-console">Open console</Link>}
+          {agent.id === "ev" && <button type="button" className="ac-console" onClick={() => setToday(true)}>Today&apos;s content</button>}
           <span className="ac-avatar" style={{ background: agent.color }} aria-hidden>{agent.name[0]}</span>
         </header>
 
@@ -352,11 +366,13 @@ const AC_CSS = `
 .ac-hist li:hover .del, .ac-hist .del:focus-visible { opacity: 1; }
 .ac-hist .mut { padding: 8px 10px; font-size: 13px; color: #64748b; }
 .ac-scrim { display: none; }
-.ac-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ac-main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
 .ac-head { display: flex; align-items: center; gap: 12px; padding: 12px 18px; }
 .ac-menu { display: none; background: none; border: 0; color: #e2e8f0; cursor: pointer; padding: 6px; }
 .ac-title { flex: 1; display: flex; align-items: baseline; gap: 10px; min-width: 0; } .ac-title b { font-size: 16px; letter-spacing: .06em; } .ac-title span { font-size: 13px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ac-console { font-size: 12.5px; color: #93c5fd; text-decoration: none; padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(96,165,250,.35); }
+.ac-today { position: absolute; inset: 0; z-index: 30; background: #05040d; }
+.ac-console { background: none; font: inherit; font-size: 12.5px; cursor: pointer; }
 .ac-console:hover { background: rgba(37,99,235,.15); }
 .ac-avatar { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: #fff; box-shadow: 0 0 0 3px rgba(37,99,235,.2); }
 .ac-thread { flex: 1; overflow: auto; }
@@ -417,3 +433,9 @@ const AC_CSS = `
 }
 @media (prefers-reduced-motion: reduce) { .ac-dots i { animation: none; } .ac-side { transition: none; } }
 `;
+
+/** EV's TODAY'S CONTENT over the chat: approve, reject or change today's post + Reel. Nothing is published without your approval. */
+function EvToday({ onClose }: { onClose: () => void }) {
+  const daily = useDailyContent();
+  return <div className="ac-today"><TodayContent daily={daily} onAction={(a) => { void daily.act(a); }} onClose={onClose} /></div>;
+}

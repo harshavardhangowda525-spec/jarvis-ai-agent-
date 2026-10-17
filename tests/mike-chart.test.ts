@@ -78,8 +78,8 @@ describe("pull up the chart", () => {
     globalThis.fetch = (async () => Response.json(binanceJson(c))) as typeof fetch;
     const tool = availableTools("mike").find((t) => t.name === "mike_chart")!;
     const r = await tool.execute({ asset: "ethereum", timeframe: "4h" } as never, { userId: "u", timezone: "UTC", activity: () => {} });
-    const d = r.data as { navigate: string; data: string; lastPrice: string };
-    expect(d.navigate).toBe("/dashboard/mike?chart=ETHUSDT&tf=4h");
+    const d = r.data as { navigate?: string; data: string; lastPrice: string };
+    expect(d.navigate).toBeUndefined(); // no MIKE screen to open — the price comes back in the chat
     expect(d.data).toBe("LIVE");
     expect(r.summary).toMatch(/Chart: .*4H · LIVE/);
   });
