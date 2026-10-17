@@ -8,6 +8,8 @@
     "local": "node scripts/local.mjs",
     "searxng": "node scripts/searxng.mjs",
     "rubin": "node scripts/rubin.mjs",
+    "darwin:check": "tsx scripts/darwin-check.ts",
+    "storage": "node scripts/storage-report.mjs",
     "ev:check-video": "node scripts/magichour-check.mjs",
     "use:ollama": "node scripts/switch-provider.mjs ollama",
     "use:groq": "node scripts/switch-provider.mjs groq",

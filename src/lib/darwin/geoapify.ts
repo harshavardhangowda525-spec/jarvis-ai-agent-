@@ -1,5 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
+import { fetchJson, ProviderHttpError, type ProviderState } from "./providers/http";
 
 /**
  * Geoapify client for DARWIN. Server-side only — the API key never reaches the
@@ -13,7 +14,7 @@ const BASE = "https://api.geoapify.com";
 export type GeoapifyErrorKind = "no_key" | "auth" | "rate_limit" | "bad_request" | "not_found" | "network";
 
 export class GeoapifyError extends Error {
-  constructor(message: string, public kind: GeoapifyErrorKind) {
+  constructor(message: string, public kind: GeoapifyErrorKind, public state: ProviderState = "provider_error") {
     super(message);
     this.name = "GeoapifyError";
   }
@@ -24,27 +25,28 @@ export function geoapifyHttpStatus(kind: GeoapifyErrorKind): number {
   return { no_key: 503, auth: 502, rate_limit: 429, bad_request: 400, not_found: 404, network: 502 }[kind];
 }
 
+/** What to tell the user for each provider state (no key value is ever included). */
+const GEO_MESSAGE: Partial<Record<ProviderState, string>> = {
+  rate_limited: "Geoapify rate limit reached — DARWIN stopped searching. Wait a minute, then try again.",
+  quota_exhausted: "Geoapify's quota for this API key is used up (the free plan resets daily) — DARWIN stopped searching. Try again after the reset, or upgrade the Geoapify plan.",
+  billing_required: "Geoapify needs billing set up on this account before it answers — check myprojects.geoapify.com.",
+  auth_failed: "Geoapify rejected the API key. Check GEOAPIFY_API_KEY (myprojects.geoapify.com → your project → API keys).",
+  unreachable: "Couldn't reach Geoapify (no answer after retrying). Check the internet connection and try again.",
+};
+
 async function call(url: string): Promise<any> {
-  let res: Response;
   try {
-    res = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) });
-  } catch {
-    throw new GeoapifyError("Couldn't reach Geoapify. Check the internet connection and try again.", "network");
+    // retries network drops, timeouts, 5xx and short rate limits with backoff; never a used-up quota or a bad key
+    return await fetchJson(url, { provider: "Geoapify", timeoutMs: 20_000, attempts: 3 });
+  } catch (e) {
+    if (!(e instanceof ProviderHttpError)) throw e;
+    const kind: GeoapifyErrorKind = e.state === "rate_limited" ? "rate_limit"
+      : e.state === "auth_failed" || e.state === "quota_exhausted" || e.state === "billing_required" ? "auth"
+      : e.state === "unreachable" ? "network"
+      : e.status === 400 ? "bad_request" : "network";
+    const msg = GEO_MESSAGE[e.state] ?? `Geoapify error: ${e.message.replace(/^Geoapify:\s*/, "")}`;
+    throw new GeoapifyError(msg, kind, e.state);
   }
-  const json: any = await res.json().catch(() => ({}));
-  if (res.status === 429) {
-    throw new GeoapifyError("Geoapify rate limit reached — DARWIN stopped searching. Wait a minute (or until your daily quota resets), then try again.", "rate_limit");
-  }
-  if (res.status === 401 || res.status === 403 || res.status === 402) {
-    throw new GeoapifyError(res.status === 402
-      ? "Geoapify's quota for this API key is used up — it resets daily (or upgrade the Geoapify plan)."
-      : "Geoapify rejected the API key. Check GEOAPIFY_API_KEY.", "auth");
-  }
-  if (!res.ok) {
-    const detail = String(json?.message || json?.error || `HTTP ${res.status}`).slice(0, 200);
-    throw new GeoapifyError(`Geoapify error: ${detail}`, res.status === 400 ? "bad_request" : "network");
-  }
-  return json;
 }
 
 // ---- location ----------------------------------------------------------------

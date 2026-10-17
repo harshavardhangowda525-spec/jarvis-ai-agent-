@@ -73,6 +73,7 @@ const byPriority = (a: GeoLead, b: GeoLead) =>
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
 export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
+  const t0 = Date.now();
   const key = env.geoapifyApiKey;
   if (!key) throw new GeoapifyError("Geoapify API key is not configured — add GEOAPIFY_API_KEY to .env.local (on this PC; restart npm run local) or to the Vercel environment variables (online), then try again.", "no_key");
   const db = getDb();
@@ -125,6 +126,9 @@ export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
   const seenAgainFps = new Set<string>();
   let skippedDuplicates = 0;
   let filteredOut = 0;
+  /** Every business the provider returned in this run (before filters and dedup). */
+  let discovered = 0;
+  const providerErrors: string[] = [];
 
   // 1) qualifying leads found last time but not shown yet
   for (const b of ((cursor.backlog as unknown as GeoLead[]) ?? [])) {
@@ -152,10 +156,11 @@ export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
       ({ features } = await searchPlaces({ center, radiusM: radii[radiusStep], plan, limit: PAGE_SIZE, offset, key }));
       requests++;
     } catch (e) {
-      if (e instanceof GeoapifyError && e.kind === "rate_limit") { stoppedReason = "rate_limit"; rateLimitMessage = e.message; break; }
+      if (e instanceof GeoapifyError && e.kind === "rate_limit") { stoppedReason = "rate_limit"; rateLimitMessage = e.message; providerErrors.push(e.message); break; }
       throw e;
     }
 
+    discovered += features.length;
     const fresh: GeoLead[] = [];
     for (const f of features) {
       const l = mapFeature(f, center, plan);
@@ -249,6 +254,9 @@ export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
   return {
     leads: created.map(toLeadDTO),
     newCount: created.length,
+    discovered,
+    providerErrors,
+    runtimeMs: Date.now() - t0,
     skippedDuplicates,
     filteredOut,
     exhausted,

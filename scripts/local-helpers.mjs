@@ -1,6 +1,8 @@
 /**
  * Small pieces of `npm run local` that are worth testing on their own.
  */
+import fs from "node:fs";
+import path from "node:path";
 import { spawnSync } from "node:child_process";
 export { retireOldUltronProvider } from "../edith/src/stale-provider.mjs";
 
@@ -152,4 +154,34 @@ export function resolveKeys(sources, keys) {
     }
   }
   return { values, from, misnamed, hidden };
+}
+
+/**
+ * Bytes used by a file or folder (symlinks not followed). Missing → 0.
+ * @param {string} p
+ * @returns {number}
+ */
+export function dirSize(p) {
+  let st;
+  try { st = fs.lstatSync(p); } catch { return 0; }
+  if (!st.isDirectory()) return st.size;
+  let total = 0;
+  let entries = [];
+  try { entries = fs.readdirSync(p); } catch { return 0; }
+  for (const e of entries) total += dirSize(path.join(p, e));
+  return total;
+}
+
+/**
+ * Next.js keeps every build's webpack cache in .next/cache/webpack and never
+ * trims it — it grows past 1 GB. It's only a speed-up (rebuilt on demand), so
+ * past `maxBytes` it's cleared. Returns the bytes freed (0 = under the limit).
+ * @param {string} root
+ * @param {number} [maxBytes]
+ */
+export function pruneBuildCache(root, maxBytes = 400 * 1024 * 1024) {
+  const dir = path.join(root, ".next", "cache", "webpack");
+  const size = dirSize(dir);
+  if (size <= maxBytes) return 0;
+  try { fs.rmSync(dir, { recursive: true, force: true }); return size; } catch { return 0; }
 }

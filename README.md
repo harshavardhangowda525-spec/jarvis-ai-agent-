@@ -862,6 +862,48 @@ If the camera can't be used (permission blocked, no camera, in use elsewhere,
 unplugged), the tracker says why and offers **Try again**. Everything else keeps
 working.
 
+## Check DARWIN's lead sources (`npm run darwin:check`)
+
+A key being set doesn't prove it works. This command checks DARWIN's sources
+with one small real request each and then runs a real search end to end:
+
+```
+npm run darwin:check -- --category gyms --location "Indiranagar, Bengaluru" --count 5
+```
+
+1. **Provider health:** each source shows Ready, Authentication failed, Rate
+   limited, Quota exhausted, Billing required, Provider error, Unreachable or
+   Not configured, with what to do. Key values are never printed.
+2. **A real search:** businesses discovered, new leads saved, duplicates
+   skipped, filtered out, provider errors and runtime.
+3. **A reconnect:** the saved leads are read back with a fresh database
+   connection and compared field by field.
+4. **Duplicates:** confirms no business is stored twice.
+
+It says PASSED only when real businesses were retrieved, saved and read back.
+Add `--health-only` to skip the search, or `--email you@example.com` if there
+is more than one account. The same health check is available signed in at
+`/api/darwin/health` (`?fresh=1` to check again now).
+
+Geoapify's data comes from OpenStreetMap, so many small businesses have no
+phone or website listed. A missing website is shown as unknown, not "no
+website". DARWIN's daily run confirms it with Google Places or a web search
+(`GOOGLE_PLACES_API_KEY`, `SEARXNG_URL`, `BRAVE_SEARCH_API_KEY`,
+`SEARCH_API_KEY` or `SERPER_API_KEY`).
+
+## How much disk JARVIS uses (`npm run storage`)
+
+`npm run storage` measures what JARVIS and each agent use on this PC, by
+category (dependencies, build, cache, models, logs), and lists the database
+tables by agent. `npm run storage -- --clean` clears the only thing that's safe
+to clear, the Next.js build cache, and shows the size before and after.
+
+Growth is bounded:
+- `npm run local` clears the build cache when it passes 400 MB (it was the
+  largest item, at about 900 MB);
+- RUBEN's log stops at 512 KB plus one old file;
+- ULTRON's audit log rolls over at 2 MB.
+
 ## DARWIN daily lead search
 
 Every day, DARWIN searches on its own for **50 new, real businesses with no

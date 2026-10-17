@@ -68,7 +68,7 @@ export async function GET() {
 
     const sources = listSources().map((s) => ({ ...s }));
     const hasData = leads.length > 0;
-    const hasConnectedDiscovery = sources.some((s) => s.kind === "api" && s.connected);
+    const hasConnectedDiscovery = sources.some((s) => s.role === "discovery" && s.connected);
 
     return ok({
       hasData,

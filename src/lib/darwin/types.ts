@@ -55,6 +55,12 @@ export interface LeadDTO {
 export interface FindLeadsResult {
   leads: LeadDTO[];
   newCount: number;
+  /** Businesses the provider returned in this run, before filters and dedup. */
+  discovered: number;
+  /** Provider failures that cut the run short (rate limit …) — empty when none. */
+  providerErrors: string[];
+  /** Wall-clock time of the whole run. */
+  runtimeMs: number;
   /** Returned by Geoapify but already in DARWIN's history — not shown again. */
   skippedDuplicates: number;
   /** Returned but not matching the filter / category. */

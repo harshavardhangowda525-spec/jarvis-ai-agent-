@@ -1,4 +1,5 @@
 import "server-only";
+import { classify, STATE_LABEL } from "@/lib/darwin/providers/http";
 import fs from "node:fs";
 import path from "node:path";
 import { getDb } from "@/lib/db";
@@ -154,7 +155,23 @@ export function plan(userId: string, probe: ClientProbe, deps: DiagnosticDeps): 
   add("agents", "ev", "Failures (24 h)", () => failures24h(userId, AGENT_LOG_NAME.ev, deps.now()));
 
   add("agents", "darwin", "DARWIN brain", () => brainChain("darwin", userId));
-  add("agents", "darwin", "Business listings (Geoapify)", async () => (env.geoapifyApiKey ? ok("configured") : fail("GEOAPIFY_API_KEY isn't set — DARWIN can't search")));
+  // a key being set isn't proof it works: one real geocode request checks the key and the quota
+  add("agents", "darwin", "Business listings (Geoapify)", async () => {
+    if (!env.geoapifyApiKey) return fail("GEOAPIFY_API_KEY isn't set — DARWIN can't search");
+    const t0 = deps.now();
+    try {
+      const res = await deps.fetch(`https://api.geoapify.com/v1/geocode/search?text=Bengaluru&limit=1&format=json&apiKey=${encodeURIComponent(env.geoapifyApiKey)}`, { signal: AbortSignal.timeout(7000), cache: "no-store" });
+      const ms = deps.now() - t0;
+      if (res.ok) return ok(`key accepted · ${ms} ms`);
+      const state = classify(res.status, await res.text().catch(() => ""));
+      if (state === "rate_limited") return warn(`rate-limited right now (HTTP ${res.status})`);
+      if (state === "quota_exhausted") return fail(`today's Geoapify quota is used up (HTTP ${res.status}) — it resets daily`);
+      if (state === "auth_failed") return fail(`rejected GEOAPIFY_API_KEY (HTTP ${res.status})`);
+      return warn(`${STATE_LABEL[state].toLowerCase()} (HTTP ${res.status})`);
+    } catch (e) {
+      return fail((e as Error)?.name === "TimeoutError" ? "didn't answer within 7 s" : "unreachable");
+    }
+  });
   add("agents", "darwin", "Verification search", async () => {
     const ps = configuredProviders().map((p) => p.label);
     const g = env.googlePlacesApiKey ? "Google Places" : null;

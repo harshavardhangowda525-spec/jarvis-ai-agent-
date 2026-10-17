@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys, prismaClientMatches, resolveKeys } from "./local-helpers.mjs";
+import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys, prismaClientMatches, resolveKeys, pruneBuildCache } from "./local-helpers.mjs";
 import { ensureSecret, searxngAnswers, startDocker } from "./searxng.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -267,6 +267,9 @@ if (!built || (head && stamp !== head) || process.argv.includes("--rebuild")) {
     await new Promise((r) => setTimeout(r, 2000));
   }
   await prismaGenerate();
+  // the build cache only speeds builds up — keep it bounded instead of letting it reach gigabytes
+  const freed = pruneBuildCache(ROOT);
+  if (freed) say(`  Cleared the old build cache (${Math.round(freed / 1024 / 1024)} MB) — this build takes a little longer.`);
   runStep("Building JARVIS (a few minutes the first time, and after each update)", `node scripts/copy-vision-assets.mjs && "${process.execPath}" "${path.join(ROOT, "node_modules", "next", "dist", "bin", "next")}" build`, ROOT);
   if (head) fs.writeFileSync(stampFile, head);
 }

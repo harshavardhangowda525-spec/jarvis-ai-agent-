@@ -1,11 +1,14 @@
 /**
  * Append-only audit log + lightweight project/task memory, persisted to disk
- * (JSONL / JSON) under the workspace's .edith/ folder. Real events only.
+ * (JSONL / JSON) under the workspace's .edith/ folder. Real events only. The
+ * audit log is capped at 2 MB plus one previous file.
  */
 import fs from "node:fs";
 import path from "node:path";
 
 export class Audit {
+  static MAX_BYTES = 2 * 1024 * 1024;
+
   constructor(ws) {
     this.dir = path.join(ws.root, ".edith");
     fs.mkdirSync(this.dir, { recursive: true });
@@ -15,7 +18,11 @@ export class Audit {
 
   record(event) {
     const line = JSON.stringify({ at: new Date().toISOString(), ...event });
-    try { fs.appendFileSync(this.logFile, line + "\n"); } catch { /* never break the run */ }
+    try {
+      // bounded: past 2 MB the log becomes audit.jsonl.old (one previous file kept)
+      if (fs.existsSync(this.logFile) && fs.statSync(this.logFile).size > Audit.MAX_BYTES) fs.renameSync(this.logFile, this.logFile + ".old");
+      fs.appendFileSync(this.logFile, line + "\n");
+    } catch { /* never break the run */ }
   }
 
   loadMemory() {
