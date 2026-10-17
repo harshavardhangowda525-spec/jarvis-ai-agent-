@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { ReactorLogo, RobotFace, Chevrons, Waveform } from "@/components/hud/visuals";
 import { useClock } from "@/hooks/useDeviceMetrics";
 import { GestureProvider, useGesture } from "@/components/gesture/gesture-provider";
-import { Hand, VolumeX } from "lucide-react";
+import { Hand, VolumeX, Megaphone } from "lucide-react";
 import { isVoiceSilent, onVoiceSilent, setVoiceSilent } from "@/lib/voice/silence";
 import { useMutedWake } from "@/hooks/useMutedWake";
 
@@ -40,9 +40,11 @@ const NAV = [
   { href: "/dashboard", label: "Command Center", icon: Terminal },
   { href: "/dashboard/operator", label: "Operator", icon: MousePointerClick },
   { href: "/dashboard/ultron", label: "ULTRON", icon: Code2 },
-  { href: "/dashboard/darwin", label: "DARWIN", icon: Radar },
-  { href: "/dashboard/mike", label: "MIKE", icon: CandlestickChart },
-  { href: "/dashboard/rubin", label: "RUBIN", icon: Handshake },
+  // the agents open as chats (their full consoles are one click away inside the chat)
+  { href: "/dashboard/chat/darwin", label: "DARWIN", icon: Radar },
+  { href: "/dashboard/chat/robin", label: "RUBIN", icon: Handshake },
+  { href: "/dashboard/chat/ev", label: "EV", icon: Megaphone },
+  { href: "/dashboard/chat/mike", label: "MIKE", icon: CandlestickChart },
   { href: "/dashboard/memory", label: "AI Agents", icon: Bot },
   { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },
   { href: "/dashboard/settings", label: "Systems", icon: Server },
@@ -81,7 +83,7 @@ export function AppShell({
   // JARVIS, DARWIN and ULTRON are full-immersion screens — the nav rails fold
   // away so the cinematic interface owns the whole viewport (JARVIS has its own
   // systems menu).
-  const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/darwin") || pathname.startsWith("/dashboard/ultron") || pathname.startsWith("/dashboard/mike") || pathname.startsWith("/dashboard/rubin");
+  const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/chat") || pathname.startsWith("/dashboard/darwin") || pathname.startsWith("/dashboard/ultron") || pathname.startsWith("/dashboard/mike") || pathname.startsWith("/dashboard/rubin");
 
   const name = user.displayName || user.email.split("@")[0];
 

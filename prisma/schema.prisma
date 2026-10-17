@@ -103,6 +103,8 @@ model Conversation {
   id        String   @id @default(cuid())
   userId    String
   title     String   @default("New conversation")
+  /// Which agent the chat is with: jarvis | ev | darwin | mike | robin
+  agent     String   @default("jarvis")
   archived  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -111,6 +113,7 @@ model Conversation {
   messages Message[]
 
   @@index([userId, archived, updatedAt])
+  @@index([userId, agent, archived, updatedAt])
 }
 
 model Message {

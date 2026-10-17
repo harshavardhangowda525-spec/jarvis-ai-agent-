@@ -1572,6 +1572,34 @@ Env (all optional):
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
   `x-robin-timestamp`, and must be no more than 5 minutes old.
 
+## Chat with the agents (DARWIN, RUBIN, EV, MIKE)
+
+JARVIS stays voice-first in its own console. Every other agent now opens as a
+chat, like ChatGPT or Gemini: pick it in the left menu, or go to
+`/dashboard/chat/darwin`, `…/robin`, `…/ev` or `…/mike`.
+
+- **Replies stream in** as they're written, with Markdown: lists, tables, code
+  with **Copy**, and links. **Stop** halts a reply and keeps what was said;
+  **Retry** asks again; **Copy** copies the answer.
+- **History:** each agent keeps its own saved chats (left menu, **+ New chat**,
+  ✕ to delete). Existing chats stay JARVIS's.
+- **Same brain as before:** each agent uses its own instructions, tools and
+  permissions on the server (`/api/agent`). Sending emails or messages still
+  asks for your OK as it always did.
+- **Hand a result to another agent:** **Send to…** under an answer opens the
+  other agent's chat with it filled in. You read it and press Send, so nothing
+  moves between agents without you.
+- **Dictate:** the 🎤 button types what you say into the box.
+- **Voice mode:** the waveform button opens a full-screen conversation with a
+  glowing orb. The orb drifts when idle, breathes while listening, sparks while
+  thinking and ripples while speaking. It talks to the same chat and history.
+  Tap the orb to talk or to interrupt; **Mute** pauses listening; **End** or
+  Esc goes back.
+- **Voice needs a speech key:** `ELEVENLABS_API_KEY` or `GROQ_API_KEY`. Without
+  one, typing still works and voice mode says what's missing.
+- **The old consoles** (DARWIN's map, RUBIN's pipeline, MIKE's charts) are one
+  click away: **Open console** at the top of the chat.
+
 ## Starting on Windows by double-click
 
 In the `jarvis-ai-agent-` folder, double-click **`start-jarvis.cmd`** to start

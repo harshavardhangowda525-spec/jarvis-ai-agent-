@@ -52,7 +52,8 @@ export async function POST(req: NextRequest) {
       conversationId ? db.message.count({ where }) : 0,
     ]);
     const convo = found ?? await db.conversation.create({
-      data: { userId: user.id, title: truncate(message, 60) },
+      // a new chat belongs to the agent it was started with (its own history list)
+      data: { userId: user.id, title: truncate(message, 60), agent: agent && agent !== "jarvis" ? agent : "jarvis" },
     });
     const priorRows = found ? recentRows.reverse() : [];
     const history = priorRows.map((m) => ({
@@ -75,10 +76,15 @@ export async function POST(req: NextRequest) {
     const convoId = convo.id;
     const isNewConvo = !conversationId;
 
+    // Stop (the browser cancels the stream): end the agent's turn and keep what it had said
+    let cancelled = false;
+    let partial = "";
     const stream = new ReadableStream<Uint8Array>({
+      cancel() { cancelled = true; },
       async start(controller) {
         const send = (event: AgentEvent | { type: "meta"; conversationId: string }) => {
-          controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+          if (cancelled) return;
+          try { controller.enqueue(encoder.encode(JSON.stringify(event) + "\n")); } catch { cancelled = true; }
         };
 
         send({ type: "meta", conversationId: convoId });
@@ -101,6 +107,8 @@ export async function POST(req: NextRequest) {
             preferredProvider: (profile as { aiProvider?: string | null } | null)?.aiProvider ?? null,
             agent: agent === "ev" ? "ev" : agent === "darwin" ? "darwin" : agent === "mike" ? "mike" : agent === "robin" ? "robin" : undefined,
           })) {
+            if (cancelled) break;
+            if (event.type === "text") partial += event.delta;
             if (event.type === "done") finalText = event.text;
             if (event.type === "error") turnError = event.message;
             if (event.type === "tool") {
@@ -147,7 +155,7 @@ export async function POST(req: NextRequest) {
               conversationId: convoId,
               userId: user.id,
               role: "assistant",
-              content: finalText || "(no response)",
+              content: finalText || (cancelled && partial ? `${partial}\n\n_(stopped)_` : cancelled ? "_(stopped)_" : "(no response)"),
               toolResults: toolSummaries.length ? (toolSummaries as any) : undefined,
             },
           });
@@ -162,7 +170,7 @@ export async function POST(req: NextRequest) {
           console.error("[agent route] persist error:", e);
         }
 
-        controller.close();
+        if (!cancelled) { try { controller.close(); } catch { /* already closed */ } }
       },
     });
 

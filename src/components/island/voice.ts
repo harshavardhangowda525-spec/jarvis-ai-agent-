@@ -73,10 +73,10 @@ export async function transcribe(blob: Blob): Promise<{ text: string } | { error
 export interface Speech { level: () => number; done: Promise<void>; stop: () => void }
 
 /** RUBIN's voice (ElevenLabs via the server); falls back to the computer's own voice. */
-export function speak(text: string): Speech {
+export function speak(text: string, agent = "robin"): Speech {
   let level = 0, stopFn = () => {};
   const done = (async () => {
-    const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 600), agent: "robin" }) }).catch(() => null);
+    const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 600), agent }) }).catch(() => null);
     if (r?.ok && r.body) {
       const url = URL.createObjectURL(await r.blob());
       const audio = new Audio(url);
