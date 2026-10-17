@@ -53,9 +53,10 @@ export interface ToolDefinition<Input = unknown> {
   /**
    * Restricts this tool to a specific internal agent (EV = marketing,
    * DARWIN = lead-gen/CRM). Scoped tools only appear when that agent is active,
-   * so they never clutter the base JARVIS toolset. Omitted = available to all.
+   * so they never clutter the base JARVIS toolset. "jarvis" = JARVIS only
+   * (e.g. delegating work — agents can't delegate onwards). Omitted = all.
    */
-  agentScope?: "ev" | "darwin" | "mike" | "robin";
+  agentScope?: "ev" | "darwin" | "mike" | "robin" | "jarvis";
   /** Short label shown in the activity panel while running. */
   activityLabel: string;
   /**

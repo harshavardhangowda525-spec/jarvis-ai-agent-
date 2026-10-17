@@ -91,8 +91,12 @@ database lives on Neon (online), ~6 MB in the test copy.
 3. **Import the existing ~400-lead CRM (Lovable / Supabase)** — done: CSV
    import with preview, duplicate detection, status mapping, "already
    contacted" preserved, sample first; backups, restore and confirmed clearing.
-4. **JARVIS task delegation** — persistent task records (id, agent, status,
-   timestamps, result, errors), cancel/retry/recover.
+4. **JARVIS task delegation** — done: `delegate_task` writes a structured
+   brief for the right agent; AgentJob records (id, agent, status, timestamps,
+   progress, result, errors); server-side runner with leases (recovers after a
+   restart — verified by killing the server mid-task), cancel/retry/approve,
+   dependencies, completion only on the agent's confirmed acceptance points;
+   `/dashboard/jobs` and spoken announcements.
 5. **Daily marketing plan + teleprompter page** — Vercel Cron (runs with the
    laptop off), saved plans with a revocable share link, email notification.
 6. **ASTON** (website demos with previews) — a new agent; scope to agree.

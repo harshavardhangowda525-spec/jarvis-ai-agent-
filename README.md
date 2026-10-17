@@ -1622,6 +1622,51 @@ Env (all optional):
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
   `x-robin-timestamp`, and must be no more than 5 minutes old.
 
+## JARVIS delegates work to the agents (Agent tasks)
+
+Tell JARVIS what you want done, by voice or text, and it hands the work to the
+agent that can do it as a **tracked task**:
+
+- "Find 50 gyms in Bangalore without a website" goes to DARWIN.
+- "Prepare outreach for today's qualified leads" goes to RUBIN.
+- "Plan this week's Instagram posts" goes to EV.
+- "How is NIFTY looking this week?" goes to MIKE.
+
+**How it works**
+- **JARVIS writes a brief for the agent, not your sentence.** The brief covers:
+  - the objective and expected outcome;
+  - what's already known;
+  - requirements and constraints;
+  - the output, and checkable "done when" points;
+  - anything that needs your approval.
+
+  Defaults it assumed are marked as assumptions. Work for several agents
+  becomes one task each, chained in order: a later task waits for the earlier
+  ones and receives their results.
+- **Every task has an id and a record:** the agent, the status, when it was
+  created, started and finished, every real step, the result and any error.
+  Statuses: Assigned, Running, Waiting for approval, Completed, Failed,
+  Cancelled.
+- **"Completed" means proven:** the agent has to confirm every "done when"
+  point, with no failed step. A reply alone isn't enough, and anything else is
+  Failed, with the reason.
+- **It runs on the server,** using the agent's own brain and tools, so a refresh
+  or a closed tab doesn't lose it.
+  - If JARVIS restarts mid-task, the task is picked up and run again. It gives
+    up after 3 interruptions.
+  - `npm run local` also checks for waiting tasks every minute.
+- **Cancel, retry, approve:** cancel stops a running task at its next step and
+  keeps what it had. Retry runs a failed or cancelled task again with the same
+  brief. A task waiting for approval carries on once you approve it. Sending
+  messages, publishing and contacting anyone always waits for you.
+- **JARVIS announces each finished task once,** on screen and by voice, with a
+  link to its details. Active tasks show in a small card on JARVIS's screen.
+- **See everything at Agent tasks** (`/dashboard/jobs`, in the left menu or the
+  Systems menu): the brief, the progress with times, the result, and **Open in
+  the agent's chat** (each run is also saved as a chat in that agent's history).
+- **Ask JARVIS:** "how's the gym search going?", "what are the agents doing?",
+  "cancel that task", "retry it".
+
 ## DARWIN CRM — the one CRM
 
 There is one CRM, and DARWIN owns it. Open it in any of these ways:

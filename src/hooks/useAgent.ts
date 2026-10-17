@@ -31,6 +31,8 @@ interface UseAgentOptions {
   /** An email being sent (compose popup): "sending" with the email, then "sent"/"failed". */
   onEmail?: (e: { id: string; phase: "sending" | "sent" | "failed"; to?: string; subject?: string; body?: string; label?: string; gmailId?: string | null; error?: string }) => void;
   onNavigate?: (path: string) => void;
+  /** A task JARVIS delegated (it runs on the server; the caller starts and tracks it). */
+  onJob?: (j: { id: string; agent: string; title: string; status: string }) => void;
   onOpen?: (url: string) => void;
   /** Open installed desktop apps on this computer (via ULTRON). */
   onOpenApp?: (names: string[]) => void;
@@ -55,7 +57,7 @@ const nextId = () => `m${Date.now()}_${idc++}`;
  * and exposes messages, the live-activity feed, and the currently streaming
  * assistant text. Voice and text share this same flow.
  */
-export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onOpenApp, onPendingMedia, onTool, onError }: UseAgentOptions = {}) {
+export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onError }: UseAgentOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -215,6 +217,9 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
               case "navigate":
                 onNavigate?.(ev.path);
                 break;
+              case "job":
+                onJob?.({ id: ev.id, agent: ev.agent, title: ev.title, status: ev.status });
+                break;
               case "pending_media":
                 onPendingMedia?.({ kind: ev.kind, projectId: ev.projectId, label: ev.label, fallback: ev.fallback });
                 break;
@@ -276,7 +281,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
         onTurnEnd?.();
       }
     },
-    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onOpen, onOpenApp, onPendingMedia, onTool, onError, pushActivity, setConversation, streaming],
+    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onError, pushActivity, setConversation, streaming],
   );
 
   return {

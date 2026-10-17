@@ -492,6 +492,19 @@ if (await waitFor(`${local}/login`, 120)) {
       for (const x of j?.data?.results ?? []) if (x.skipped === "gmail" && !rbWarned) { rbWarned = true; say("  [robin] A follow-up is coming up, but Gmail isn't connected — connect Google in JARVIS Settings for reminder emails."); break; }
     } catch { /* offline — next round */ } finally { rbTicking = false; }
   };
+  // JARVIS's delegated tasks: run what's waiting and pick up any a restart interrupted — every minute
+  let jobTicking = false;
+  const jobsTick = async () => {
+    if (jobTicking) return;
+    jobTicking = true;
+    try {
+      const r = await fetch(`${local}/api/cron/jobs`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(320_000) });
+      const j = await r.json().catch(() => ({}));
+      if (j?.data?.ran?.length) say(`  [tasks] Ran ${j.data.ran.length} delegated task${j.data.ran.length === 1 ? "" : "s"}.`);
+    } catch { /* offline — next round */ } finally { jobTicking = false; }
+  };
+  setTimeout(jobsTick, 30_000);
+  setInterval(jobsTick, 60_000);
   setTimeout(robinTick, 45_000);
   setInterval(robinTick, 60_000);
   setTimeout(mikeTick, 90_000);

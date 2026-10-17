@@ -43,6 +43,8 @@ export type AgentEvent =
   /** A Magic Hour render still in progress — the app keeps checking and shows it when done. */
   | { type: "pending_media"; kind: "image" | "video"; projectId: string; label: string; fallback?: { prompt: string; seconds?: number; aspect?: "square" | "portrait" | "landscape" } }
   | { type: "provider"; name: string }
+  /** A task JARVIS delegated to an agent (delegate_task) — tracked until it finishes. */
+  | { type: "job"; id: string; agent: string; title: string; status: string }
   /**
    * An email being sent: "sending" (with the full email, shown typing out in the
    * compose popup while the real send runs), then "sent" or "failed" with the
@@ -413,6 +415,10 @@ async function* runOneTool(
     const data = result.data as Record<string, unknown> | undefined;
     if (data && typeof data.navigate === "string") {
       yield { type: "navigate", path: data.navigate };
+    }
+    const job = data?.job as { id?: unknown; agent?: unknown; title?: unknown; status?: unknown } | undefined;
+    if (job && typeof job.id === "string") {
+      yield { type: "job", id: job.id, agent: String(job.agent ?? ""), title: String(job.title ?? ""), status: String(job.status ?? "") };
     }
     if (data && Array.isArray(data.openApp)) {
       yield { type: "open_app", names: (data.openApp as unknown[]).map(String).slice(0, 4) };

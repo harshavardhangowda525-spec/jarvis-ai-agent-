@@ -42,6 +42,8 @@ import { KineticStage, KineticWord, type KineticStyle } from "./jarvis/kinetic";
 import { HoloPanel } from "./jarvis/holo-panel";
 import { cn } from "@/lib/utils";
 import { CHAT_AGENTS, type ChatAgentId } from "@/lib/agents/catalog";
+import { announcement, useJobs } from "@/components/jobs/use-jobs";
+import { JOB_STATUS_LABEL } from "@/lib/jobs/brief";
 
 // Weather intents ("what's the weather", "forecast for Tokyo", "will it rain").
 const WEATHER_RE = /\b(weather|forecast|temperature|humidity|how (hot|cold|warm)|(will|is|does|gonna) it (be )?(going to |gonna )?(rain|raining|snow|snowing|sunny|cloudy|cold|hot|windy|storm)|need an umbrella)\b/i;
@@ -223,7 +225,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   // Gesture control shares this console's command router with your voice.
   const gesture = useGesture();
   const gestureRef = useRef(gesture); gestureRef.current = gesture;
+  // Tasks JARVIS delegated to the agents: started here as soon as they're assigned, announced when they finish
+  const jobs = useJobs({ status: "active" });
+  const jobsRef = useRef(jobs); jobsRef.current = jobs;
   const agent = useAgent({
+    onJob: () => { void jobsRef.current.refresh(); },
     onTextDelta: (delta) => {
       if (!(voiceStarted && !voice.muted && voice.enabled)) return;
       if (!speechRef.current) speechRef.current = voice.speakStream();
@@ -275,6 +281,18 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   });
   watchRenderRef.current = renders.watch;
   agentRef.current = agent;
+  // each finished task is announced once — what the task record says, with a link to its details
+  const announcing = useRef(new Set<string>());
+  useEffect(() => {
+    for (const j of jobs.announce) {
+      if (announcing.current.has(j.id)) continue;
+      announcing.current.add(j.id);
+      const line = announcement(j);
+      agentRef.current.appendLocalExchange("", line, [{ url: `/dashboard/jobs?task=${j.id}`, label: "task details" }], { note: true });
+      sayRef.current(line);
+      void jobs.act(j.id, "announced");
+    }
+  }, [jobs.announce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sleep = useCallback(() => { voice.stop(); setVoiceStarted(false); }, [voice]);
   sayRef.current = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
@@ -1019,6 +1037,21 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       )}
       {browser && <BrowserPopup target={browser} onClose={() => setBrowser(null)} onOpenTab={(u) => { openTab(u); }} />}
       <NiosAlerts watch={nios} />
+      {jobs.jobs.length > 0 && (
+        <div className="absolute bottom-24 left-4 z-30 w-72 space-y-1.5" aria-label="Agent tasks">
+          {jobs.jobs.slice(0, 3).map((j) => (
+            <button key={j.id} onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/jobs?task=${j.id}`); }}
+              className="block w-full rounded-xl border border-cyan-200/15 bg-[#06121f]/80 px-3 py-2 text-left backdrop-blur transition hover:border-cyan-200/35">
+              <span className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] text-cyan-100/60">
+                <i className={cn("inline-block h-1.5 w-1.5 rounded-full", j.status === "running" ? "animate-pulse bg-cyan-300" : j.status === "waiting_approval" ? "bg-amber-300" : "bg-white/40")} />
+                {j.agentName} · {JOB_STATUS_LABEL[j.status]}
+              </span>
+              <span className="mt-0.5 block truncate text-[12px] text-white/85">{j.title}</span>
+              {j.progress.at(-1) && <span className="block truncate text-[11px] text-white/45">{j.progress.at(-1)!.text}</span>}
+            </button>
+          ))}
+        </div>
+      )}
       <DarwinReportCard w={darwinReport} onOpenDarwin={launchDarwin} />
       {brief?.phase === "open" && (
         <BriefingPopup
@@ -1142,6 +1175,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                       // a plain click opens it in JARVIS's browser; ctrl/⌘/middle-click → a real tab
                       if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0 || /\/api\/ev\/media\//.test(l.url)) return;
                       e.preventDefault();
+                      // a JARVIS page (e.g. a task's details) opens here, not in the web browser pop-up
+                      if (l.url.startsWith("/")) { router.push(l.url); return; }
                       showInJarvis({ url: l.url, label: l.label.replace(/^Open\s+/i, "") });
                     }}
                     className="rounded-full border border-cyan-100/20 bg-cyan-100/[0.06] px-3 py-1 text-[11px] text-cyan-50 transition hover:bg-cyan-100/[0.12]">
@@ -1184,6 +1219,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                 ))}
                 <button onClick={() => { setMenuOpen(false); openHumanoid(); }} className="rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">Humanoid</button>
                 {/* the agents' chat screens (the side nav is folded away on this screen) */}
+                <button onClick={() => { setMenuOpen(false); router.push("/dashboard/jobs"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Agent tasks</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/crm"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">DARWIN CRM</button>
                 <span className="col-span-2 mt-2 px-3 text-[10px] uppercase tracking-[0.25em] text-white/35">Agent chats</span>
                 {Object.values(CHAT_AGENTS).map((a) => (

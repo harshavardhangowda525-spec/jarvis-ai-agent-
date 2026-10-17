@@ -48,6 +48,7 @@ model User {
   mikeAlerts          MikeAlert[]
   robinLeads          RobinLead[]
   crmBackups          CrmBackup[]
+  agentJobs           AgentJob[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
   gateCredentials     GateCredential[]
@@ -1191,4 +1192,43 @@ model DarwinSeen {
 
   @@unique([userId, fingerprint])
   @@index([userId, sourceRef])
+}
+
+/// Work JARVIS delegated to an agent: a persistent, traceable task.
+model AgentJob {
+  id              String    @id @default(cuid())
+  userId          String
+  /// darwin | robin | ev | mike
+  agent           String
+  title           String
+  /// planning | assigned | running | waiting_approval | completed | failed | cancelled
+  status          String    @default("assigned")
+  /// What you asked, word for word.
+  request         String    @db.Text
+  /// The structured brief JARVIS wrote for the agent: objective, inputs, constraints, output, acceptance.
+  brief           Json
+  /// Jobs that must complete first (their results are handed to this one).
+  dependsOn       String[]  @default([])
+  /// [{ at, text, kind }] — real steps only (tools run, approvals, errors).
+  progress        Json      @default("[]")
+  result          String?   @db.Text
+  resultData      Json?
+  error           String?   @db.Text
+  attempts        Int       @default(0)
+  cancelRequested Boolean   @default(false)
+  /// While running: the runner's lease. Past it with status "running" = the runner died (restart).
+  leaseUntil      DateTime?
+  /// The agent chat conversation that holds the run (open it in the agent's chat).
+  conversationId  String?
+  /// Set when the finished job has been announced to you.
+  announcedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([status, leaseUntil])
 }

@@ -42,6 +42,7 @@ const NAV = [
   { href: "/dashboard/ultron", label: "ULTRON", icon: Code2 },
   // the agents open as chats; DARWIN's CRM is the one CRM
   { href: "/dashboard/crm", label: "CRM", icon: ListChecks },
+  { href: "/dashboard/jobs", label: "Agent tasks", icon: Bot },
   { href: "/dashboard/chat/darwin", label: "DARWIN", icon: Radar },
   { href: "/dashboard/chat/robin", label: "RUBIN", icon: Handshake },
   { href: "/dashboard/chat/ev", label: "EV", icon: Megaphone },

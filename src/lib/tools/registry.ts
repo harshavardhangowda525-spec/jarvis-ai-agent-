@@ -3,6 +3,7 @@
  * The agent loop reads this list, hands the model each tool's JSON schema, and
  * lets the model decide what to call. No command matching lives in the agent.
  */
+import { delegateTaskTool, taskControlTool, taskStatusTool } from "./jobs";
 import type { ToolDefinition } from "./types";
 import { capabilities } from "@/lib/env";
 import { isProviderConfigured } from "@/lib/integrations/providers";
@@ -49,6 +50,9 @@ import {
 } from "./robin";
 
 const ALL_TOOLS: ToolDefinition[] = [
+  delegateTaskTool as ToolDefinition,
+  taskStatusTool as ToolDefinition,
+  taskControlTool as ToolDefinition,
   calculatorTool as ToolDefinition,
   timeTool as ToolDefinition,
   weatherTool as ToolDefinition,
@@ -109,7 +113,7 @@ export function availableTools(agent?: "ev" | "darwin" | "mike" | "robin"): Tool
   const googleReady = isProviderConfigured("google");
   return ALL_TOOLS.filter((t) => {
     // Agent-scoped tools (EV's) only surface for their agent.
-    if (t.agentScope) return t.agentScope === agent;
+    if (t.agentScope) return t.agentScope === (agent ?? "jarvis");
     // RUBIN stays on sales: its own tools plus a few basics (smaller requests, isolated context)
     if (agent === "robin" && !ROBIN_BASICS.has(t.name)) return false;
     if (t.requiresCapability === "search") return capabilities.search;
