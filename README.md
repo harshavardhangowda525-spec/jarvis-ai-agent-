@@ -1575,8 +1575,11 @@ Env (all optional):
 ## Chat with the agents (DARWIN, RUBIN, EV, MIKE)
 
 JARVIS stays voice-first in its own console. Every other agent now opens as a
-chat, like ChatGPT or Gemini: pick it in the left menu, or go to
-`/dashboard/chat/darwin`, `…/robin`, `…/ev` or `…/mike`.
+chat, like ChatGPT or Gemini. To open one:
+- from JARVIS's own screen, click the **Systems** button (the grid icon, top
+  right) and pick the agent under **Agent chats**;
+- on any other page, pick it in the left menu;
+- or go to `/dashboard/chat/darwin`, `…/robin`, `…/ev` or `…/mike`.
 
 - **Replies stream in** as they're written, with Markdown: lists, tables, code
   with **Copy**, and links. **Stop** halts a reply and keeps what was said;

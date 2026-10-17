@@ -44,6 +44,7 @@ import { JarvisMotion, type JarvisMotionHandle, type JState, type AgentName, typ
 import { KineticStage, KineticWord, type KineticStyle } from "./jarvis/kinetic";
 import { HoloPanel } from "./jarvis/holo-panel";
 import { cn } from "@/lib/utils";
+import { CHAT_AGENTS } from "@/lib/agents/catalog";
 
 // "publish" / "post it" / "publish with caption …" while an EV image is open.
 const EV_PUBLISH_RE = /^(please\s+)?(publish|post|upload|share)\b|\b(publish|post|upload) (it|this|that|now|the (image|post|picture|photo|video|reel))\b|\bgo ahead( and (publish|post))?\b|\b(publish|post|put it) (to|on) (instagram|insta|ig)\b/i;
@@ -1382,6 +1383,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                   <button key={href} onClick={() => { setMenuOpen(false); router.push(href); }} className="rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">{label}</button>
                 ))}
                 <button onClick={() => { setMenuOpen(false); openHumanoid(); }} className="rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">Humanoid</button>
+                {/* the agents' chat screens (the side nav is folded away on this screen) */}
+                <span className="col-span-2 mt-2 px-3 text-[10px] uppercase tracking-[0.25em] text-white/35">Agent chats</span>
+                {Object.values(CHAT_AGENTS).map((a) => (
+                  <button key={a.id} onClick={() => { setMenuOpen(false); router.push(`/dashboard/chat/${a.id}`); }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: a.color }} aria-hidden />{a.name}
+                  </button>
+                ))}
               </nav>
             </HoloPanel>
           </div>
