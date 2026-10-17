@@ -77,7 +77,7 @@ export interface SpeechStream {
 }
 
 /** Which agent's voice this hook speaks with — selects a distinct timbre. */
-export type VoiceProfile = "jarvis" | "ev" | "darwin" | "ultron" | "mike" | "robin";
+export type VoiceProfile = "jarvis" | "ev" | "darwin" | "ultron" | "mike" | "robin" | "aston";
 
 interface UseVoiceOptions {
   onTranscript: (text: string) => void;
@@ -103,6 +103,8 @@ const BROWSER_VOICE: Record<VoiceProfile, { rate: number; pitch: number; match: 
   mike: { rate: 1.02, pitch: 0.95, match: /brian|christopher|guy|google us english|tom|alex/i, female: false },
   // Friendly, organised, professional male — a touch brisk.
   robin: { rate: 1.04, pitch: 0.98, match: /eric|andrew|ryan|mark|guy|google us english|david/i, female: false },
+  // Smooth, confident designer — a little warmer than JARVIS.
+  aston: { rate: 1.03, pitch: 1.0, match: /ryan|daniel|george|google uk english male|guy|andrew/i, female: false },
   ultron: { rate: 0.86, pitch: 0.4, match: /george|thomas|fred|google uk english male|rishi|daniel/i, female: false },
 };
 

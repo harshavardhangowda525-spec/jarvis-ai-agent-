@@ -49,6 +49,9 @@ model User {
   robinLeads          RobinLead[]
   crmBackups          CrmBackup[]
   agentJobs           AgentJob[]
+  astonSites          AstonSite[]
+  marketingPlans      MarketingPlan[]
+  planSettings        MarketingPlanSettings?
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
   gateCredentials     GateCredential[]
@@ -1222,6 +1225,8 @@ model AgentJob {
   conversationId  String?
   /// Set when the finished job has been announced to you.
   announcedAt     DateTime?
+  /// Agent-specific input, e.g. ASTON: { siteId, feedback, leadId, kind }.
+  payload         Json?
   createdAt       DateTime  @default(now())
   startedAt       DateTime?
   finishedAt      DateTime?
@@ -1231,4 +1236,91 @@ model AgentJob {
 
   @@index([userId, status, createdAt])
   @@index([status, leaseUntil])
+}
+
+/// ASTON's website / app demos. Each build is a new version — earlier ones stay viewable.
+model AstonSite {
+  id              String    @id @default(cuid())
+  userId          String
+  name            String
+  /// website | app
+  kind            String    @default("website")
+  niche           String?
+  /// The CRM lead it was built for (no FK: the demo outlives the lead).
+  leadId          String?
+  /// Unguessable preview link /p/<token> — rotate it to revoke old links.
+  previewToken    String    @unique
+  currentVersion  Int       @default(0)
+  /// The version you approved (approval never deploys anything).
+  approvedVersion Int?
+  approvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions AstonVersion[]
+
+  @@index([userId, updatedAt])
+}
+
+model AstonVersion {
+  id        String   @id @default(cuid())
+  siteId    String
+  n         Int
+  /// ready | failed
+  status    String
+  spec      Json
+  html      String   @db.Text
+  /// [{ id, type, title }] — the sections the walkthrough visits.
+  sections  Json     @default("[]")
+  /// The check report the build passed (or failed).
+  checks    Json
+  /// The change request this version answers (null for the first build).
+  feedback  String?  @db.Text
+  jobId     String?
+  createdAt DateTime @default(now())
+
+  site AstonSite @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([siteId, n])
+}
+
+/// One daily marketing plan (Asia/Kolkata date) — read in ASTON's teleprompter.
+model MarketingPlan {
+  id             String    @id @default(cuid())
+  userId         String
+  /// YYYY-MM-DD in Asia/Kolkata
+  date           String
+  /// generating | ready | failed
+  status         String    @default("generating")
+  niche          String?
+  plan           Json?
+  error          String?   @db.Text
+  attempts       Int       @default(0)
+  leaseUntil     DateTime?
+  /// Revocable share link /tp/<token> (no customer data is ever in a plan).
+  shareToken     String    @unique
+  shareRevokedAt DateTime?
+  /// When the "plan is ready" notification went out, and what each channel said.
+  notifiedAt     DateTime?
+  notifyLog      Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+}
+
+model MarketingPlanSettings {
+  userId       String   @id
+  enabled      Boolean  @default(true)
+  /// HH:MM in Asia/Kolkata — the plan is ready by then.
+  deliveryTime String   @default("07:00")
+  /// "Plan ready" notifications — off until you switch them on.
+  notifyEmail    Boolean @default(false)
+  notifyWhatsapp Boolean @default(false)
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

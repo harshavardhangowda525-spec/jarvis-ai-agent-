@@ -44,6 +44,8 @@ import { cn } from "@/lib/utils";
 import { CHAT_AGENTS, type ChatAgentId } from "@/lib/agents/catalog";
 import { announcement, useJobs } from "@/components/jobs/use-jobs";
 import { JOB_STATUS_LABEL } from "@/lib/jobs/brief";
+import { AstonViewer } from "@/components/aston/viewer";
+import { astonPreviewCommand, isAstonActivation, teleprompterCommand } from "@/lib/aston/intent";
 
 // Weather intents ("what's the weather", "forecast for Tokyo", "will it rain").
 const WEATHER_RE = /\b(weather|forecast|temperature|humidity|how (hot|cold|warm)|(will|is|does|gonna) it (be )?(going to |gonna )?(rain|raining|snow|snowing|sunny|cloudy|cold|hot|windy|storm)|need an umbrella)\b/i;
@@ -228,8 +230,15 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   // Tasks JARVIS delegated to the agents: started here as soon as they're assigned, announced when they finish
   const jobs = useJobs({ status: "active" });
   const jobsRef = useRef(jobs); jobsRef.current = jobs;
+  // ASTON: the finished demo JARVIS offered to show, and the preview panel
+  const [astonOffer, setAstonOffer] = useState<{ siteId: string; version: number; url: string; title: string; jobId: string; at: number } | null>(null);
+  const [astonPanel, setAstonPanel] = useState<{ siteId: string; walk: boolean; key: number } | null>(null);
+  const astonOfferRef = useRef(astonOffer); astonOfferRef.current = astonOffer;
+  const astonPanelRef = useRef(astonPanel); astonPanelRef.current = astonPanel;
   const agent = useAgent({
     onJob: () => { void jobsRef.current.refresh(); },
+    // ASTON preview you asked for (via aston_demo open/walkthrough)
+    onArtifact: (a) => { setAstonOffer(null); setAstonPanel({ siteId: a.siteId, walk: a.mode === "walk", key: Date.now() }); },
     onTextDelta: (delta) => {
       if (!(voiceStarted && !voice.muted && voice.enabled)) return;
       if (!speechRef.current) speechRef.current = voice.speakStream();
@@ -288,6 +297,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       if (announcing.current.has(j.id)) continue;
       announcing.current.add(j.id);
       const line = announcement(j);
+      const site = j.status === "completed" ? j.resultData?.artifacts?.find((a) => a.kind === "aston") : undefined;
+      // ASTON's preview is offered, never opened on its own
+      if (site) setAstonOffer({ siteId: site.siteId, version: site.version, url: site.url, title: site.title, jobId: j.id, at: Date.now() });
       agentRef.current.appendLocalExchange("", line, [{ url: `/dashboard/jobs?task=${j.id}`, label: "task details" }], { note: true });
       sayRef.current(line);
       void jobs.act(j.id, "announced");
@@ -635,6 +647,23 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           .catch(() => { agent.appendLocalExchange(t, "I couldn't reach the server."); say("I couldn't reach the server."); });
         return;
       }
+      // ASTON's preview: "yes, open it" / "show me the preview" / "walk me through it" (only when JARVIS offered one or it's open)
+      const offer = astonOfferRef.current && Date.now() - astonOfferRef.current.at < 30 * 60_000 ? astonOfferRef.current : null;
+      const pv = astonPreviewCommand(t, { offered: !!offer, open: !!astonPanelRef.current });
+      if (pv) {
+        if (pv === "close") { setAstonPanel(null); agent.appendLocalExchange(t, "Closed the preview."); sayRef.current("Closed."); return; }
+        const siteId = offer?.siteId ?? astonPanelRef.current?.siteId;
+        if (siteId) {
+          setAstonOffer(null);
+          setAstonPanel({ siteId, walk: pv === "walk", key: Date.now() });
+          const msg = pv === "walk" ? "Opening the preview — I'll walk you through it." : "Here's the preview. Say “walk me through it” for a guided tour, or tell me what to change.";
+          agent.appendLocalExchange(t, msg); if (pv !== "walk") sayRef.current(msg);
+          return;
+        }
+      }
+      // "Open ASTON" → ASTON's chat; "open the teleprompter" / "today's plan" → the teleprompter
+      if (isAstonActivation(low)) { openChat("aston"); return; }
+      if (teleprompterCommand(low)) { agent.appendLocalExchange(t, "Opening today's plan in the teleprompter."); sayRef.current("Opening the teleprompter."); router.push("/dashboard/teleprompter"); return; }
       // "Rubin", "Activate Rubin", "Open Rubin", "Start Rubin" → RUBIN takes over (sales & CRM);
       // "Rubin, show me today's follow-ups" → Rubin opens and does it. ("Ask Rubin …" stays with JARVIS.)
       if (isRobinActivation(t)) {
@@ -710,7 +739,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchUltron, launchDarwin, launchMike, launchRobin, openHumanoid, closeHumanoid, openEv, openEvToday, voice, voiceStarted, router]);
+  }, [agent, sleep, launchUltron, launchDarwin, launchMike, launchRobin, openChat, openHumanoid, closeHumanoid, openEv, openEvToday, voice, voiceStarted, router]);
 
   // Voice was on in the agent you just left → switch it back on here.
   const resumingVoice = useResumeVoice(enableVoice);
@@ -1036,6 +1065,27 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         />
       )}
       {browser && <BrowserPopup target={browser} onClose={() => setBrowser(null)} onOpenTab={(u) => { openTab(u); }} />}
+      {astonOffer && !astonPanel && (
+        <div className="absolute left-1/2 top-20 z-40 w-[min(520px,calc(100%-24px))] -translate-x-1/2 rounded-2xl border border-amber-300/40 bg-[#0b1020]/95 p-4 shadow-2xl backdrop-blur" role="dialog" aria-label="ASTON preview ready" onClick={(e) => e.stopPropagation()}>
+          <p className="text-[11px] uppercase tracking-[0.22em] text-amber-300/80">ASTON · preview ready</p>
+          <p className="mt-1 text-[15px] text-white/90">{astonOffer.title} — version {astonOffer.version}</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-[13px]">
+            <button className="rounded-xl bg-amber-400 px-3 py-2 font-semibold text-black" onClick={() => { const w = window.open(astonOffer.url, "_blank"); if (w) w.opener = null; else setAstonPanel({ siteId: astonOffer.siteId, walk: false, key: Date.now() }); setAstonOffer(null); }}>Open preview</button>
+            <button className="rounded-xl border border-white/15 px-3 py-2 text-white/85" onClick={() => { setAstonPanel({ siteId: astonOffer.siteId, walk: true, key: Date.now() }); setAstonOffer(null); }}>Walk me through</button>
+            <button className="rounded-xl border border-white/15 px-3 py-2 text-white/85" onClick={() => { setAstonPanel({ siteId: astonOffer.siteId, walk: false, key: Date.now() }); setAstonOffer(null); }}>Request changes</button>
+            <button className="rounded-xl border border-white/15 px-3 py-2 text-white/60" onClick={() => router.push(`/dashboard/jobs?task=${astonOffer.jobId}`)}>Task details</button>
+            <button className="ml-auto rounded-xl px-2 py-2 text-white/45" aria-label="Dismiss" onClick={() => setAstonOffer(null)}>×</button>
+          </div>
+        </div>
+      )}
+      {astonPanel && (
+        <div className="absolute inset-x-2 bottom-2 top-16 z-40 flex overflow-hidden rounded-2xl border border-white/10 shadow-2xl md:inset-x-8" onClick={(e) => e.stopPropagation()}>
+          <AstonViewer key={astonPanel.key} siteId={astonPanel.siteId} autoWalk={astonPanel.walk} compact
+            speak={voiceStarted && !voice.muted && voice.enabled ? (t) => voice.speak(t) : undefined}
+            onChangesRequested={() => { void jobs.refresh(); agent.appendLocalExchange("", "Sent to ASTON — I'll tell you when the new version is ready.", undefined, { note: true }); }}
+            onClose={() => setAstonPanel(null)} />
+        </div>
+      )}
       <NiosAlerts watch={nios} />
       {jobs.jobs.length > 0 && (
         <div className="absolute bottom-24 left-4 z-30 w-72 space-y-1.5" aria-label="Agent tasks">
@@ -1220,6 +1270,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                 <button onClick={() => { setMenuOpen(false); openHumanoid(); }} className="rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">Humanoid</button>
                 {/* the agents' chat screens (the side nav is folded away on this screen) */}
                 <a href="/app" onClick={() => setMenuOpen(false)} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Phone app</a>
+                <button onClick={() => { setMenuOpen(false); router.push("/dashboard/aston"); }} className="rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">ASTON demos</button>
+                <button onClick={() => { setMenuOpen(false); router.push("/dashboard/teleprompter"); }} className="rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Teleprompter</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/jobs"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Agent tasks</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/crm"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">DARWIN CRM</button>
                 <span className="col-span-2 mt-2 px-3 text-[10px] uppercase tracking-[0.25em] text-white/35">Agent chats</span>

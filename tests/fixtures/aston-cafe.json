@@ -1,0 +1,20 @@
+{
+  "kind": "website",
+  "businessName": "Brew & Bloom Café",
+  "niche": "cafe",
+  "tagline": "Slow coffee and fresh bakes in Indiranagar",
+  "palette": "espresso",
+  "font": "elegant",
+  "hero": { "eyebrow": "Specialty coffee · Bakery", "headline": "Your calm corner for great coffee", "sub": "Hand-brewed coffee, fresh bakes every morning and a quiet table to work or catch up.", "primary": { "label": "See the menu", "action": "menu" }, "secondary": { "label": "Reserve a table", "action": "book" } },
+  "sections": [
+    { "type": "about", "title": "Made slowly, served warmly", "body": "We roast in small batches and bake through the morning so every cup and croissant is fresh.", "highlights": ["Small-batch coffee", "Bakes made daily", "Work-friendly tables"] },
+    { "type": "menu", "title": "Our menu", "intro": "A short menu, done properly.", "categories": [ { "name": "Coffee", "items": [ { "name": "Pour over", "desc": "Single origin, brewed to order" }, { "name": "Flat white" } ] }, { "name": "Bakes", "items": [ { "name": "Butter croissant" }, { "name": "Banana bread", "desc": "Walnut and dark chocolate" } ] } ] },
+    { "type": "gallery", "title": "Inside the café", "items": [ { "caption": "The window seats", "emoji": "☕" }, { "caption": "Morning bakes", "emoji": "🥐" }, { "caption": "The brew bar", "emoji": "🫖" }, { "caption": "Garden corner", "emoji": "🌿" } ] },
+    { "type": "faq", "title": "Good to know", "items": [ { "q": "Do you take reservations?", "a": "Yes — send an enquiry and we'll confirm your table." }, { "q": "Is there Wi-Fi?", "a": "Yes, free Wi-Fi for guests." } ] },
+    { "type": "hours", "title": "Visit us" },
+    { "type": "cta", "title": "Planning a get-together?", "body": "Tell us the date and how many are coming.", "button": { "label": "Enquire now", "action": "enquire" } },
+    { "type": "contact", "title": "Reserve a table", "body": "We'll reply to confirm.", "fields": ["name", "phone", "date", "time", "guests", "message"] }
+  ],
+  "walkthrough": { "about": "The story section sets the calm, crafted tone.", "menu": "The menu uses tabs so it stays short on a phone." },
+  "assumptions": ["Menu items are examples — replace with the real menu"]
+}

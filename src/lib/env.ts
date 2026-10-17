@@ -42,6 +42,13 @@ export const env = {
   databaseUrl: read("DATABASE_URL"),
   authSecret: read("AUTH_SECRET"),
   appUrl: resolveAppUrl(),
+  // WhatsApp Cloud API (Meta) — the "daily plan ready" message to your own number.
+  whatsappPhoneNumberId: read("WHATSAPP_PHONE_NUMBER_ID"),
+  whatsappAccessToken: read("WHATSAPP_ACCESS_TOKEN"),
+  whatsappNotifyTo: read("WHATSAPP_NOTIFY_TO"),
+  // An approved template (needed outside a 24-hour chat window); {{1}} = niche, {{2}} = link.
+  whatsappPlanTemplate: read("WHATSAPP_PLAN_TEMPLATE"),
+  whatsappTemplateLang: read("WHATSAPP_TEMPLATE_LANG") || "en",
 
   // Legacy/Anthropic key. Kept for backward compatibility.
   aiApiKey: read("AI_API_KEY"),
@@ -93,6 +100,8 @@ export const env = {
   mikeProvider: read("MIKE_PROVIDER").toLowerCase() || "groq,gemini",
   // RUBIN (sales & CRM) uses JARVIS's AI infrastructure: Groq first, Gemini as backup.
   // RUBIN (formerly ROBIN): RUBIN_* settings, the old ROBIN_* names still work
+  // ASTON (website/app demos + the daily marketing plan): Groq first, Gemini as backup.
+  astonProvider: read("ASTON_PROVIDER").toLowerCase() || "groq,gemini",
   robinProvider: (read("RUBIN_PROVIDER") || read("ROBIN_PROVIDER")).toLowerCase() || "groq,gemini",
   // Reasoning models (gpt-oss) think before answering; "low" keeps replies quick.
   reasoningEffort: read("AI_REASONING_EFFORT").toLowerCase() || "low",
@@ -121,6 +130,8 @@ export const env = {
   darwinVoiceId: read("DARWIN_VOICE_ID") || "IKne3meq5aSn9XLyUdCD",
   // MIKE voice — calm, precise market analyst. Defaults to "Brian". Override with MIKE_VOICE_ID.
   mikeVoiceId: read("MIKE_VOICE_ID") || "nPczCjzI2devNBz1zQrb",
+  // ASTON (designer): ElevenLabs "George" by default
+  astonVoiceId: read("ASTON_VOICE_ID") || "JBFqnCBsd6RMkjVDRZzb",
   // RUBIN voice — calm, friendly, professional male sales assistant. Defaults to "Eric". Override with ROBIN_VOICE_ID.
   robinVoiceId: read("RUBIN_VOICE_ID") || read("ROBIN_VOICE_ID") || "cjVigY5qzO86Huf0OWal",
   // Signs inbound RUBIN webhooks (HMAC-SHA256). Unset = the webhook is off.

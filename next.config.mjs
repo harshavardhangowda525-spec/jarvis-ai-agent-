@@ -23,10 +23,12 @@ const nextConfig = {
   },
   async headers() {
     return [
+      // ASTON's previews (/p/…) set their own framing rules: JARVIS shows them
+      // in its walkthrough frame (same site only); everything else is never framed.
+      { source: "/((?!p/).*)", headers: [{ key: "X-Frame-Options", value: "DENY" }] },
       {
         source: "/(.*)",
         headers: [
-          { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "microphone=(self), camera=(self)" },

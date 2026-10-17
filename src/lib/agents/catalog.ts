@@ -3,7 +3,7 @@
  * console; every other agent IS its chat screen (+ optional voice mode),
  * each with its own identity, brain prompt and tools on the server (runAgent).
  */
-export type ChatAgentId = "darwin" | "robin" | "ev" | "mike";
+export type ChatAgentId = "darwin" | "robin" | "ev" | "mike" | "aston";
 
 export interface ChatAgent {
   id: ChatAgentId;
@@ -31,6 +31,10 @@ export const CHAT_AGENTS: Record<ChatAgentId, ChatAgent> = {
   mike: {
     id: "mike", name: "MIKE", role: "Market analysis (never trades)", color: "#22c55e",
     suggestions: ["How is Bitcoin looking today?", "Analyse NIFTY on the daily chart", "What's the trend on Reliance?", "Explain the last setup you found"],
+  },
+  aston: {
+    id: "aston", name: "ASTON", role: "Website & app demos · teleprompter", color: "#f59e0b",
+    suggestions: ["Build a premium website demo for a cafe in Indiranagar", "Make an app demo for my best gym lead", "Show my demos", "Open today's teleprompter"],
   },
 };
 

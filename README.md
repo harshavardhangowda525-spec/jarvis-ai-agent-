@@ -1643,6 +1643,74 @@ Env (all optional):
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
   `x-robin-timestamp`, and must be no more than 5 minutes old.
 
+## ASTON — website & app demos
+
+Say *"Create a premium website for a cafe called Brew & Bloom in Indiranagar"*
+(or *"Get ASTON to build an app demo for this gym"*). JARVIS writes a brief and
+hands it to **ASTON** as a tracked task (Agent tasks). ASTON:
+
+1. writes the content (sections, menu, FAQ, walkthrough notes) with its AI
+   (`ASTON_PROVIDER`, default Groq → Gemini);
+2. builds a complete responsive page (or a phone-app prototype) from it —
+   working navigation, demo-safe forms, accessible, reduced-motion aware;
+3. runs **real checks** on the page (structure, every link target, labels,
+   phone/WhatsApp links, valid scripts, size, WCAG colour contrast…). A build
+   that fails is kept as a failed version and is **never** offered;
+4. saves it as a new **version** with a private preview link `/p/<token>`.
+
+Contact details (phone, email, address, hours, Instagram) come **only** from
+what you said or the CRM lead — never from the model. Anything missing is shown
+as a dashed *placeholder* and listed in the demo notes.
+
+When it's done JARVIS says *"ASTON has finished … would you like me to open
+it?"* — it never opens anything by itself. Then:
+
+- **"Yes, open it"** / **Open preview** — shows it (in JARVIS, or a new tab);
+- **"Walk me through it"** — JARVIS scrolls the real page section by section
+  while explaining it, checks it at phone width, then asks whether to change
+  anything or approve;
+- **"Make it darker / add a booking button…"** or **Request changes** — a new
+  version; earlier versions stay viewable;
+- **Approve** — recorded only. Nothing is ever deployed or published.
+
+Previews are sandboxed: the page's scripts run in their own isolated origin
+(they can't reach JARVIS or your session), can't connect anywhere and forms
+send nothing. *New preview link* revokes the old one. All demos:
+**Systems → ASTON demos** (`/dashboard/aston`); ASTON's chat: *"open ASTON"*.
+
+## Daily marketing plan & ASTON's teleprompter
+
+Every morning a cloud schedule (Vercel Cron, hourly 04:30–10:30 India time —
+your PC can be off; `npm run local` also checks) makes **one** plan for the
+day and saves it **before** any notification goes out:
+
+- niche of the day (not repeated within a week; favours niches your CRM has
+  leads for) and why, problems, what to pitch;
+- phone-call, Instagram DM and WhatsApp scripts, follow-ups;
+- a content idea and a Reel brief (hook, scenes, on-screen text, caption, CTA);
+- the day's checklist and a short sales lesson.
+
+No invented statistics, no "you have no website" claims, no CRM data in it.
+If writing fails it retries at the next check (3 attempts) and the error is
+shown — *Try again* makes it now.
+
+Open it: **Systems → Teleprompter**, *"open the teleprompter"*, or the share
+link `/tp/<token>` on your phone (works without signing in; *New link* /
+*Switch link off* revoke it). The teleprompter has big text, A−/A+, speed,
+play/pause auto-scroll, section jumps, mirror mode, and keeps the screen on.
+Keys: space, ↑/↓ speed, +/− size, ←/→ section. **History** shows earlier days.
+
+**Settings** (in the teleprompter): on/off, *ready by* time (India time), and
+"plan ready" notifications — off until you switch them on:
+
+| Channel | Needs | Reported as |
+|---|---|---|
+| WhatsApp | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_NOTIFY_TO`, approved template `WHATSAPP_PLAN_TEMPLATE` ({{1}} niche, {{2}} link) | "accepted by WhatsApp — delivery not confirmed" |
+| Email | Google connected (Gmail) | "accepted by Gmail" |
+
+Each plan is announced once. *Send a test now* sends today's message to you so
+you can confirm the setup.
+
 ## JARVIS delegates work to the agents (Agent tasks)
 
 Tell JARVIS what you want done, by voice or text, and it hands the work to the

@@ -503,6 +503,20 @@ if (await waitFor(`${local}/login`, 120)) {
       if (j?.data?.ran?.length) say(`  [tasks] Ran ${j.data.ran.length} delegated task${j.data.ran.length === 1 ? "" : "s"}.`);
     } catch { /* offline — next round */ } finally { jobTicking = false; }
   };
+  // ASTON's daily marketing plan (also on the cloud schedule — this just covers a PC that's on)
+  let planTicking = false;
+  const plansTick = async () => {
+    if (planTicking) return;
+    planTicking = true;
+    try {
+      const r = await fetch(`${local}/api/cron/plans`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(320_000) });
+      const j = await r.json().catch(() => ({}));
+      for (const p of j?.data?.plans ?? []) if (p.status === "ready" && p.niche && !plansSaid.has(p.niche)) { plansSaid.add(p.niche); say(`  [plan] Today's marketing plan is ready — ${p.niche}.`); }
+    } catch { /* offline — next round */ } finally { planTicking = false; }
+  };
+  const plansSaid = new Set();
+  setTimeout(plansTick, 75_000);
+  setInterval(plansTick, 5 * 60_000);
   setTimeout(jobsTick, 30_000);
   setInterval(jobsTick, 60_000);
   setTimeout(robinTick, 45_000);

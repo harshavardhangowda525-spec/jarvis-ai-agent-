@@ -1,0 +1,22 @@
+{
+  "niche": "gyms",
+  "opportunity": "Gyms compete on trust and convenience. Many local gyms rely on walk-ins and Instagram DMs, so a clear website with trial booking and class timings can turn interest into visits.",
+  "problems": ["Enquiries get lost in DMs", "Class timings are hard to find", "No easy way to book a free trial"],
+  "services": [{ "name": "Website with trial booking", "why": "Captures enquiries even when the front desk is busy" }, { "name": "AI promotional video", "why": "Shows the space and trainers in 30 seconds" }],
+  "scripts": {
+    "call": "Hi, is this [Business]? I'm calling from Infinity Web & Apps. I help gyms in [Area] get more trial sign-ups online. I couldn't find a website for you — do you have one?",
+    "instagram": "Hi [Name]! Love the energy on your page. Quick question — where do new members book a free trial today?",
+    "whatsapp": "Hi [Name], this is from Infinity Web & Apps. We build simple websites for gyms where people can see timings and book a trial. Would a 2-minute demo be useful?",
+    "followUps": [{ "when": "Day 2", "channel": "WhatsApp", "text": "Hi [Name], just following up on the demo — happy to share it whenever suits you." }, { "when": "Day 5", "channel": "Call", "text": "Quick call to see if the trial-booking idea is worth a look. No worries if not." }]
+  },
+  "content": { "idea": "Before/after: a gym's DM inbox vs. a booking page that fills the calendar.", "format": "Instagram Reel, 25 seconds" },
+  "video": {
+    "hook": "Your gym is losing members in the DMs.",
+    "scenes": [{ "visual": "Phone with a flood of DMs", "onScreen": "12 unanswered enquiries", "motion": "Fast zoom" }, { "visual": "Clean booking page", "onScreen": "Book a free trial", "motion": "Slide in" }, { "visual": "Calendar filling up", "onScreen": "Trials booked automatically", "seconds": 5 }],
+    "caption": "Stop losing members in your DMs. #gymowner #fitnessbusiness #websitedesign",
+    "cta": "DM us 'GYM' for a free demo"
+  },
+  "checklist": [{ "task": "Find 20 gyms in one area", "block": "prospecting" }, { "task": "Send 10 WhatsApp intros", "block": "outreach" }, { "task": "Follow up yesterday's replies", "block": "follow-ups" }, { "task": "Record the Reel", "block": "content" }, { "task": "Log replies in the CRM", "block": "tracking" }],
+  "insight": "Ask about how they get members today before pitching anything.",
+  "assumptions": ["Gyms in the area use Instagram for enquiries"]
+}

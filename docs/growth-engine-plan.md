@@ -14,7 +14,7 @@ anything not verifiable from here is marked so.
 | EV / EVIE (Instagram content, daily post + Reel) | `src/lib/ev/*` | working |
 | MIKE (market analysis) | `src/lib/mike/*` | working |
 | ULTRON (EDITH dev agent on the PC) | `edith/*` | working |
-| **ASTON** (website/app builder, teleprompter) | — | **does not exist** |
+| **ASTON** (website/app builder, teleprompter) | `src/lib/aston/`, `src/lib/plans/`, `/dashboard/aston`, `/dashboard/teleprompter` | **built** — demos with checked previews, versions, walkthrough; daily plan + teleprompter |
 | **WhatsApp sending** (Business Platform API) | — | **not integrated** — only `wa.me` links that open the chat |
 | **Central notification service / queue** | — | **does not exist** (RUBIN emails reminders; JARVIS speaks) |
 | **Android companion app** | `/app`, `app/manifest.ts`, `public/sw.js` | **installable PWA done** (home-screen app, shortcuts, offline screen); no native APK yet |
@@ -97,11 +97,16 @@ database lives on Neon (online), ~6 MB in the test copy.
    restart — verified by killing the server mid-task), cancel/retry/approve,
    dependencies, completion only on the agent's confirmed acceptance points;
    `/dashboard/jobs` and spoken announcements.
-5. **Daily marketing plan + teleprompter page** — Vercel Cron (runs with the
-   laptop off), saved plans with a revocable share link, email notification.
-6. **ASTON** (website demos with previews) — a new agent; scope to agree.
-7. **WhatsApp notifications** — needs a WhatsApp Business Platform account
-   (Meta) or Twilio, an approved template and a phone number.
+5. ✅ **Daily marketing plan + teleprompter** — Vercel Cron hourly 04:30–10:30
+   IST (laptop off), one plan per day, retries (3), revocable share link,
+   history; notifications by WhatsApp Cloud API / Gmail when switched on.
+6. ✅ **ASTON** — website/app demos: content → renderer → 20+ real checks →
+   private sandboxed preview (/p/…), versions per change request, approval
+   (a record only), guided walkthrough in JARVIS.
+7. **WhatsApp notifications** — the sender is built (plan-ready message);
+   needs WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_ACCESS_TOKEN, WHATSAPP_NOTIFY_TO
+   and an approved template (WHATSAPP_PLAN_TEMPLATE). Task-completion
+   messages over WhatsApp are not built yet.
 8. **Android** — ✅ installable PWA shipped (`/app` install page + QR). Still
    open: push notifications, and a native APK/TWA wrapper if wanted.
 

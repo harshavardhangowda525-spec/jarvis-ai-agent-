@@ -13,11 +13,16 @@ const DESTINATIONS = {
   darwin: "/dashboard/chat/darwin",
   rubin: "/dashboard/chat/robin",
   ev: "/dashboard/chat/ev",
+  aston: "/dashboard/chat/aston",
+  demos: "/dashboard/aston",
+  teleprompter: "/dashboard/teleprompter",
+  crm: "/dashboard/crm",
+  agent_tasks: "/dashboard/jobs",
 } as const;
 
 const schema = z.object({
   destination: z
-    .enum(["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev"])
+    .enum(["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "demos", "teleprompter", "crm", "agent_tasks"])
     .describe("Which section of the app to open."),
 });
 
@@ -30,14 +35,14 @@ export const navigationTool: ToolDefinition<z.infer<typeof schema>> = {
   name: "navigate",
   description:
     "Open a section of the JARVIS app for the user (home, chat, tasks, notes, " +
-    "memory, settings, integrations, mike / darwin / rubin / ev = that agent's chat: MIKE market analysis, DARWIN lead generation, RUBIN sales & CRM, EV Instagram marketing). Use when the user asks to go to or open a page.",
+    "memory, settings, integrations, mike / darwin / rubin / ev = that agent's chat: MIKE market analysis, DARWIN lead generation, RUBIN sales & CRM, EV Instagram marketing, ASTON website/app demos; demos = ASTON's demo previews; teleprompter = today's marketing plan; crm = DARWIN CRM; agent_tasks = delegated tasks). Use when the user asks to go to or open a page.",
   schema,
   inputSchema: {
     type: "object",
     properties: {
       destination: {
         type: "string",
-        enum: ["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev"],
+        enum: ["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "demos", "teleprompter", "crm", "agent_tasks"],
       },
     },
     required: ["destination"],

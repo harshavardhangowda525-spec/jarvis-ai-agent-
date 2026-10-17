@@ -17,6 +17,8 @@ const delegateSchema = z.object({
   request: z.string().trim().max(2000).describe("What the user asked, in their words."),
   brief: briefSchema,
   dependsOn: z.array(z.string()).max(5).optional().describe("Ids of tasks (from earlier delegate_task results) that must finish first; their results are handed over."),
+  kind: z.enum(["website", "app"]).optional().describe("ASTON only: a website or an app demo."),
+  leadId: z.string().max(60).optional().describe("ASTON only: the CRM lead it's for (its verified details are used)."),
 });
 
 export const delegateTaskTool: ToolDefinition<z.input<typeof delegateSchema>> = {
@@ -27,6 +29,7 @@ export const delegateTaskTool: ToolDefinition<z.input<typeof delegateSchema>> = 
     "Hand a piece of work to the agent that can do it, as a tracked task that runs in the background and reports back. " +
     "DARWIN: finding/verifying businesses, lead generation, the CRM. RUBIN: outreach drafts, follow-ups, quotations, sales numbers. " +
     "EV: Instagram content, captions, reels, marketing ideas. MIKE: market analysis (never trades). " +
+    "ASTON: website and app demos — builds the page, checks it and returns a private preview link (to change an existing demo use aston_demo instead). " +
     "Write a real brief for that agent — don't just forward the user's sentence: a clear objective, the expected outcome, what's already known, " +
     "requirements, constraints, the output format and concrete acceptance criteria. Use sensible defaults and say they're assumptions in the brief. " +
     "For multi-step work make one task per agent and chain them with dependsOn (e.g. DARWIN verifies, then RUBIN drafts outreach). " +
@@ -54,11 +57,14 @@ export const delegateTaskTool: ToolDefinition<z.input<typeof delegateSchema>> = 
         required: ["objective", "expectedOutcome", "acceptance"],
       },
       dependsOn: { type: "array", items: { type: "string" } },
+      kind: { type: "string", enum: ["website", "app"] },
+      leadId: { type: "string" },
     },
     required: ["agent", "title", "request", "brief"],
   },
   async execute(input, ctx) {
-    const job = await createJob(ctx.userId, { ...input, brief: briefSchema.parse(input.brief) });
+    const { kind, leadId, ...rest } = input;
+    const job = await createJob(ctx.userId, { ...rest, brief: briefSchema.parse(input.brief), ...(input.agent === "aston" ? { payload: { kind, leadId } } : {}) });
     return {
       data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, note: "Assigned. It runs in the background; JARVIS reports when it finishes. Don't claim results yet." },
       summary: `Assigned to ${JOB_AGENT_NAME[input.agent]}: ${job.title}`,

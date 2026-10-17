@@ -8,6 +8,7 @@ import { Markdown } from "./markdown";
 import { VoiceMode } from "./voice-mode";
 import { capturePhrase, transcribe } from "@/components/island/voice";
 import { TodayContent, useDailyContent } from "@/components/console/ev/today-content";
+import { announcement, useJobs } from "@/components/jobs/use-jobs";
 
 /**
  * The chat screen every agent except JARVIS uses (JARVIS keeps its own
@@ -30,7 +31,7 @@ interface Msg {
 interface Convo { id: string; title: string; updatedAt: string }
 
 const uid = () => Math.random().toString(36).slice(2, 10);
-const AGENT_ORDER: ChatAgentId[] = ["darwin", "robin", "ev", "mike"];
+const AGENT_ORDER: ChatAgentId[] = ["darwin", "robin", "ev", "mike", "aston"];
 
 export function AgentChat({ agent }: { agent: ChatAgent }) {
   const router = useRouter();
@@ -48,6 +49,24 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
   const [today, setToday] = useState(() => agent.id === "ev" && params.get("today") === "1");
   const [me, setMe] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // ASTON's builds run while its chat is open, and their result is reported here
+  const jobs = useJobs({ status: "all", enabled: agent.id === "aston" });
+  const jobsRef = useRef(jobs); jobsRef.current = jobs;
+  const jobSeen = useRef(new Map<string, string>());
+  useEffect(() => {
+    if (agent.id !== "aston") return;
+    for (const j of jobs.jobs) {
+      if (j.agent !== "aston") continue;
+      const prev = jobSeen.current.get(j.id);
+      jobSeen.current.set(j.id, j.status);
+      if (!prev || prev === j.status || !["completed", "failed", "waiting_approval"].includes(j.status)) continue;
+      const art = j.resultData?.artifacts?.[0];
+      setMsgs((all) => [...all, {
+        id: uid(), role: "assistant", status: "done", content: announcement(j),
+        links: [...(art ? [{ url: `/dashboard/aston?site=${art.siteId}`, label: "Open the preview" }, { url: `/dashboard/aston?site=${art.siteId}&walk=1`, label: "Walk me through it" }] : []), { url: `/dashboard/jobs?task=${j.id}`, label: "Task details" }],
+      }]);
+    }
+  }, [agent.id, jobs.jobs]);
   const activeRef = useRef<string | null>(null); activeRef.current = activeId;
   const endRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -141,6 +160,13 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
               patch(aId, (m) => ({ ...m, links: [...(m.links ?? []), { url: String(ev.url), label: String(ev.label ?? ev.url) }] })); break;
             case "navigate":
               patch(aId, (m) => ({ ...m, links: [...(m.links ?? []), { url: String(ev.path), label: "Open in JARVIS" }] })); break;
+            case "artifact":
+              // a preview you asked to see → ASTON's viewer (walkthrough when you asked for one)
+              patch(aId, (m) => ({ ...m, links: [...(m.links ?? []), { url: `/dashboard/aston?site=${String(ev.siteId)}${ev.mode === "walk" ? "&walk=1" : ""}`, label: ev.mode === "walk" ? "Start the walkthrough" : "Open the preview" }] }));
+              router.push(`/dashboard/aston?site=${String(ev.siteId)}${ev.mode === "walk" ? "&walk=1" : ""}`);
+              break;
+            case "job":
+              void jobsRef.current.refresh(); break;
             case "email":
               if (ev.phase === "sent" || ev.phase === "failed") patch(aId, (m) => ({ ...m, tools: [...(m.tools ?? []), { name: "email", status: ev.phase === "sent" ? "ok" : "error", summary: ev.phase === "sent" ? `Email sent to ${ev.to ?? "the recipient"}` : `Email not sent: ${ev.error ?? "failed"}` }] }));
               break;
@@ -164,7 +190,7 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
       void loadList();
     }
     return err && err !== "stopped" ? { text: full, error: err } : { text: full };
-  }, [agent.id, loadList]);
+  }, [agent.id, loadList, router]);
 
   const sendRef = useRef(send); sendRef.current = send;
 
@@ -265,6 +291,8 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
           <div className="ac-title"><b>{agent.name}</b><span>{agent.role}</span></div>
           {agent.id === "ev" && <button type="button" className="ac-console" onClick={() => setToday(true)}>Today&apos;s content</button>}
           {(agent.id === "darwin" || agent.id === "robin") && <Link href="/dashboard/crm" className="ac-console">Open CRM</Link>}
+          {agent.id === "aston" && <Link href="/dashboard/aston" className="ac-console">Demos</Link>}
+          {agent.id === "aston" && <Link href="/dashboard/teleprompter" className="ac-console">Teleprompter</Link>}
           <span className="ac-avatar" style={{ background: agent.color }} aria-hidden>{agent.name[0]}</span>
         </header>
 

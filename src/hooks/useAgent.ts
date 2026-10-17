@@ -40,13 +40,15 @@ interface UseAgentOptions {
   onPendingMedia?: (p: { kind: "image" | "video"; projectId: string; label: string; fallback?: { prompt: string; seconds?: number; aspect?: "square" | "portrait" | "landscape" } }) => void;
   /** Fired for every tool result (used e.g. to drive EV's operating state). */
   onTool?: (t: { name: string; status: "ok" | "error"; summary: string }) => void;
+  /** ASTON preview you asked to see (open = show it, walk = guided walkthrough). */
+  onArtifact?: (a: { siteId: string; version: number; url: string; title: string; mode?: "open" | "walk" }) => void;
   /** The turn failed (no provider answered, rate limit, connection error…) — the message to show/say. */
   onError?: (message: string) => void;
 }
 
 /** Per-send options. `agent` routes the turn through a specific internal brain. */
 export interface SendOptions {
-  agent?: "jarvis" | "ev" | "darwin" | "mike" | "robin";
+  agent?: "jarvis" | "ev" | "darwin" | "mike" | "robin" | "aston";
 }
 
 let idc = 0;
@@ -57,7 +59,7 @@ const nextId = () => `m${Date.now()}_${idc++}`;
  * and exposes messages, the live-activity feed, and the currently streaming
  * assistant text. Voice and text share this same flow.
  */
-export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onError }: UseAgentOptions = {}) {
+export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onArtifact, onError }: UseAgentOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -220,6 +222,9 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
               case "job":
                 onJob?.({ id: ev.id, agent: ev.agent, title: ev.title, status: ev.status });
                 break;
+              case "artifact":
+                onArtifact?.({ siteId: ev.siteId, version: ev.version, url: ev.url, title: ev.title, mode: ev.mode });
+                break;
               case "pending_media":
                 onPendingMedia?.({ kind: ev.kind, projectId: ev.projectId, label: ev.label, fallback: ev.fallback });
                 break;
@@ -281,7 +286,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
         onTurnEnd?.();
       }
     },
-    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onError, pushActivity, setConversation, streaming],
+    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onArtifact, onError, pushActivity, setConversation, streaming],
   );
 
   return {

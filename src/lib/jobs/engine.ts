@@ -2,6 +2,7 @@ import "server-only";
 import type { AgentJob, Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { runAgent, type AgentEvent, type AgentInput } from "@/lib/ai/agent";
+import { astonRunner, type AstonPayload } from "@/lib/aston/build";
 import { ACTIVE, FINISHED, JOB_AGENT_NAME, briefPrompt, briefSchema, judgeOutcome, type Brief, type JobAgent, type JobStatus } from "./brief";
 
 /**
@@ -30,14 +31,14 @@ const db = () => getDb();
 const step = (text: string, kind: Step["kind"] = "info"): Step => ({ at: new Date().toISOString(), text: text.slice(0, 300), kind });
 const pushSteps = (j: Pick<AgentJob, "progress">, ...s: Step[]) => [...((Array.isArray(j.progress) ? j.progress : []) as Step[]), ...s].slice(-60) as unknown as Prisma.InputJsonValue;
 
-export async function createJob(userId: string, p: { agent: JobAgent; title: string; request: string; brief: Brief; dependsOn?: string[] }) {
+export async function createJob(userId: string, p: { agent: JobAgent; title: string; request: string; brief: Brief; dependsOn?: string[]; payload?: AstonPayload }) {
   const brief = briefSchema.parse(p.brief);
   const deps = p.dependsOn?.length ? await db().agentJob.findMany({ where: { userId, id: { in: p.dependsOn } }, select: { id: true } }) : [];
   if (p.dependsOn?.length && deps.length !== p.dependsOn.length) throw new Error("A task it depends on doesn't exist.");
   return db().agentJob.create({
     data: {
       userId, agent: p.agent, title: p.title.trim().slice(0, 160), request: p.request.slice(0, 4000), brief: brief as unknown as Prisma.InputJsonValue,
-      dependsOn: deps.map((d) => d.id), status: "assigned",
+      dependsOn: deps.map((d) => d.id), status: "assigned", ...(p.payload ? { payload: p.payload as Prisma.InputJsonValue } : {}),
       progress: [step(`Assigned to ${JOB_AGENT_NAME[p.agent]}${deps.length ? ` — starts after ${deps.length} other task${deps.length === 1 ? "" : "s"}` : ""}`)] as unknown as Prisma.InputJsonValue,
     },
   });
@@ -113,6 +114,7 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date 
   let text = "", error: string | null = null, cancelled = false, lastWrite = 0;
   const tools: { name: string; status: "ok" | "error"; summary: string }[] = [];
   const links: { url: string; label: string }[] = [];
+  const artifacts: Extract<AgentEvent, { type: "artifact" }>[] = [];
   const pending: Step[] = [];
   const flush = async (force = false) => {
     if (!force && Date.now() - lastWrite < 2500 && !pending.length) return;
@@ -123,11 +125,12 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date 
   };
 
   try {
-    const run = (o.runner ?? runAgent)({
+    const runner: Runner = o.runner ?? (job.agent === "aston" ? astonRunner(job) : runAgent);
+    const run = runner({
       userId: job.userId, timezone: profile?.timezone ?? "UTC", assistantName: profile?.assistantName ?? "JARVIS",
       displayName: profile?.displayName ?? null, history: [], message: prompt,
       preferredProvider: (profile as { aiProvider?: string | null } | null)?.aiProvider ?? null,
-      agent: job.agent as JobAgent,
+      agent: job.agent as AgentInput["agent"],
     });
     for await (const ev of run) {
       if (ev.type === "text") text += ev.delta;
@@ -137,6 +140,7 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date 
         tools.push({ name: ev.name, status: ev.status, summary: ev.summary });
         pending.push(step(`${ev.status === "ok" ? "✓" : "✗"} ${ev.summary || ev.name}`, ev.status === "ok" ? "tool" : "error"));
       } else if (ev.type === "link" || ev.type === "open") links.push({ url: ev.url, label: ev.label });
+      else if (ev.type === "artifact") artifacts.push(ev);
       else if (ev.type === "activity") { /* live label only */ }
       await flush(pending.length > 0);
       if (cancelled) break;
@@ -155,7 +159,7 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date 
     where: { id },
     data: {
       status, leaseUntil: null, result: shown || null,
-      resultData: { tools, links } as unknown as Prisma.InputJsonValue,
+      resultData: { tools, links, artifacts } as unknown as Prisma.InputJsonValue,
       error: status === "failed" ? outcome.reason : null,
       finishedAt: status === "waiting_approval" ? null : new Date(),
       progress: pushSteps(job, step(
@@ -216,7 +220,8 @@ export async function resumeJob(userId: string, id: string, note: string) {
 export const jobView = (j: AgentJob) => ({
   id: j.id, agent: j.agent, agentName: JOB_AGENT_NAME[j.agent as JobAgent] ?? j.agent, title: j.title, status: j.status as JobStatus,
   request: j.request, brief: j.brief as unknown as Brief, dependsOn: j.dependsOn, progress: j.progress as unknown as Step[],
-  result: j.result, resultData: j.resultData as { tools?: { name: string; status: string; summary: string }[]; links?: { url: string; label: string }[] } | null,
+  result: j.result, resultData: j.resultData as { tools?: { name: string; status: string; summary: string }[]; links?: { url: string; label: string }[]; artifacts?: { kind: "aston"; siteId: string; version: number; url: string; title: string }[] } | null,
+  payload: (j.payload ?? null) as AstonPayload | null,
   error: j.error, attempts: j.attempts, cancelRequested: j.cancelRequested, conversationId: j.conversationId,
   createdAt: j.createdAt.toISOString(), startedAt: j.startedAt?.toISOString() ?? null, finishedAt: j.finishedAt?.toISOString() ?? null,
   updatedAt: j.updatedAt.toISOString(), announced: !!j.announcedAt,

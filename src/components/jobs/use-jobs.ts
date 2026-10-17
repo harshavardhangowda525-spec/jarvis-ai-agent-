@@ -54,6 +54,8 @@ export function useJobs(o: { status?: "active" | "finished" | "all"; enabled?: b
 /** One spoken line for a finished task — only what the task record says. */
 export function announcement(j: JobView): string {
   const first = (s: string | null) => (s ?? "").replace(/[*_`]+/g, "").replace(/[#>|]+/g, " ").replace(/\s+/g, " ").trim().match(/^.{1,180}?[.!?](\s|$)/)?.[0]?.trim() ?? (s ?? "").slice(0, 160);
+  const site = j.resultData?.artifacts?.find((a) => a.kind === "aston");
+  if (j.status === "completed" && site) return `ASTON has finished ${site.title}${j.payload?.siteId ? ` — version ${site.version}` : ""}. The preview is ready. Would you like me to open it in a new tab so I can walk you through the design, or would you like to change anything first?`;
   if (j.status === "completed") return `${j.agentName} finished "${j.title}". ${first(j.result)}`.trim();
   if (j.status === "waiting_approval") return `${j.agentName} needs your approval on "${j.title}". ${j.progress.at(-1)?.text.replace(/^Waiting for your approval:\s*/, "") ?? ""}`.trim();
   if (j.status === "cancelled") return `"${j.title}" was cancelled.`;

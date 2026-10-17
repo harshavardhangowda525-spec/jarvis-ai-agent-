@@ -29,6 +29,8 @@ import { robinOverview } from "@/lib/robin/overview";
 import { listServices as listRobinServices } from "@/lib/robin/crm";
 import { money as robinMoney } from "@/lib/robin/types";
 import { emailChannelReady } from "@/lib/darwin/email";
+import { buildAstonSystemPrompt } from "@/lib/aston/prompt";
+import { todayPlanSummary } from "@/lib/plans/engine";
 
 export type AgentEvent =
   | { type: "activity"; label: string }
@@ -43,6 +45,8 @@ export type AgentEvent =
   /** A Magic Hour render still in progress — the app keeps checking and shows it when done. */
   | { type: "pending_media"; kind: "image" | "video"; projectId: string; label: string; fallback?: { prompt: string; seconds?: number; aspect?: "square" | "portrait" | "landscape" } }
   | { type: "provider"; name: string }
+  /** Something an agent built (ASTON: a site version with a checked preview). */
+  | { type: "artifact"; kind: "aston"; siteId: string; version: number; url: string; title: string; mode?: "open" | "walk" }
   /** A task JARVIS delegated to an agent (delegate_task) — tracked until it finishes. */
   | { type: "job"; id: string; agent: string; title: string; status: string }
   /**
@@ -72,7 +76,7 @@ export interface AgentInput {
   /** Per-user preferred primary AI provider (from Settings); overrides env default. */
   preferredProvider?: string | null;
   /** Which internal agent is driving: "ev" (marketing) or "darwin" (lead-gen/CRM). */
-  agent?: "ev" | "darwin" | "mike" | "robin";
+  agent?: "ev" | "darwin" | "mike" | "robin" | "aston";
 }
 
 const MAX_STEPS = 8;
@@ -95,6 +99,7 @@ export async function* runAgent(
   const isDarwin = input.agent === "darwin";
   const isMike = input.agent === "mike";
   const isRobin = input.agent === "robin";
+  const isAston = input.agent === "aston";
 
   // "Remember that …" / "From now on …" is saved straight away, so it's kept
   // even if the model (especially a small local one) forgets to call the tool.
@@ -182,6 +187,17 @@ export async function* runAgent(
       console.error("[agent] robin CRM snapshot failed:", e);
     }
     system = buildRobinSystemPrompt({ userDisplayName: input.displayName, timezone: tz, nowLocal, crmSummary, servicesSummary });
+  } else if (isAston) {
+    // ASTON's designer brain: its demos and today's plan, nothing invented.
+    const [sites, plan] = await Promise.all([
+      db.astonSite.findMany({ where: { userId: input.userId }, orderBy: { updatedAt: "desc" }, take: 5, select: { name: true, kind: true, currentVersion: true, approvedVersion: true } }).catch(() => []),
+      todayPlanSummary(input.userId).catch(() => null),
+    ]);
+    system = buildAstonSystemPrompt({
+      userDisplayName: input.displayName, timezone: validTz(input.timezone),
+      demosSummary: sites.length ? sites.map((s) => `${s.name} (${s.kind}, v${s.currentVersion}${s.approvedVersion ? `, v${s.approvedVersion} approved` : ""})`).join("; ") : "No demos yet.",
+      planSummary: plan ?? "Today's marketing plan isn't ready yet.",
+    });
   } else {
     system = buildSystemPrompt({
       assistantName: input.assistantName,
@@ -190,7 +206,7 @@ export async function* runAgent(
       memories: await memoriesLookup,
     });
   }
-  if (isEv || isDarwin || isMike || isRobin) {
+  if (isEv || isDarwin || isMike || isRobin || isAston) {
     // EV, DARWIN and MIKE share JARVIS's memory of the user (preferences, business…).
     system += memoryPromptBlock(await memoriesLookup,
       `# What you know about ${input.displayName || "the user"} (shared memory with JARVIS — use it to personalise; never contradict it)`);
@@ -198,13 +214,13 @@ export async function* runAgent(
   system += memoryNote;
 
   const brain = await brainLookup;
-  const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : "jarvis", brain, input.preferredProvider);
+  const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : isAston ? "aston" : "jarvis", brain, input.preferredProvider);
   if (!brainPick.configs.length) {
     yield { type: "error", message: brainPick.missing ?? "No AI provider is configured." };
     return;
   }
   const configs = brainPick.configs;
-  const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : undefined);
+  const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : isAston ? "aston" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {
     userId: input.userId,
@@ -288,7 +304,7 @@ export async function* runAgent(
   }
 }
 
-const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE", robin: "RUBIN" } as const;
+const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE", robin: "RUBIN", aston: "ASTON" } as const;
 
 const PROVIDER_NAMES: Record<string, string> = { groq: "Groq", gemini: "Gemini", ollama: "your PC brain (Ollama)", cerebras: "Cerebras", openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude" };
 const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.groq.com)", gemini: "GEMINI_API_KEY (free at aistudio.google.com/apikey)" };
@@ -300,6 +316,7 @@ const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.
  *   DARWIN → DARWIN_PROVIDER, default "groq,gemini" = Groq, Gemini as backup
  *   MIKE   → MIKE_PROVIDER,   default "groq,gemini" = Groq, Gemini as backup
  *   RUBIN  → ROBIN_PROVIDER,  default "groq,gemini" = Groq, Gemini as backup
+ *   ASTON  → ASTON_PROVIDER,  default "groq,gemini" = Groq, Gemini as backup
  * A provider id (or a comma list) means those providers in that order and
  * nothing else. "auto" = every configured provider, fastest first (JARVIS also
  * honours the per-user Settings pick). If none of them is set up, `missing`
@@ -310,7 +327,7 @@ export function agentConfigs(
   brain: BrainEndpoint | null,
   preferred?: string | null,
 ): { configs: AiConfig[]; missing?: string } {
-  const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : agent === "mike" ? env.mikeProvider : agent === "robin" ? env.robinProvider : env.jarvisProvider;
+  const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : agent === "mike" ? env.mikeProvider : agent === "robin" ? env.robinProvider : agent === "aston" ? env.astonProvider : env.jarvisProvider;
   const picks = pick.split(/[\s,>]+/).filter(Boolean);
   if (picks.includes("auto")) {
     try { return { configs: getAiConfigs((agent === "jarvis" && preferred) || undefined, brain) }; }
@@ -419,6 +436,10 @@ async function* runOneTool(
     const job = data?.job as { id?: unknown; agent?: unknown; title?: unknown; status?: unknown } | undefined;
     if (job && typeof job.id === "string") {
       yield { type: "job", id: job.id, agent: String(job.agent ?? ""), title: String(job.title ?? ""), status: String(job.status ?? "") };
+    }
+    const ap = data?.astonPreview as { siteId?: unknown; version?: unknown; url?: unknown; title?: unknown; mode?: unknown } | undefined;
+    if (ap && typeof ap.siteId === "string" && typeof ap.url === "string" && ap.url.startsWith("/p/")) {
+      yield { type: "artifact", kind: "aston", siteId: ap.siteId, version: Number(ap.version) || 0, url: ap.url, title: String(ap.title ?? "Preview"), mode: ap.mode === "walk" ? "walk" : "open" };
     }
     if (data && Array.isArray(data.openApp)) {
       yield { type: "open_app", names: (data.openApp as unknown[]).map(String).slice(0, 4) };

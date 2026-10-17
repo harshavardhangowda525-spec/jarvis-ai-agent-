@@ -4,6 +4,7 @@
  * lets the model decide what to call. No command matching lives in the agent.
  */
 import { delegateTaskTool, taskControlTool, taskStatusTool } from "./jobs";
+import { astonBuildTool, astonDemosTool, astonPlanTool, jarvisAstonDemoTool, jarvisPlanTool } from "./aston";
 import type { ToolDefinition } from "./types";
 import { capabilities } from "@/lib/env";
 import { isProviderConfigured } from "@/lib/integrations/providers";
@@ -53,6 +54,11 @@ const ALL_TOOLS: ToolDefinition[] = [
   delegateTaskTool as ToolDefinition,
   taskStatusTool as ToolDefinition,
   taskControlTool as ToolDefinition,
+  jarvisAstonDemoTool as ToolDefinition,
+  jarvisPlanTool as ToolDefinition,
+  astonBuildTool as ToolDefinition,
+  astonDemosTool as ToolDefinition,
+  astonPlanTool as ToolDefinition,
   calculatorTool as ToolDefinition,
   timeTool as ToolDefinition,
   weatherTool as ToolDefinition,
@@ -109,13 +115,15 @@ const ALL_TOOLS: ToolDefinition[] = [
  */
 const ROBIN_BASICS = new Set(["calculator", "get_time", "memory", "tasks", "notes", "web_search"]);
 
-export function availableTools(agent?: "ev" | "darwin" | "mike" | "robin"): ToolDefinition[] {
+export function availableTools(agent?: "ev" | "darwin" | "mike" | "robin" | "aston"): ToolDefinition[] {
   const googleReady = isProviderConfigured("google");
   return ALL_TOOLS.filter((t) => {
     // Agent-scoped tools (EV's) only surface for their agent.
     if (t.agentScope) return t.agentScope === (agent ?? "jarvis");
     // RUBIN stays on sales: its own tools plus a few basics (smaller requests, isolated context)
     if (agent === "robin" && !ROBIN_BASICS.has(t.name)) return false;
+    // ASTON: its own tools plus the same few basics
+    if (agent === "aston" && !ROBIN_BASICS.has(t.name)) return false;
     if (t.requiresCapability === "search") return capabilities.search;
     if (t.requiresCapability === "weather") return capabilities.weather;
     if (t.requiresCapability === "websiteData") return capabilities.websiteData;

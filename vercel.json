@@ -50,6 +50,15 @@
     },
     "src/app/api/mike/scan/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/cron/plans/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/plans/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/jobs/[id]/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -96,6 +105,34 @@
     {
       "path": "/api/cron/mike",
       "schedule": "20 4 * * *"
+    },
+    {
+      "path": "/api/cron/plans",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/plans",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/plans",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/plans",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/plans",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/plans",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/plans",
+      "schedule": "0 5 * * *"
     }
   ]
 }
