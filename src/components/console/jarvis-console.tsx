@@ -537,6 +537,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
       if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) { sleep(); return; }
 
+      // ===== "open CRM", "open DARWIN CRM", "show my leads" → DARWIN's CRM (the one CRM) =====
+      if (/^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?(?:open|show|launch|bring up|pull up|go to)\s+(?:the\s+|my\s+)?(?:darwin'?s?\s+)?crm[.!\s]*$|^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:open|show)\s+(?:me\s+)?my\s+leads[.!\s]*$/i.test(t)) {
+        logActivity({ category: "agent", agent: "DARWIN", action: "Opened the CRM", importance: 1 });
+        sayRef.current("Opening the CRM.");
+        router.push("/dashboard/crm");
+        return;
+      }
       // ===== EV marketing agent: "open EV", "activate EV" → EV's chat =====
       if (/\b(activate|open|start|launch|bring up|switch to|go to)\s+ev\b|\bev\s+mode\b|^ev[\s!.,]*$/.test(low)) {
         openEv();
@@ -685,7 +692,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       agent.send(t);
     };
-  }, [agent, sleep, launchUltron, launchDarwin, launchMike, launchRobin, openHumanoid, closeHumanoid, openEv, openEvToday, voice, voiceStarted]);
+  }, [agent, sleep, launchUltron, launchDarwin, launchMike, launchRobin, openHumanoid, closeHumanoid, openEv, openEvToday, voice, voiceStarted, router]);
 
   // Voice was on in the agent you just left → switch it back on here.
   const resumingVoice = useResumeVoice(enableVoice);
@@ -1177,6 +1184,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                 ))}
                 <button onClick={() => { setMenuOpen(false); openHumanoid(); }} className="rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">Humanoid</button>
                 {/* the agents' chat screens (the side nav is folded away on this screen) */}
+                <button onClick={() => { setMenuOpen(false); router.push("/dashboard/crm"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">DARWIN CRM</button>
                 <span className="col-span-2 mt-2 px-3 text-[10px] uppercase tracking-[0.25em] text-white/35">Agent chats</span>
                 {Object.values(CHAT_AGENTS).map((a) => (
                   <button key={a.id} onClick={() => { setMenuOpen(false); router.push(`/dashboard/chat/${a.id}`); }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">

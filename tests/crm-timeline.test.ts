@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { timeline } from "@/components/island/crm-dashboard";
+import { timeline } from "@/components/crm/timeline";
 import type { IslandLeadFull } from "@/lib/robin/island-types";
 
 const lead = (over: Partial<IslandLeadFull> = {}): IslandLeadFull => ({

@@ -104,15 +104,16 @@ async function lease(id: string, now: Date, ms: number) {
 /** Everything DARWIN already has (both lists) — so nothing is repeated. */
 async function knowledge(userId: string) {
   const db = getDb();
-  const [leads, igLeads, checks, known] = await Promise.all([
+  const [leads, igLeads, checks, known, cleared] = await Promise.all([
     db.darwinLead.findMany({ where: { userId }, select: { fingerprint: true, sourceRef: true, phone: true, businessName: true, latitude: true, longitude: true } }),
     db.darwinIgLead.findMany({ where: { userId }, select: { fingerprint: true, placeId: true, phone: true, businessName: true, latitude: true, longitude: true, instagramUsername: true } }),
     db.darwinIgCheck.findMany({ where: { userId }, select: { fingerprint: true, placeId: true } }),
     // businesses the main search already found WITH a website — no point checking them here
     db.darwinCandidate.findMany({ where: { userId, status: { in: ["website_exists", "closed"] } }, select: { fingerprint: true, placeId: true } }),
+    db.darwinSeen.findMany({ where: { userId }, select: { fingerprint: true, sourceRef: true } }),
   ]);
-  const fps = new Set([...leads.map((l) => l.fingerprint), ...igLeads.map((l) => l.fingerprint)]);
-  const refs = new Set([...leads.map((l) => l.sourceRef), ...igLeads.map((l) => l.placeId)].filter(Boolean) as string[]);
+  const fps = new Set([...leads.map((l) => l.fingerprint), ...igLeads.map((l) => l.fingerprint), ...cleared.map((l) => l.fingerprint)]);
+  const refs = new Set([...leads.map((l) => l.sourceRef), ...igLeads.map((l) => l.placeId), ...cleared.map((l) => l.sourceRef)].filter(Boolean) as string[]);
   const phones = new Set([...leads, ...igLeads].map((l) => tail10(l.phone)).filter((p) => p.length === 10));
   const named = [...leads, ...igLeads].filter((l) => l.latitude != null && l.longitude != null).map((l) => ({ n: normName(l.businessName), lat: l.latitude!, lon: l.longitude! }));
   const handles = new Set(igLeads.map((l) => l.instagramUsername));

@@ -84,12 +84,13 @@ database lives on Neon (online), ~6 MB in the test copy.
 1. **Lead generation reliability** — done in this change (health, retries,
    states, run report, `npm run darwin:check`). Proven only when the check
    passes on your PC with your key.
-2. **One CRM** — decision needed (§6): make one lead store canonical, remove
-   the DARWIN→RUBIN copy, give it a simple light CRM screen, and point RUBEN's
-   "Open CRM" at it through the same API. Migration with counts before/after.
-3. **Import the existing ~400-lead CRM** — needs the provider name (§6).
-   CSV/XLSX import works for any provider: preview, duplicate detection,
-   status mapping, "already contacted" preserved, dry run on a sample first.
+2. **One CRM** — done: the RUBIN tables are the single CRM, owned and shown by
+   DARWIN (`/dashboard/crm`, `src/lib/crm/*`); DARWIN saves straight into it;
+   RUBEN's pop-up shows the same screen via the same API. Migration 0022 is
+   additive (record counts identical before/after on the test database).
+3. **Import the existing ~400-lead CRM (Lovable / Supabase)** — done: CSV
+   import with preview, duplicate detection, status mapping, "already
+   contacted" preserved, sample first; backups, restore and confirmed clearing.
 4. **JARVIS task delegation** — persistent task records (id, agent, status,
    timestamps, result, errors), cancel/retry/recover.
 5. **Daily marketing plan + teleprompter page** — Vercel Cron (runs with the
@@ -102,8 +103,8 @@ database lives on Neon (online), ~6 MB in the test copy.
 
 ## 6. Decisions needed from you
 
-- Which CRM holds the ~400 contacted leads (HubSpot, Zoho, Google Sheets,
-  Excel, …)? Can you export it as CSV/XLSX?
-- Clear DARWIN's current CRM after a verified backup — yes/no (an in-app
-  confirmation will still be required).
-- WhatsApp: do you have a Meta WhatsApp Business account or Twilio?
+Answered: the leads are in a Lovable app (Supabase → CSV export); RUBIN's
+tables became the one CRM; clearing DARWIN's records is allowed after a backup
+with an in-app confirmation; WhatsApp will use Meta's WhatsApp Business
+Platform (Cloud API) — still to build (needs a phone number ID, an access
+token and an approved template).

@@ -93,6 +93,10 @@ export interface LeadInput extends QualifyInput {
   potentialValue?: number | null;
   serviceInterest?: string | null;
   notes?: string | null;
+  /** The record's id in the CRM it was imported from. */
+  externalRef?: string | null;
+  /** How DARWIN verified it (kept with the lead, so it survives clearing DARWIN's search records). */
+  evidence?: Record<string, unknown> | null;
 }
 
 /** An existing Rubin lead that is the same business (DARWIN id, phone, email, or name + city). */
@@ -126,6 +130,7 @@ export async function createLead(userId: string, input: LeadInput, source: Sourc
       const taken = await db.robinLead.findFirst({ where: { userId, darwinLeadId: input.darwinLeadId }, select: { id: true } });
       if (!taken) fill.darwinLeadId = input.darwinLeadId;
     }
+    if (!dup.evidence && input.evidence) fill.evidence = input.evidence as Prisma.InputJsonValue;
     if (fill.phone) fill.phoneKey = phoneKeyOf(input.phone);
     const lead = Object.keys(fill).length ? await db.robinLead.update({ where: { id: dup.id }, data: fill }) : dup;
     await logRobin(userId, dup.id, "duplicate", `Duplicate of ${dup.businessName} detected${source === "darwin" ? " in DARWIN's leads" : ""} — kept the existing record${Object.keys(fill).length ? " and added the missing details" : ""}.`, { source }, 1);
@@ -151,7 +156,8 @@ export async function createLead(userId: string, input: LeadInput, source: Sourc
       instagram: input.instagram ?? null, address: input.address ?? null, city: input.city ?? null, mapsUrl: input.mapsUrl ?? null,
       websiteStatus: input.websiteStatus ?? (input.website ? "has_website" : "unknown"), websiteQuality: input.websiteQuality ?? null,
       opportunityType: input.opportunityType ?? null, darwinScore: input.darwinScore ?? null, rating: input.rating ?? null, reviews: input.reviews ?? null,
-      source: input.source ?? source, discoveredAt: input.discoveredAt ?? null,
+      source: input.source ?? source, discoveredAt: input.discoveredAt ?? null, externalRef: input.externalRef ?? null,
+      evidence: (input.evidence ?? undefined) as Prisma.InputJsonValue | undefined,
       fingerprint: fingerprintOf(name, input.city ?? input.address), phoneKey: phoneKeyOf(input.phone),
       score: q.score, priority: q.priority, reasons: q.reasons as unknown as Prisma.InputJsonValue, qualifiedAt: now,
       stage, stageChangedAt: now, potentialValue: input.potentialValue ?? null, serviceInterest: input.serviceInterest ?? null, notes: input.notes ?? null,

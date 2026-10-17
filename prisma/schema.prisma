@@ -47,6 +47,8 @@ model User {
   mikeSignals         MikeSignal[]
   mikeAlerts          MikeAlert[]
   robinLeads          RobinLead[]
+  crmBackups          CrmBackup[]
+  darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
   gateCredentials     GateCredential[]
   gateSecurity        GateSecurity?
@@ -698,7 +700,9 @@ model RobinLead {
   darwinScore      Int? // DARWIN's own lead score (a prioritisation hint, never a prediction)
   rating           Float?
   reviews          Int?
-  source           String    @default("darwin") // darwin | manual | webhook
+  source           String    @default("darwin") // darwin | manual | webhook | import
+  externalRef      String? // the record's id in the CRM it was imported from (re-imports never duplicate it)
+  evidence         Json? // how DARWIN verified it: website check status + reasons, where the phone/email came from, when
   discoveredAt     DateTime?
   fingerprint      String // normalised name + city, for duplicate detection
   phoneKey         String? // last 10 digits, for duplicate detection
@@ -733,6 +737,7 @@ model RobinLead {
 
   @@unique([userId, darwinLeadId])
   @@unique([userId, number])
+  @@unique([userId, source, externalRef])
   @@index([userId, stage])
   @@index([userId, fingerprint])
   @@index([userId, phoneKey])
@@ -1157,3 +1162,33 @@ model DarwinIgCheck {
   @@index([userId, placeId])
 }
 
+
+/// A restorable snapshot of the CRM and DARWIN's discovered leads (gzip JSON).
+model CrmBackup {
+  id        String   @id @default(cuid())
+  userId    String
+  reason    String // manual | before_clear | before_import
+  counts    Json // { darwinLeads, crmLeads, interactions, followUps … } at backup time
+  bytes     Int
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+/// Businesses DARWIN has already discovered, kept after their records are cleared,
+/// so a cleared business is never "discovered" as new again.
+model DarwinSeen {
+  id          String   @id @default(cuid())
+  userId      String
+  fingerprint String
+  sourceRef   String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fingerprint])
+  @@index([userId, sourceRef])
+}

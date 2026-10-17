@@ -25,7 +25,7 @@ function sourcesHash() {
       else if (/\.(tsx?|mjs|cjs|js|json|prisma)$/.test(e.name)) { h.update(p); h.update(fs.readFileSync(p)); }
     }
   };
-  for (const d of ["src/lib", "src/components/island", "desktop/rubin/standalone"]) walk(path.join(ROOT, d));
+  for (const d of ["src/lib", "src/components/island", "src/components/crm", "desktop/rubin/standalone"]) walk(path.join(ROOT, d));
   h.update(fs.readFileSync(path.join(ROOT, "prisma", "schema.prisma")));
   return h.digest("hex");
 }

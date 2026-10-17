@@ -108,7 +108,11 @@ export async function findNewLeads(p: FindParams): Promise<FindLeadsResult> {
   }
 
   // ---- everything DARWIN has ever discovered for this user -----------------
-  const history = await db.darwinLead.findMany({ where: { userId: p.userId }, select: { fingerprint: true, sourceRef: true } });
+  const history = [
+    ...(await db.darwinLead.findMany({ where: { userId: p.userId }, select: { fingerprint: true, sourceRef: true } })),
+    // businesses whose DARWIN records were cleared are still "already found"
+    ...(await db.darwinSeen.findMany({ where: { userId: p.userId }, select: { fingerprint: true, sourceRef: true } })),
+  ];
   const knownFp = new Set(history.map((h) => h.fingerprint));
   const knownRef = new Set(history.map((h) => h.sourceRef).filter((x): x is string => !!x));
   const inHistory = (l: GeoLead, fp: string) =>

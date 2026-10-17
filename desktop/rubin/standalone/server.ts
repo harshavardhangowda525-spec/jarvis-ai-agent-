@@ -15,12 +15,17 @@ import { STAGES } from "@/lib/robin/types";
 import { RobinError, moveStage } from "@/lib/robin/crm";
 import { islandNotices, runIslandCommand } from "@/lib/robin/island";
 import { islandDashboard, islandLeadFull } from "@/lib/robin/island-dashboard";
-import { addFollowUpNote, cancelFollowUp, completeFollowUp, logInteraction } from "@/lib/robin/engage";
+import { addFollowUpNote, cancelFollowUp, completeFollowUp, logInteraction, scheduleFollowUp } from "@/lib/robin/engage";
+import { FOLLOWUP_ACTIONS } from "@/lib/robin/types";
 import { CHANNELS, CALL_OUTCOMES } from "@/lib/robin/types";
 import type { IslandStatus } from "@/lib/robin/island-types";
 import { getVoiceProvider } from "@/lib/voice/elevenlabs";
 import { groqSttAvailable, groqTranscribe } from "@/lib/voice/groq-stt";
 import { robinVoiceFor } from "@/lib/robin/voice";
+import { crmCreate, crmGenerate, crmGenerateOptions, crmLead, crmList, crmPatch } from "@/lib/crm/api";
+import { backupFile, clearDarwin, clearPreview, createBackup, listBackups, restoreBackup } from "@/lib/crm/backup";
+import { commitImport, previewImport } from "@/lib/crm/import";
+import { CRM_STATUSES, type CrmStatus } from "@/lib/crm/status";
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const ok = (data: unknown) => json(200, { ok: true, data });
@@ -128,6 +133,38 @@ export async function handle(req: Request): Promise<Response> {
     }
 
     let mm: RegExpMatchArray | null;
+    // DARWIN's CRM — the same contract as JARVIS's /api/crm (one CRM, one database)
+    if (p === "/api/crm" && m === "GET") return ok(await crmList(user.id, url.searchParams));
+    if (p === "/api/crm" && m === "POST") return ok(await crmCreate(user.id, await req.json()));
+    if (p === "/api/robin/followups" && m === "POST") {
+      const b = z.object({ leadId: z.string().min(1), dueAt: z.coerce.date(), action: z.enum(FOLLOWUP_ACTIONS).optional(), notes: z.string().max(2000).nullish() }).parse(await req.json());
+      return ok(await scheduleFollowUp(user.id, b.leadId, b, "user"));
+    }
+    if (p === "/api/crm/import" && m === "POST") {
+      const ST = z.enum(CRM_STATUSES.map((x) => x.id) as [CrmStatus, ...CrmStatus[]]);
+      const b = z.object({ action: z.enum(["preview", "import"]), csv: z.string().min(1).max(5_000_000), mapping: z.record(z.number().int().min(0)).optional(), statusMap: z.record(ST).optional(), defaultStatus: ST.optional(), sourceLabel: z.string().max(40).optional(), limit: z.number().int().min(1).max(5000).optional() }).parse(await req.json());
+      const o = { mapping: b.mapping, statusMap: b.statusMap, defaultStatus: b.defaultStatus, sourceLabel: b.sourceLabel };
+      return ok(b.action === "preview" ? await previewImport(user.id, b.csv, o) : await commitImport(user.id, b.csv, { ...o, limit: b.limit }));
+    }
+    if (p === "/api/crm/backups" && m === "GET") return ok({ backups: await listBackups(user.id) });
+    if (p === "/api/crm/backups" && m === "POST") return ok({ backup: await createBackup(user.id, "manual") });
+    if ((mm = p.match(/^\/api\/crm\/backups\/([\w-]{1,40})$/)) && m === "GET") {
+      const f = await backupFile(user.id, mm[1]);
+      return new Response(f.json, { headers: { "Content-Type": "application/json", "Content-Disposition": `attachment; filename="${f.name}"` } });
+    }
+    if ((mm = p.match(/^\/api\/crm\/backups\/([\w-]{1,40})$/)) && m === "POST") {
+      z.object({ confirm: z.literal(true) }).parse(await req.json());
+      return ok(await restoreBackup(user.id, mm[1]));
+    }
+    if (p === "/api/crm/clear" && m === "GET") return ok(await clearPreview(user.id));
+    if (p === "/api/crm/clear" && m === "POST") {
+      const b = z.object({ confirm: z.literal(true), includeUntouchedCrm: z.boolean().default(false), expect: z.object({ darwinLeads: z.number().int().min(0), untouchedCrmLeads: z.number().int().min(0) }) }).parse(await req.json());
+      return ok(await clearDarwin(user.id, b));
+    }
+    if (p === "/api/crm/generate" && m === "GET") return ok(await crmGenerateOptions());
+    if (p === "/api/crm/generate" && m === "POST") return ok(await crmGenerate(user.id, await req.json()));
+    if ((mm = p.match(/^\/api\/crm\/([\w-]{1,40})$/)) && m === "GET") return ok(await crmLead(user.id, mm[1]));
+    if ((mm = p.match(/^\/api\/crm\/([\w-]{1,40})$/)) && m === "PATCH") return ok(await crmPatch(user.id, mm[1], await req.json()));
     if ((mm = p.match(/^\/api\/robin\/leads\/([\w-]{1,40})$/)) && m === "PATCH") {
       const b = stageSchema.parse(await req.json());
       const r = await moveStage(user.id, mm[1], b.stage, { source: b.source ?? "user", note: b.note, confirm: b.confirm });

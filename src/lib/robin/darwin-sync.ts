@@ -12,11 +12,27 @@ import { audit, createLead, loadSettings, logRobin, advanceTo, type LeadInput, t
  */
 
 type Meta = {
-  search?: { location?: string };
+  search?: { location?: string; category?: string };
   google?: { mapsUri?: string | null; rating?: number | null; reviews?: number | null } | null;
-  websiteVerification?: { status?: string };
+  websiteVerification?: { status?: string; reasons?: string[]; independent?: number; checkedAt?: string };
+  phoneSource?: string | null;
+  emailSource?: string | null;
   bucket?: string;
 };
+
+/** What DARWIN actually checked about this business — copied onto the CRM lead. */
+export function darwinEvidence(d: DarwinLead): Record<string, unknown> {
+  const m = (d.metadata ?? {}) as Meta;
+  return {
+    source: d.source, sourceRef: d.sourceRef, sourceUrl: d.sourceUrl,
+    discoveredAt: d.discoveredAt.toISOString(), lastVerifiedAt: d.lastVerifiedAt?.toISOString() ?? null,
+    verifiedFields: d.verifiedFields,
+    website: m.websiteVerification ? { status: m.websiteVerification.status ?? null, reasons: m.websiteVerification.reasons ?? [], checkedAt: m.websiteVerification.checkedAt ?? null } : null,
+    phoneSource: m.phoneSource ?? null, emailSource: m.emailSource ?? null,
+    google: m.google ?? null,
+    search: m.search ?? null,
+  };
+}
 
 export function darwinToLead(d: DarwinLead): LeadInput {
   const m = (d.metadata ?? {}) as Meta;
@@ -33,18 +49,19 @@ export function darwinToLead(d: DarwinLead): LeadInput {
     instagram: d.instagram, address: d.location, city, mapsUrl: maps, websiteStatus: status, opportunityType: d.opportunityType,
     darwinScore: d.leadScore, rating: m.google?.rating ?? null, reviews: m.google?.reviews ?? null,
     source: "darwin", discoveredAt: d.discoveredAt, potentialValue: d.salesValue ?? null, serviceInterest: d.serviceInterest ?? null,
+    evidence: darwinEvidence(d),
   };
 }
 
 export interface SyncResult { imported: number; duplicates: number; names: string[]; remaining: number; skipped?: "off" }
 
 /**
- * Bring DARWIN's leads that Rubin hasn't seen yet into the CRM.
- * `ids` = only these (the "Send to Rubin" button works even with auto-import off).
+ * Bring DARWIN's leads that aren't in the CRM yet into it. There is ONE CRM:
+ * every business DARWIN discovers lands in it (the old auto-import switch no
+ * longer applies). `ids` = only these.
  */
 export async function syncFromDarwin(userId: string, o: { ids?: string[]; limit?: number; source?: Source } = {}): Promise<SyncResult> {
   const db = getDb();
-  if (!o.ids && !(await loadSettings(userId)).autoImport) return { imported: 0, duplicates: 0, names: [], remaining: 0, skipped: "off" };
   const known = await db.robinLead.findMany({ where: { userId, OR: [{ darwinLeadId: { not: null } }, { darwinAliases: { isEmpty: false } }] }, select: { darwinLeadId: true, darwinAliases: true } });
   const seen = new Set(known.flatMap((k) => [k.darwinLeadId, ...k.darwinAliases].filter(Boolean) as string[]));
   const limit = Math.min(o.limit ?? 200, 500);

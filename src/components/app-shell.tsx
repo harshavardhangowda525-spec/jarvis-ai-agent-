@@ -40,7 +40,8 @@ const NAV = [
   { href: "/dashboard", label: "Command Center", icon: Terminal },
   { href: "/dashboard/operator", label: "Operator", icon: MousePointerClick },
   { href: "/dashboard/ultron", label: "ULTRON", icon: Code2 },
-  // the agents open as chats (their full consoles are one click away inside the chat)
+  // the agents open as chats; DARWIN's CRM is the one CRM
+  { href: "/dashboard/crm", label: "CRM", icon: ListChecks },
   { href: "/dashboard/chat/darwin", label: "DARWIN", icon: Radar },
   { href: "/dashboard/chat/robin", label: "RUBIN", icon: Handshake },
   { href: "/dashboard/chat/ev", label: "EV", icon: Megaphone },

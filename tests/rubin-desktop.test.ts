@@ -216,7 +216,7 @@ describe("RUBEN on its own", () => {
     expect(L.sameOrigin("http://localhost:3000/island", "http://localhost:3000")).toBe(true);
   });
   it("the CRM opens only when you ask for it", () => {
-    for (const t of ["Open CRM", "hey rubin open my crm", "show the CRM", "bring up the dashboard"]) expect([t, asksForCrm(t)]).toEqual([t, true]);
+    for (const t of ["Open CRM", "hey rubin open my crm", "show the CRM", "bring up the dashboard", "Open Darwin CRM", "open darwin's crm", "Show my leads"]) expect([t, asksForCrm(t)]).toEqual([t, true]);
     for (const t of ["show my interested leads", "open notepad", "maximise chrome", "which clients need follow-up today", "close CRM"]) expect([t, asksForCrm(t)]).toEqual([t, false]);
   });
 });

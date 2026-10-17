@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { IslandCard, IslandLead, IslandPending, IslandReply } from "@/lib/robin/island-types";
 import { capturePhrase, speak, transcribe, wakeCommand, type Capture, type Speech } from "./voice";
 import { desktop, type DesktopSettings } from "./desktop-bridge";
-import { CrmDashboard, CRM_CSS, type CrmHandle } from "./crm-dashboard";
+import { DarwinCrm, type CrmHandle } from "@/components/crm/darwin-crm";
 
 /**
  * RUBEN — the Dynamic Island CRM assistant. By default only a thin blue outline;
@@ -34,7 +34,9 @@ function saveLocal(s: DesktopSettings) {
 
 /** "Open CRM", "show the CRM", "Hey Rubin open my CRM" — the only words that open the dashboard. */
 export function asksForCrm(text: string): boolean {
-  return /\b(?:open|show|launch|start|bring up|pull up)\s+(?:the\s+|my\s+)?(?:crm|dashboard)\b/i.test(text);
+  // "Open CRM", "Open Darwin CRM", "Show my leads" → DARWIN's CRM (RUBEN has no CRM of its own)
+  return /\b(?:open|show|launch|start|bring up|pull up)\s+(?:the\s+|my\s+)?(?:darwin'?s?\s+)?(?:crm|dashboard)\b/i.test(text)
+    || /\b(?:open|show|see)\s+(?:me\s+)?(?:all\s+)?(?:of\s+)?my\s+leads\s*[.!?]*$/i.test(text);
 }
 
 const SIZE: Record<Mode | "away", [number, number]> = {
@@ -378,7 +380,7 @@ export function RubenIsland() {
 
   return (
     <div className="ri-root">
-      <style dangerouslySetInnerHTML={{ __html: CSS + CRM_CSS }} />
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <div className="ri-stage">
         <button
           type="button"
@@ -426,9 +428,10 @@ export function RubenIsland() {
                   <Settings settings={settings} mics={mics} onChange={updateSettings} isDesktop={!!bridge.current} />
                 </div>
               )}
-              <CrmDashboard ref={crm} active={open} micOn={mode === "listening"} onMic={() => void listen()}
+              {/* DARWIN's CRM — the one CRM; RUBEN only opens it */}
+              <DarwinCrm ref={crm} embedded active={open} micOn={mode === "listening"} onMic={() => void listen()}
                 onSettings={() => setShowSettings((v) => !v)} onClose={() => { void send("close crm"); }}
-                onSelectLead={(id) => { leadId.current = id; }} onCommand={(t, id) => void send(t, id ? { leadId: id } : {})} />
+                onSelectLead={(id) => { leadId.current = id; }} />
             </section>
             {/* what RUBEN heard / is doing — and a place to type */}
             <form className={`ri-pill ${shown ? "in" : "out"}`} aria-hidden={!open} onPointerEnter={hover(true)}

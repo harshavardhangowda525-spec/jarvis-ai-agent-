@@ -1622,6 +1622,84 @@ Env (all optional):
   HMAC-SHA256: `x-robin-signature: sha256=<hex of "timestamp.body">` and
   `x-robin-timestamp`, and must be no more than 5 minutes old.
 
+## DARWIN CRM — the one CRM
+
+There is one CRM, and DARWIN owns it. Open it in any of these ways:
+- JARVIS's left menu → **CRM**, or the **Systems** menu → **DARWIN CRM**;
+- `/dashboard/crm`;
+- say "open CRM", "open DARWIN CRM" or "show my leads";
+- **Open CRM** in DARWIN's or RUBIN's chat.
+
+RUBEN's "Open CRM" shows the same screen and the same records. There is no
+second copy anywhere: every lead DARWIN discovers goes straight into it, and
+so does every lead you import or add.
+
+**The screen**
+- A light, compact layout in navy and blue that works on a phone (cards) and on
+  a desktop (table).
+- **Search** by name, phone, email, Instagram, website, city or `#number`.
+- **Filters:** status, niche, location, website (has one / verified none /
+  unknown), next follow-up (due, overdue, today, next 7 days, none) and source.
+- **Each row:** business, phone, website, Instagram, source, status and the
+  next action.
+- **The lead panel:**
+  - contact details, with phone, WhatsApp, email and links;
+  - status change (Converted and Rejected ask first) and editing;
+  - logging a call, scheduling a follow-up, marking follow-ups done, and notes;
+  - **verification evidence:** where DARWIN found the business, the website
+    check and its reasons, and where the phone came from;
+  - the full history.
+- Anything that isn't known says **Unknown**. A missing website is "unknown"
+  unless DARWIN verified there is none.
+
+**Statuses:** Not contacted · Contacted · Interested — Follow Up · Demo
+Scheduled · Proposal Sent · Ready to Purchase · Converted · Rejected. A status
+is set by you or by a recorded event, such as a logged call, a scheduled demo
+or a sent quotation. It is never guessed.
+
+**Generate leads:** pick a niche, location and how many. DARWIN searches the
+real listings, skips businesses you already have, saves new ones straight into
+the CRM, and shows what happened: discovered, added, duplicates skipped,
+filtered out, provider errors and runtime. If the provider fails, you see why.
+
+**Import your existing CRM (for example your Lovable app):**
+1. Lovable keeps its data in Supabase. Open your project's Supabase dashboard →
+   **Table Editor** → your leads table → **Export → CSV**. (Google Sheets: File →
+   Download → CSV; Excel: Save As → CSV.)
+2. In the CRM, click **Import** and choose the file.
+3. Check the preview:
+   - which column is which (fix any that are wrong);
+   - your statuses and what each becomes (unclear ones like "Purple" must be
+     chosen);
+   - leads that are already in the CRM (skipped, never overwritten);
+   - rows without a business name.
+4. Click **Import 5 as a test**, check those leads, then import the rest.
+   Importing the same file again adds nothing.
+
+Leads you've already worked keep their status (rows with no status default to
+**Contacted**), their notes and their next follow-up date. Nothing is sent to
+anyone. A backup is taken before every import.
+
+**Backups & clearing (⋯ menu)**
+- **Back up now**, **Download** (a JSON file) and **Restore**. Restoring brings
+  back records that are missing and never changes existing ones. A safety
+  backup is taken first, and the 20 newest backups are kept.
+- **Clear DARWIN's discovered leads** shows exactly what would be removed, and
+  only clears after you confirm those counts.
+  - A backup is taken first.
+  - DARWIN still remembers those businesses, so they don't come back as new.
+  - Their verification evidence stays on the CRM leads.
+  - Optionally, you can also remove CRM leads DARWIN added that you never
+    touched. Leads with any history are always kept.
+
+**API** (signed in; RUBEN's own server answers the same):
+- `GET /api/crm` lists leads, with the filters and counts;
+- `POST /api/crm` adds a lead;
+- `GET` / `PATCH /api/crm/:id` reads or changes one lead;
+- `POST /api/crm/generate` runs a discovery;
+- `POST /api/crm/import` with `action: "preview" | "import"`;
+- `/api/crm/backups` and `/api/crm/clear` handle backups and clearing.
+
 ## Chat with the agents (DARWIN, RUBIN, EV, MIKE)
 
 JARVIS stays voice-first in its own console. Every other agent is a chat, like
@@ -1743,38 +1821,11 @@ outline.
   remembers where you left it. If that monitor is unplugged, it comes back to
   the main screen.
 
-**The CRM dashboard.** Opening the island grows a single glass surface out
-of the outline. Inside is a classic sales CRM:
-
-- **A dark sidebar:**
-  - Leads, Follow-ups (due today + overdue), Activities and Reporting;
-  - **Smart views** with live counts: Ready to Purchase, Interested (Follow
-    Up), Open pipeline, Won and Rejected;
-  - Settings, Collapse (icons only) and Close CRM.
-- **A top bar:** back / forward through what you've opened, a search box (name,
-  number, phone, email, Instagram, website, city or address) and the mic.
-- **The lead list:** name, status, last contact and next follow-up. Click a
-  row to open the lead.
-- **The lead page:**
-  - the name, and a **status pill** you click to change the stage (Won,
-    Rejected and Do not contact ask first);
-  - **Note** (saved on the lead, or on its next follow-up);
-  - **Email** opens a draft in your mail app; **WhatsApp** opens the chat in
-    WhatsApp. You send them yourself;
-  - **Call** logs how a call went (spoke, interested, no answer …);
-  - **Follow-up** asks RUBEN to schedule one for tomorrow; **…** has Prepare a
-    pitch, Follow up next week and Open in Maps;
-  - on the left, **Details** with collapsible **Tasks** (tick to mark done),
-    **Opportunities** (value, quotations, demos, client), **Contacts** and
-    **Custom fields**, and a **Notes** tab;
-  - on the right, a **Summary** built from the record (stage and since when,
-    calls logged, next follow-up), then the **activity timeline**: calls and
-    messages with their outcome, status changes, tasks, demos, quotations and
-    notes. Filter it (All / Calls & messages / Status changes / Tasks / Notes)
-    or search it.
-- **Activities:** what was logged today and the latest calls and messages.
-- **Reporting:** totals, win rate, demos, proposals, clients and the pipeline
-  by stage.
+**The CRM.** Opening the island grows a glass surface out of the outline that
+shows **DARWIN's CRM**, the same screen and records as JARVIS's CRM page (see
+"DARWIN CRM — the one CRM"). RUBEN keeps no CRM of its own. "Show my interested
+leads" filters it, "open Iron Temple Gym" opens that lead, and "which clients
+need follow-up today?" shows the follow-ups that are due.
 
 Everything is read from the database. A change shows the server's real
 answer, either "Saved — …" or the reason it wasn't saved. Closing (✕, Esc,

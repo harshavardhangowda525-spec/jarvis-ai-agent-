@@ -264,6 +264,7 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
           <button type="button" className="ac-menu" onClick={() => setSide((s) => !s)} aria-label="Chats and agents" aria-expanded={side}><Burger /></button>
           <div className="ac-title"><b>{agent.name}</b><span>{agent.role}</span></div>
           {agent.id === "ev" && <button type="button" className="ac-console" onClick={() => setToday(true)}>Today&apos;s content</button>}
+          {(agent.id === "darwin" || agent.id === "robin") && <Link href="/dashboard/crm" className="ac-console">Open CRM</Link>}
           <span className="ac-avatar" style={{ background: agent.color }} aria-hidden>{agent.name[0]}</span>
         </header>
 

@@ -104,7 +104,7 @@ export async function runIslandCommand(userId: string, input: { text: string; le
   const selected = input.leadId ?? null;
 
   // ---- the interface itself
-  if (/^(?:open|show|launch|start|bring up)\s+(?:the\s+|my\s+)?crm$/.test(low)) return { say: "CRM open. What do you need?", card: null, open: true };
+  if (/^(?:open|show|launch|start|bring up)\s+(?:the\s+|my\s+)?(?:darwin'?s?\s+)?crm$/.test(low) || /^(?:open|show|see)\s+(?:me\s+)?(?:all\s+)?(?:of\s+)?my\s+leads$/.test(low)) return { say: "CRM open. What do you need?", card: null, open: true };
   if (/^(?:close|hide|dismiss|minimi[sz]e|exit)(?:\s+(?:the\s+)?crm)?$/.test(low) || /^that'?s all$/.test(low)) return { say: "Closing the CRM.", card: null, open: false, pending: null };
 
   // ---- a decision waiting for yes / no

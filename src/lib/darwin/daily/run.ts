@@ -319,18 +319,20 @@ const normName = (s: string) => s.normalize("NFKD").toLowerCase().replace(/[^\p{
 /** Everything DARWIN already knows, for dedup (loaded once per tick). */
 async function knowledge(userId: string, now: Date, run: { id: string; date: string }) {
   const db = getDb();
-  const [leads, cands, todayLeads] = await Promise.all([
+  const [leads, cands, todayLeads, cleared] = await Promise.all([
     db.darwinLead.findMany({ where: { userId }, select: { fingerprint: true, sourceRef: true, phone: true, businessName: true, latitude: true, longitude: true, website: true } }),
     db.darwinCandidate.findMany({ where: { userId }, select: { fingerprint: true, placeId: true, status: true, checkedAt: true, runDate: true, reasons: true } }),
     db.darwinLead.findMany({ where: { userId, metadata: { path: ["dailyRunId"], equals: run.id } }, select: { fingerprint: true, sourceRef: true } }),
+    // businesses whose DARWIN records were cleared are still "already found"
+    db.darwinSeen.findMany({ where: { userId }, select: { fingerprint: true, sourceRef: true } }),
   ]);
   // handled earlier in THIS run (a wider circle re-reads the nearest places) — not duplicates
   const today = new Set<string>([
     ...todayLeads.flatMap((l) => [l.fingerprint, l.sourceRef ?? ""]),
     ...cands.filter((c) => c.runDate === run.date).flatMap((c) => [c.fingerprint, c.placeId ?? ""]),
   ].filter(Boolean));
-  const fps = new Set(leads.map((l) => l.fingerprint));
-  const refs = new Set(leads.map((l) => l.sourceRef).filter(Boolean) as string[]);
+  const fps = new Set([...leads, ...cleared].map((l) => l.fingerprint));
+  const refs = new Set([...leads, ...cleared].map((l) => l.sourceRef).filter(Boolean) as string[]);
   const phones = new Set(leads.map((l) => (l.phone ?? "").replace(/\D/g, "").slice(-10)).filter((p) => p.length === 10));
   const named = leads.filter((l) => l.latitude != null && l.longitude != null).map((l) => ({ n: normName(l.businessName), lat: l.latitude!, lon: l.longitude! }));
   const cutoff = now.getTime() - RECHECK_AFTER_DAYS * 86_400_000;
