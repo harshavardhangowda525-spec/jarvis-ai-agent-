@@ -62,10 +62,12 @@ export interface IslandDashboard {
 /** Everything about one lead, for the dashboard's detail pane. */
 export interface IslandLeadFull extends IslandLeadDetail {
   mapsUrl: string | null; potentialValue: number | null; serviceInterest: string | null;
-  interactions: { id: string; when: string; channel: string; direction: string; outcome: string | null; notes: string | null }[];
-  followUpsAll: { id: string; when: string; action: string; status: string; overdue: boolean; notes: string | null }[];
-  stageHistory: { when: string; from: string | null; to: string }[];
-  demos: { id: string; when: string; type: string; status: string }[];
-  quotations: { id: string; number: string; status: string; total: number; currency: string; when: string }[];
+  interactions: { id: string; at: string; when: string; channel: string; direction: string; outcome: string | null; notes: string | null }[];
+  followUpsAll: { id: string; at: string; when: string; action: string; status: string; overdue: boolean; notes: string | null; doneAt: string | null }[];
+  stageHistory: { at: string; when: string; from: string | null; to: string }[];
+  demos: { id: string; at: string; when: string; type: string; status: string }[];
+  quotations: { id: string; at: string; number: string; status: string; total: number; currency: string; when: string }[];
+  /** When the lead came into the CRM, and when it reached its current stage (ISO). */
+  createdAt: string; stageSince: string;
   client: { status: string; paymentStatus: string; amount: number; currency: string; project: string | null } | null;
 }

@@ -137,6 +137,10 @@ export async function handle(req: Request): Promise<Response> {
       const b = interactionSchema.parse(await req.json());
       return ok(await logInteraction(user.id, mm[1], { ...b, status: b.direction === "inbound" ? "received" : "logged" }, b.source ?? "user"));
     }
+    if ((mm = p.match(/^\/api\/robin\/leads\/([\w-]{1,40})\/notes$/)) && m === "POST") {
+      const b = z.object({ text: z.string().trim().min(1).max(1000) }).parse(await req.json());
+      return ok(await addFollowUpNote(user.id, { leadId: mm[1], text: b.text }, "user"));
+    }
     if ((mm = p.match(/^\/api\/robin\/followups\/([\w-]{1,40})$/)) && m === "PATCH") {
       const b = followSchema.parse(await req.json());
       if (b.action === "note") return ok(await addFollowUpNote(user.id, { followUpId: mm[1], text: b.notes ?? "" }, b.source ?? "user"));

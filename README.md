@@ -1680,32 +1680,38 @@ outline.
   remembers where you left it. If that monitor is unplugged, it comes back to
   the main screen.
 
-**The CRM dashboard.** Opening the island grows a single liquid-glass surface
-out of the outline, in deep navy with electric-blue accents. It holds your
-actual CRM:
+**The CRM dashboard.** Opening the island grows a single glass surface out
+of the outline. Inside is a classic sales CRM:
 
-- **The three sales statuses, with live counts:** Ready to purchase,
-  Interested (follow up) and Rejected. Open, Won and All are there too. Click
-  one to filter the list.
-- **Follow-ups:** what's due today and what's overdue, each with a **Done**
-  button.
-- **A pipeline bar and progress line:** demos upcoming and done, proposals out
-  and accepted, clients, and what was logged today.
-- **Search:** find any lead by name, number, phone, email, Instagram, website,
-  city or address.
-- **The lead's full record:**
-  - phone, WhatsApp and email;
-  - Instagram and website links, which open in your browser;
-  - progress (Contacted → Interested → Follow-up/demo → Proposal → Ready to
-    purchase → Client);
-  - follow-ups, interaction history, demos, quotations, client status and
-    stage history.
-- **Actions on the lead:**
-  - Ready to purchase, Interested, Rejected and Won (Rejected and Won ask
-    first);
-  - Follow up tomorrow;
-  - Prepare pitch.
-- **With no lead open:** today's activity and the next follow-ups.
+- **A dark sidebar:**
+  - Leads, Follow-ups (due today + overdue), Activities and Reporting;
+  - **Smart views** with live counts: Ready to Purchase, Interested (Follow
+    Up), Open pipeline, Won and Rejected;
+  - Settings, Collapse (icons only) and Close CRM.
+- **A top bar:** back / forward through what you've opened, a search box (name,
+  number, phone, email, Instagram, website, city or address) and the mic.
+- **The lead list:** name, status, last contact and next follow-up. Click a
+  row to open the lead.
+- **The lead page:**
+  - the name, and a **status pill** you click to change the stage (Won,
+    Rejected and Do not contact ask first);
+  - **Note** (saved on the lead, or on its next follow-up);
+  - **Email** opens a draft in your mail app; **WhatsApp** opens the chat in
+    WhatsApp. You send them yourself;
+  - **Call** logs how a call went (spoke, interested, no answer …);
+  - **Follow-up** asks RUBEN to schedule one for tomorrow; **…** has Prepare a
+    pitch, Follow up next week and Open in Maps;
+  - on the left, **Details** with collapsible **Tasks** (tick to mark done),
+    **Opportunities** (value, quotations, demos, client), **Contacts** and
+    **Custom fields**, and a **Notes** tab;
+  - on the right, a **Summary** built from the record (stage and since when,
+    calls logged, next follow-up), then the **activity timeline**: calls and
+    messages with their outcome, status changes, tasks, demos, quotations and
+    notes. Filter it (All / Calls & messages / Status changes / Tasks / Notes)
+    or search it.
+- **Activities:** what was logged today and the latest calls and messages.
+- **Reporting:** totals, win rate, demos, proposals, clients and the pipeline
+  by stage.
 
 Everything is read from the database. A change shows the server's real
 answer, either "Saved — …" or the reason it wasn't saved. Closing (✕, Esc,
@@ -1734,7 +1740,8 @@ Friday", "add a note…", "show lead 12" and "briefing".
 
 **What RUBEN won't do**
 
-- It never sends a message to anyone: no WhatsApp, email or call from the island.
+- It never sends a message to anyone. Email and WhatsApp only open your own
+  mail app or WhatsApp, and you press Send.
 - It never shows made-up leads or a success it didn't get from JARVIS.
 - If something fails, you see the real error and nothing is changed.
 - "Won", "Rejected" and "Do not contact" always ask for your "yes" first.
