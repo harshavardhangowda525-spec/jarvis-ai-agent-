@@ -5,57 +5,21 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   LayoutDashboard,
-  Terminal,
-  Bot,
   ListChecks,
-  Server,
-  FolderOpen,
-  Database,
-  CalendarDays,
-  Share2,
   Settings,
   StickyNote,
   Brain,
   LogOut,
   Lock,
-  Maximize2,
-  MousePointerClick,
-  Code2,
-  Radar,
-  CandlestickChart, Handshake,
+  Maximize2, Handshake,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ReactorLogo, RobotFace, Chevrons, Waveform } from "@/components/hud/visuals";
+import { ReactorLogo, Chevrons } from "@/components/hud/visuals";
 import { useClock } from "@/hooks/useDeviceMetrics";
 import { GestureProvider, useGesture } from "@/components/gesture/gesture-provider";
-import { Hand, VolumeX, Megaphone } from "lucide-react";
+import { Hand, VolumeX } from "lucide-react";
 import { isVoiceSilent, onVoiceSilent, setVoiceSilent } from "@/lib/voice/silence";
 import { useMutedWake } from "@/hooks/useMutedWake";
-
-// Full mission-control nav. Every item routes to a real page (several are
-// conceptual aliases of the same working page — e.g. Command Center is the
-// console) so nothing 404s.
-const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard", label: "Command Center", icon: Terminal },
-  { href: "/dashboard/operator", label: "Operator", icon: MousePointerClick },
-  { href: "/dashboard/ultron", label: "ULTRON", icon: Code2 },
-  // the agents open as chats; DARWIN's CRM is the one CRM
-  { href: "/dashboard/crm", label: "CRM", icon: ListChecks },
-  { href: "/dashboard/jobs", label: "Agent tasks", icon: Bot },
-  { href: "/dashboard/chat/darwin", label: "DARWIN", icon: Radar },
-  { href: "/dashboard/chat/robin", label: "RUBIN", icon: Handshake },
-  { href: "/dashboard/chat/ev", label: "EV", icon: Megaphone },
-  { href: "/dashboard/chat/mike", label: "MIKE", icon: CandlestickChart },
-  { href: "/dashboard/memory", label: "AI Agents", icon: Bot },
-  { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },
-  { href: "/dashboard/settings", label: "Systems", icon: Server },
-  { href: "/dashboard/notes", label: "Files", icon: FolderOpen },
-  { href: "/dashboard/memory", label: "Database", icon: Database },
-  { href: "/dashboard/tasks", label: "Calendar", icon: CalendarDays },
-  { href: "/dashboard/settings", label: "Network", icon: Share2 },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
-];
 
 // Compact nav for the mobile bottom bar (real, distinct pages only).
 const MOBILE_NAV = [
@@ -75,36 +39,16 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [online, setOnline] = useState<number | null>(null);
-  const [build, setBuild] = useState<{ shortSha: string; env: string } | null>(null);
   const now = useClock();
   // The clock is client-only: the server's time (and timezone) never matches the browser's.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // JARVIS, ULTRON and the agent chats are full-immersion screens — the nav rails fold
-  // away so the cinematic interface owns the whole viewport (JARVIS has its own
-  // systems menu).
+  // JARVIS, ULTRON and the agent chats are full-immersion screens: no bottom bar on
+  // phones either. (There's no side bar anywhere — JARVIS's Systems menu has every page.)
   const immersive = pathname === "/dashboard" || pathname.startsWith("/dashboard/chat") || pathname.startsWith("/dashboard/ultron");
 
   const name = user.displayName || user.email.split("@")[0];
-
-  useEffect(() => {
-    fetch("/api/status")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        if (!j?.data?.services) return;
-        const svc = j.data.services as Record<string, boolean>;
-        const vals = Object.values(svc);
-        setOnline(Math.round((vals.filter(Boolean).length / vals.length) * 100));
-      })
-      .catch(() => setOnline(null));
-    // Which commit is live — confirms a deploy picked up the latest code.
-    fetch("/api/version")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => j?.data && setBuild({ shortSha: j.data.shortSha, env: j.data.env }))
-      .catch(() => setBuild(null));
-  }, []);
 
   // RUBIN's reminder emails: while JARVIS is open anywhere, check every 2 minutes
   // (each follow-up/demo is emailed once; the server decides what's due)
@@ -143,12 +87,6 @@ export function AppShell({
     return () => { window.fetch = orig; };
   }, [router]);
 
-  // Only the first nav item for a given href is "active-eligible", so duplicate
-  // aliases (Dashboard/Command Center) never both light up.
-  const primaryIndexForHref = new Map<string, number>();
-  NAV.forEach((n, i) => { if (!primaryIndexForHref.has(n.href)) primaryIndexForHref.set(n.href, i); });
-  const matchesPath = (href: string) =>
-    href === "/dashboard" ? pathname === href : pathname.startsWith(href);
   const isActive = (href: string) => href === "/dashboard" ? pathname === href : pathname.startsWith(href);
 
   const weekday = mounted ? now.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase() : "";
@@ -212,59 +150,6 @@ export function AppShell({
       </header>
 
       <div className="flex min-h-0 flex-1">
-        {/* Left nav rail — desktop (folded away in immersive DARWIN mode) */}
-        {!immersive && (
-        <aside className="hidden w-56 shrink-0 flex-col overflow-y-auto border-r border-accent/15 p-3 md:flex">
-          {/* robot face */}
-          <div className="mb-3 flex justify-center pt-1">
-            <RobotFace size={84} />
-          </div>
-
-          <nav className="flex flex-col gap-1">
-            {NAV.map(({ href, label, icon: Icon }, i) => {
-              const activeItem = matchesPath(href) && primaryIndexForHref.get(href) === i;
-              return (
-                <Link
-                  key={label}
-                  href={href}
-                  className={cn(
-                    "group relative flex items-center gap-3 overflow-hidden rounded px-3 py-2 text-sm transition",
-                    activeItem
-                      ? "bg-accent/12 text-accent-bright box-glow-soft"
-                      : "text-muted-foreground hover:bg-accent/[0.07] hover:text-foreground",
-                  )}
-                >
-                  {activeItem && <span className="absolute inset-y-1 left-0 w-[3px] bg-accent-bright shadow-[0_0_10px_hsl(var(--accent))]" />}
-                  <Icon className={cn("h-4 w-4 transition", activeItem && "drop-glow")} />
-                  <span className="hud-label text-[11px]">{label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          {/* version + status block */}
-          <div className="mt-4 rounded border border-accent/15 p-3 box-glow-soft">
-            <div className="hud-label text-[11px] text-accent-bright">JARVIS v2.0.1</div>
-            <div className="hud-label mt-0.5 text-[8px] text-muted-foreground">Premium AI Assistant</div>
-            {build && (
-              <div className="mt-1 font-mono text-[9px] text-muted-foreground" title="Live build (git commit)">
-                build <span className="text-accent">{build.shortSha}</span>{build.env && build.env !== "production" ? ` · ${build.env}` : ""}
-              </div>
-            )}
-            <div className="mt-2 flex items-center gap-2">
-              <span className="hud-label text-[8px] text-muted-foreground">Status</span>
-              <span className="h-1.5 w-1.5 animate-hud-pulse rounded-full bg-success shadow-[0_0_8px_hsl(var(--success))]" />
-              <span className="hud-label text-[9px] text-success">
-                {online === null ? "Online" : `Online · ${online}%`}
-              </span>
-            </div>
-            <div className="mt-2 h-6">
-              <Waveform bars={26} active className="opacity-70" />
-            </div>
-          </div>
-        </aside>
-        )}
-
         {/* Content */}
         <main className={cn("min-w-0 flex-1", immersive ? "pb-0" : "pb-16 md:pb-0")}>{children}</main>
       </div>

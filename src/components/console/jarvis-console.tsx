@@ -1270,6 +1270,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                 <button onClick={() => { setMenuOpen(false); openHumanoid(); }} className="rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">Humanoid</button>
                 {/* the agents' chat screens (the side nav is folded away on this screen) */}
                 <a href="/app" onClick={() => setMenuOpen(false)} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Phone app</a>
+                <button onClick={() => { setMenuOpen(false); launchUltron(); }} className="rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">ULTRON</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/aston"); }} className="rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">ASTON demos</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/teleprompter"); }} className="rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Teleprompter</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/jobs"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Agent tasks</button>
