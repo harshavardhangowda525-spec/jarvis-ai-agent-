@@ -70,6 +70,7 @@ describe("live brain registration", () => {
         user: { findMany: async () => [{ id: "u1" }] },
         integration: {
           findUnique: async ({ where }: any) => rows.get(`${where.userId_provider.userId}:${where.userId_provider.provider}`) ?? null,
+          findMany: async ({ where }: any) => (where.provider.in as string[]).flatMap((p) => { const r = rows.get(`${where.userId}:${p}`); return r ? [{ provider: p, ...r }] : []; }),
           upsert: async ({ where, create, update }: any) => {
             const k = `${where.userId_provider.userId}:${where.userId_provider.provider}`;
             rows.set(k, rows.has(k) ? { status: update.status, metadata: update.metadata } : { status: create.status, metadata: create.metadata });
@@ -83,6 +84,16 @@ describe("live brain registration", () => {
     const { registerBrain, getLiveBrain } = await import("@/lib/ai/brain");
     await registerBrain({ url: "https://abc.trycloudflare.com", model: "qwen2.5-coder:7b" });
     expect(await getLiveBrain("u1")).toEqual({ baseUrl: "https://abc.trycloudflare.com", model: "qwen2.5-coder:7b" });
+  });
+
+  it("tracks the Claude bridge separately from the Ollama brain", async () => {
+    const { registerBrain, getLiveBrain } = await import("@/lib/ai/brain");
+    await registerBrain({ url: "https://claude.trycloudflare.com", model: "sonnet" }, "claude");
+    expect(await getLiveBrain("u1")).toEqual({ claudeUrl: "https://claude.trycloudflare.com", claudeModel: "sonnet" });
+    await registerBrain({ url: "https://abc.trycloudflare.com", model: "qwen2.5:3b" });
+    expect(await getLiveBrain("u1")).toEqual({ baseUrl: "https://abc.trycloudflare.com", model: "qwen2.5:3b", claudeUrl: "https://claude.trycloudflare.com", claudeModel: "sonnet" });
+    await registerBrain({ url: null }, "claude");
+    expect(await getLiveBrain("u1")).toEqual({ baseUrl: "https://abc.trycloudflare.com", model: "qwen2.5:3b" });
   });
 
   it("goes offline when the gateway says so (Ctrl+C)", async () => {

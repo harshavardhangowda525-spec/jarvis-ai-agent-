@@ -41,7 +41,7 @@ const warn = (detail: string): Result => ({ status: "warn", detail });
 const fail = (detail: string): Result => ({ status: "fail", detail });
 const info = (detail: string): Result => ({ status: "info", detail });
 
-const PROVIDER_LABEL: Record<string, string> = { groq: "Groq", gemini: "Gemini", cerebras: "Cerebras", openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude", ollama: "PC brain (Ollama)" };
+const PROVIDER_LABEL: Record<string, string> = { groq: "Groq", gemini: "Gemini", cerebras: "Cerebras", openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude (API)", claude: "Claude on your PC", ollama: "PC brain (Ollama)" };
 const plabel = (p: string) => PROVIDER_LABEL[p] ?? p;
 const AGENT_LOG_NAME: Record<string, string> = { ev: "EV", darwin: "DARWIN", mike: "MIKE", rubin: "RUBIN" };
 const mb = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes > 100 * 1024 * 1024 ? 0 : 1)} MB`;

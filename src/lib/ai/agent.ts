@@ -306,7 +306,7 @@ export async function* runAgent(
 
 const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE", robin: "RUBIN", aston: "ASTON" } as const;
 
-const PROVIDER_NAMES: Record<string, string> = { groq: "Groq", gemini: "Gemini", ollama: "your PC brain (Ollama)", cerebras: "Cerebras", openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude" };
+const PROVIDER_NAMES: Record<string, string> = { groq: "Groq", gemini: "Gemini", ollama: "your PC brain (Ollama)", cerebras: "Cerebras", openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude (API)", claude: "Claude on your PC" };
 const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.groq.com)", gemini: "GEMINI_API_KEY (free at aistudio.google.com/apikey)" };
 
 /**
@@ -328,7 +328,9 @@ export function agentConfigs(
   preferred?: string | null,
 ): { configs: AiConfig[]; missing?: string } {
   const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : agent === "mike" ? env.mikeProvider : agent === "robin" ? env.robinProvider : agent === "aston" ? env.astonProvider : env.jarvisProvider;
-  const picks = pick.split(/[\s,>]+/).filter(Boolean);
+  const own = pick.split(/[\s,>]+/).filter(Boolean);
+  // CLAUDE_FOR_ALL_AGENTS=1 → Claude on your PC first for every agent; its own list stays as the backup
+  const picks = env.claudeForAllAgents && !own.includes("claude") ? ["claude", ...own] : own;
   if (picks.includes("auto")) {
     try { return { configs: getAiConfigs((agent === "jarvis" && preferred) || undefined, brain) }; }
     catch (e) { if (!(e instanceof AiNotConfiguredError)) throw e; return { configs: [], missing: `${AGENT_NAMES[agent]} has no AI key to answer with. Add ${KEY_HINT.groq} or ${KEY_HINT.gemini} to .env.local (or your Vercel environment variables), then restart.` }; }
@@ -346,7 +348,9 @@ export function agentConfigs(
   const names = picks.map((p) => PROVIDER_NAMES[p] ?? p);
   return {
     configs,
-    missing: picks.length === 1 && picks[0] === "ollama"
+    missing: picks.length === 1 && picks[0] === "claude"
+      ? `${name} runs only on Claude on your PC, and the Claude bridge isn't connected right now. On your PC, start it with "npm run claude" in the edith folder (or "npm run local"), or add a backup like ${agent.toUpperCase()}_PROVIDER=claude,groq,gemini.`
+      : picks.length === 1 && picks[0] === "ollama"
       ? `${name} runs only on your PC brain (Ollama), and it isn't connected right now. On your PC, start it with "npm run brain" (or "npm run local") and ask again.`
       : picks.every((p) => KEY_HINT[p])
         ? `${name} runs on ${names.join(" (with ")}${names.length > 1 ? " as backup)" : ""}, and none of them is set up. Add ${picks.map((p) => KEY_HINT[p]).join(" or ")} to your Vercel environment variables or .env.local, then restart.`

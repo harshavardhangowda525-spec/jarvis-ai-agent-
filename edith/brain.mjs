@@ -18,11 +18,11 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "./src/loadenv.mjs";
 import { toNativeChat, NativeToOpenAI, describeTimings, ndjson } from "./src/ollama-native.mjs";
 import { lowerOllamaPriority } from "./src/os-priority.mjs";
+import { startTunnel, waitReachable, stopTunnel } from "./src/tunnel.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.resolve(__dirname, ".env"));
@@ -260,39 +260,7 @@ const server = http.createServer((req, res) => {
   req.pipe(up);
 });
 
-// ---- tunnel -----------------------------------------------------------------
-function startTunnel() {
-  return new Promise((resolve) => {
-    const target = `http://127.0.0.1:${PORT}`;
-    // Fixed command strings (no user input). On Windows npx/cloudflared are
-    // .cmd/.exe shims that need a shell; passing ONE string avoids Node's
-    // DEP0190 "args with shell" warning.
-    const win = process.platform === "win32";
-    const run = (line, opts = {}) => (win ? spawn(line, { shell: true, ...opts }) : spawn(line.split(" ")[0], line.split(" ").slice(1), opts));
-    const hasCf = (win ? spawnSync("cloudflared --version", { shell: true, stdio: "ignore" }) : spawnSync("cloudflared", ["--version"], { stdio: "ignore" })).status === 0;
-    const line = hasCf
-      ? `cloudflared tunnel --url ${target} --no-autoupdate`
-      : `npx --yes cloudflared tunnel --url ${target} --no-autoupdate`;
-    if (!hasCf) say("  (cloudflared not installed — fetching it via npx; this can take 1–2 minutes the first time.\n   Faster next time: winget install --id Cloudflare.cloudflared)");
-    const child = run(line);
-    let done = false;
-    const onData = (buf) => {
-      const m = String(buf).match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/i);
-      if (m && !done) { done = true; resolve({ url: m[0], child }); }
-    };
-    child.stdout.on("data", onData);
-    child.stderr.on("data", onData);
-    child.on("exit", (code) => { if (!done) { done = true; resolve({ url: null, child: null, code }); } });
-    setTimeout(() => { if (!done) { done = true; resolve({ url: null, child }); } }, 180_000);
-  });
-}
-async function waitReachable(publicUrl) {
-  for (let i = 0; i < 20; i++) {
-    try { const r = await fetch(`${publicUrl}/health`, { signal: AbortSignal.timeout(5000) }); if (r.ok) return true; } catch { /* DNS still propagating */ }
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  return false;
-}
+// ---- tunnel: see src/tunnel.mjs ----------------------------------------------
 
 // ---- registration with JARVIS -----------------------------------------------
 let lastRegOk = null;
@@ -382,7 +350,7 @@ let publicUrl = FIXED_URL;
 let tunnel = null;
 if (!publicUrl) {
   say("  Opening a secure tunnel…");
-  const t = await startTunnel();
+  const t = await startTunnel(PORT, say);
   if (!t.url) die("Couldn't open a Cloudflare tunnel. Install it with:  winget install --id Cloudflare.cloudflared   then run npm run brain again.");
   publicUrl = t.url; tunnel = t.child;
   if (!(await waitReachable(publicUrl))) say("  (tunnel is slow to come up — continuing; JARVIS will retry)");
@@ -414,12 +382,7 @@ async function shutdown() {
       signal: AbortSignal.timeout(5000),
     }).catch(() => {});
   }
-  if (tunnel?.pid) {
-    // On Windows the tunnel runs under a cmd.exe shell — kill the whole tree so
-    // cloudflared doesn't linger in the background.
-    if (process.platform === "win32") spawnSync(`taskkill /pid ${tunnel.pid} /T /F`, { shell: true, stdio: "ignore" });
-    else tunnel.kill();
-  }
+  stopTunnel(tunnel);
   process.exit(0);
 }
 process.on("SIGINT", shutdown);

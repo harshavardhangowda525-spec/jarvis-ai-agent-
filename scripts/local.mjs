@@ -357,6 +357,26 @@ if (usesOllama(jarvisPick)) {
   }
 }
 
+// ---- 4b. Claude on this PC (your Claude plan) as the agents' brain ---------------------------------
+// CLAUDE_FOR_ALL_AGENTS=1, or "claude" in any agent's *_PROVIDER list → start the Claude bridge
+// (edith/claude-bridge.mjs) on 127.0.0.1; the agents fall back to their other brains if it can't answer.
+const CLAUDE_PORT = 11510;
+const agentPicks = ["JARVIS_PROVIDER", "DARWIN_PROVIDER", "RUBIN_PROVIDER", "ROBIN_PROVIDER", "EV_PROVIDER", "MIKE_PROVIDER", "ASTON_PROVIDER"].map((k) => pickOf(appEnv[k], ""));
+const claudeWanted = ["1", "true", "yes", "on"].includes(String(appEnv.CLAUDE_FOR_ALL_AGENTS ?? "").toLowerCase()) || agentPicks.some((p) => p.includes("claude"));
+const claudeKeyFile = path.join(EDITH, ".claude-bridge-key");
+let claudeKey = appEnv.CLAUDE_BRIDGE_KEY || edithEnv.CLAUDE_BRIDGE_KEY || (fs.existsSync(claudeKeyFile) ? fs.readFileSync(claudeKeyFile, "utf8").trim() : "");
+let claudeUrl = "";
+if (claudeWanted) {
+  if (!claudeKey) { claudeKey = `claude_${crypto.randomBytes(24).toString("base64url")}`; fs.writeFileSync(claudeKeyFile, claudeKey, { mode: 0o600 }); }
+  if (await up(`http://127.0.0.1:${CLAUDE_PORT}/health`)) say("  Claude bridge already running on this PC — using it.");
+  else {
+    say("  Starting the Claude bridge (Claude on this PC, your Claude plan)…");
+    start("claude", ["claude-bridge.mjs"], { cwd: EDITH, env: { CLAUDE_BRIDGE_LOCAL_ONLY: "1", CLAUDE_BRIDGE_KEY: claudeKey, CLAUDE_BRIDGE_PORT: String(CLAUDE_PORT), ...(appEnv.CLAUDE_MODEL ? { CLAUDE_MODEL: appEnv.CLAUDE_MODEL } : {}) } });
+  }
+  if (await waitFor(`http://127.0.0.1:${CLAUDE_PORT}/health`, 90)) claudeUrl = `http://127.0.0.1:${CLAUDE_PORT}`;
+  else say("  ! The Claude bridge didn't start (see the [claude] lines above) — the agents use their other brains.");
+}
+
 // ---- 5. ULTRON runtime ------------------------------------------------------------------------------
 // ULTRON runs on OpenRouter, then this PC's Ollama. Cloud keys are lent too, for
 // anyone who picks other brains with ULTRON_AI_PROVIDER (e.g. "ollama,groq").
@@ -391,6 +411,7 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
       OLLAMA_MODEL: model,
       BRAIN_PRIORITY: appEnv.BRAIN_PRIORITY || "first",        // only matters with JARVIS_PROVIDER=auto
     } : {}),
+    ...(claudeUrl ? { CLAUDE_BRIDGE_URL: claudeUrl, CLAUDE_BRIDGE_KEY: claudeKey, CLAUDE_MODEL: appEnv.CLAUDE_MODEL || "sonnet" } : {}),
     ...aiKeys.values,
     // the keys exactly where they were found (an empty line elsewhere can't hide them)
     ...keys.values,
@@ -407,7 +428,8 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
 const local = `http://localhost:${PORT}`;
 if (await waitFor(`${local}/login`, 120)) {
   say(`\n  ✓ JARVIS is running on this PC: ${local}`);
-  const only = (pick) => (pick.includes("auto") ? "all providers" : pick.map((p) => (p === "ollama" ? "Ollama" : p[0].toUpperCase() + p.slice(1))).join(" → "));
+  const only = (pick) => (pick.includes("auto") ? "all providers" : pick.map((p) => (p === "ollama" ? "Ollama" : p === "claude" ? "Claude (this PC)" : p[0].toUpperCase() + p.slice(1))).join(" → "));
+  if (claudeUrl) say(`    Claude on this PC answers first for ${["1", "true", "yes", "on"].includes(String(appEnv.CLAUDE_FOR_ALL_AGENTS ?? "").toLowerCase()) ? "every agent" : "the agents whose list starts with claude"} (your Claude plan's limits apply; their other brains take over when it can't).`);
   const withModel = (pick, m) => only(pick).replace(/^Ollama\b/, `Ollama (${m})`);
   say(`    Brains: JARVIS ${withModel(jarvisPick, model)} · EV ${only(pickOf(appEnv.EV_PROVIDER, "groq,gemini"))} · DARWIN ${only(pickOf(appEnv.DARWIN_PROVIDER, "groq,gemini"))} · ULTRON ${withModel(ultronPick, ultronModel)}`);
   const geminiKey = [edithEnv.GEMINI_API_KEY, appEnv.GEMINI_API_KEY].find((v) => v && !isPlaceholder(v));

@@ -1317,6 +1317,7 @@ Google shows a warning for the Drive permission until the app is verified.
 | DARWIN | `DARWIN_PROVIDER`   | `groq,gemini` | Groq, Gemini as backup              |
 | MIKE   | `MIKE_PROVIDER`     | `groq,gemini` | Groq, Gemini as backup              |
 | RUBIN  | `RUBIN_PROVIDER`    | `groq,gemini` | Groq, Gemini as backup              |
+| ASTON  | `ASTON_PROVIDER`    | `groq,gemini` | Groq, Gemini as backup              |
 | ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `openrouter,ollama` | OpenRouter (`OPENROUTER_API_KEY`, model `OPENROUTER_MODEL`), with this PC's Ollama as the backup (model: `ULTRON_OLLAMA_MODEL`, else `OLLAMA_MODEL`, else `qwen2.5:3b`) |
 
 `JARVIS_PROVIDER=ollama` puts JARVIS back on your PC brain (then `npm run local`
@@ -1332,6 +1333,48 @@ nothing else — if they're all offline or out of quota, the agent says so
 instead of quietly answering with another model.
 `auto` restores the old behaviour: every configured provider, fastest first,
 with automatic fallback.
+
+### Claude on your PC as every agent's brain (your Claude plan, no API key)
+
+The **Claude bridge** (`edith/claude-bridge.mjs`) lets the Claude app on your
+PC — Claude Code, signed in with your Claude account — think for JARVIS,
+DARWIN, RUBIN, EV, MIKE and ASTON. Each step runs `claude -p` once with
+Claude's own tools switched off (no files, no shell, no MCP servers, an empty
+folder): Claude decides what to say and which of JARVIS's tools to call; JARVIS
+runs the tools, exactly as with Groq/Gemini.
+
+1. **Install Claude Code** on the PC (claude.com/claude-code), open a terminal,
+   run `claude` and sign in with your Claude account.
+2. **JARVIS on the PC** (`start-jarvis.cmd` / `npm run local`): add to
+   `.env.local`, then restart:
+   ```
+   CLAUDE_FOR_ALL_AGENTS=1
+   CLAUDE_MODEL=sonnet        # or opus / haiku
+   ```
+   The bridge starts by itself (`[claude]` lines) and every agent answers with
+   Claude first.
+3. **Online JARVIS** (Vercel — your phone app): on the PC, in the `edith`
+   folder, run `npm run claude` and keep the window open (needs
+   `JARVIS_URL=https://your-app.vercel.app` in `edith/.env`). It prints a key;
+   add `CLAUDE_BRIDGE_KEY=<that key>` and `CLAUDE_FOR_ALL_AGENTS=1` in Vercel →
+   Environment Variables, then redeploy. The bridge reaches Vercel through a
+   free Cloudflare tunnel and re-registers every 2 minutes.
+
+Only some agents? Leave `CLAUDE_FOR_ALL_AGENTS` out and put `claude` first in
+that agent's list, e.g. `DARWIN_PROVIDER=claude,groq,gemini`.
+
+Good to know:
+- Usage counts against your Claude plan's limits. When a limit is hit, or the
+  PC is off/asleep, each agent uses its own list (Groq → Gemini) automatically.
+- Each step takes ~5–15 s (Claude Code starts per request), so voice replies
+  are slower than on Groq; up to 2 run at once (`CLAUDE_MAX_PARALLEL`).
+- It can't see images; screen reading keeps using a vision model.
+- ULTRON keeps its own brain (OpenRouter → Ollama).
+- This uses your personal Claude subscription for your own assistant. For a
+  product used by other people, Anthropic's supported route is the API
+  (`AI_API_KEY`).
+- Troubleshooting: `CLAUDE_BRIDGE_DEBUG_DIR=<folder>` saves each request and
+  Claude's raw answer.
 
 
 ## MIKE — market intelligence

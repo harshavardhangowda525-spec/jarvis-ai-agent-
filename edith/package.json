@@ -13,7 +13,8 @@
     "edith": "node run.mjs",
     "selftest": "node selftest.mjs",
     "check": "node check-keys.mjs",
-    "brain": "node brain.mjs"
+    "brain": "node brain.mjs",
+    "claude": "node claude-bridge.mjs"
   },
   "dependencies": {
     "playwright-core": "^1.63.0",

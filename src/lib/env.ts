@@ -77,6 +77,16 @@ export const env = {
   // Shared secret between JARVIS and the brain gateway (Bearer auth on every
   // request + on registration). Never a real AI vendor key.
   ollamaApiKey: read("OLLAMA_API_KEY"),
+  // The Claude bridge on your PC (`npm run claude` in edith/): the key it printed,
+  // and — only when JARVIS itself runs on that PC — its fixed local address.
+  claudeBridgeKey: read("CLAUDE_BRIDGE_KEY"),
+  claudeBridgeUrl: read("CLAUDE_BRIDGE_URL"),
+  // which Claude the bridge runs (sonnet | opus | haiku) — the bridge decides; this is the label
+  claudeModel: read("CLAUDE_MODEL"),
+  claudeTimeoutMs: Math.max(30_000, Number(read("CLAUDE_TIMEOUT_MS")) || 200_000),
+  // One switch: every agent (JARVIS, DARWIN, RUBIN, EV, MIKE, ASTON) thinks with
+  // Claude on your PC first, and keeps its own list as the backup.
+  claudeForAllAgents: ["1", "true", "yes", "on"].includes(read("CLAUDE_FOR_ALL_AGENTS").toLowerCase()),
   // How long to wait for the PC's first token before falling back to the cloud.
   // A 7B model on a CPU must read the whole prompt first (often 1–2 min).
   ollamaTimeoutMs: Math.max(10_000, Number(read("OLLAMA_TIMEOUT_MS")) || 150_000),
@@ -304,7 +314,12 @@ export interface AiConfig {
 }
 
 /** A live Ollama brain registered by the gateway on the user's PC. */
-export interface BrainEndpoint { baseUrl: string; model?: string }
+export interface BrainEndpoint {
+  /** The Ollama gateway (`npm run brain`). */
+  baseUrl?: string; model?: string;
+  /** The Claude bridge (`npm run claude`): Claude Code on the PC, your Claude plan. */
+  claudeUrl?: string; claudeModel?: string;
+}
 
 /** Ollama's OpenAI-compatible API lives under /v1 — add it if the URL lacks it. */
 function ollamaV1(url: string): string {
@@ -322,10 +337,11 @@ const AI_DEFAULT_MODEL: Record<string, string> = {
   openai: "gpt-4o-mini",
   anthropic: "claude-sonnet-5",
   ollama: "qwen2.5-coder:7b",
+  claude: "sonnet",
 };
 
 /** Order tried when falling back (a provider is skipped if not configured). */
-const AI_FALLBACK_ORDER = ["groq", "gemini", "cerebras", "openrouter", "openai", "anthropic", "ollama"];
+const AI_FALLBACK_ORDER = ["groq", "gemini", "cerebras", "openrouter", "openai", "anthropic", "claude", "ollama"];
 
 /** Human labels for the provider picker. */
 export const AI_PROVIDER_LABELS: Record<string, string> = {
@@ -334,7 +350,8 @@ export const AI_PROVIDER_LABELS: Record<string, string> = {
   cerebras: "Cerebras (very fast, free)",
   openrouter: "OpenRouter",
   openai: "OpenAI",
-  anthropic: "Anthropic (Claude)",
+  anthropic: "Anthropic (Claude API)",
+  claude: "Claude on your PC (your Claude plan)",
   ollama: "Your PC (Ollama) first — unlimited, slower",
 };
 
@@ -343,7 +360,7 @@ export function listConfiguredProviders(): { id: string; label: string }[] {
   return AI_FALLBACK_ORDER
     // The PC brain has no static URL (the gateway registers it live), so it's
     // offered whenever its key is set.
-    .filter((p) => buildAiConfig(p) !== null || (p === "ollama" && env.ollamaApiKey.length > 0))
+    .filter((p) => buildAiConfig(p) !== null || (p === "ollama" && env.ollamaApiKey.length > 0) || (p === "claude" && env.claudeBridgeKey.length > 0))
     .map((p) => ({ id: p, label: AI_PROVIDER_LABELS[p] ?? p }));
 }
 
@@ -396,6 +413,17 @@ function buildAiConfig(provider: string, brain?: BrainEndpoint | null): AiConfig
         timeoutMs: env.ollamaTimeoutMs,
       };
     }
+    case "claude": {
+      // The Claude bridge on the PC: a live tunnel registration, or a fixed local
+      // address when JARVIS runs on that PC. It speaks the OpenAI chat API.
+      const base = brain?.claudeUrl || env.claudeBridgeUrl;
+      if (!base || !env.claudeBridgeKey) return null;
+      return {
+        provider, kind: "openai", apiKey: env.claudeBridgeKey, baseUrl: ollamaV1(base),
+        model: brain?.claudeModel || env.claudeModel || AI_DEFAULT_MODEL.claude,
+        timeoutMs: env.claudeTimeoutMs,
+      };
+    }
     case "anthropic":
       return env.aiApiKey
         ? { provider, kind: "anthropic", apiKey: env.aiApiKey, model: AI_DEFAULT_MODEL.anthropic }
@@ -419,12 +447,12 @@ export function resolveAiConfigs(primaryOverride?: string, brain?: BrainEndpoint
   const picked = (primaryOverride ?? "").toLowerCase();
   // A PC brain is available when the gateway registered live OR (running JARVIS
   // on the PC itself) Ollama is configured at a fixed local URL.
-  const pcBrain = !!brain || env.ollamaBaseUrl.length > 0;
+  const pcBrain = !!brain?.baseUrl || env.ollamaBaseUrl.length > 0;
   const brainFirst = pcBrain && (picked === "ollama" || (!picked && env.brainPriority === "first"));
   const override = brainFirst ? "ollama" : picked === "ollama" ? "" : picked;
   // An old AI_PROVIDER=ollama doesn't force a live PC brain first — speed wins
   // unless the PC was chosen explicitly (Settings or BRAIN_PRIORITY=first).
-  const envPrimary = !!brain && !brainFirst && env.aiProvider === "ollama" ? "" : env.aiProvider;
+  const envPrimary = !!brain?.baseUrl && !brainFirst && env.aiProvider === "ollama" ? "" : env.aiProvider;
   const primary = override && buildAiConfig(override, brain) ? override : envPrimary;
   const order = [
     ...(primary && AI_FALLBACK_ORDER.includes(primary) ? [primary] : []),
