@@ -70,13 +70,42 @@ const keyMatches = (header) => {
  * the native claude(.exe); or, for an npm install on Windows (a .cmd shim), node
  * with the package's cli.js.
  */
+/**
+ * Where Windows installs of Claude Code usually live, when `where claude` can't
+ * see them (PATH not refreshed, or installed by the Claude desktop app):
+ * the native installer, winget, and the copy the desktop app downloads.
+ */
+function knownInstalls() {
+  const home = process.env.USERPROFILE ?? os.homedir();
+  const appdata = process.env.APPDATA ?? path.join(home, "AppData", "Roaming");
+  const local = process.env.LOCALAPPDATA ?? path.join(home, "AppData", "Local");
+  const out = [
+    path.join(home, ".local", "bin", "claude.exe"),
+    path.join(local, "Microsoft", "WinGet", "Links", "claude.exe"),
+    path.join(appdata, "npm", "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"),
+  ];
+  // versioned folders (newest first): the desktop app's Claude Code, winget packages
+  const newest = (dir, pick) => {
+    try {
+      return fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name)
+        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true })).map((n) => pick(path.join(dir, n)));
+    } catch { return []; }
+  };
+  out.push(...newest(path.join(appdata, "Claude", "claude-code"), (d) => path.join(d, "claude.exe")));
+  out.push(...newest(path.join(local, "AnthropicClaude"), (d) => path.join(d, "resources", "claude-code", "claude.exe")));
+  out.push(...newest(path.join(local, "Microsoft", "WinGet", "Packages"), (d) => path.join(d, "claude.exe")).filter((f) => /anthropic/i.test(f)));
+  return out;
+}
+
 export function resolveClaude() {
   const custom = read("CLAUDE_BIN");
   if (custom) return { cmd: custom, pre: [] };
   if (process.platform !== "win32") return { cmd: "claude", pre: [] };
   const found = spawnSync("where claude", { shell: true, encoding: "utf8" }).stdout?.split(/\r?\n/).map((s) => s.trim()).filter(Boolean) ?? [];
-  const exe = found.find((f) => /\.exe$/i.test(f));
+  const exe = found.find((f) => /\.exe$/i.test(f)) ?? knownInstalls().find((f) => fs.existsSync(f));
   if (exe) return { cmd: exe, pre: [] };
+  const npmShim = path.join(process.env.APPDATA ?? "", "npm", "claude.cmd");
+  if (process.env.APPDATA && fs.existsSync(npmShim) && !found.includes(npmShim)) found.push(npmShim);
   for (const shim of found.filter((f) => /\.cmd$/i.test(f))) {
     // the shim names what it runs (a native claude.exe or cli.js inside the npm package)
     let t = null;
@@ -228,9 +257,10 @@ async function selfCheck() {
 // ---- main ---------------------------------------------------------------------
 {
   say(`\nJARVIS Claude bridge — model ${MODEL}`);
-  if (!CLAUDE) die("Couldn't find the `claude` command on this PC (checked PATH with `where claude`). If Claude Code is installed, set CLAUDE_BIN in edith/.env to the full path of claude.exe (run `where claude` to see it).\n  Not installed? Install Claude Code (claude.com/claude-code), run `claude` once and sign in with your Claude account, then try again.");
+  if (!CLAUDE) die("Couldn't find Claude Code on this PC (looked on PATH and in the usual install folders). If Claude Code is installed, add CLAUDE_BIN=<full path> to .env.local, using the full path of claude.exe (run `where claude` to see it).\n  Not installed? Install Claude Code (claude.com/claude-code), run `claude` once and sign in with your Claude account, then try again.");
   const ver = spawnSync(CLAUDE.cmd, [...CLAUDE.pre, "--version"], { encoding: "utf8", windowsHide: true });
   if (ver.status !== 0) die(`\`claude --version\` failed${ver.stderr ? `: ${ver.stderr.trim().slice(0, 200)}` : ""}. Reinstall Claude Code, then try again.`);
+  say(`  Using ${CLAUDE.pre[0] ?? CLAUDE.cmd}`);
   say(`  Claude Code ${ver.stdout.trim()} · up to ${MAX_PARALLEL} at once · ${Math.round(TIMEOUT_MS / 1000)}s limit per answer`);
   fs.mkdirSync(WORKDIR, { recursive: true });
   say("  Checking you're signed in…");

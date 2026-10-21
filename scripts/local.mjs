@@ -371,7 +371,7 @@ if (claudeWanted) {
   if (await up(`http://127.0.0.1:${CLAUDE_PORT}/health`)) say("  Claude bridge already running on this PC — using it.");
   else {
     say("  Starting the Claude bridge (Claude on this PC, your Claude plan)…");
-    start("claude", ["claude-bridge.mjs"], { cwd: EDITH, env: { CLAUDE_BRIDGE_LOCAL_ONLY: "1", CLAUDE_BRIDGE_KEY: claudeKey, CLAUDE_BRIDGE_PORT: String(CLAUDE_PORT), ...(appEnv.CLAUDE_MODEL ? { CLAUDE_MODEL: appEnv.CLAUDE_MODEL } : {}) } });
+    start("claude", ["claude-bridge.mjs"], { cwd: EDITH, env: { CLAUDE_BRIDGE_LOCAL_ONLY: "1", CLAUDE_BRIDGE_KEY: claudeKey, CLAUDE_BRIDGE_PORT: String(CLAUDE_PORT), ...(appEnv.CLAUDE_MODEL ? { CLAUDE_MODEL: appEnv.CLAUDE_MODEL } : {}), ...(appEnv.CLAUDE_BIN ? { CLAUDE_BIN: appEnv.CLAUDE_BIN } : {}) } });
   }
   if (await waitFor(`http://127.0.0.1:${CLAUDE_PORT}/health`, 90)) claudeUrl = `http://127.0.0.1:${CLAUDE_PORT}`;
   else say("  ! The Claude bridge didn't start (see the [claude] lines above) — the agents use their other brains.");
