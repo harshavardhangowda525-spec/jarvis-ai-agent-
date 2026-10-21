@@ -108,6 +108,9 @@ describe("Jarvis → ASTON build commands", () => {
     expect(buildCommand("can you make an app demo for Iron Temple Gym")).toMatchObject({ kind: "app", needsDetails: false });
     expect(buildCommand("get aston to design a landing page for my salon")).toMatchObject({ kind: "website", needsDetails: false });
     expect(buildCommand("build a website")).toMatchObject({ needsDetails: true });
+    expect(buildCommand("Jarvis, I want a website for my cafe Brew & Bloom")).toMatchObject({ kind: "website", needsDetails: false });
+    expect(buildCommand("I need an app for Iron Temple Gym")).toMatchObject({ kind: "app", needsDetails: false });
+    expect(buildCommand("i would like a landing page for my salon")).toMatchObject({ kind: "website" });
     expect(buildCommand("make me a website please")).toMatchObject({ needsDetails: true });
   });
   it("leaves questions and other requests alone", async () => {

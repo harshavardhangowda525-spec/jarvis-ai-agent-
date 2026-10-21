@@ -95,6 +95,7 @@ export function AstonViewer({ siteId, autoWalk, speak, onChangesRequested, onClo
           <button type="button" aria-pressed={device === "phone"} onClick={() => setDevice("phone")}>Phone</button>
         </div>
         <button type="button" onClick={openTab} disabled={!url}>Open in new tab</button>
+        {url && <a className="av-dl" href={`${url}${url.includes("?") ? "&" : "?"}download=1`} download>Download code</a>}
         <button type="button" className="pri" onClick={() => { setAsked(false); walk.current?.start(); }} disabled={!url}>Walk me through</button>
         <button type="button" onClick={() => setMode(mode === "changes" ? null : "changes")}>Request changes</button>
         <button type="button" onClick={approve} disabled={!cur || cur.status !== "ready" || d.approvedVersion === cur.n}>{d.approvedVersion === cur?.n ? "Approved" : `Approve v${cur?.n ?? ""}`}</button>
@@ -143,7 +144,7 @@ export function AstonViewer({ siteId, autoWalk, speak, onChangesRequested, onClo
 const AV_CSS = `
 .av{position:relative;display:flex;flex-direction:column;min-height:0;min-width:0;flex:1;background:#0b1020;color:#e2e8f0;font:14px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .av button{font:inherit;cursor:pointer;min-height:36px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#131c30;color:#e2e8f0;white-space:nowrap}
-.av button:disabled{opacity:.45;cursor:default}.av button.pri{background:#f59e0b;border-color:#f59e0b;color:#111;font-weight:700}
+.av .av-dl{display:inline-flex;align-items:center;min-height:36px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:#131c30;color:#e2e8f0;white-space:nowrap;text-decoration:none}.av button:disabled{opacity:.45;cursor:default}.av button.pri{background:#f59e0b;border-color:#f59e0b;color:#111;font-weight:700}
 .av-bar{display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);overflow-x:auto;scrollbar-width:thin}
 .av-name{display:flex;flex-direction:column;min-width:140px;margin-right:auto}.av-name strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.av-name small{color:#94a3b8}
 .av-seg{display:flex}.av-seg button{border-radius:0}.av-seg button:first-child{border-radius:10px 0 0 10px}.av-seg button:last-child{border-radius:0 10px 10px 0}.av-seg button[aria-pressed=true]{background:#1e3a5f;border-color:#38bdf8}

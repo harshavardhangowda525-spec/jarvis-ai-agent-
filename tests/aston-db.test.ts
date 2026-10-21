@@ -47,6 +47,9 @@ d("ASTON builds, versions and previews (integration)", () => {
     const walk = await P.GET(new NextRequest(`http://x/p/${token}?walk=1`), { params: { token } });
     expect(await walk.text()).toContain("aston:goto");
     expect((await P.GET(new NextRequest("http://x/p/not-a-real-token-123456"), { params: { token: "not-a-real-token-123456" } })).status).toBe(404);
+    const dl = await P.GET(new NextRequest(`http://x/p/${token}?download=1`), { params: { token } });
+    expect(dl.headers.get("content-disposition")).toBe('attachment; filename="brew-bloom-cafe-v1-index.html"');
+    expect(await dl.text()).toMatch(/^<!doctype html>/);
   });
 
   it("a change request makes v2 and keeps v1", async () => {

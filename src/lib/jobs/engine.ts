@@ -85,8 +85,9 @@ export async function runnableJobs(userId?: string): Promise<string[]> {
  * Run one job to its end. Safe to call twice: only one caller claims it.
  * Returns the job as it ended, or null when it wasn't runnable.
  */
-export async function runJob(id: string, o: { runner?: Runner; now?: () => Date } = {}): Promise<AgentJob | null> {
+export async function runJob(id: string, o: { runner?: Runner; now?: () => Date; leaseMs?: number } = {}): Promise<AgentJob | null> {
   const now = o.now ?? (() => new Date());
+  const LEASE = o.leaseMs ?? LEASE_MS;
   const j0 = await db().agentJob.findUnique({ where: { id } });
   if (!j0 || j0.status !== "assigned" || j0.cancelRequested) return null;
   const deps = j0.dependsOn.length ? await db().agentJob.findMany({ where: { id: { in: j0.dependsOn } } }) : [];
@@ -94,7 +95,7 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date 
   // claim it — one runner only
   const claimed = await db().agentJob.updateMany({
     where: { id, status: "assigned", cancelRequested: false },
-    data: { status: "running", attempts: { increment: 1 }, startedAt: j0.startedAt ?? now(), leaseUntil: new Date(now().getTime() + LEASE_MS), progress: pushSteps(j0, step(`${JOB_AGENT_NAME[j0.agent as JobAgent] ?? j0.agent} started (attempt ${j0.attempts + 1})`)) },
+    data: { status: "running", attempts: { increment: 1 }, startedAt: j0.startedAt ?? now(), leaseUntil: new Date(now().getTime() + LEASE), progress: pushSteps(j0, step(`${JOB_AGENT_NAME[j0.agent as JobAgent] ?? j0.agent} started (attempt ${j0.attempts + 1})`)) },
   });
   if (!claimed.count) return null;
   let job = (await db().agentJob.findUnique({ where: { id } }))!;
@@ -121,8 +122,14 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date 
     lastWrite = Date.now();
     const cur = await db().agentJob.findUnique({ where: { id }, select: { progress: true, cancelRequested: true } });
     if (cur?.cancelRequested) cancelled = true;
-    await db().agentJob.update({ where: { id }, data: { leaseUntil: new Date(now().getTime() + LEASE_MS), ...(pending.length ? { progress: pushSteps(cur ?? job, ...pending.splice(0)) } : {}) } });
+    await db().agentJob.update({ where: { id }, data: { leaseUntil: new Date(now().getTime() + LEASE), ...(pending.length ? { progress: pushSteps(cur ?? job, ...pending.splice(0)) } : {}) } });
   };
+  // Heartbeat: an agent can be silent for minutes (ASTON waiting for Claude to write
+  // a site) — keep the lease alive while this runner is really working, so a long
+  // step is never mistaken for a dead runner and started again.
+  const heartbeat = setInterval(() => {
+    void db().agentJob.updateMany({ where: { id, status: "running" }, data: { leaseUntil: new Date(now().getTime() + LEASE) } }).catch(() => {});
+  }, Math.max(200, Math.floor(LEASE / 3)));
 
   try {
     const runner: Runner = o.runner ?? (job.agent === "aston" ? astonRunner(job) : runAgent);
@@ -148,6 +155,7 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date 
   } catch (e) {
     error = `The agent hit an error: ${String((e as Error)?.message ?? e).replace(/(key|token|secret|password)=\S+/gi, "$1=…").slice(0, 200)}`;
   }
+  clearInterval(heartbeat);
   await flush(true);
 
   const outcome = cancelled ? { status: "cancelled" as const, reason: null, text: text.trim() } : judgeOutcome(text, tools, error);

@@ -38,6 +38,12 @@ export function buildCommand(text: string): BuildCommand | null {
   const t = text.trim();
   const low = t.toLowerCase();
   if (/^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:how|what|why|when|where|which|who|is|are|does|do|should|would)\b/.test(low) && !/^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:can|could|would|will) you\b/.test(low)) return null;
+  // "I want / need / would like a website for my cafe" — asking for one is asking ASTON to build it
+  const wish = /^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?i (?:want|need|would like|'d like)\s+(?:a\s+|an\s+)?(?:new\s+|premium\s+|modern\s+|simple\s+|demo\s+)*(website|web ?site|landing page|web ?page|app|application|mobile app|app demo|web app)\s+(?:for|of)\s+\S/.exec(low);
+  if (wish) {
+    const k: BuildCommand["kind"] = /app|application/.test(wish[1]) && !/web ?app/.test(wish[1]) ? "app" : "website";
+    return { kind: k, request: t.replace(/^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)/i, "").trim(), needsDetails: false };
+  }
   const m = /^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(?:i (?:want|need|would like) (?:you )?(?:to )?|let'?s\s+|(?:ask|tell|get|have) aston to\s+|aston[,\s]+)?(?:build|create|make|design|develop|generate|do|prepare)\s+(?:me\s+|us\s+)?(?:a\s+|an\s+|the\s+|one\s+)?(?:new\s+|premium\s+|modern\s+|simple\s+|quick\s+|nice\s+|demo\s+)*(website|web ?site|site|landing page|web ?page|homepage|portfolio site|app|application|mobile app|app demo|web app)\b/.exec(low);
   if (!m) return null;
   const kind: BuildCommand["kind"] = /app|application/.test(m[1]) && !/web ?app/.test(m[1]) ? "app" : "website";

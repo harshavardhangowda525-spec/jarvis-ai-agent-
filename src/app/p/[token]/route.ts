@@ -38,6 +38,17 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
   const version = await getDb().astonVersion.findUnique({ where: { siteId_n: { siteId: site.id, n: v } }, select: { html: true, status: true } });
   if (!version || version.status !== "ready") return page(404, "Version not available", `Version ${v} of this demo isn't a finished, checked build.`);
   // the walkthrough frame gets a tiny helper that reports the real sections and scrolls to them
+  // ?download=1 → the site's code as a file (index.html: complete, self-contained HTML/CSS/JS)
+  if (req.nextUrl.searchParams.get("download") === "1") {
+    const site = await getDb().astonSite.findUnique({ where: { previewToken: params.token }, select: { name: true } });
+    const slug = (site?.name ?? "site").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50) || "site";
+    return new Response(version.html, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8", "Content-Disposition": `attachment; filename="${slug}-v${v}-index.html"`,
+        "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": CSP,
+      },
+    });
+  }
   const html = req.nextUrl.searchParams.get("walk") === "1" ? version.html.replace("</head>", `<script>${WALK_HELPER}</script></head>`) : version.html;
   return new Response(html, {
     headers: {

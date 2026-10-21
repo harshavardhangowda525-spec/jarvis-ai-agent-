@@ -38,6 +38,19 @@ d("JARVIS delegated tasks (integration)", () => {
   });
   afterAll(async () => { await db().user.deleteMany({ where: { id: userId } }).catch(() => {}); });
 
+  it("a long silent step (ASTON waiting for Claude) keeps its lease — it isn't restarted as dead", async () => {
+    const j = await E.createJob(userId, { agent: "aston", title: "slow build", request: "x", brief });
+    // the runner says nothing for 4× the lease; meanwhile the app keeps checking for dead runners
+    const slow = async function* (): AsyncGenerator<AgentEvent> { await new Promise((r) => setTimeout(r, 2400)); yield* done("Built it."); };
+    let stop = false;
+    const watcher = (async () => { while (!stop) { await E.recoverStale(); await new Promise((r) => setTimeout(r, 150)); } })();
+    const r = await E.runJob(j.id, { runner: slow as never, leaseMs: 600 });
+    stop = true; await watcher;
+    expect(r?.status).toBe("completed");
+    expect(r?.attempts).toBe(1);
+    expect((r?.progress as { text: string }[]).some((p) => /Interrupted/.test(p.text))).toBe(false);
+  }, 15_000);
+
   it("runs a job through the agent and records progress, result, timestamps and a chat", async () => {
     const seen: string[] = [];
     const j = await E.createJob(userId, { agent: "darwin", title: "5 gyms without a website", request: "find 5 gyms in indiranagar with no website", brief });
