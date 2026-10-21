@@ -94,6 +94,38 @@ export async function probeDatabase(root, url, timeoutMs = 40_000) {
   }
 }
 
+/**
+ * Which of this version's database changes (prisma/migrations) the database
+ * hasn't applied yet — and any that started but failed. Read straight from
+ * Prisma's own _prisma_migrations table, so it can't be fooled by a stamp file.
+ * Returns null if the database can't be asked.
+ */
+export async function pendingMigrations(root, url, timeoutMs = 40_000) {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const dir = path.join(root, "prisma", "migrations");
+  const local = fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort() : [];
+  const { createRequire } = await import("node:module");
+  let client;
+  try {
+    const require = createRequire(`${root.replace(/\\/g, "/")}/package.json`);
+    const { PrismaClient } = require("@prisma/client");
+    const { tuneDatabaseUrl } = await import("./db-url.mjs");
+    client = new PrismaClient({ datasources: { db: { url: tuneDatabaseUrl(url) } }, log: [] });
+    const rows = await Promise.race([
+      client.$queryRawUnsafe('SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations"').catch((e) => (/does not exist/i.test(String(e?.message)) ? [] : Promise.reject(e))),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("no answer")), timeoutMs)),
+    ]);
+    const done = new Set(rows.filter((r) => r.finished_at && !r.rolled_back_at).map((r) => r.migration_name));
+    const failed = rows.filter((r) => !r.finished_at && !r.rolled_back_at).map((r) => r.migration_name);
+    return { missing: local.filter((m) => !done.has(m)), failed };
+  } catch {
+    return null;
+  } finally {
+    await client?.$disconnect().catch(() => {});
+  }
+}
+
 /** AI keys/models JARVIS, EV and DARWIN can use (the same names the app reads). */
 const CLOUD_AI_VARS = ["GROQ_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "AI_API_KEY", "GROQ_MODEL", "GEMINI_MODEL"];
 const realValue = (v) => typeof v === "string" && v.trim() !== "" && !/^\[sensitive\]$/i.test(v.trim());

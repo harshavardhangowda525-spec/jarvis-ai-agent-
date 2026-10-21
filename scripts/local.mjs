@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { retireOldUltronProvider, stopPort, probeDatabase, describeDbError, cloudAiKeys, prismaClientMatches, resolveKeys, pruneBuildCache } from "./local-helpers.mjs";
+import { retireOldUltronProvider, stopPort, probeDatabase, pendingMigrations, describeDbError, cloudAiKeys, prismaClientMatches, resolveKeys, pruneBuildCache } from "./local-helpers.mjs";
 import { ensureSecret, searxngAnswers, startDocker } from "./searxng.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -280,17 +280,24 @@ if (!built || (head && stamp !== head) || process.argv.includes("--rebuild")) {
   if (db.ok) {
     say(`  Database: connected (${db.ms > 4000 ? `it was asleep — woke up in ${(db.ms / 1000).toFixed(1)} s` : `${db.ms} ms`})`);
     // this version's database changes (e.g. RUBIN's lead numbers) — applied once per update, safe to repeat
-    const migStamp = path.join(ROOT, ".next", "LOCAL_MIGRATED_COMMIT");
-    const migrated = fs.existsSync(migStamp) ? fs.readFileSync(migStamp, "utf8").trim() : "";
-    if (!head || migrated !== head || process.argv.includes("--migrate")) {
-      say("  Updating the database for this version…");
+    // Ask the database itself which of this version's changes it still needs (never trust a
+    // stamp alone — an update that failed once must not leave tables missing for good).
+    const before = await pendingMigrations(ROOT, dbUrl);
+    const needed = !before || before.missing.length > 0 || before.failed.length > 0 || process.argv.includes("--migrate");
+    if (needed) {
+      say(`  Updating the database for this version…${before?.missing.length ? ` (${before.missing.length} change${before.missing.length === 1 ? "" : "s"}: ${before.missing.join(", ")})` : ""}`);
       const r = spawnSync(process.execPath, [path.join(ROOT, "node_modules", "prisma", "build", "index.js"), "migrate", "deploy"], {
         cwd: ROOT, stdio: "inherit", timeout: 180_000,
         // a pooled Neon address can't run migrations — use the direct one
         env: { ...process.env, DATABASE_URL: dbUrl.replace("-pooler.", ".") },
       });
-      if (r.status === 0) { if (head) fs.writeFileSync(migStamp, head); say("  Database is up to date."); }
-      else say("  ! Couldn't update the database just now — run  npm run local -- --migrate  to try again.");
+      const after = await pendingMigrations(ROOT, dbUrl);
+      if (r.status === 0 && after && !after.missing.length) say("  Database is up to date.");
+      else {
+        say("  ! The database couldn't be updated — some features will fail with \"column/table does not exist\" until it is.");
+        if (after?.failed.length) say(`    A database change failed part-way: ${after.failed.join(", ")}. Send the error lines above to get it fixed.`);
+        else if (after?.missing.length) say(`    Still missing: ${after.missing.join(", ")}. Send the error lines above, or run  npm run local -- --migrate  to try again.`);
+      }
     }
   } else {
     say(`  ! Database: can't connect right now.\n    ${describeDbError(db.error) ?? db.error.split("\n").filter(Boolean).pop()}`);
