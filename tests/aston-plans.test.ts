@@ -115,3 +115,37 @@ describe("Jarvis → ASTON build commands", () => {
     for (const q of ["how do I build a website?", "what does a website cost", "make a note to call Ravi", "create a task for tomorrow", "open youtube", "change the website colours to dark", "find 50 gyms without a website"]) expect(buildCommand(q), q).toBeNull();
   });
 });
+
+describe("JARVIS → agent hand-off accepts how different brains fill it in", () => {
+  it("tidies Claude-style arguments instead of failing", async () => {
+    const { delegateTaskTool } = await import("@/lib/tools/jobs");
+    const r = delegateTaskTool.schema.safeParse({
+      agent: "ASTON", title: "Premium website for Brew & Bloom café in Indiranagar, Bengaluru — menu, gallery, reservations, contact and opening hours".repeat(2),
+      request: "Create a premium website for a cafe", kind: "landing page", leadId: null, dependsOn: null,
+      brief: {
+        objective: "Build a premium cafe website", expectedOutcome: "A checked preview link",
+        context: "Business: Brew & Bloom, Indiranagar\nPhone 98450 12345",
+        requirements: ["Menu", "Gallery", "x".repeat(900)], constraints: "Don't publish anything",
+        acceptance: "All checks pass; preview link works", outputFormat: "", approvals: null,
+      },
+    });
+    expect(r.success).toBe(true);
+    if (!r.success) return;
+    expect(r.data.agent).toBe("aston");
+    expect(r.data.kind).toBe("website");
+    expect(r.data.title.length).toBeLessThanOrEqual(120);
+    expect(r.data.brief.context).toEqual(["Business: Brew & Bloom, Indiranagar", "Phone 98450 12345"]);
+    expect(r.data.brief.acceptance).toEqual(["All checks pass", "preview link works"]);
+    expect(r.data.brief.requirements[2].length).toBe(400);
+    expect(r.data.brief.approvals).toEqual([]);
+    expect(r.data.leadId).toBeUndefined();
+    expect(delegateTaskTool.schema.safeParse({ agent: "rubin", title: "Follow-ups", request: "x", brief: { objective: "Draft follow-ups", expectedOutcome: "Drafts ready", acceptance: ["done"] } }).success).toBe(true);
+  });
+
+  it("still refuses a hand-off with nothing to do", async () => {
+    const { delegateTaskTool } = await import("@/lib/tools/jobs");
+    const r = delegateTaskTool.schema.safeParse({ agent: "aston", title: "x", request: "", brief: { objective: "", expectedOutcome: "y", acceptance: [] } });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues.map((i) => i.path.join("."))).toEqual(expect.arrayContaining(["title", "brief.objective", "brief.acceptance"]));
+  });
+});

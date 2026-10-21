@@ -479,8 +479,14 @@ async function* runOneTool(
     await recordToolActivity(userId, tool, rawInput, true, result.summary ?? null, null);
     return { content: JSON.stringify(result.data).slice(0, 12000), isError: false };
   } catch (err) {
+    // wrong arguments → say exactly which fields, so the brain can fix them and retry;
+    // anything else is printed in full on the server (the JARVIS window) for diagnosis
+    const zodIssues = (err as { issues?: { path: (string | number)[]; message: string }[] })?.issues;
+    if (!(err instanceof ToolError) && !Array.isArray(zodIssues)) console.error(`[agent] tool ${tool.name} failed:`, err);
     const message =
-      err instanceof ToolError ? err.message : "The tool encountered an unexpected error.";
+      err instanceof ToolError ? err.message
+        : Array.isArray(zodIssues) ? `The ${tool.name} arguments didn't fit: ${zodIssues.slice(0, 6).map((i) => `${i.path.join(".") || "input"} — ${i.message}`).join("; ")}. Fix those fields and call it again.`
+        : `The tool hit an unexpected error (${String((err as Error)?.message ?? err).split("\n").filter(Boolean).pop()?.slice(0, 160) ?? "unknown"}).`;
     if (emailId) yield { type: "email", id: emailId, phase: "failed", error: message };
     yield { type: "tool", name: tool.name, status: "error", summary: message };
     await logTool(userId, tool.name, rawInput, null, "error", message, Date.now() - started);

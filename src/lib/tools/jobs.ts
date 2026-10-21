@@ -11,17 +11,19 @@ import { getDb } from "@/lib/db";
  * then runs on the server and is tracked until it really finishes.
  */
 
+// tolerant of how different brains fill it in ("ASTON", "Rubin", a long title, kind "landing page"…)
+const AGENT_ALIAS: Record<string, string> = { rubin: "robin", ruben: "robin", reuben: "robin", evie: "ev", eve: "ev", austin: "aston" };
 const delegateSchema = z.object({
-  agent: z.enum(JOB_AGENTS),
-  title: z.string().trim().min(3).max(120),
-  request: z.string().trim().max(2000).describe("What the user asked, in their words."),
+  agent: z.preprocess((v) => { const s = String(v ?? "").trim().toLowerCase(); return AGENT_ALIAS[s] ?? s; }, z.enum(JOB_AGENTS)),
+  title: z.preprocess((v) => (typeof v === "string" ? v.trim().slice(0, 120) : v), z.string().min(3)),
+  request: z.preprocess((v) => (typeof v === "string" ? v.trim().slice(0, 2000) : v ?? ""), z.string()).describe("What the user asked, in their words."),
   brief: briefSchema,
-  dependsOn: z.array(z.string()).max(5).optional().describe("Ids of tasks (from earlier delegate_task results) that must finish first; their results are handed over."),
-  kind: z.enum(["website", "app"]).optional().describe("ASTON only: a website or an app demo."),
-  leadId: z.string().max(60).optional().describe("ASTON only: the CRM lead it's for (its verified details are used)."),
+  dependsOn: z.preprocess((v) => (v == null || v === "" ? undefined : typeof v === "string" ? [v] : v), z.array(z.string()).max(5).optional()).describe("Ids of tasks (from earlier delegate_task results) that must finish first; their results are handed over."),
+  kind: z.preprocess((v) => { const s = String(v ?? "").toLowerCase(); return !s ? undefined : /app|application|mobile/.test(s) && !/web ?app/.test(s) ? "app" : "website"; }, z.enum(["website", "app"]).optional()).describe("ASTON only: a website or an app demo."),
+  leadId: z.preprocess((v) => (v == null || v === "" ? undefined : String(v)), z.string().max(60).optional()).describe("ASTON only: the CRM lead it's for (its verified details are used)."),
 });
 
-export const delegateTaskTool: ToolDefinition<z.input<typeof delegateSchema>> = {
+export const delegateTaskTool: ToolDefinition<z.infer<typeof delegateSchema>> = {
   name: "delegate_task",
   agentScope: "jarvis",
   activityLabel: "Assigning the task",
@@ -34,7 +36,7 @@ export const delegateTaskTool: ToolDefinition<z.input<typeof delegateSchema>> = 
     "requirements, constraints, the output format and concrete acceptance criteria. Use sensible defaults and say they're assumptions in the brief. " +
     "For multi-step work make one task per agent and chain them with dependsOn (e.g. DARWIN verifies, then RUBIN drafts outreach). " +
     "Never assign the same work to two agents. Tell the user the task was assigned and that you'll report when it finishes — never claim it's done.",
-  schema: delegateSchema as unknown as z.ZodType<z.input<typeof delegateSchema>>,
+  schema: delegateSchema as unknown as z.ZodType<z.infer<typeof delegateSchema>>,
   inputSchema: {
     type: "object",
     properties: {
@@ -64,7 +66,7 @@ export const delegateTaskTool: ToolDefinition<z.input<typeof delegateSchema>> = 
   },
   async execute(input, ctx) {
     const { kind, leadId, ...rest } = input;
-    const job = await createJob(ctx.userId, { ...rest, brief: briefSchema.parse(input.brief), ...(input.agent === "aston" ? { payload: { kind, leadId } } : {}) });
+    const job = await createJob(ctx.userId, { ...rest, brief: input.brief, ...(input.agent === "aston" ? { payload: { kind, leadId } } : {}) });
     return {
       data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, note: "Assigned. It runs in the background; JARVIS reports when it finishes. Don't claim results yet." },
       summary: `Assigned to ${JOB_AGENT_NAME[input.agent]}: ${job.title}`,

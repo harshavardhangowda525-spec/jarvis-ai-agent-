@@ -18,17 +18,31 @@ export const JOB_STATUS_LABEL: Record<JobStatus, string> = {
 export const FINISHED: JobStatus[] = ["completed", "failed", "cancelled"];
 export const ACTIVE: JobStatus[] = ["planning", "assigned", "running"];
 
+/*
+ * Every brain writes briefs a little differently (one sentence instead of a
+ * list, a list joined with newlines, an over-long line…). Tidy that up instead
+ * of rejecting the hand-off: text is trimmed to size, a single string becomes a
+ * one-item list, and empty items are dropped.
+ */
+const clip = (max: number) => z.preprocess((v) => (v == null ? v : typeof v === "string" ? v : Array.isArray(v) ? v.join("; ") : String(v)), z.string().trim().transform((s) => s.slice(0, max)));
+const text = (max: number) => clip(max).pipe(z.string().min(3));
+const optText = (max: number) => z.preprocess((v) => (v === "" || v == null ? undefined : v), clip(max).optional());
+const list = (maxItems: number, maxLen: number) => z.preprocess(
+  (v) => (v == null ? [] : typeof v === "string" ? v.split(/\n+|;\s+/).map((s) => s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "")) : Array.isArray(v) ? v.map((x) => (typeof x === "string" ? x : JSON.stringify(x))) : [String(v)]),
+  z.array(z.string()).transform((a) => a.map((s) => s.trim().slice(0, maxLen)).filter(Boolean).slice(0, maxItems)),
+);
+
 export const briefSchema = z.object({
-  objective: z.string().trim().min(3).max(1000),
-  expectedOutcome: z.string().trim().min(3).max(1000),
-  context: z.array(z.string().trim().max(600)).max(12).default([]),
-  requirements: z.array(z.string().trim().max(400)).max(15).default([]),
-  constraints: z.array(z.string().trim().max(400)).max(12).default([]),
-  outputFormat: z.string().trim().max(400).optional(),
-  acceptance: z.array(z.string().trim().max(300)).min(1).max(10),
-  deadline: z.string().trim().max(80).optional(),
+  objective: text(1000),
+  expectedOutcome: text(1000),
+  context: list(12, 600).default([]),
+  requirements: list(15, 400).default([]),
+  constraints: list(12, 400).default([]),
+  outputFormat: optText(400),
+  acceptance: list(10, 300).pipe(z.array(z.string()).min(1, "give at least one acceptance point")),
+  deadline: optText(80),
   /** Steps that need your OK before they happen (sending, publishing …). */
-  approvals: z.array(z.string().trim().max(200)).max(8).default([]),
+  approvals: list(8, 200).default([]),
 });
 export type Brief = z.infer<typeof briefSchema>;
 
