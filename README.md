@@ -574,12 +574,28 @@ Every morning EV prepares **today's Instagram package** for Infinity Web & Apps
 (a feed post image and a 9:16 Reel) and has it waiting for your approval by
 **5:30 AM** (Asia/Kolkata). You don't have to start it.
 
-**Images and videos come from [Magic Hour](https://magichour.ai)** — the daily post
-image, the Reel's animated clip, and anything you ask EV for in chat ("make an
-image for…", "turn it into a reel"). Set `MAGICHOUR_API_KEY` (magichour.ai →
-Developer → API key) in `.env.local` and on Vercel. Without it EV tells you it
-needs connecting rather than using another generator; `EV_MEDIA_PROVIDER=auto`
-brings back Gemini/OpenAI as a backup. Optional: `MAGICHOUR_IMAGE_MODEL`,
+**Images and videos are motion graphics made by Claude on your PC** (the default —
+no Magic Hour, no API key). EV writes a motion-design brief (the message, the
+exact on-screen words, palette, and the motion beats with timings); Claude —
+through the Claude bridge, your Claude plan — answers with drawing code
+(`frame(t)` → SVG); JARVIS checks it and renders it: a PNG for images, an H.264
+MP4 (1080×1920, 30 fps for Reels) for videos. Vector shapes, gradients, kinetic
+typography and iconographic illustration — not photos.
+
+- Claude's code runs in a locked sandbox (no files, network or Node; time-limited),
+  and frames are drawn in a separate helper process, so a bad frame can never
+  crash JARVIS. If the code fails, Claude gets the exact error once to fix it.
+  Blank images and videos that don't move are rejected, never shown as done.
+- Each image or video takes about 1–3 minutes (mostly Claude writing the code)
+  and counts against your Claude plan. Claude on the PC must be connected
+  (`CLAUDE_FOR_ALL_AGENTS=1` + `start-jarvis.cmd`, or `npm run claude` for the
+  online app); otherwise EV says so.
+- The daily post image is made the same way; the daily Reel animates it with
+  EV's motion render.
+
+To use Magic Hour instead, set `EV_MEDIA_PROVIDER=magichour` and
+`MAGICHOUR_API_KEY` (magichour.ai → Developer → API key); `EV_MEDIA_PROVIDER=auto`
+also brings back Gemini/OpenAI images as a backup. Optional: `MAGICHOUR_IMAGE_MODEL`,
 `MAGICHOUR_VIDEO_MODEL` and their `_RESOLUTION` settings (blank = Magic Hour's
 recommended model). Each render uses Magic Hour credits.
 

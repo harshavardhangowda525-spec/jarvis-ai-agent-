@@ -83,7 +83,7 @@ export const env = {
   claudeBridgeUrl: read("CLAUDE_BRIDGE_URL"),
   // which Claude the bridge runs (sonnet | opus | haiku) — the bridge decides; this is the label
   claudeModel: read("CLAUDE_MODEL"),
-  claudeTimeoutMs: Math.max(30_000, Number(read("CLAUDE_TIMEOUT_MS")) || 200_000),
+  claudeTimeoutMs: Math.max(30_000, Number(read("CLAUDE_TIMEOUT_MS")) || 300_000),
   // One switch: every agent (JARVIS, DARWIN, RUBIN, EV, MIKE, ASTON) thinks with
   // Claude on your PC first, and keeps its own list as the backup.
   claudeForAllAgents: ["1", "true", "yes", "on"].includes(read("CLAUDE_FOR_ALL_AGENTS").toLowerCase()),
@@ -213,10 +213,11 @@ export const env = {
   magicHourImageResolution: read("MAGICHOUR_IMAGE_RESOLUTION"),
   magicHourVideoModel: read("MAGICHOUR_VIDEO_MODEL"),
   magicHourVideoResolution: read("MAGICHOUR_VIDEO_RESOLUTION"),
-  // Who makes EV's images and videos. "magichour" (default) = Magic Hour only —
-  // if it isn't connected EV says so instead of using another generator.
-  // "auto" = Magic Hour first, Gemini / OpenAI images as the backup.
-  evMediaProvider: (read("EV_MEDIA_PROVIDER").toLowerCase() === "auto" ? "auto" : "magichour") as "magichour" | "auto",
+  // Who makes EV's images and videos:
+  //   "claude" (default) = motion graphics coded by Claude on your PC (the Claude
+  //                        bridge — your Claude plan), rendered here to PNG / MP4;
+  //   "magichour" = Magic Hour only; "auto" = Magic Hour, then Gemini / OpenAI images.
+  evMediaProvider: (({ auto: "auto", magichour: "magichour" } as Record<string, "auto" | "magichour">)[read("EV_MEDIA_PROVIDER").toLowerCase()] ?? "claude") as "claude" | "magichour" | "auto",
 
   // EV daily content: every morning EV prepares a post + Reel for your approval.
   // Times are local to EV_DAILY_TZ. Auto-publish stays OFF unless you set it.
@@ -567,8 +568,13 @@ export const capabilities = {
   },
   /** EV can generate images (Magic Hour, or a Gemini/OpenAI key is present). */
   get evImage() {
+    if (env.evMediaProvider === "claude") return env.claudeBridgeKey.length > 0;
     if (env.evMediaProvider === "magichour") return env.magicHourApiKey.length > 0;
     return env.magicHourApiKey.length > 0 || env.geminiApiKey.length > 0 || env.openaiApiKey.length > 0;
+  },
+  /** EV can make videos (Claude motion graphics, or Magic Hour). */
+  get evVideo() {
+    return env.evMediaProvider === "claude" ? env.claudeBridgeKey.length > 0 : env.magicHourApiKey.length > 0;
   },
   /** Magic Hour is configured — enables high-quality image + video generation. */
   get magicHour() {

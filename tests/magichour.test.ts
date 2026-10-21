@@ -148,16 +148,25 @@ describe("Magic Hour client (current API shapes)", () => {
 });
 
 describe("EV uses Magic Hour", () => {
-  it("defaults to Magic Hour only; the key's other spelling works too", async () => {
+  it("defaults to Claude motion graphics; EV_MEDIA_PROVIDER=magichour means Magic Hour only (either key spelling)", async () => {
     vi.resetModules();
     const saved = { ...process.env };
-    delete process.env.EV_MEDIA_PROVIDER; delete process.env.MAGICHOUR_API_KEY; process.env.MAGIC_HOUR_API_KEY = "mhk_alt";
+    delete process.env.EV_MEDIA_PROVIDER; delete process.env.MAGICHOUR_API_KEY; delete process.env.CLAUDE_BRIDGE_KEY; process.env.MAGIC_HOUR_API_KEY = "mhk_alt";
     process.env.GEMINI_API_KEY = "gem_test";
     try {
-      const { env, capabilities } = await import("@/lib/env");
-      expect(env.evMediaProvider).toBe("magichour");
-      expect(env.magicHourApiKey).toBe("mhk_alt");
-      expect(capabilities.evImage).toBe(true);
+      let m = await import("@/lib/env");
+      expect(m.env.evMediaProvider).toBe("claude");
+      expect(m.capabilities.evImage).toBe(false); // no Claude bridge key yet
+      process.env.CLAUDE_BRIDGE_KEY = "claude_k";
+      vi.resetModules();
+      m = await import("@/lib/env");
+      expect([m.capabilities.evImage, m.capabilities.evVideo]).toEqual([true, true]);
+      process.env.EV_MEDIA_PROVIDER = "magichour";
+      vi.resetModules();
+      m = await import("@/lib/env");
+      expect(m.env.evMediaProvider).toBe("magichour");
+      expect(m.env.magicHourApiKey).toBe("mhk_alt");
+      expect(m.capabilities.evImage).toBe(true);
       delete process.env.MAGIC_HOUR_API_KEY;
       vi.resetModules();
       const again = await import("@/lib/env");

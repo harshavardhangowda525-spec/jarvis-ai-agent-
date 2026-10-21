@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
-vi.hoisted(() => { process.env.MAGICHOUR_API_KEY = "mhk_test"; });
+vi.hoisted(() => { process.env.MAGICHOUR_API_KEY = "mhk_test"; process.env.EV_MEDIA_PROVIDER = "magichour"; });
 import sharp from "sharp";
 import { getDb, isDbConfigured } from "@/lib/db";
 import { resolveStartImage } from "@/lib/ev/start-image";

@@ -66,12 +66,15 @@ export function buildRequest(body) {
 
   const protocol = toolNames.length
     ? [
-        "# How to answer",
-        "You are the brain behind this assistant. You can't run anything yourself; the app runs these tools for you and shows you the results:",
+        "# How to answer (important)",
+        "You are the brain behind this assistant. In this session you have NO tools you can call directly: the tools listed below are NOT functions available to you, and calling one directly fails with \"No such tool available\".",
+        "Instead, you REQUEST them in your JSON answer (tool_calls). The app runs them for you and shows you the results in the next message, then you continue.",
+        "",
+        "Tools the app can run for you:",
         ...tools.map((f) => `- ${f.name}: ${String(f.description ?? "").replace(/\s+/g, " ").trim()}\n  parameters: ${JSON.stringify(f.parameters ?? { type: "object" })}`),
         "",
         "Answer with JSON matching the schema:",
-        "- to use tools: put the calls in tool_calls (arguments must match that tool's parameters) and leave reply empty or one short line;",
+        "- to use tools: list them in tool_calls (name + arguments matching that tool's parameters) and leave reply empty or one short line — never say a tool is unavailable; just request it;",
         "- when you're done: tool_calls = [] and reply = your answer to the user.",
         "Never claim a tool ran or what it returned unless its result is in the conversation below.",
       ].join("\n")
@@ -166,4 +169,9 @@ export function shimTarget(cmdText) {
   const hits = [...String(cmdText).matchAll(/%~?dp0%?\\?([^"%\r\n]*?\.(?:exe|c?js|mjs))"/gi)].map((m) => m[1]).filter((f) => !/(^|\\|\/)node\.exe$/i.test(f));
   const f = hits[0];
   return f ? { file: f.replace(/\\/g, "/"), node: !/\.exe$/i.test(f) } : null;
+}
+
+/** Claude tried to call the app's tools directly (they don't exist in its session) instead of requesting them. */
+export function triedDirectToolCall(r) {
+  return !r.toolCalls.length && /no such tool|tool(?:s)? (?:is|are|was|were)? ?(?:not )?(?:un)?available|returned "no such tool/i.test(r.text);
 }

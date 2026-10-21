@@ -7,6 +7,7 @@ import { env } from "@/lib/env";
 import { generateImage, ImageGenError, type Aspect } from "@/lib/ev/image";
 import { isConfigured as magicHourReady, createImage as mhCreateImage, MagicHourError } from "@/lib/ev/magichour";
 import { finishMagicHour } from "@/lib/ev/render";
+import { makeMotion, ClaudeMotionUnavailable, MotionCodeError } from "@/lib/ev/motion";
 
 /**
  * EV's image generator. Produces a REAL image and returns a public URL usable
@@ -22,7 +23,7 @@ const schema = z.object({
   action: z.enum(["generate", "check"]).optional().describe("generate (default) or check a pending Magic Hour job."),
   prompt: z.string().max(2000).optional().describe("Detailed visual description (subject, style, mood, colors, text overlay)."),
   aspect: z.enum(["square", "portrait", "landscape"]).optional().describe("Composition. square (default) and portrait suit Instagram feed."),
-  provider: z.enum(["auto", "magichour", "gemini", "openai"]).optional().describe("Image engine. EV uses Magic Hour; only change this if the user asks for another engine."),
+  provider: z.enum(["auto", "claude", "magichour", "gemini", "openai"]).optional().describe("Image engine. Leave it out: EV uses its configured engine (Claude motion graphics by default). Only set it if the user asks for another engine."),
   niche: z.string().max(60).optional(),
   contentId: z.string().optional().describe("EvContent id to attach this image URL to."),
   projectId: z.string().optional().describe("Magic Hour project id (for action 'check')."),
@@ -59,7 +60,9 @@ async function finishImage(userId: string, projectId: string, contentId: string 
 export const evImageTool: ToolDefinition<Input> = {
   name: "ev_image",
   description:
-    "Generate a REAL marketing image for Infinity Web & Apps with Magic Hour and return a public URL for review/publishing. " +
+    "Generate a REAL marketing image for Infinity Web & Apps and return a public URL for review/publishing. By default Claude on the user's PC codes it as a " +
+    "motion graphic (vector shapes, gradients, kinetic typography) and JARVIS renders it — write the prompt as a motion-design brief (exact on-screen words, layout, palette, mood). " +
+    "With Magic Hour (EV_MEDIA_PROVIDER=magichour) it's async: " +
     "Magic Hour is async: if it isn't ready quickly you get a projectId — call again with " +
     "action 'check' and that projectId to fetch it. Never fabricates an image.",
   schema,
@@ -67,6 +70,22 @@ export const evImageTool: ToolDefinition<Input> = {
   activityLabel: "Generating marketing image",
   async execute(input, ctx) {
     const aspect = (input.aspect ?? "square") as Aspect;
+    // ---- Claude motion graphics (the default): EV's brief → Claude's code → a real PNG ----
+    const viaClaude = input.provider === "claude" || (env.evMediaProvider === "claude" && !input.provider && input.action !== "check");
+    if (viaClaude) {
+      if (!input.prompt || input.prompt.trim().length < 3) throw new ToolError("Provide a 'prompt' — the motion-design brief for the image.");
+      try {
+        const r = await makeMotion(ctx.userId, { prompt: input.prompt, aspect, kind: "image", onStep: (s) => ctx.activity(s) });
+        await attach(ctx.userId, input.contentId, r.url, r.mediaId);
+        return {
+          data: { url: r.url, mediaId: r.mediaId, provider: "claude", title: r.title, openUrl: r.url, label: "View image", toAnimate: { tool: "ev_video", note: "ev_video with a motion brief makes the animated version" } },
+          summary: `Made a ${aspect} motion-graphic image with Claude (“${r.title}”)${r.repaired ? " — Claude fixed its code once" : ""}. Ready to review${input.contentId ? " and attached to the post" : ""}.`,
+        };
+      } catch (err) {
+        if (err instanceof ClaudeMotionUnavailable || err instanceof MotionCodeError) throw new ToolError(err.message);
+        throw err;
+      }
+    }
     // EV makes images with Magic Hour. Only in "auto" mode may another engine stand in.
     const onlyMagicHour = env.evMediaProvider === "magichour";
     const useMagicHour = onlyMagicHour || input.provider === "magichour" ||
@@ -122,7 +141,7 @@ export const evImageTool: ToolDefinition<Input> = {
       action: { type: "string", enum: ["generate", "check"] },
       prompt: { type: "string", description: "Detailed visual description." },
       aspect: { type: "string", enum: ["square", "portrait", "landscape"] },
-      provider: { type: "string", enum: ["auto", "magichour", "gemini", "openai"] },
+      provider: { type: "string", enum: ["auto", "claude", "magichour", "gemini", "openai"] },
       niche: { type: "string" },
       contentId: { type: "string" },
       projectId: { type: "string" },

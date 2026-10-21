@@ -133,7 +133,8 @@ export async function* runAgent(
       darwinAvailable: darwinConfigured() || true, // DARWIN is now internal
       instagramAvailable: !!igCreds,
       imageAvailable: capabilities.evImage,
-      videoAvailable: capabilities.magicHour,
+      videoAvailable: capabilities.evVideo,
+      claudeMedia: env.evMediaProvider === "claude",
     });
   } else if (isDarwin) {
     // DARWIN's lead-gen/CRM brain — real data only.

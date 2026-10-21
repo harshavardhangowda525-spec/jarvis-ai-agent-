@@ -8,6 +8,7 @@ import { agentConfigs } from "@/lib/ai/agent";
 import { completeWithFallback } from "@/lib/ai/complete";
 import { generateImage, resolveImageProvider } from "@/lib/ev/image";
 import * as magicHour from "@/lib/ev/magichour";
+import { makeMotion } from "@/lib/ev/motion";
 import { storeRemoteMedia } from "@/lib/ev/media";
 import { itemText } from "@/lib/ev/memory";
 import { fingerprint, findSimilar } from "@/lib/ev/dedup";
@@ -40,7 +41,7 @@ export class DailyError extends Error {
 export interface DailyDeps {
   now: () => Date;
   write: (system: string, user: string) => Promise<string>;
-  image: (prompt: string) => Promise<{ bytes: Buffer; mimeType: string; provider: string }>;
+  image: (prompt: string, userId: string) => Promise<{ bytes: Buffer; mimeType: string; provider: string }>;
   reel: typeof renderReel;
   magicHour: null | {
     createImage: (prompt: string) => Promise<string>;
@@ -52,7 +53,7 @@ export interface DailyDeps {
    * when it isn't connected); "auto" (the default when omitted) = Magic Hour
    * first, the Gemini/OpenAI image model as the backup.
    */
-  mediaMode?: "magichour" | "auto";
+  mediaMode?: "magichour" | "auto" | "claude";
   /** Whether Instagram can fetch our media (public https APP_URL). */
   publicUrl: boolean;
 }
@@ -73,13 +74,23 @@ export function defaultDeps(): DailyDeps {
       if (!configs.length) throw new DailyError(missing ?? "EV's writing brain isn't configured.", true);
       return completeWithFallback(configs, system, user, { maxTokens: 2200, timeoutMs: 60_000 });
     },
-    image: async (prompt) => {
+    image: async (prompt, userId) => {
+      // the default: a motion-graphic still coded by Claude on the PC (no API, no Magic Hour)
+      if (env.evMediaProvider === "claude") {
+        try {
+          const r = await makeMotion(userId, { prompt, aspect: "portrait", kind: "image" });
+          await getDb().evMedia.delete({ where: { id: r.mediaId } }).catch(() => {}); // the pipeline stores its own copy
+          return { bytes: r.bytes, mimeType: r.mimeType, provider: "Claude motion graphic" };
+        } catch (e) {
+          throw new DailyError((e as Error).message); // retried at the next check (e.g. once the PC is on)
+        }
+      }
       if (!resolveImageProvider()) throw new DailyError("Image generation isn't configured. Connect Magic Hour (MAGICHOUR_API_KEY), or set GEMINI_API_KEY / OPENAI_API_KEY with EV_MEDIA_PROVIDER=auto.", true);
       const r = await generateImage(prompt, "portrait");
       return { bytes: r.bytes, mimeType: r.mimeType, provider: `${r.provider} · ${r.model}` };
     },
     reel: renderReel,
-    magicHour: magicHour.isConfigured() ? {
+    magicHour: magicHour.isConfigured() && env.evMediaProvider !== "claude" ? {
       createImage: (prompt) => magicHour.createImage(prompt, "portrait"),
       createVideo: (o) => magicHour.createVideo({ prompt: o.prompt, image: o.image, seconds: 8, aspect: "portrait" }),
       wait: (kind, id, budgetMs) => magicHour.waitProject(kind, id, budgetMs),
@@ -272,7 +283,7 @@ async function stepImage(p: EvDaily, deps: DailyDeps, log: DailyLogEntry[]): Pro
     }
   }
   if (direct) {
-    const img = await deps.image(prompt);
+    const img = await deps.image(prompt, p.userId);
     const media = await getDb().evMedia.create({ data: { userId: p.userId, mimeType: img.mimeType, data: img.bytes, prompt: prompt.slice(0, 4000) }, select: { id: true } });
     log.push(entry(deps.now(), "creative", `Generated the post image (${img.provider}).`));
     await save(p.id, { imageMediaId: media.id, imageUrl: mediaUrl(media.id), imageProvider: img.provider, stage: "video", error: null }, log);
@@ -680,7 +691,7 @@ export async function dailyView(userId: string, deps: Pick<DailyDeps, "now" | "p
     resolveIgCreds(userId).catch(() => null),
   ]);
   const writer = evWriters().configs[0]?.provider ?? null;
-  const image = magicHour.isConfigured() ? "magichour" : env.evMediaProvider === "auto" ? resolveImageProvider()?.provider ?? null : null;
+  const image = env.evMediaProvider === "claude" ? (env.claudeBridgeKey ? "Claude (motion graphics)" : null) : magicHour.isConfigured() ? "magichour" : env.evMediaProvider === "auto" ? resolveImageProvider()?.provider ?? null : null;
   return {
     enabled: cfg.enabled, timezone: cfg.tz, today, start: cfg.start, readyBy: cfg.readyBy,
     startLabel: clockLabel(cfg.start), readyByLabel: clockLabel(cfg.readyBy), autoPublish: cfg.autoPublish,
@@ -689,7 +700,7 @@ export async function dailyView(userId: string, deps: Pick<DailyDeps, "now" | "p
     history: hist.map((h) => ({ ...h, createdAt: h.createdAt.toISOString() })),
     capabilities: {
       writer, image,
-      video: magicHour.isConfigured() && cfg.video !== "motion" ? "Magic Hour + EV Reel" : "EV Reel (motion render)",
+      video: env.evMediaProvider !== "claude" && magicHour.isConfigured() && cfg.video !== "motion" ? "Magic Hour + EV Reel" : "EV Reel (motion render)",
       instagram: !!ig, publicUrl: deps.publicUrl || !!(await publicBase(userId)),
     },
   };

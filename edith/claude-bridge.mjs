@@ -25,7 +25,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "./src/loadenv.mjs";
 import { startTunnel, waitReachable, stopTunnel } from "./src/tunnel.mjs";
-import { BridgeError, buildRequest, claudeArgs, parseResult, shimTarget, toChunks, toCompletion } from "./src/claude-protocol.mjs";
+import { BridgeError, buildRequest, claudeArgs, parseResult, shimTarget, toChunks, toCompletion, triedDirectToolCall } from "./src/claude-protocol.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.resolve(__dirname, ".env"));
@@ -37,7 +37,7 @@ const JARVIS = read("JARVIS_URL").replace(/\/+$/, "");
 const FIXED_URL = read("CLAUDE_BRIDGE_PUBLIC_URL").replace(/\/+$/, "");
 const LOCAL_ONLY = read("CLAUDE_BRIDGE_LOCAL_ONLY") === "1";
 const MAX_PARALLEL = Math.max(1, Number(read("CLAUDE_MAX_PARALLEL")) || 2);
-const TIMEOUT_MS = Math.max(30_000, Number(read("CLAUDE_TIMEOUT_MS")) || 180_000);
+const TIMEOUT_MS = Math.max(30_000, Number(read("CLAUDE_TIMEOUT_MS")) || 290_000);
 const KEY_FILE = path.resolve(__dirname, ".claude-bridge-key");
 // CLAUDE_BRIDGE_DEBUG_DIR=folder → save each request and Claude's raw answer there (troubleshooting only)
 const DEBUG_DIR = read("CLAUDE_BRIDGE_DEBUG_DIR");
@@ -155,7 +155,12 @@ async function think(body, signal) {
   try {
     const stdout = await runClaude(claudeArgs({ model: MODEL, systemFile: sysFile, schema }), prompt, signal);
     if (DEBUG_DIR) fs.writeFileSync(path.join(DEBUG_DIR, `${Date.now()}.json`), JSON.stringify({ system, prompt, schema, stdout }, null, 1));
-    return parseResult(stdout, toolNames);
+    const r = parseResult(stdout, toolNames);
+    if (!toolNames.length || !triedDirectToolCall(r)) return r;
+    // it tried to call the app's tools itself → once more, with a plain reminder
+    say("  (Claude tried to run a tool itself — asking again the right way)");
+    const again = await runClaude(claudeArgs({ model: MODEL, systemFile: sysFile, schema }), `${prompt}\n\n[Reminder: you cannot call ${toolNames.slice(0, 6).join(", ")}${toolNames.length > 6 ? "…" : ""} yourself. Request them in tool_calls in your JSON answer; the app runs them.]`, signal);
+    return parseResult(again, toolNames);
   } finally {
     release();
     fs.rm(sysFile, { force: true }, () => {});

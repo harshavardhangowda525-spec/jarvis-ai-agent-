@@ -117,7 +117,7 @@ describe("Claude on your PC in JARVIS's brain chain", () => {
   it("CLAUDE_FOR_ALL_AGENTS puts Claude first for every agent, each keeping its own backups", async () => {
     const { agentConfigs } = await load({ GROQ_API_KEY: "gsk_x", GEMINI_API_KEY: "g", CLAUDE_BRIDGE_KEY: "claude_k", CLAUDE_FOR_ALL_AGENTS: "1" });
     for (const a of ["jarvis", "darwin", "robin", "ev", "mike", "aston"] as const) expect(agentConfigs(a, live).configs.map((c) => c.provider), a).toEqual(["claude", "groq", "gemini"]);
-    expect(agentConfigs("aston", live).configs[0]).toMatchObject({ baseUrl: "https://pc.trycloudflare.com/v1", apiKey: "claude_k", model: "sonnet", timeoutMs: 200_000 });
+    expect(agentConfigs("aston", live).configs[0]).toMatchObject({ baseUrl: "https://pc.trycloudflare.com/v1", apiKey: "claude_k", model: "sonnet", timeoutMs: 300_000 });
     // PC off (no live bridge) → straight to the backups, no waiting
     expect(agentConfigs("jarvis", null).configs.map((c) => c.provider)).toEqual(["groq", "gemini"]);
   });

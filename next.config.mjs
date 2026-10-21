@@ -1,3 +1,6 @@
+// EV's motion graphics are drawn in a helper process (scripts/motion-render.mjs) — ship it and what it loads
+const MOTION = ["./scripts/motion-render.mjs", "./src/lib/ev/motion/sandbox-core.mjs", "./node_modules/@resvg/**"];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -14,8 +17,10 @@ const nextConfig = {
     // EV renders its daily Reel with ffmpeg + the bundled Inter font — ship both
     // with the functions that render.
     outputFileTracingIncludes: {
-      "/api/ev/daily": ["./node_modules/ffmpeg-static/ffmpeg", "./assets/fonts/**"],
-      "/api/cron/ev-daily": ["./node_modules/ffmpeg-static/ffmpeg", "./assets/fonts/**"],
+      "/api/ev/daily": ["./node_modules/ffmpeg-static/ffmpeg", "./assets/fonts/**", ...MOTION],
+      "/api/cron/ev-daily": ["./node_modules/ffmpeg-static/ffmpeg", "./assets/fonts/**", ...MOTION],
+      // EV's motion graphics (ev_image / ev_video in a chat): the render helper process
+      "/api/agent": ["./node_modules/ffmpeg-static/ffmpeg", "./assets/fonts/**", ...MOTION],
       // ROBIN draws quotation PDFs with the same font (it has the ₹ sign)
       "/api/robin/quotations/[id]": ["./assets/fonts/**"],
       "/api/robin/quotations/[id]/pdf": ["./assets/fonts/**"],

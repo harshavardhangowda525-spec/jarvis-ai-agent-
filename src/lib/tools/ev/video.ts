@@ -6,6 +6,8 @@ import { getDb } from "@/lib/db";
 import { isConfigured as magicHourReady, createVideo, MagicHourError } from "@/lib/ev/magichour";
 import { finishMagicHour, type VideoFallback } from "@/lib/ev/render";
 import { resolveStartImage } from "@/lib/ev/start-image";
+import { env } from "@/lib/env";
+import { makeMotion, ClaudeMotionUnavailable, MotionCodeError } from "@/lib/ev/motion";
 
 /**
  * EV's video generator (Magic Hour). Creates a REAL marketing video — text-to-
@@ -56,13 +58,29 @@ async function finish(userId: string, projectId: string, contentId: string | und
 export const evVideoTool: ToolDefinition<Input> = {
   name: "ev_video",
   description:
-    "Generate a REAL marketing video/reel for Infinity Web & Apps with Magic Hour: text-to-video from a prompt, or image-to-video " +
+    "Generate a REAL marketing video/reel for Infinity Web & Apps. By default Claude on the user's PC codes it as a motion graphic and JARVIS renders a real MP4 " +
+    "(write the prompt as a motion-design brief with motion beats and timings; portrait 9:16 for Reels; 3–15 s). With Magic Hour: text-to-video from a prompt, or image-to-video " +
     "from an EV image (contentImageId = its mediaId). Renders take minutes: if it isn't done at once the app keeps checking and shows " +
     "the video by itself when it's ready — just tell the user it's rendering. 'check' + projectId fetches it on request. Never fabricates a video.",
   schema,
   agentScope: "ev",
   activityLabel: "Generating marketing video",
   async execute(input, ctx) {
+    // ---- Claude motion graphics (the default): EV's brief → Claude's code → a real MP4 ----
+    if (env.evMediaProvider === "claude" && input.action !== "check") {
+      if (!input.prompt || input.prompt.trim().length < 3) throw new ToolError("Provide a 'prompt' — the motion-design brief (message, on-screen words, palette, motion beats with timings).");
+      try {
+        const r = await makeMotion(ctx.userId, { prompt: input.prompt, aspect: input.aspect ?? "portrait", kind: "video", seconds: input.seconds, onStep: (s) => ctx.activity(s) });
+        await attach(ctx.userId, input.contentId, r.url, r.mediaId);
+        return {
+          data: { url: r.url, mediaId: r.mediaId, provider: "claude", title: r.title, seconds: r.seconds, openUrl: r.url, label: "View video" },
+          summary: `Made a ${r.seconds}s ${r.aspect} motion-graphic video with Claude (“${r.title}”)${r.repaired ? " — Claude fixed its code once" : ""}. Ready to review.`,
+        };
+      } catch (err) {
+        if (err instanceof ClaudeMotionUnavailable || err instanceof MotionCodeError) throw new ToolError(err.message);
+        throw err;
+      }
+    }
     if (!magicHourReady()) {
       throw new ToolError("Video generation needs Magic Hour. Add MAGICHOUR_API_KEY (magichour.ai → API) to enable EV video.");
     }

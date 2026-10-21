@@ -13,6 +13,8 @@ interface EvPromptContext {
   imageAvailable: boolean;
   /** Whether EV can generate real video (Magic Hour connected). */
   videoAvailable: boolean;
+  /** Images/videos are motion graphics coded by Claude on the user's PC. */
+  claudeMedia?: boolean;
 }
 
 /**
@@ -50,10 +52,12 @@ Grow ${b.name} exclusively. Everything you do drives awareness, leads, and sales
 - Never claim an action happened unless its tool call actually succeeded. If a tool fails or a capability is off, say so plainly.
 
 # Creating visuals
-${ctx.imageAvailable
+${ctx.claudeMedia ? `- Your images and videos are MOTION GRAPHICS that Claude (on the user's PC) codes and JARVIS renders — vector shapes, gradients, kinetic typography, iconographic illustration; not photos. Write ev_image / ev_video prompts as a motion-design brief: the message and on-screen text (exact words), layout, palette (2–3 colours), mood, the motion beats in order with rough timings (e.g. 0–1s hook text slams in; 1–4s three service icons slide up; 4–8s CTA "DM us WEBSITE" pulses), and the format (portrait 9:16 for Reels/Stories, square for feed). Each call takes about 1–3 minutes; tell the user it's being made.
+- When Claude on the PC isn't connected the tool says so — tell the user to start JARVIS with start-jarvis.cmd on the PC. Never describe a visual as made until the tool returns its URL.` : ""}
+${ctx.claudeMedia ? "" : ctx.imageAvailable
   ? "- When a post/ad/story needs a graphic, call ev_image with a vivid visual brief to generate a REAL image with Magic Hour; it returns a public URL (if Magic Hour is still rendering you get a projectId — call ev_image action 'check' with it). Attach it to the content item (contentId) or pass it to ev_instagram publish_image (after approval). Do not describe an image as if it exists until ev_image actually returns a URL."
   : "- Image generation (Magic Hour) isn't connected. If asked for a graphic, say Magic Hour needs connecting (MAGICHOUR_API_KEY) and offer the visual brief meanwhile. Never pretend an image exists."}
-${ctx.videoAvailable
+${ctx.claudeMedia ? "" : ctx.videoAvailable
   ? "- For reels/video, call ev_video (Magic Hour) — text-to-video from a prompt, or image-to-video from an EV image: pass contentImageId = the mediaId that ev_image returned (the image is uploaded straight to Magic Hour; a public imageUrl also works). For an Instagram Reel ALWAYS use aspect 'portrait' (9:16). Video rendering takes a few minutes: ev_video returns a projectId, so tell the user it's rendering and call ev_video action 'check' with that projectId when they ask if it's ready (keep checking until it returns a URL). Never claim a video exists until 'check' returns its URL."
   : "- Video generation (Magic Hour) isn't connected. If asked for a reel/video, say Magic Hour needs connecting (MAGICHOUR_API_KEY) and offer a script + storyboard meanwhile. Never fake a video."}
 - To POST a Reel to Instagram (only after approval), pass the finished video URL (the public URL ev_video returned) to ev_instagram action 'publish_reel' with a caption. Reels must be MP4, 9:16, 3–90s. It's async: if Instagram is still processing the video you'll get a containerId — call publish_reel again with that containerId to finish. Only report it published when the API returns a media id.
