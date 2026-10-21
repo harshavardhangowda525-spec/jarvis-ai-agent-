@@ -24,3 +24,24 @@ export function isAstonActivation(low: string): boolean {
 export function teleprompterCommand(low: string): boolean {
   return /\b(open|show|start|bring up|launch)\b.{0,20}\b(teleprompter|today'?s (marketing )?plan|daily (marketing )?plan|marketing plan)\b/.test(low) || /^(the )?teleprompter[.!\s]*$/.test(low.trim());
 }
+
+export type BuildCommand = { kind: "website" | "app"; request: string; needsDetails: boolean };
+
+/**
+ * "Jarvis, build me a website for Brew & Bloom café…", "create a landing page
+ * for my gym", "get ASTON to make an app demo for Iron Temple" → straight to
+ * ASTON with your own words (no AI round trip deciding who should do it).
+ * Questions ("how do I build a website?", "what does a website cost?") and
+ * changes to an existing demo are not build commands.
+ */
+export function buildCommand(text: string): BuildCommand | null {
+  const t = text.trim();
+  const low = t.toLowerCase();
+  if (/^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:how|what|why|when|where|which|who|is|are|does|do|should|would)\b/.test(low) && !/^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:can|could|would|will) you\b/.test(low)) return null;
+  const m = /^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(?:i (?:want|need|would like) (?:you )?(?:to )?|let'?s\s+|(?:ask|tell|get|have) aston to\s+|aston[,\s]+)?(?:build|create|make|design|develop|generate|do|prepare)\s+(?:me\s+|us\s+)?(?:a\s+|an\s+|the\s+|one\s+)?(?:new\s+|premium\s+|modern\s+|simple\s+|quick\s+|nice\s+|demo\s+)*(website|web ?site|site|landing page|web ?page|homepage|portfolio site|app|application|mobile app|app demo|web app)\b/.exec(low);
+  if (!m) return null;
+  const kind: BuildCommand["kind"] = /app|application/.test(m[1]) && !/web ?app/.test(m[1]) ? "app" : "website";
+  // what's left after "build a website" — who it's for and what it needs
+  const rest = low.slice(m.index + m[0].length).replace(/[^a-z0-9&@'+-]+/g, " ").replace(/\b(for|me|us|please|now|demo|a|an|the|my|of|to|with|and)\b/g, " ").trim();
+  return { kind, request: t.replace(/^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)/i, "").trim(), needsDetails: rest.split(/\s+/).filter((w) => w.length > 1).length < 1 };
+}

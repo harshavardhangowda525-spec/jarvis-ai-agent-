@@ -107,7 +107,9 @@ export async function requestBuild(userId: string, p: { request: string; kind?: 
     acceptance: ["Every check passes", "A preview link"],
     approvals: [],
   };
-  return createJob(userId, { agent: "aston", title: `${kind === "app" ? "App" : "Website"} demo — ${who}`.slice(0, 120), request: p.request.slice(0, 2000), brief, payload: { kind, ...(lead ? { leadId: lead.id } : {}) } });
+  // a title you'll recognise: the business, or what you asked for
+  const what = lead?.businessName ?? p.business ?? (p.request.replace(/^(?:please\s+)?(?:(?:can|could|would|will) you\s+)?(?:build|create|make|design|develop|generate)\s+(?:me\s+)?(?:an?\s+)?/i, "").replace(/\s+/g, " ").trim().slice(0, 70) || who);
+  return createJob(userId, { agent: "aston", title: `${kind === "app" ? "App" : "Website"} — ${what}`.slice(0, 120), request: p.request.slice(0, 2000), brief, payload: { kind, ...(lead ? { leadId: lead.id } : {}) } });
 }
 
 /** Approve a version. Approval is a record only — it never deploys or publishes anything. */

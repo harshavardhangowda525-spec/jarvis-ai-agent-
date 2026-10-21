@@ -99,3 +99,19 @@ describe("ASTON", () => {
     expect(teleprompterCommand("open youtube")).toBe(false);
   });
 });
+
+describe("Jarvis → ASTON build commands", () => {
+  it("sends build requests straight to ASTON with the user's words", async () => {
+    const { buildCommand } = await import("@/lib/aston/intent");
+    expect(buildCommand("Jarvis, build me a website for Brew & Bloom cafe in Indiranagar")).toEqual({ kind: "website", request: "build me a website for Brew & Bloom cafe in Indiranagar", needsDetails: false });
+    expect(buildCommand("Create a premium website for a cafe")).toMatchObject({ kind: "website", needsDetails: false });
+    expect(buildCommand("can you make an app demo for Iron Temple Gym")).toMatchObject({ kind: "app", needsDetails: false });
+    expect(buildCommand("get aston to design a landing page for my salon")).toMatchObject({ kind: "website", needsDetails: false });
+    expect(buildCommand("build a website")).toMatchObject({ needsDetails: true });
+    expect(buildCommand("make me a website please")).toMatchObject({ needsDetails: true });
+  });
+  it("leaves questions and other requests alone", async () => {
+    const { buildCommand } = await import("@/lib/aston/intent");
+    for (const q of ["how do I build a website?", "what does a website cost", "make a note to call Ravi", "create a task for tomorrow", "open youtube", "change the website colours to dark", "find 50 gyms without a website"]) expect(buildCommand(q), q).toBeNull();
+  });
+});

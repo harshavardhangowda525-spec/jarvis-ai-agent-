@@ -45,7 +45,7 @@ import { CHAT_AGENTS, type ChatAgentId } from "@/lib/agents/catalog";
 import { announcement, useJobs } from "@/components/jobs/use-jobs";
 import { JOB_STATUS_LABEL } from "@/lib/jobs/brief";
 import { AstonViewer } from "@/components/aston/viewer";
-import { astonPreviewCommand, isAstonActivation, teleprompterCommand } from "@/lib/aston/intent";
+import { astonPreviewCommand, buildCommand, isAstonActivation, teleprompterCommand } from "@/lib/aston/intent";
 
 // Weather intents ("what's the weather", "forecast for Tokyo", "will it rain").
 const WEATHER_RE = /\b(weather|forecast|temperature|humidity|how (hot|cold|warm)|(will|is|does|gonna) it (be )?(going to |gonna )?(rain|raining|snow|snowing|sunny|cloudy|cold|hot|windy|storm)|need an umbrella)\b/i;
@@ -235,6 +235,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [astonPanel, setAstonPanel] = useState<{ siteId: string; walk: boolean; key: number } | null>(null);
   const astonOfferRef = useRef(astonOffer); astonOfferRef.current = astonOffer;
   const astonPanelRef = useRef(astonPanel); astonPanelRef.current = astonPanel;
+  // "build a website" without saying for whom → JARVIS asks once; the next thing you say is the brief
+  const astonAsk = useRef<{ kind: "website" | "app"; request: string; at: number } | null>(null);
   const agent = useAgent({
     onJob: () => { void jobsRef.current.refresh(); },
     // ASTON preview you asked for (via aston_demo open/walkthrough)
@@ -660,6 +662,35 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
           agent.appendLocalExchange(t, msg); if (pv !== "walk") sayRef.current(msg);
           return;
         }
+      }
+      // "Build me a website for …" / "make an app demo for …" → straight to ASTON with your words; it starts building now
+      const say = (m: string) => { agent.appendLocalExchange(t, m); sayRef.current(m); };
+      const startBuild = (kind: "website" | "app", request: string) => {
+        astonAsk.current = null;
+        say(`On it — ASTON is building the ${kind} now. I'll tell you when the preview is ready.`);
+        void fetch("/api/aston/sites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request: request.slice(0, 2000), kind }) })
+          .then(async (r) => {
+            const j = await r.json().catch(() => null);
+            if (!r.ok || !j?.ok) { const m = `ASTON couldn't start: ${j?.error ?? `HTTP ${r.status}`}`; agent.appendLocalExchange("", m, undefined, { note: true }); sayRef.current(m); return; }
+            void jobsRef.current.refresh();
+          })
+          .catch(() => { agent.appendLocalExchange("", "I couldn't reach ASTON — check that JARVIS is running.", undefined, { note: true }); });
+      };
+      const asked = astonAsk.current && Date.now() - astonAsk.current.at < 5 * 60_000 ? astonAsk.current : null;
+      if (asked) {
+        if (/^(?:no|nope|cancel|never ?mind|forget it|stop)/.test(low)) { astonAsk.current = null; say("Okay, cancelled."); return; }
+        startBuild(asked.kind, `${asked.request}. Details: ${t}`);
+        return;
+      }
+      const bc = buildCommand(t);
+      if (bc) {
+        if (bc.needsDetails) {
+          astonAsk.current = { kind: bc.kind, request: bc.request, at: Date.now() };
+          say(`Sure. Who's the ${bc.kind} for, and what should it include? Tell me the business name, where it is, and anything like the phone number, opening hours or what to show.`);
+          return;
+        }
+        startBuild(bc.kind, bc.request);
+        return;
       }
       // "Open ASTON" → ASTON's chat; "open the teleprompter" / "today's plan" → the teleprompter
       if (isAstonActivation(low)) { openChat("aston"); return; }
