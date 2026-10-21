@@ -431,7 +431,11 @@ if (await waitFor(`${local}/login`, 120)) {
   const only = (pick) => (pick.includes("auto") ? "all providers" : pick.map((p) => (p === "ollama" ? "Ollama" : p === "claude" ? "Claude (this PC)" : p[0].toUpperCase() + p.slice(1))).join(" → "));
   if (claudeUrl) say(`    Claude on this PC answers first for ${["1", "true", "yes", "on"].includes(String(appEnv.CLAUDE_FOR_ALL_AGENTS ?? "").toLowerCase()) ? "every agent" : "the agents whose list starts with claude"} (your Claude plan's limits apply; their other brains take over when it can't).`);
   const withModel = (pick, m) => only(pick).replace(/^Ollama\b/, `Ollama (${m})`);
-  say(`    Brains: JARVIS ${withModel(jarvisPick, model)} · EV ${only(pickOf(appEnv.EV_PROVIDER, "groq,gemini"))} · DARWIN ${only(pickOf(appEnv.DARWIN_PROVIDER, "groq,gemini"))} · ULTRON ${withModel(ultronPick, ultronModel)}`);
+  // CLAUDE_FOR_ALL_AGENTS puts Claude in front of every agent's own list (when the bridge is up)
+  const claudeAll = !!claudeUrl && ["1", "true", "yes", "on"].includes(String(appEnv.CLAUDE_FOR_ALL_AGENTS ?? "").toLowerCase());
+  const eff = (pick) => (claudeAll && !pick.includes("claude") ? ["claude", ...pick] : pick);
+  say(`    Brains: JARVIS ${withModel(eff(jarvisPick), model)} · EV ${only(eff(pickOf(appEnv.EV_PROVIDER, "groq,gemini")))} · DARWIN ${only(eff(pickOf(appEnv.DARWIN_PROVIDER, "groq,gemini")))} · ULTRON ${withModel(ultronPick, ultronModel)}`);
+  if (claudeWanted && !claudeUrl) say("    ! You asked for Claude (CLAUDE_FOR_ALL_AGENTS / claude in a *_PROVIDER), but the Claude bridge isn't running — see the [claude] lines above. The agents are using their other brains.");
   const geminiKey = [edithEnv.GEMINI_API_KEY, appEnv.GEMINI_API_KEY].find((v) => v && !isPlaceholder(v));
   if (aiKeys.borrowed.length) say(`    Using ${aiKeys.borrowed.join(", ")} from edith/.env for JARVIS, EV and DARWIN (it isn't in .env.local).`);
   if (!Object.keys(aiKeys.values).some((k) => k.endsWith("_API_KEY"))) say("    ! No AI key found (GROQ_API_KEY / GEMINI_API_KEY) in .env.local or edith/.env — JARVIS, EV and DARWIN can't answer until you add one.\n      Free keys: console.groq.com/keys and aistudio.google.com/apikey — put them in .env.local, then run this again.");

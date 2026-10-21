@@ -44,6 +44,13 @@ describe("Claude bridge protocol", () => {
     expect(a[a.indexOf("--setting-sources") + 1]).toBe("");
   });
 
+  it("finds what a Windows claude.cmd shim really runs (never node.exe itself)", () => {
+    expect(P.shimTarget(String.raw`@IF EXIST "%~dp0\node.exe" ( "%~dp0\node.exe" "%~dp0\node_modules\@anthropic-ai\claude-code\cli.js" %* ) ELSE ( node "%~dp0\node_modules\@anthropic-ai\claude-code\cli.js" %* )`))
+      .toEqual({ file: "node_modules/@anthropic-ai/claude-code/cli.js", node: true });
+    expect(P.shimTarget(String.raw`"%dp0%\node_modules\@anthropic-ai\claude-code\bin\claude.exe"   %*`)).toEqual({ file: "node_modules/@anthropic-ai/claude-code/bin/claude.exe", node: false });
+    expect(P.shimTarget("@echo off")).toBeNull();
+  });
+
   it("streams text by sentence and tool calls in OpenAI chunk format", () => {
     const ch = P.toChunks("sonnet", { text: "Hello there. How are you?", toolCalls: [] });
     expect(ch.slice(1, -1).map((c: { choices: { delta: { content: string } }[] }) => c.choices[0].delta.content)).toEqual(["Hello there. ", "How are you?"]);

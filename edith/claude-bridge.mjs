@@ -25,7 +25,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "./src/loadenv.mjs";
 import { startTunnel, waitReachable, stopTunnel } from "./src/tunnel.mjs";
-import { BridgeError, buildRequest, claudeArgs, parseResult, toChunks, toCompletion } from "./src/claude-protocol.mjs";
+import { BridgeError, buildRequest, claudeArgs, parseResult, shimTarget, toChunks, toCompletion } from "./src/claude-protocol.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.resolve(__dirname, ".env"));
@@ -78,8 +78,15 @@ export function resolveClaude() {
   const exe = found.find((f) => /\.exe$/i.test(f));
   if (exe) return { cmd: exe, pre: [] };
   for (const shim of found.filter((f) => /\.cmd$/i.test(f))) {
-    const cli = path.join(path.dirname(shim), "node_modules", "@anthropic-ai", "claude-code", "cli.js");
-    if (fs.existsSync(cli)) return { cmd: process.execPath, pre: [cli] };
+    // the shim names what it runs (a native claude.exe or cli.js inside the npm package)
+    let t = null;
+    try { t = shimTarget(fs.readFileSync(shim, "utf8")); } catch { /* unreadable */ }
+    const target = t && path.join(path.dirname(shim), t.file);
+    if (target && fs.existsSync(target)) return t.node ? { cmd: process.execPath, pre: [target] } : { cmd: target, pre: [] };
+    for (const rel of [["bin", "claude.exe"], ["cli.js"]]) {
+      const f = path.join(path.dirname(shim), "node_modules", "@anthropic-ai", "claude-code", ...rel);
+      if (fs.existsSync(f)) return f.endsWith(".exe") ? { cmd: f, pre: [] } : { cmd: process.execPath, pre: [f] };
+    }
   }
   return null;
 }
@@ -219,9 +226,9 @@ async function selfCheck() {
 }
 
 // ---- main ---------------------------------------------------------------------
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+{
   say(`\nJARVIS Claude bridge — model ${MODEL}`);
-  if (!CLAUDE) die("The `claude` command isn't installed. Install Claude Code (claude.com/claude-code), run `claude` once and sign in with your Claude account, then try again.");
+  if (!CLAUDE) die("Couldn't find the `claude` command on this PC (checked PATH with `where claude`). If Claude Code is installed, set CLAUDE_BIN in edith/.env to the full path of claude.exe (run `where claude` to see it).\n  Not installed? Install Claude Code (claude.com/claude-code), run `claude` once and sign in with your Claude account, then try again.");
   const ver = spawnSync(CLAUDE.cmd, [...CLAUDE.pre, "--version"], { encoding: "utf8", windowsHide: true });
   if (ver.status !== 0) die(`\`claude --version\` failed${ver.stderr ? `: ${ver.stderr.trim().slice(0, 200)}` : ""}. Reinstall Claude Code, then try again.`);
   say(`  Claude Code ${ver.stdout.trim()} · up to ${MAX_PARALLEL} at once · ${Math.round(TIMEOUT_MS / 1000)}s limit per answer`);

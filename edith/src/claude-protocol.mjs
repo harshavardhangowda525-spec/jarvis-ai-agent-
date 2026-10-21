@@ -156,3 +156,14 @@ export function claudeArgs({ model, systemFile, schema }) {
     ...(schema ? ["--json-schema", JSON.stringify(schema)] : []),
   ];
 }
+
+/**
+ * What an npm `claude.cmd` shim on Windows really starts — a .exe or a .js file
+ * (relative to the shim's folder) — so the bridge can run it WITHOUT a shell
+ * (cmd.exe would mangle the JSON schema argument). null if it can't tell.
+ */
+export function shimTarget(cmdText) {
+  const hits = [...String(cmdText).matchAll(/%~?dp0%?\\?([^"%\r\n]*?\.(?:exe|c?js|mjs))"/gi)].map((m) => m[1]).filter((f) => !/(^|\\|\/)node\.exe$/i.test(f));
+  const f = hits[0];
+  return f ? { file: f.replace(/\\/g, "/"), node: !/\.exe$/i.test(f) } : null;
+}
