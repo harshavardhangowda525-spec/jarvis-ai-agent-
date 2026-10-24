@@ -5,9 +5,9 @@
  */
 import { z } from "zod";
 
-export const JOB_AGENTS = ["darwin", "robin", "ev", "mike", "aston"] as const;
+export const JOB_AGENTS = ["darwin", "robin", "ev", "mike", "aston", "friday"] as const;
 export type JobAgent = (typeof JOB_AGENTS)[number];
-export const JOB_AGENT_NAME: Record<JobAgent, string> = { darwin: "DARWIN", robin: "RUBIN", ev: "EV", mike: "MIKE", aston: "ASTON" };
+export const JOB_AGENT_NAME: Record<JobAgent, string> = { darwin: "DARWIN", robin: "RUBIN", ev: "EV", mike: "MIKE", aston: "ASTON", friday: "FRIDAY" };
 
 export const JOB_STATUSES = ["planning", "assigned", "running", "waiting_approval", "completed", "failed", "cancelled"] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];

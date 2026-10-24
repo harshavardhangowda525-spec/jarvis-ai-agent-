@@ -5,7 +5,7 @@ import { ok, handleError } from "@/lib/api";
 
 export const runtime = "nodejs";
 
-const AGENTS = ["jarvis", "ev", "darwin", "mike", "robin", "aston"];
+const AGENTS = ["jarvis", "ev", "darwin", "mike", "robin", "aston", "friday"];
 export const dynamic = "force-dynamic";
 
 /** List conversations (search via ?q=), newest first. */

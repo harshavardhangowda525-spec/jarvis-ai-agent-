@@ -39,7 +39,7 @@ describe("voice mode", () => {
     expect(long).toMatch(/The rest is in the chat\.$/);
   });
   it("knows the chat agents (JARVIS isn't one — it keeps its voice console)", () => {
-    expect(Object.keys(CHAT_AGENTS).sort()).toEqual(["aston", "darwin", "ev", "mike", "robin"]);
+    expect(Object.keys(CHAT_AGENTS).sort()).toEqual(["aston", "darwin", "ev", "friday", "mike", "robin"]);
     expect(isChatAgent("jarvis")).toBe(false);
     expect(isChatAgent("darwin")).toBe(true);
   });

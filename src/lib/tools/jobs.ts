@@ -12,7 +12,7 @@ import { getDb } from "@/lib/db";
  */
 
 // tolerant of how different brains fill it in ("ASTON", "Rubin", a long title, kind "landing page"…)
-const AGENT_ALIAS: Record<string, string> = { rubin: "robin", ruben: "robin", reuben: "robin", evie: "ev", eve: "ev", austin: "aston" };
+const AGENT_ALIAS: Record<string, string> = { rubin: "robin", ruben: "robin", reuben: "robin", evie: "ev", eve: "ev", austin: "aston", fryday: "friday", "f.r.i.d.a.y.": "friday" };
 const delegateSchema = z.object({
   agent: z.preprocess((v) => { const s = String(v ?? "").trim().toLowerCase(); return AGENT_ALIAS[s] ?? s; }, z.enum(JOB_AGENTS)),
   title: z.preprocess((v) => (typeof v === "string" ? v.trim().slice(0, 120) : v), z.string().min(3)),
@@ -32,6 +32,7 @@ export const delegateTaskTool: ToolDefinition<z.infer<typeof delegateSchema>> = 
     "DARWIN: finding/verifying businesses, lead generation, the CRM. RUBIN: outreach drafts, follow-ups, quotations, sales numbers. " +
     "EV: Instagram content, captions, reels, marketing ideas. MIKE: market analysis (never trades). " +
     "ASTON: website and app demos — builds the page, checks it and returns a private preview link (to change an existing demo use aston_demo instead). " +
+    "FRIDAY: 3D models of inventions/products in Blender with ten verified renders and an interactive viewer (to change, re-render or export an existing model use friday_model instead). " +
     "Write a real brief for that agent — don't just forward the user's sentence: a clear objective, the expected outcome, what's already known, " +
     "requirements, constraints, the output format and concrete acceptance criteria. Use sensible defaults and say they're assumptions in the brief. " +
     "For multi-step work make one task per agent and chain them with dependsOn (e.g. DARWIN verifies, then RUBIN drafts outreach). " +
@@ -66,7 +67,7 @@ export const delegateTaskTool: ToolDefinition<z.infer<typeof delegateSchema>> = 
   },
   async execute(input, ctx) {
     const { kind, leadId, ...rest } = input;
-    const job = await createJob(ctx.userId, { ...rest, brief: input.brief, ...(input.agent === "aston" ? { payload: { kind, leadId } } : {}) });
+    const job = await createJob(ctx.userId, { ...rest, brief: input.brief, ...(input.agent === "aston" ? { payload: { kind, leadId } } : input.agent === "friday" ? { payload: { action: "create" as const } } : {}) });
     return {
       data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, note: "Assigned. It runs in the background; JARVIS reports when it finishes. Don't claim results yet." },
       summary: `Assigned to ${JOB_AGENT_NAME[input.agent]}: ${job.title}`,

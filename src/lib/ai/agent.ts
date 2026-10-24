@@ -30,6 +30,8 @@ import { listServices as listRobinServices } from "@/lib/robin/crm";
 import { money as robinMoney } from "@/lib/robin/types";
 import { emailChannelReady } from "@/lib/darwin/email";
 import { buildAstonSystemPrompt } from "@/lib/aston/prompt";
+import { buildFridaySystemPrompt } from "@/lib/friday/chat-prompt";
+import { findBlender } from "@/lib/friday/blender";
 import { todayPlanSummary } from "@/lib/plans/engine";
 
 export type AgentEvent =
@@ -47,6 +49,8 @@ export type AgentEvent =
   | { type: "provider"; name: string }
   /** Something an agent built (ASTON: a site version with a checked preview). */
   | { type: "artifact"; kind: "aston"; siteId: string; version: number; url: string; title: string; mode?: "open" | "walk" }
+  /** FRIDAY: a verified model version (opens in Friday's workspace). */
+  | { type: "artifact"; kind: "friday"; projectId: string; version: number; url: string; title: string }
   /** A task JARVIS delegated to an agent (delegate_task) — tracked until it finishes. */
   | { type: "job"; id: string; agent: string; title: string; status: string }
   /**
@@ -76,7 +80,7 @@ export interface AgentInput {
   /** Per-user preferred primary AI provider (from Settings); overrides env default. */
   preferredProvider?: string | null;
   /** Which internal agent is driving: "ev" (marketing) or "darwin" (lead-gen/CRM). */
-  agent?: "ev" | "darwin" | "mike" | "robin" | "aston";
+  agent?: "ev" | "darwin" | "mike" | "robin" | "aston" | "friday";
 }
 
 const MAX_STEPS = 8;
@@ -100,6 +104,7 @@ export async function* runAgent(
   const isMike = input.agent === "mike";
   const isRobin = input.agent === "robin";
   const isAston = input.agent === "aston";
+  const isFriday = input.agent === "friday";
 
   // "Remember that …" / "From now on …" is saved straight away, so it's kept
   // even if the model (especially a small local one) forgets to call the tool.
@@ -199,6 +204,14 @@ export async function* runAgent(
       demosSummary: sites.length ? sites.map((s) => `${s.name} (${s.kind}, v${s.currentVersion}${s.approvedVersion ? `, v${s.approvedVersion} approved` : ""})`).join("; ") : "No demos yet.",
       planSummary: plan ?? "Today's marketing plan isn't ready yet.",
     });
+  } else if (isFriday) {
+    // FRIDAY's own brain: its projects, nothing invented.
+    const projects = await db.fridayProject.findMany({ where: { userId: input.userId }, orderBy: { updatedAt: "desc" }, take: 6, select: { name: true, activeVersion: true } }).catch(() => []);
+    system = buildFridaySystemPrompt({
+      userDisplayName: input.displayName, timezone: validTz(input.timezone),
+      projectsSummary: projects.length ? projects.map((p) => `${p.name} (v${p.activeVersion})`).join("; ") : "No projects yet.",
+      blender: !!findBlender(),
+    });
   } else {
     system = buildSystemPrompt({
       assistantName: input.assistantName,
@@ -207,7 +220,7 @@ export async function* runAgent(
       memories: await memoriesLookup,
     });
   }
-  if (isEv || isDarwin || isMike || isRobin || isAston) {
+  if (isEv || isDarwin || isMike || isRobin || isAston || isFriday) {
     // EV, DARWIN and MIKE share JARVIS's memory of the user (preferences, business…).
     system += memoryPromptBlock(await memoriesLookup,
       `# What you know about ${input.displayName || "the user"} (shared memory with JARVIS — use it to personalise; never contradict it)`);
@@ -215,13 +228,13 @@ export async function* runAgent(
   system += memoryNote;
 
   const brain = await brainLookup;
-  const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : isAston ? "aston" : "jarvis", brain, input.preferredProvider);
+  const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : isAston ? "aston" : isFriday ? "friday" : "jarvis", brain, input.preferredProvider);
   if (!brainPick.configs.length) {
     yield { type: "error", message: brainPick.missing ?? "No AI provider is configured." };
     return;
   }
   const configs = brainPick.configs;
-  const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : isAston ? "aston" : undefined);
+  const tools = availableTools(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : isAston ? "aston" : isFriday ? "friday" : undefined);
   const activityQueue: string[] = [];
   const ctx: ToolContext = {
     userId: input.userId,
@@ -305,7 +318,7 @@ export async function* runAgent(
   }
 }
 
-const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE", robin: "RUBIN", aston: "ASTON" } as const;
+const AGENT_NAMES = { jarvis: "JARVIS", ev: "EV", darwin: "DARWIN", mike: "MIKE", robin: "RUBIN", aston: "ASTON", friday: "FRIDAY" } as const;
 
 const PROVIDER_NAMES: Record<string, string> = { groq: "Groq", gemini: "Gemini", ollama: "your PC brain (Ollama)", cerebras: "Cerebras", openrouter: "OpenRouter", openai: "OpenAI", anthropic: "Claude (API)", claude: "Claude on your PC" };
 const KEY_HINT: Record<string, string> = { groq: "GROQ_API_KEY (free at console.groq.com)", gemini: "GEMINI_API_KEY (free at aistudio.google.com/apikey)" };
@@ -328,7 +341,7 @@ export function agentConfigs(
   brain: BrainEndpoint | null,
   preferred?: string | null,
 ): { configs: AiConfig[]; missing?: string } {
-  const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : agent === "mike" ? env.mikeProvider : agent === "robin" ? env.robinProvider : agent === "aston" ? env.astonProvider : env.jarvisProvider;
+  const pick = agent === "ev" ? env.evProvider : agent === "darwin" ? env.darwinProvider : agent === "mike" ? env.mikeProvider : agent === "robin" ? env.robinProvider : agent === "aston" ? env.astonProvider : agent === "friday" ? env.fridayProvider : env.jarvisProvider;
   const own = pick.split(/[\s,>]+/).filter(Boolean);
   // CLAUDE_FOR_ALL_AGENTS=1 → Claude on your PC first for every agent; its own list stays as the backup
   const picks = env.claudeForAllAgents && !own.includes("claude") ? ["claude", ...own] : own;

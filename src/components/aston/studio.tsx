@@ -39,7 +39,7 @@ export function AstonStudio() {
       if (prev && prev !== j.status && ["completed", "failed"].includes(j.status)) {
         void load();
         const art = j.resultData?.artifacts?.[0];
-        if (j.status === "completed" && art) router.replace(`/dashboard/aston?site=${art.siteId}`);
+        if (j.status === "completed" && art?.kind === "aston") router.replace(`/dashboard/aston?site=${art.siteId}`);
       }
     }
   }, [astonJobs, load, router]);

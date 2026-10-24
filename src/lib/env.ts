@@ -112,6 +112,8 @@ export const env = {
   // RUBIN (formerly ROBIN): RUBIN_* settings, the old ROBIN_* names still work
   // ASTON (website/app demos + the daily marketing plan): Groq first, Gemini as backup.
   astonProvider: read("ASTON_PROVIDER").toLowerCase() || "groq,gemini",
+  // FRIDAY (3D modelling): Claude on your PC first when it's connected, then Groq, then Gemini.
+  fridayProvider: read("FRIDAY_PROVIDER").toLowerCase() || "claude,groq,gemini",
   robinProvider: (read("RUBIN_PROVIDER") || read("ROBIN_PROVIDER")).toLowerCase() || "groq,gemini",
   // Reasoning models (gpt-oss) think before answering; "low" keeps replies quick.
   reasoningEffort: read("AI_REASONING_EFFORT").toLowerCase() || "low",
@@ -142,6 +144,8 @@ export const env = {
   mikeVoiceId: read("MIKE_VOICE_ID") || "nPczCjzI2devNBz1zQrb",
   // ASTON (designer): ElevenLabs "George" by default
   astonVoiceId: read("ASTON_VOICE_ID") || "JBFqnCBsd6RMkjVDRZzb",
+  // FRIDAY: ElevenLabs "Alice" (British female) by default
+  fridayVoiceId: read("FRIDAY_VOICE_ID") || "Xb7hH8MSUJpSbSDYk0k2",
   // RUBIN voice — calm, friendly, professional male sales assistant. Defaults to "Eric". Override with ROBIN_VOICE_ID.
   robinVoiceId: read("RUBIN_VOICE_ID") || read("ROBIN_VOICE_ID") || "cjVigY5qzO86Huf0OWal",
   // Signs inbound RUBIN webhooks (HMAC-SHA256). Unset = the webhook is off.

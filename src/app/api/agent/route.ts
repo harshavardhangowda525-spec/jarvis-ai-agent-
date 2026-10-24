@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
             startedAt,
             prefetch,
             preferredProvider: (profile as { aiProvider?: string | null } | null)?.aiProvider ?? null,
-            agent: agent === "ev" ? "ev" : agent === "darwin" ? "darwin" : agent === "mike" ? "mike" : agent === "robin" ? "robin" : agent === "aston" ? "aston" : undefined,
+            agent: agent === "ev" ? "ev" : agent === "darwin" ? "darwin" : agent === "mike" ? "mike" : agent === "robin" ? "robin" : agent === "aston" ? "aston" : agent === "friday" ? "friday" : undefined,
           })) {
             if (cancelled) break;
             if (event.type === "text") partial += event.delta;
@@ -128,7 +128,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Activity history: the command and how it went (routine chit-chat skipped).
-        const who = agent === "ev" ? "EV" : agent === "darwin" ? "DARWIN" : agent === "mike" ? "MIKE" : agent === "robin" ? "RUBIN" : agent === "aston" ? "ASTON" : "JARVIS";
+        const who = agent === "ev" ? "EV" : agent === "darwin" ? "DARWIN" : agent === "mike" ? "MIKE" : agent === "robin" ? "RUBIN" : agent === "aston" ? "ASTON" : agent === "friday" ? "FRIDAY" : "JARVIS";
         // "Forget …" commands aren't themselves remembered.
         if (!isTrivialCommand(message) && !/^\s*(please\s+)?(jarvis[,\s]+)?forget\b/i.test(message)) {
           const okTools = toolSummaries.filter((t) => t.status === "ok");

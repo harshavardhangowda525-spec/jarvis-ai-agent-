@@ -79,6 +79,7 @@ export interface BlenderResult {
 export async function runBlender(job: BuildJob, o: { onProgress?: (p: Progress) => void; signal?: AbortSignal; timeoutMs?: number } = {}): Promise<BlenderResult> {
   const blender = findBlender();
   if (!blender) throw new BlenderMissing(`Blender isn't installed on this computer, so Friday can't model or render yet. ${installHint()}`);
+  if (o.signal?.aborted) throw new BlenderFailed("Cancelled.");
   await fs.mkdir(job.outDir, { recursive: true });
   const jobFile = path.join(job.outDir, "job.json");
   await fs.writeFile(jobFile, JSON.stringify(job));

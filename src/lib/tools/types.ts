@@ -56,7 +56,7 @@ export interface ToolDefinition<Input = unknown> {
    * so they never clutter the base JARVIS toolset. "jarvis" = JARVIS only
    * (e.g. delegating work — agents can't delegate onwards). Omitted = all.
    */
-  agentScope?: "ev" | "darwin" | "mike" | "robin" | "aston" | "jarvis";
+  agentScope?: "ev" | "darwin" | "mike" | "robin" | "aston" | "friday" | "jarvis";
   /** Short label shown in the activity panel while running. */
   activityLabel: string;
   /**

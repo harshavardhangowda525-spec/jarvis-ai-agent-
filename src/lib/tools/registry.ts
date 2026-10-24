@@ -5,6 +5,7 @@
  */
 import { delegateTaskTool, taskControlTool, taskStatusTool } from "./jobs";
 import { astonBuildTool, astonDemosTool, astonPlanTool, jarvisAstonDemoTool, jarvisPlanTool } from "./aston";
+import { fridayAgentTool, jarvisFridayTool } from "./friday";
 import type { ToolDefinition } from "./types";
 import { capabilities } from "@/lib/env";
 import { isProviderConfigured } from "@/lib/integrations/providers";
@@ -55,6 +56,8 @@ const ALL_TOOLS: ToolDefinition[] = [
   taskStatusTool as ToolDefinition,
   taskControlTool as ToolDefinition,
   jarvisAstonDemoTool as ToolDefinition,
+  jarvisFridayTool as ToolDefinition,
+  fridayAgentTool as ToolDefinition,
   jarvisPlanTool as ToolDefinition,
   astonBuildTool as ToolDefinition,
   astonDemosTool as ToolDefinition,
@@ -115,7 +118,7 @@ const ALL_TOOLS: ToolDefinition[] = [
  */
 const ROBIN_BASICS = new Set(["calculator", "get_time", "memory", "tasks", "notes", "web_search"]);
 
-export function availableTools(agent?: "ev" | "darwin" | "mike" | "robin" | "aston"): ToolDefinition[] {
+export function availableTools(agent?: "ev" | "darwin" | "mike" | "robin" | "aston" | "friday"): ToolDefinition[] {
   const googleReady = isProviderConfigured("google");
   return ALL_TOOLS.filter((t) => {
     // Agent-scoped tools (EV's) only surface for their agent.
@@ -124,6 +127,8 @@ export function availableTools(agent?: "ev" | "darwin" | "mike" | "robin" | "ast
     if (agent === "robin" && !ROBIN_BASICS.has(t.name)) return false;
     // ASTON: its own tools plus the same few basics
     if (agent === "aston" && !ROBIN_BASICS.has(t.name)) return false;
+    // FRIDAY: its own tool plus the same few basics
+    if (agent === "friday" && !ROBIN_BASICS.has(t.name)) return false;
     if (t.requiresCapability === "search") return capabilities.search;
     if (t.requiresCapability === "weather") return capabilities.weather;
     if (t.requiresCapability === "websiteData") return capabilities.websiteData;
