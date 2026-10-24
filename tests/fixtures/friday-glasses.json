@@ -1,0 +1,32 @@
+{
+  "name": "Smart glasses concept",
+  "summary": "Conceptual smart glasses: rectangular acetate front, tinted lenses, temples with an electronics pod on the right.",
+  "specs": {
+    "verified": [],
+    "assumptions": ["Overall size of typical glasses: ~140 mm wide, ~145 mm temples", "Electronics placement is a placeholder"],
+    "questions": ["Which side should the camera be on?"]
+  },
+  "materials": [
+    { "id": "frame", "name": "Matte black acetate", "color": "#16181d", "metallic": 0, "roughness": 0.55 },
+    { "id": "lens", "name": "Tinted lens", "color": "#3a4a5c", "metallic": 0, "roughness": 0.03, "transmission": 0.92, "ior": 1.5 },
+    { "id": "metal", "name": "Brushed titanium", "color": "#9aa1a9", "metallic": 1, "roughness": 0.32 },
+    { "id": "pcb", "name": "Circuit board (concept)", "color": "#1f6f43", "roughness": 0.6 },
+    { "id": "battery", "name": "Battery (concept)", "color": "#2563eb", "roughness": 0.4 },
+    { "id": "glass", "name": "Camera glass", "color": "#05070a", "roughness": 0.05, "metallic": 0.2 }
+  ],
+  "components": [
+    { "id": "rim_right", "name": "Lens rim", "group": "Main Frame", "material": "frame", "shape": { "type": "rounded_rect", "width": 56, "height": 44, "depth": 6, "radius": 13 }, "position": [36, 0, 0], "rotation": [90, 0, 0], "mirrorX": true, "subtract": ["rim_cut"], "bevel": { "width": 1.2, "segments": 3 }, "explode": [0, -12, 0] },
+    { "id": "rim_cut", "name": "Rim opening", "material": "frame", "shape": { "type": "rounded_rect", "width": 48, "height": 36, "depth": 20, "radius": 10 }, "position": [36, 0, 0], "rotation": [90, 0, 0], "cutter": true },
+    { "id": "lens_right", "name": "Lens", "group": "Lenses", "material": "lens", "shape": { "type": "rounded_rect", "width": 49, "height": 37, "depth": 2, "radius": 10.5 }, "position": [36, 0, 0], "rotation": [90, 0, 0], "mirrorX": true, "explode": [0, -30, 0] },
+    { "id": "bridge", "name": "Bridge", "group": "Main Frame", "material": "frame", "shape": { "type": "tube", "points": [[-9, 0, 9], [-4, -1.5, 12], [4, -1.5, 12], [9, 0, 9]], "radius": 2.6 }, "explode": [0, -12, 0] },
+    { "id": "hinge_right", "name": "Hinge", "group": "Hinges", "material": "metal", "shape": { "type": "box", "size": [7, 9, 6] }, "position": [66, 3, 10], "mirrorX": true, "bevel": { "width": 0.8, "segments": 2 }, "explode": [8, 0, 0] },
+    { "id": "temple_left", "name": "Left temple", "group": "Temples", "material": "frame", "shape": { "type": "tube", "points": [[-67, 7, 10], [-69, 60, 10], [-69, 118, 8], [-66, 140, -10], [-62, 150, -22]], "radius": 2.6 }, "explode": [-14, 0, 0] },
+    { "id": "temple_right", "name": "Right temple", "group": "Temples", "material": "frame", "shape": { "type": "tube", "points": [[67, 7, 10], [69, 60, 10], [69, 118, 8], [66, 140, -10], [62, 150, -22]], "radius": 2.6 }, "explode": [14, 0, 0] },
+    { "id": "pod", "name": "Electronics pod", "group": "Electronics", "material": "frame", "shape": { "type": "capsule", "radius": 5.5, "length": 34 }, "position": [70, 40, 10], "rotation": [90, 0, 0], "solidify": 1.2, "conceptual": true, "explode": [26, 0, 0] },
+    { "id": "board", "name": "Main board (placeholder)", "group": "Electronics", "material": "pcb", "shape": { "type": "box", "size": [1.2, 30, 7] }, "position": [70, 40, 10], "internal": true, "conceptual": true, "explode": [44, 0, 0] },
+    { "id": "battery", "name": "Battery (placeholder)", "group": "Electronics", "material": "battery", "shape": { "type": "box", "size": [3.5, 24, 6] }, "position": [71.5, 42, 10], "internal": true, "conceptual": true, "bevel": { "width": 0.6, "segments": 2 }, "explode": [58, 0, 0] },
+    { "id": "camera", "name": "Camera module (placeholder)", "group": "Sensors", "material": "glass", "shape": { "type": "cylinder", "radius": 2.8, "depth": 3 }, "position": [-62, -2.5, 15], "rotation": [90, 0, 0], "conceptual": true, "bevel": { "width": 0.4, "segments": 2 }, "explode": [0, -24, 6] }
+  ],
+  "detail": "hinge_right",
+  "environment": "studio_dark"
+}

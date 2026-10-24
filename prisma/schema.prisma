@@ -52,6 +52,7 @@ model User {
   astonSites          AstonSite[]
   marketingPlans      MarketingPlan[]
   planSettings        MarketingPlanSettings?
+  fridayProjects      FridayProject[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
   gateCredentials     GateCredential[]
@@ -1323,4 +1324,52 @@ model MarketingPlanSettings {
   updatedAt    DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// FRIDAY's 3D projects. Files live on the PC that runs Blender (dir); every
+/// change is a new version — earlier versions are never overwritten.
+model FridayProject {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  slug          String
+  /// The project folder (FridayProjects/<slug>) on the computer that runs Blender.
+  dir           String
+  activeVersion Int      @default(0)
+  /// { verified[], assumptions[], questions[] } — assumptions are never treated as confirmed.
+  specs         Json?
+  /// Recent modifications, newest last: [{ at, version, change }]
+  history       Json     @default("[]")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions FridayVersion[]
+
+  @@unique([userId, slug])
+  @@index([userId, updatedAt])
+}
+
+model FridayVersion {
+  id        String   @id @default(cuid())
+  projectId String
+  n         Int
+  /// e.g. "Edith Prototype Version 2"
+  label     String?
+  /// building | ready | failed
+  status    String   @default("building")
+  plan      Json
+  /// The version it was changed from, and what was asked.
+  parentN   Int?
+  change    String?  @db.Text
+  /// What Blender really produced: parts, size, files, renders (verified).
+  result    Json?
+  error     String?  @db.Text
+  jobId     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project FridayProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, n])
 }

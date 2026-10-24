@@ -53,3 +53,6 @@ __pycache__/
 /public/vision/
 magichour-check.txt
 /public/models/face-api/
+
+# FRIDAY 3D projects (Blender files, renders)
+FridayProjects/
