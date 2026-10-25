@@ -17,13 +17,15 @@ const DESTINATIONS = {
   demos: "/dashboard/aston",
   friday: "/dashboard/friday",
   teleprompter: "/dashboard/teleprompter",
+  intel: "/dashboard/intel",
+  trading: "/dashboard/trading",
   crm: "/dashboard/crm",
   agent_tasks: "/dashboard/jobs",
 } as const;
 
 const schema = z.object({
   destination: z
-    .enum(["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "friday", "demos", "teleprompter", "crm", "agent_tasks"])
+    .enum(["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "friday", "demos", "teleprompter", "crm", "agent_tasks", "intel", "trading"])
     .describe("Which section of the app to open."),
 });
 
@@ -36,14 +38,14 @@ export const navigationTool: ToolDefinition<z.infer<typeof schema>> = {
   name: "navigate",
   description:
     "Open a section of the JARVIS app for the user (home, chat, tasks, notes, " +
-    "memory, settings, integrations, mike / darwin / rubin / ev = that agent's chat: MIKE market analysis, DARWIN lead generation, RUBIN sales & CRM, EV Instagram marketing, ASTON website/app demos, FRIDAY 3D modelling workspace; demos = ASTON's demo previews; teleprompter = today's marketing plan; crm = DARWIN CRM; agent_tasks = delegated tasks). Use when the user asks to go to or open a page.",
+    "memory, settings, integrations, mike / darwin / rubin / ev = that agent's chat: MIKE market analysis, DARWIN lead generation, RUBIN sales & CRM, EV Instagram marketing, ASTON website/app demos, FRIDAY 3D modelling workspace; demos = ASTON's demo previews; teleprompter = today's marketing plan; crm = DARWIN CRM; agent_tasks = delegated tasks; intel = the Business Environment Command Center; trading = MIKE's Trading Intelligence weekly review). Use when the user asks to go to or open a page.",
   schema,
   inputSchema: {
     type: "object",
     properties: {
       destination: {
         type: "string",
-        enum: ["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "friday", "demos", "teleprompter", "crm", "agent_tasks"],
+        enum: ["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "friday", "demos", "teleprompter", "crm", "agent_tasks", "intel", "trading"],
       },
     },
     required: ["destination"],
