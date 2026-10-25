@@ -49,6 +49,15 @@ export const tradingReviewTool: ToolDefinition<z.infer<typeof schema>> = {
     "MIKE's weekly trading review of the user's own trading playbook (ETF learning plan, backtests, paper trading, journal): strategy results, risk audit with evidence, learning and discipline, week-over-week comparison and next week's plan. " +
     "Read-only; results are historical/simulated, never live. Use for 'how did my trading practice go this week', 'generate my weekly trading analysis', 'how is my breakout strategy doing', 'did I break any risk rules'.",
   schema,
+  inputSchema: {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["latest", "week", "generate", "this_week", "strategy", "risk", "learning", "compare", "history"] },
+      week: { type: "string", description: "Any date in the week wanted (YYYY-MM-DD). Default: the latest." },
+      strategy: { type: "string", enum: ["trend", "breakout", "pullback", "range"], description: "A trend-following, B breakout, C pullback, D range-bound." },
+    },
+    required: ["action"],
+  },
   activityLabel: "Reading your trading playbook",
   async execute(input, ctx) {
     const weekStart = weekStartOf(input.week);
@@ -68,7 +77,7 @@ export const tradingReviewTool: ToolDefinition<z.infer<typeof schema>> = {
         if (r.status === "unavailable") throw new ToolError(r.error ?? "The trading playbook isn't connected.");
         if (r.status !== "ready") throw new ToolError(`The review couldn't be made: ${r.error ?? r.status}`);
       }
-      const r = await getReport(ctx.userId, input.action === "generate" || input.action === "latest" ? weekStart : weekStart);
+      const r = await getReport(ctx.userId, weekStart);
       if (!r) return { data: { none: true, note: "No weekly review yet. Say 'generate my weekly trading analysis' or open Trading Intelligence.", link: LINK }, summary: "No weekly review yet" };
       if (r.status === "unavailable") throw new ToolError(r.error ?? "The trading playbook isn't connected.");
       if (r.status !== "ready" || !r.metrics) return { data: { status: r.status, error: r.error, link: LINK }, summary: `Review ${r.status}` };
