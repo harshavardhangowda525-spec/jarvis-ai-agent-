@@ -7,6 +7,21 @@ import { useJobs } from "@/components/jobs/use-jobs";
 import { STATES, STATE_LABEL, type StudioState } from "@/lib/aston/studio/spec";
 import type { StudioDetail } from "@/lib/aston/studio/service";
 import { highlight } from "./highlight";
+import { voiceWasOn } from "@/hooks/useVoice";
+import { isVoiceSilent } from "@/lib/voice/silence";
+
+/** JARVIS says how the build ended — only if you're using voice, and only what really happened. */
+async function speak(text: string) {
+  if (!voiceWasOn() || isVoiceSilent()) return;
+  try {
+    const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, agent: "jarvis" }) });
+    if (!r.ok) throw new Error("tts");
+    const url = URL.createObjectURL(await r.blob());
+    const a = new Audio(url); a.onended = () => URL.revokeObjectURL(url); await a.play();
+  } catch {
+    try { if ("speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } catch { /* no voice here */ }
+  }
+}
 
 /**
  * ASTON's studio: the code being written on the left, the live website on the
@@ -78,9 +93,11 @@ function Project({ id }: { id: string }) {
   const [note, setNote] = useState<string | null>(null);
   const [deployCheck, setDeployCheck] = useState<{ ready: boolean; checks: { ok: boolean; text: string }[]; zipUrl: string; provider: string | null } | null>(null);
   const [shownVersion, setShownVersion] = useState<number | null>(null);
-  useJobs({ status: "active" }); // starts ASTON's task if it's waiting to run
+  const jobs = useJobs({ status: "active" }); // starts ASTON's task if it's waiting to run
+  const jobsRef = useRef(jobs); jobsRef.current = jobs;
   const filesRef = useRef(files); filesRef.current = files;
   const pending = useRef(new Map<string, string>());
+  const sawBuild = useRef(false);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -91,7 +108,7 @@ function Project({ id }: { id: string }) {
 
   // live: snapshot, then every piece of code as it's written
   useEffect(() => {
-    void load();
+    void load().then(() => jobsRef.current.refresh()); // a build that's waiting to start starts now
     const es = new EventSource(`/api/aston/projects/${id}/live`);
     const reloadSoon = () => { if (reloadTimer.current) clearTimeout(reloadTimer.current); reloadTimer.current = setTimeout(() => setPreviewKey((k) => k + 1), 700); };
     es.addEventListener("snapshot", (m) => {
@@ -112,7 +129,18 @@ function Project({ id }: { id: string }) {
         flush();
         setFiles((all) => { const f = all.get(e.path); return f ? new Map(all).set(e.path, { ...f, done: true }) : all; });
         if (/\.(html|css|js|svg)$/.test(e.path)) reloadSoon();
-      } else if (e.type === "state") { setState({ state: e.state, note: e.note }); if (["review", "failed", "deployed"].includes(e.state)) void load(); }
+      } else if (e.type === "state") {
+        setState({ state: e.state, note: e.note });
+        if (BUSY.includes(e.state)) sawBuild.current = true;
+        if (["review", "failed", "deployed"].includes(e.state)) setNote(null); // "planning the change…" is over
+        if (["review", "failed", "deployed"].includes(e.state)) void load().then((p) => {
+          if (!sawBuild.current || !p) return;
+          sawBuild.current = false;
+          const t = p.tests as { passed?: number; failed?: number } | null;
+          void speak(e.state === "failed" ? `The build of ${p.name} stopped: ${p.error ?? e.note ?? "an error"}.`
+            : `The website is ready for review. The preview is open next to the code. ${t ? `Browser tests: ${t.passed} passed${t.failed ? `, ${t.failed} still failing` : ", none failing"}.` : "It wasn't browser-tested."}`);
+        });
+      }
       else if (e.type === "log") setLog((l) => [...l, { text: e.text, kind: e.kind, at: new Date().toISOString() }].slice(-300));
       else if (e.type === "tests" || e.type === "version") void load();
     });
@@ -169,6 +197,7 @@ function Project({ id }: { id: string }) {
     const r = await fetch(`/api/aston/projects/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((x) => x.json()).catch(() => null);
     if (!r?.ok) { setNote(r?.error ?? "That didn't work."); return null; }
     setShownVersion(null); setFollow(true); void load();
+    if (r.data?.job) void jobsRef.current.refresh(); // start it now, not at the next check
     return r.data;
   };
 

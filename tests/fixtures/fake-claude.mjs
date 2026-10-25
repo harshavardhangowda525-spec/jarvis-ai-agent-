@@ -11,6 +11,7 @@ const out = (o) => process.stdout.write(JSON.stringify({ type: "result", subtype
 if (args.includes("stream-json") && !args.includes("--json-schema")) {
   // like --output-format stream-json --include-partial-messages: pieces, then the result line
   const text = input.includes("WRITE CODE") ? "<!doctype html>\n<h1>Hello</h1>\n" : "streamed answer";
+  if (input.includes("THINK FIRST")) process.stdout.write(JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "planning…" } } }) + "\n");
   for (const piece of text.match(/.{1,6}/gs)) process.stdout.write(JSON.stringify({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: piece } } }) + "\n");
   out({ result: text });
 } else if (input.includes("LIMIT")) out({ is_error: true, subtype: "success", result: "Claude AI usage limit reached|1760000000" });

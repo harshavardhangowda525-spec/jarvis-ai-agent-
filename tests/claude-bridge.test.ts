@@ -108,6 +108,15 @@ describe("Claude bridge server (with a stand-in claude command)", () => {
     expect(last.args).toEqual(expect.arrayContaining(["stream-json", "--include-partial-messages"]));
   });
 
+  it("says when Claude is thinking before it writes (reasoning_content), without mixing it into the text", async () => {
+    const ai = new OpenAI({ apiKey: key, baseURL: `http://127.0.0.1:${port}/v1` });
+    const stream = await ai.chat.completions.create({ model: "sonnet", stream: true, messages: [{ role: "user", content: "THINK FIRST then WRITE CODE" }] });
+    let thinking = 0, text = "";
+    for await (const c of stream) { const d = c.choices[0]?.delta as { content?: string; reasoning_content?: string } | undefined; if (d?.reasoning_content) thinking++; if (d?.content) text += d.content; }
+    expect(thinking).toBe(1);
+    expect(text).toBe("<!doctype html>\n<h1>Hello</h1>\n");
+  });
+
   it("reports a plan limit as 429 so JARVIS moves to the next brain", async () => {
     const r = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "LIMIT" }] }) });
     expect(r.status).toBe(429);
