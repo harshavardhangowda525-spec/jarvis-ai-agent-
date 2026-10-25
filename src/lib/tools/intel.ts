@@ -4,6 +4,7 @@ import type { ToolDefinition } from "./types";
 import { getDb } from "@/lib/db";
 import { briefingView, generateBriefing } from "@/lib/intel/briefing";
 import { commandCenter, refreshNow } from "@/lib/intel/service";
+import { refreshIntel } from "@/lib/intel/collect";
 import { internalSnapshot } from "@/lib/intel/internal";
 import { CATEGORIES, type CategoryId } from "@/lib/intel/topics";
 import { istDate, weekOf } from "@/lib/trading/week";
@@ -48,7 +49,25 @@ export const businessIntelTool: ToolDefinition<z.infer<typeof schema>> = {
     switch (input.action) {
       case "briefing": {
         const b = await getDb().intelBriefing.findFirst({ where: { userId: ctx.userId, kind, status: "ready" }, orderBy: { period: "desc" } });
-        if (!b) return { data: { none: true, note: `No ${kind} briefing yet — say "generate today's business briefing".`, link: LINK }, summary: "No briefing yet" };
+        if (!b) {
+          // No briefing yet (e.g. the first day) — answer from the latest real items now, and start the first briefing.
+          ctx.activity("Reading the latest sources…");
+          await refreshIntel(ctx.userId).catch(() => null);
+          const cc = await commandCenter(ctx.userId);
+          const period = kind === "daily" ? istDate(Date.now()) : weekOf(istDate(Date.now())).start;
+          void generateBriefing(ctx.userId, kind, period, { trigger: "manual" }).catch((e) => console.error("[intel] first briefing:", (e as Error).message));
+          return {
+            data: {
+              noBriefingYet: true,
+              note: `There's no ${kind} briefing yet — one is being prepared now (it also runs automatically ${kind === "daily" ? "every day at 08:00" : "every Sunday at 19:00"} IST). Answer from these latest real items and cite them; don't say there is nothing.`,
+              lastRefreshAt: cc.status.lastRefreshAt,
+              items: cc.priority.slice(0, 8).map((i) => ({ ...cite(i), category: i.category, importance: i.importance, relevance: i.relevance, whyItMatters: i.analysis?.whyItMatters ?? null, opportunity: i.analysis?.opportunity ?? null })),
+              topOpportunities: cc.opportunities.slice(0, 3).map((o) => ({ title: o.title, score: o.score })),
+              link: LINK,
+            },
+            summary: `${cc.priority.length} latest items (briefing being prepared)`,
+          };
+        }
         const v = briefingView(b);
         return { data: { ...v, link: `${LINK}?briefing=${kind}:${b.period}` }, summary: `${kind === "daily" ? "Daily briefing" : "Weekly review"} — ${b.period}` };
       }

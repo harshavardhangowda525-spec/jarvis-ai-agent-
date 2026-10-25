@@ -160,4 +160,14 @@ d("business intelligence pipeline (integration)", () => {
     expect((wk.content as { trend: Record<string, { now: number }> }).trend.ai.now).toBeGreaterThan(0);
     expect((wk.content as { internal: { leadsTotal: number } }).internal.leadsTotal).toBe(0);
   });
+  it("'how's the business environment?' with no briefing yet answers from the latest real items", async () => {
+    const { businessIntelTool } = await import("@/lib/tools/intel");
+    await getDb().intelBriefing.deleteMany({ where: { userId } });
+    const r = await businessIntelTool.execute({ action: "briefing", kind: "weekly" }, { userId, timezone: "Asia/Kolkata", activity: () => {} });
+    const d = r.data as { noBriefingYet: boolean; items: { url: string; publisher: string | null }[]; note: string };
+    expect(d.noBriefingYet).toBe(true);
+    expect(d.items.length).toBeGreaterThan(0);
+    expect(d.items[0].url).toMatch(/^https:\/\//);
+    expect(d.note).toMatch(/being prepared/);
+  });
 });
