@@ -40,7 +40,7 @@ d("business intelligence pipeline (integration)", () => {
       { t: "OpenAI launches new AI coding agent for developers", l: "https://techcrunch.com/ai-agent", d: "The agent writes and reviews code in the browser.", h: 3 },
       { t: "Old story", l: "https://techcrunch.com/old", h: 24 * 20 },
     ]));
-    if (url.includes("theverge")) return new Response(rss([{ t: "OpenAI launches new AI coding agent for developers worldwide", l: "https://theverge.com/agent", d: "OpenAI's coding agent", h: 4 }]));
+    if (url.includes("engadget")) return new Response(rss([{ t: "OpenAI launches new AI coding agent for developers worldwide", l: "https://engadget.com/agent", d: "OpenAI's coding agent", h: 4 }]));
     if (url.includes("news.google.com") && url.includes("smart%20glasses")) return new Response(rss([{ t: "Smart glasses sales jump in India - Economic Times", l: "https://news.google.com/rss/articles/abc", h: 5 }]));
     if (url.includes("googleapis.com/youtube/v3/channels")) return new Response(JSON.stringify({ items: [{ id: "UC1", snippet: { title: "OpenAI" }, contentDetails: { relatedPlaylists: { uploads: "UU1" } } }] }));
     if (url.includes("playlistItems")) return new Response(JSON.stringify({ items: [{ contentDetails: { videoId: "vLive" } }, { contentDetails: { videoId: "vOld" } }] }));
@@ -80,7 +80,7 @@ d("business intelligence pipeline (integration)", () => {
       expect(r.youtube.configured).toBe(false);
       expect(r.youtube.message).toMatch(/YOUTUBE_API_KEY/);
       const items = await getDb().intelItem.findMany({ where: { userId } });
-      expect(items.map((i) => i.url).sort()).toEqual(["https://news.google.com/rss/articles/abc", "https://techcrunch.com/ai-agent", "https://theverge.com/agent"]);
+      expect(items.map((i) => i.url).sort()).toEqual(["https://engadget.com/agent", "https://news.google.com/rss/articles/abc", "https://techcrunch.com/ai-agent"]);
       const gn = items.find((i) => i.via === "google_news")!;
       expect(gn).toMatchObject({ title: "Smart glasses sales jump in India", publisher: "Economic Times", topic: "wearables", category: "consumer" });
       // cached for 15 minutes
@@ -110,8 +110,8 @@ d("business intelligence pipeline (integration)", () => {
     expect(res.analyzed).toBeGreaterThanOrEqual(3);
     const agent = await getDb().intelItem.findFirstOrThrow({ where: { userId, url: "https://techcrunch.com/ai-agent" } });
     const an = agent.analysis as unknown as import("@/lib/intel/analyze").ItemAnalysis;
-    expect(an.confidence.level).toBe("medium"); // TechCrunch + The Verge carry the same story
-    expect(an.confidence.publishers.sort()).toEqual(["TechCrunch", "The Verge"]);
+    expect(an.confidence.level).toBe("medium"); // TechCrunch + Engadget carry the same story
+    expect(an.confidence.publishers.sort()).toEqual(["Engadget", "TechCrunch"]);
     expect(an.basis).toMatch(/not the full article/);
     const yt = await getDb().intelItem.findFirstOrThrow({ where: { userId, via: "youtube", url: { contains: "vLive" } } });
     expect((yt.analysis as unknown as { confidence: { level: string } }).confidence.level).toBe("high");

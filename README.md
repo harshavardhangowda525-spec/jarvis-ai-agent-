@@ -1919,6 +1919,26 @@ AstonProjects/<project>/versions/v001/tests/…   (report.json + screenshots)
 Settings: `ASTON_PROJECTS_DIR` (where projects are saved), `ASTON_BROWSER`
 (a Chromium-based browser's path, if Edge or Chrome isn't found).
 
+## MIKE's Trading Intelligence — weekly review of your trading playbook
+
+**Dashboard → MIKE's chat → Trading Intelligence** (`/dashboard/trading`), or ask "generate my weekly trading analysis", "how is my breakout strategy doing", "did I break any risk rules".
+
+- **Reads your playbook's own records** (the [trading-playbook](https://github.com/harshavardhangowda525-spec/trading-playbook-) app): its 84-day ETF plan, strategies A–D, saved backtests, paper sessions, trading journal, risk settings. Read-only — JARVIS never writes to it or keeps a hand-made copy. Connect it with the `PLAYBOOK_*` settings in `.env.example` (the playbook's Supabase). If the playbook runs in LOCAL MODE, load its backup (playbook Settings → Export) on the page instead.
+- **Every Sunday 18:00 IST** it reviews the week just ending (Monday–Sunday IST): strategy results with "Insufficient data" under 30 trades, a risk audit where every finding lists its evidence, discipline and learning progress, a comparison with earlier weeks, and next week's plan. Missed Sundays are caught up; running twice never makes a second report. **Generate Weekly Analysis** remakes it now and keeps the old version as a revision.
+- **Never invents numbers:** the written review is checked against your records — an AI text that mentions a number that isn't there is discarded for the rule-based write-up. Missing data shows "No data", never 0. Backtests are labelled historical simulation, paper trades historical paper trading. No real orders, no brokerage credentials, Indian-listed ETFs only.
+- Exports as CSV and PDF; notifications (WhatsApp/email) only on the channels you switch on.
+
+## Business Environment Command Center
+
+**`/dashboard/intel`** (or "open the command center", "today's business briefing", "any opportunities?", "is OpenAI live?").
+
+- **Real sources only:** publisher feeds (TechCrunch, Engadget, Inc42, YourStory, The Register, MIT Technology Review, MediaNama, The Hacker News, GitHub, Google, OpenAI), Google News searches for your topics (AI tools, smart glasses, web/app development, Indian SMBs, payments, cyber, policy…; edit them under Topics & alerts), Tavily when `SEARCH_API_KEY` is set, and official YouTube channels when `YOUTUBE_API_KEY` is set. Each item keeps its publisher, date and link; results are cached (refresh every 15 minutes at most).
+- **Analysis for Infinity Web & Apps** — What happened / Why it matters / Business impact / Opportunity / Risk / Recommended action / Source confidence. It reads only the headline and summary and says so; confidence is computed from how many publishers carry the story.
+- **Live intelligence:** a video shows LIVE only when YouTube reported it live at the check time shown; nothing autoplays.
+- **Opportunity detector:** each opportunity cites real items, and its score comes from a fixed rule (relevance, confidence, recency, evidence, ease) — not from the AI.
+- **Briefings:** daily at 08:00 IST and a weekly review on Sunday 19:00 IST, with [n] citations (an AI summary citing anything that isn't in the sources is discarded). Internal CRM/lead numbers are in the drawer, not on the main screen.
+- Commands work by typing or the mic: "show AI", "live now", "search smart glasses", "opportunities", "brief me", "weekly review", "refresh".
+
 ## Daily marketing plan & ASTON's teleprompter
 
 Every morning a cloud schedule (Vercel Cron, hourly 04:30–10:30 India time —

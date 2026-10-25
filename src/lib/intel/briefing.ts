@@ -38,10 +38,12 @@ export async function defaultAsk(userId: string): Promise<{ ask: Ask; provider: 
   return { ask: (s, u) => completeWithFallback(pick.configs, s, u, { maxTokens: 4000, timeoutMs: 150_000 }), provider: pick.configs[0].provider };
 }
 
+// models write citations as 2, "2" or "[2]" — all mean headline 2
+const cites = z.array(z.union([z.number(), z.string()])).default([]).transform((xs) => xs.map((x) => Number(String(x).replace(/\D/g, ""))).filter((n) => Number.isInteger(n) && n > 0));
 const summarySchema = z.object({
-  summary: z.string().min(20).max(2500),
-  actions: z.array(z.object({ action: z.string().max(300), cite: z.array(z.coerce.number().int()).default([]) })).max(6).default([]),
-  risks: z.array(z.object({ text: z.string().max(300), cite: z.array(z.coerce.number().int()).default([]) })).max(6).default([]),
+  summary: z.string().min(20).max(4000),
+  actions: z.array(z.object({ action: z.string().max(600), cite: cites })).default([]).transform((xs) => xs.slice(0, 6)),
+  risks: z.array(z.object({ text: z.string().max(600), cite: cites })).default([]).transform((xs) => xs.slice(0, 6)),
 });
 export type Summary = z.infer<typeof summarySchema> & { by: "ai" | "rules"; provider?: string; rejected?: string };
 
@@ -71,7 +73,7 @@ export async function writeSummary(hs: Headline[], ai: { ask: Ask; provider: str
   const facts = hs.map((h) => ({ n: h.n, headline: h.title, publisher: h.publisher, date: h.publishedAt?.slice(0, 10), analysis: h.analysis && { whatHappened: h.analysis.whatHappened, whyItMatters: h.analysis.whyItMatters, opportunity: h.analysis.opportunity, risk: h.analysis.risk, action: h.analysis.recommendedAction } }));
   try {
     const p = summarySchema.safeParse(extractJson(await ai.ask(SUMMARY_SYSTEM, `HEADLINES:\n${JSON.stringify(facts)}`)));
-    if (!p.success) return { ...rules, by: "rules", rejected: "The AI summary didn't match the briefing format." };
+    if (!p.success) return { ...rules, by: "rules", rejected: `The AI summary didn't match the briefing format (${p.error.issues.slice(0, 2).map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}).` };
     const ns = new Set(hs.map((h) => h.n));
     const text = [p.data.summary, ...p.data.actions.map((a) => a.action), ...p.data.risks.map((r) => r.text)].join(" ");
     const cited = [...text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])).concat(p.data.actions.flatMap((a) => a.cite), p.data.risks.flatMap((r) => r.cite));

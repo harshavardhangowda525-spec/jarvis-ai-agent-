@@ -44,11 +44,16 @@ export const DEFAULT_TOPICS: Topic[] = [
 /** Publishers read directly (RSS). */
 export const FEEDS: { name: string; url: string; category: CategoryId }[] = [
   { name: "TechCrunch", url: "https://techcrunch.com/feed/", category: "software" },
-  { name: "The Verge", url: "https://www.theverge.com/rss/index.xml", category: "consumer" },
+  { name: "Engadget", url: "https://www.engadget.com/rss.xml", category: "consumer" },
   { name: "Inc42", url: "https://inc42.com/feed/", category: "business" },
-  { name: "Ars Technica", url: "https://feeds.arstechnica.com/arstechnica/technology-lab", category: "software" },
+  { name: "YourStory", url: "https://yourstory.com/feed", category: "business" },
+  { name: "The Register", url: "https://www.theregister.com/headlines.atom", category: "software" },
   { name: "MIT Technology Review", url: "https://www.technologyreview.com/feed/", category: "ai" },
-  { name: "Economic Times Tech", url: "https://economictimes.indiatimes.com/tech/rssfeeds/13357270.cms", category: "business" },
+  { name: "MediaNama", url: "https://www.medianama.com/feed/", category: "legal" },
+  { name: "The Hacker News", url: "https://feeds.feedburner.com/TheHackersNews", category: "cyber" },
+  { name: "GitHub Blog", url: "https://github.blog/feed/", category: "software" },
+  { name: "Google Blog", url: "https://blog.google/rss/", category: "ai" },
+  { name: "OpenAI News", url: "https://openai.com/news/rss.xml", category: "ai" },
 ];
 
 /** Official YouTube channels watched for livestreams and new videos (handles, resolved with the YouTube Data API). */

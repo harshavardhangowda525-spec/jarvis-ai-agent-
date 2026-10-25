@@ -69,7 +69,10 @@ export async function refreshIntel(userId: string, o: { force?: boolean; fetch?:
   const push = (items: FeedItem[], via: string, feed: string, topic: Topic | null, fallback: CategoryId) => {
     for (const it of items) {
       const { title, publisher } = via === "google_news" ? splitPublisher(it.title, it.publisher) : { title: it.title, publisher: it.publisher };
-      cands.push({ url: it.link, title, summary: it.summary, publisher, publishedAt: it.publishedAt, via, feed, topic: topic?.id ?? null, category: topic ? topic.category : categorize(`${title} ${it.summary ?? ""}`, fallback) });
+      // Google News "summaries" are just the headline and publisher again — no summary is better than a fake one
+      const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+      const summary = it.summary && !norm(it.summary).startsWith(norm(title).slice(0, 40)) ? it.summary : null;
+      cands.push({ url: it.link, title, summary, publisher, publishedAt: it.publishedAt, via, feed, topic: topic?.id ?? null, category: topic ? topic.category : categorize(`${title} ${it.summary ?? ""}`, fallback) });
     }
   };
 

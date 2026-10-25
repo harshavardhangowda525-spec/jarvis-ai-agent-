@@ -91,7 +91,7 @@ export function EquityChart({ points, color, label, currency = "₹" }: { points
     <div className="ti-chart" onMouseLeave={() => setHover(null)}>
       <svg viewBox={`0 0 ${W} ${H1 + H2}`} role="img" aria-label={`${label} cumulative net and drawdown`}
         onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); const px = ((e.clientX - r.left) / r.width) * W; let best = 0; points.forEach((_, i) => { if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i; }); setHover(best); }}>
-        {[lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i).map((v) => <g key={v}><line x1={P.l} x2={W - P.r} y1={y1(v)} y2={y1(v)} className={v === 0 ? "ti-zero" : "ti-grid"} /><text x={P.l - 6} y={y1(v) + 3} className="ti-axis" textAnchor="end">{fmt(v)}</text></g>)}
+        {[0, lo, hi].filter((v, i, a) => a.indexOf(v) === i && a.slice(0, i).every((u) => Math.abs(y1(u) - y1(v)) > 14)).map((v) => <g key={v}><line x1={P.l} x2={W - P.r} y1={y1(v)} y2={y1(v)} className={v === 0 ? "ti-zero" : "ti-grid"} /><text x={P.l - 6} y={y1(v) + 3} className="ti-axis" textAnchor="end">{fmt(v)}</text></g>)}
         <path d={line} fill="none" stroke={color} strokeWidth={2} />
         {n <= 40 && points.map((p, i) => <circle key={i} cx={x(i)} cy={y1(p.cum)} r={hover === i ? 4.5 : 3} fill={color} stroke="#0b1018" strokeWidth={2} />)}
         <text x={P.l} y={H1 + 4} className="ti-axis">Drawdown</text>

@@ -9,20 +9,23 @@ import { MIN_TRADES } from "./playbook-types";
 import type { WeekMetrics, WeekRow } from "./analyze";
 import { weekLabel } from "./week";
 
+// over-long text is trimmed, not rejected — the number check below is what guards the facts
+const text = (max: number) => z.string().transform((x) => (x.length > max ? `${x.slice(0, max - 1).trimEnd()}…` : x));
 export const narrativeSchema = z.object({
-  executiveSummary: z.string().min(20).max(1600),
-  strategies: z.array(z.object({ id: z.string(), note: z.string().max(600) })).max(4).default([]),
-  risk: z.string().max(1000).default(""),
-  learning: z.string().max(1000).default(""),
-  discipline: z.string().max(1000).default(""),
-  comparison: z.string().max(1000).default(""),
-  nextWeek: z.array(z.object({ action: z.string().max(240), why: z.string().max(400) })).min(1).max(6),
+  executiveSummary: text(1600).pipe(z.string().min(20)),
+  strategies: z.array(z.object({ id: z.string(), note: text(700) })).default([]).transform((xs) => xs.slice(0, 4)),
+  risk: text(1000).default(""),
+  learning: text(1000).default(""),
+  discipline: text(1000).default(""),
+  comparison: text(1000).default(""),
+  nextWeek: z.array(z.object({ action: text(240), why: text(400) })).min(1).transform((xs) => xs.slice(0, 6)),
 });
 export type NarrativeBody = z.infer<typeof narrativeSchema>;
 export interface Narrative extends NarrativeBody { by: "ai" | "rules"; provider?: string; rejected?: string }
 
 const pct = (x: number | null) => (x == null ? "no data" : `${Math.round(x * 100)}%`);
 const num = (x: number | null, d = 2) => (x == null ? "no data" : x.toFixed(d));
+const money = (x: number | null) => (x == null ? "no data" : `${x < 0 ? "−" : ""}₹${Math.abs(x).toFixed(2)}`);
 
 /** Compact facts for the model — exactly what the dashboard shows. */
 export function factsFor(m: WeekMetrics, history: WeekRow[]) {
@@ -90,8 +93,8 @@ export function rulesNarrative(m: WeekMetrics, history: WeekRow[]): NarrativeBod
   const sim = m.backtests.trades + m.paper.trades;
   const parts: string[] = [];
   parts.push(sim ? `This week you saved ${m.backtests.runs} backtest run${m.backtests.runs === 1 ? "" : "s"} (${m.backtests.trades} historical simulated trades) and ran ${m.paper.sessions} paper session${m.paper.sessions === 1 ? "" : "s"} (${m.paper.trades} historical paper trades).` : "No backtests or paper trades were recorded this week.");
-  if (m.backtests.trades) parts.push(`Backtests: win rate ${pct(m.backtests.all.winRate)}, average ${num(m.backtests.all.avgR)}R, net ₹${num(m.backtests.all.net)} after costs (historical simulation).`);
-  if (m.paper.trades) parts.push(`Paper: win rate ${pct(m.paper.all.winRate)}, average ${num(m.paper.all.avgR)}R, net ₹${num(m.paper.all.net)} (virtual money).`);
+  if (m.backtests.trades) parts.push(`Backtests: win rate ${pct(m.backtests.all.winRate)}, average ${num(m.backtests.all.avgR)}R, net ${money(m.backtests.all.net)} after costs (historical simulation).`);
+  if (m.paper.trades) parts.push(`Paper: win rate ${pct(m.paper.all.winRate)}, average ${num(m.paper.all.avgR)}R, net ${money(m.paper.all.net)} (virtual money).`);
   parts.push(m.learning.lessonsThisWeek.length ? `You completed ${m.learning.lessonsThisWeek.length} lesson${m.learning.lessonsThisWeek.length === 1 ? "" : "s"} of the 84-day plan (${m.learning.lessonsTotal} in total).` : `No lessons of the 84-day plan were completed this week (${m.learning.lessonsTotal} in total).`);
   const high = m.risk.findings.filter((f) => f.severity === "high");
   parts.push(high.length ? `Risk audit: ${high.length} high-severity issue${high.length === 1 ? "" : "s"} — ${high.slice(0, 3).map((f) => `${f.rule} (${f.count})`).join(", ")}.` : m.risk.clean === null ? "Risk audit: nothing to audit this week." : "Risk audit: no high-severity issues found.");

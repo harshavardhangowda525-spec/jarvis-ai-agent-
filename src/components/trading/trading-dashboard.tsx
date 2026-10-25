@@ -153,7 +153,7 @@ export function TradingDashboard() {
 
   return (
     <div className="ti">
-      <style>{TI_CSS}</style>
+      <style dangerouslySetInnerHTML={{ __html: TI_CSS }} />
       <div className="ti-head">
         <div>
           <h1>Trading Intelligence</h1>
@@ -188,8 +188,8 @@ export function TradingDashboard() {
       {msg && <div className="ti-banner info" role="status">{msg}</div>}
 
       {data && !data.source.configured && (
-        <div className="ti-glass" style={{ marginBottom: 12 }}>
-          <h2>Connect your trading playbook</h2>
+        <details className="ti-glass" style={{ marginBottom: 12 }} open={!data.source.backupAt}>
+          <summary style={{ cursor: "pointer" }}><h2 style={{ display: "inline" }}>{data.source.backupAt ? "Playbook source: uploaded backup — update or connect Supabase" : "Connect your trading playbook"}</h2></summary>
           <p className="ti-prose" style={{ fontSize: 13 }}>
             MIKE reads your playbook&apos;s own records — it never copies them by hand or writes to them. If your playbook syncs to Supabase, add to JARVIS&apos;s environment:{" "}
             <code>PLAYBOOK_SUPABASE_URL</code>, <code>PLAYBOOK_SUPABASE_ANON_KEY</code>, <code>PLAYBOOK_EMAIL</code>, <code>PLAYBOOK_PASSWORD</code> (or <code>PLAYBOOK_SUPABASE_SERVICE_KEY</code> + <code>PLAYBOOK_USER_ID</code>), then restart.
@@ -200,7 +200,7 @@ export function TradingDashboard() {
             <button className="ti-btn" onClick={() => fileRef.current?.click()} disabled={busy}>Load playbook backup (.json)</button>
             {data.source.backupAt && <span className="ti-sub">Current backup: {new Date(data.source.backupAt).toLocaleString("en-IN")}</span>}
           </div>
-        </div>
+        </details>
       )}
 
       {view === "report" && report && report.status !== "ready" && !report.viewingOld && (
