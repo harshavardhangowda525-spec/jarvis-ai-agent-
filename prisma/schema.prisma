@@ -54,6 +54,10 @@ model User {
   marketingPlans      MarketingPlan[]
   planSettings        MarketingPlanSettings?
   fridayProjects      FridayProject[]
+  tradingReports      TradingReport[]
+  intelItems          IntelItem[]
+  intelBriefings      IntelBriefing[]
+  intelOpportunities  IntelOpportunity[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
   gateCredentials     GateCredential[]
@@ -1448,4 +1452,147 @@ model AstonSubmission {
 
   @@unique([projectId, form, slot])
   @@index([projectId, createdAt])
+}
+
+/// MIKE's weekly review of the trading playbook (one per user per IST week, Monday–Sunday).
+model TradingReport {
+  id          String    @id @default(cuid())
+  userId      String
+  weekStart   String
+  weekEnd     String
+  /// generating | ready | failed | unavailable (no playbook data source)
+  status      String    @default("generating")
+  revision    Int       @default(0)
+  /// scheduled | catch_up | manual
+  trigger     String    @default("scheduled")
+  metrics     Json?
+  narrative   Json?
+  source      Json?
+  error       String?
+  leaseUntil  DateTime?
+  generatedAt DateTime?
+  notifiedAt  DateTime?
+  notifyLog   Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user      User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revisions TradingReportRevision[]
+
+  @@unique([userId, weekStart])
+  @@index([userId, weekStart])
+}
+
+/// Every generated version of a weekly report is kept.
+model TradingReportRevision {
+  id        String   @id @default(cuid())
+  reportId  String
+  revision  Int
+  trigger   String
+  metrics   Json
+  narrative Json?
+  source    Json?
+  createdAt DateTime @default(now())
+
+  report TradingReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@unique([reportId, revision])
+}
+
+model TradingSettings {
+  userId         String   @id
+  weeklyEnabled  Boolean  @default(true)
+  notifyEmail    Boolean  @default(false)
+  notifyWhatsapp Boolean  @default(false)
+  /// a playbook backup (Settings → Export in the playbook) used only when cloud sync isn't set up
+  backup         Json?
+  backupAt       DateTime?
+  updatedAt      DateTime @updatedAt
+}
+
+/// External business-environment intelligence: one real article/video, with its source.
+model IntelItem {
+  id          String    @id @default(cuid())
+  userId      String
+  /// sha1 of the canonical url — the same story is stored once
+  urlHash     String
+  url         String
+  title       String
+  summary     String?
+  publisher   String?
+  publishedAt DateTime?
+  fetchedAt   DateTime  @default(now())
+  /// rss | google_news | tavily | youtube
+  via         String
+  feed        String?
+  topic       String?
+  category    String?
+  /// youtube: { videoId, channel, live: "live"|"upcoming"|"none", thumbnail, checkedAt }
+  media       Json?
+  /// AI analysis (WHAT HAPPENED … SOURCE CONFIDENCE), grounded on title + summary only
+  analysis    Json?
+  importance  Int?
+  relevance   Int?
+  analyzedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, urlHash])
+  @@index([userId, publishedAt])
+  @@index([userId, fetchedAt])
+}
+
+model IntelOpportunity {
+  id         String   @id @default(cuid())
+  userId     String
+  key        String
+  title      String
+  detail     Json
+  score      Int
+  evidence   Json
+  status     String   @default("new")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, score])
+}
+
+/// Daily (08:00 IST) and weekly (Sunday 19:00 IST) business briefings.
+model IntelBriefing {
+  id          String    @id @default(cuid())
+  userId      String
+  /// daily | weekly
+  kind        String
+  period      String
+  status      String    @default("generating")
+  revision    Int       @default(0)
+  trigger     String    @default("scheduled")
+  content     Json?
+  sources     Json?
+  error       String?
+  leaseUntil  DateTime?
+  generatedAt DateTime?
+  notifiedAt  DateTime?
+  notifyLog   Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, period])
+}
+
+model IntelSettings {
+  userId         String    @id
+  topics         Json?
+  dailyEnabled   Boolean   @default(true)
+  weeklyEnabled  Boolean   @default(true)
+  notifyEmail    Boolean   @default(false)
+  notifyWhatsapp Boolean   @default(false)
+  lastRefreshAt  DateTime?
+  lastRefresh    Json?
+  updatedAt      DateTime  @updatedAt
 }

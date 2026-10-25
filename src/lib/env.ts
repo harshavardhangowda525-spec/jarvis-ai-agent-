@@ -294,6 +294,19 @@ export const env = {
   niosRegionalCentres: read("NIOS_REGIONAL_CENTRES"),
   niosExtraUrls: read("NIOS_EXTRA_URLS"),
   cronSecret: read("CRON_SECRET"),
+  // Your trading playbook app's Supabase project (read-only). Either sign in as
+  // you (anon key + the playbook account's email/password — row-level security
+  // limits reads to your own documents) or use the service key + your user id.
+  playbookSupabaseUrl: read("PLAYBOOK_SUPABASE_URL").replace(/\/$/, ""),
+  playbookAnonKey: read("PLAYBOOK_SUPABASE_ANON_KEY"),
+  playbookEmail: read("PLAYBOOK_EMAIL"),
+  playbookPassword: read("PLAYBOOK_PASSWORD"),
+  playbookServiceKey: read("PLAYBOOK_SUPABASE_SERVICE_KEY"),
+  playbookUserId: read("PLAYBOOK_USER_ID"),
+  // Optional: only this JARVIS account reads the playbook above (others can upload their own backup).
+  playbookOwnerEmail: read("PLAYBOOK_OWNER_EMAIL").toLowerCase(),
+  // YouTube Data API v3 (server-side only) — official livestreams and videos for the command center.
+  youtubeApiKey: read("YOUTUBE_API_KEY"),
   // Hard guard: even if code were misconfigured, never fabricate leads.
   mockDataDisabled: (read("MOCK_DATA") || "false").toLowerCase() !== "true",
   appEnv: read("APP_ENV").toLowerCase() || "development",

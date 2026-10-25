@@ -24,6 +24,9 @@ const nextConfig = {
       // ROBIN draws quotation PDFs with the same font (it has the ₹ sign)
       "/api/robin/quotations/[id]": ["./assets/fonts/**"],
       "/api/robin/quotations/[id]/pdf": ["./assets/fonts/**"],
+      // the trading review and business briefings export PDFs with the same font
+      "/api/trading/export": ["./assets/fonts/**"],
+      "/api/intel/export": ["./assets/fonts/**"],
       // the database self-repair compares the real tables with these (src/lib/schema)
       "/api/**": ["./prisma/migrations/**"],
       "/dashboard/**": ["./prisma/migrations/**"],

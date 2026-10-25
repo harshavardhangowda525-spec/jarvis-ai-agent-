@@ -556,6 +556,26 @@ if (await waitFor(`${local}/login`, 120)) {
     } catch { /* offline — next round */ } finally { planTicking = false; }
   };
   const plansSaid = new Set();
+  // MIKE's weekly trading review (Sunday 18:00 IST) and the business briefings (08:00 daily, Sunday 19:00 IST) —
+  // both idempotent, so an hourly-ish tick just catches anything missed while the PC was off
+  let intelTicking = false;
+  const said = new Set();
+  const intelTick = async () => {
+    if (intelTicking) return;
+    intelTicking = true;
+    try {
+      for (const [path, key] of [["/api/cron/trading", "trading"], ["/api/cron/intel", "intel"]]) {
+        const r = await fetch(`${local}${path}`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(320_000) }).catch(() => null);
+        const j = await r?.json().catch(() => ({}));
+        for (const x of j?.data?.[key] ?? []) {
+          const id = `${key}:${x.week ?? x.period}:${x.kind ?? ""}`;
+          if (x.status === "ready" && x.fresh && !said.has(id)) { said.add(id); say(key === "trading" ? `  [mike] Weekly trading review ready (week of ${x.week}).` : `  [intel] ${x.kind === "weekly" ? "Weekly business review" : "Daily business briefing"} ready (${x.period}).`); }
+        }
+      }
+    } catch { /* offline — next round */ } finally { intelTicking = false; }
+  };
+  setTimeout(intelTick, 100_000);
+  setInterval(intelTick, 10 * 60_000);
   setTimeout(plansTick, 75_000);
   setInterval(plansTick, 5 * 60_000);
   setTimeout(jobsTick, 30_000);

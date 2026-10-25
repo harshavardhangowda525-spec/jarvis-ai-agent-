@@ -59,6 +59,21 @@
     },
     "src/app/api/jobs/[id]/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/cron/trading/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/trading/reports/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cron/intel/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/intel/refresh/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/intel/briefings/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -133,6 +148,26 @@
     {
       "path": "/api/cron/plans",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/trading",
+      "schedule": "31 12 * * 0"
+    },
+    {
+      "path": "/api/cron/trading",
+      "schedule": "5 13 * * *"
+    },
+    {
+      "path": "/api/cron/intel",
+      "schedule": "31 2 * * *"
+    },
+    {
+      "path": "/api/cron/intel",
+      "schedule": "31 13 * * 0"
+    },
+    {
+      "path": "/api/cron/intel",
+      "schedule": "15 5 * * *"
     }
   ]
 }

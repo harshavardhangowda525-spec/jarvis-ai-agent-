@@ -43,6 +43,7 @@ import { darwinOutreachTool } from "./darwin/outreach";
 import { darwinMessageTool } from "./darwin/message";
 import { darwinMapTool } from "./darwin/map";
 import { niosTool } from "./nios";
+import { tradingReviewTool } from "./trading";
 import { mikeAnalyzeTool, mikeScanTool, mikeBacktestTool, mikeJournalTool, mikeAlertTool, mikeMarketSummaryTool, mikeChartTool } from "./mike";
 import { activityTool } from "./activity";
 import {
@@ -107,6 +108,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   mikeAlertTool as ToolDefinition,
   mikeMarketSummaryTool as ToolDefinition,
   mikeChartTool as ToolDefinition,
+  tradingReviewTool as ToolDefinition,
   // RUBIN (sales & CRM): its own tools only while Rubin is active; JARVIS can ask Rubin / open Rubin
   ...[robinLeadsTool, robinLeadTool, robinUpdateStageTool, robinSetPriorityTool, robinScheduleFollowUpTool, robinFollowUpsTool, robinCompleteFollowUpTool, robinNoteTool,
     robinLogInteractionTool, robinScheduleDemoTool, robinQuotationTool, robinAnalyticsTool, robinBriefingTool, robinReportTool,
