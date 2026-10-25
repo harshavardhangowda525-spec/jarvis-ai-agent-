@@ -152,3 +152,37 @@ describe("JARVIS → agent hand-off accepts how different brains fill it in", ()
     if (!r.success) expect(r.error.issues.map((i) => i.path.join("."))).toEqual(expect.arrayContaining(["title", "brief.objective", "brief.acceptance"]));
   });
 });
+
+import { clipText, planSchema as tolerantPlan } from "@/lib/plans/schema";
+describe("a wordy plan isn't thrown away", () => {
+  it("shortens over-long text at a sentence or word break", () => {
+    expect(clipText("Short.", 80)).toBe("Short.");
+    const long = "Instagram carousel with six slides. Each slide shows a before and after of a clinic website on a phone, with a bold headline.";
+    const c = clipText(long, 80);
+    expect(c.length).toBeLessThanOrEqual(80);
+    expect(c).toBe("Instagram carousel with six slides.");
+    expect(clipText("word ".repeat(40), 50).endsWith("…")).toBe(true);
+  });
+  it("Claude's real shape (long format, '5s' durations, extra items) passes", () => {
+    const scene = { visual: "Phone screen", onScreen: "Find us online", motion: "slide", voiceOver: "", seconds: "5s" };
+    const r = tolerantPlan.safeParse({
+      niche: "clinics", opportunity: "Patients search online first.", problems: Array(9).fill("Hard to find"), services: [{ name: "Website", why: "Bookings" }],
+      scripts: { call: "Hello [Name]…", instagram: "Hi!", whatsapp: "Hi!", followUps: [{ when: "Day 2", channel: "WhatsApp", text: "Just checking in." }] },
+      content: { idea: "Before/after", format: "Instagram Reel, 30–45 seconds, vertical 9:16, with captions burned in and a strong first-second hook that stops the scroll" },
+      video: { hook: "Is your clinic invisible?", scenes: [scene, scene, scene], caption: "Get found. #clinic", cta: "DM us" },
+      checklist: [{ task: "Find 20 clinics", block: "prospecting" }, { task: "Call 5", block: "outreach" }, { task: "Post reel", block: "content" }],
+      insight: "Trust first.", assumptions: ["Most patients search on phones", ""],
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.content.format.length).toBeLessThanOrEqual(120);
+      expect(r.data.problems).toHaveLength(6);
+      expect(r.data.video.scenes[0].seconds).toBe(5);
+      expect(r.data.video.scenes[0].voiceOver).toBeUndefined();
+      expect(r.data.assumptions).toEqual(["Most patients search on phones"]);
+    }
+  });
+  it("still refuses a plan with missing parts", () => {
+    expect(tolerantPlan.safeParse({ niche: "x" }).success).toBe(false);
+  });
+});

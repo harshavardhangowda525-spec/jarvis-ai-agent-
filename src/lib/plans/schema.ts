@@ -6,29 +6,51 @@ import { z } from "zod";
 
 export const PLAN_TZ = "Asia/Kolkata";
 
-const s = (max: number) => z.string().trim().min(1).max(max);
+/**
+ * Text that's too long is shortened at a sentence or word break rather than
+ * thrown away — one wordy field (e.g. a long "format") must never sink a
+ * whole plan. Only missing or empty text is an error.
+ */
+export function clipText(v: string, max: number): string {
+  const t = v.replace(/\s+\n/g, "\n").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max - 1);
+  const sentence = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "), cut.lastIndexOf("\n"));
+  if (sentence > max * 0.4) return cut.slice(0, sentence + 1).trim();
+  const word = cut.lastIndexOf(" ");
+  return `${(word > max * 0.6 ? cut.slice(0, word) : cut).trim()}…`;
+}
+const s = (max: number) => z.preprocess((v) => (typeof v === "string" ? clipText(v, max) : typeof v === "number" ? String(v) : v), z.string().min(1).max(max));
+const opt = (max: number) => z.preprocess((v) => (v == null || v === "" ? undefined : typeof v === "string" ? clipText(v, max) : v), z.string().max(max).optional());
+/** Lists keep their first `max` items instead of failing on one extra. */
+const list = <T extends z.ZodTypeAny>(item: T, min: number, max: number) => z.preprocess((v) => (Array.isArray(v) ? v.slice(0, max) : v), z.array(item).min(min).max(max));
+/** "5", "5s", "5 sec" → 5, kept within 1–30 s. */
+const secs = z.preprocess((v) => {
+  const n = typeof v === "number" ? v : parseFloat(String(v ?? ""));
+  return Number.isFinite(n) ? Math.min(30, Math.max(1, n)) : undefined;
+}, z.number().optional());
 
 export const planSchema = z.object({
   niche: s(60),
   opportunity: s(900),
-  problems: z.array(s(240)).min(1).max(6),
-  services: z.array(z.object({ name: s(80), why: s(300) })).min(1).max(5),
+  problems: list(s(240), 1, 6),
+  services: list(z.object({ name: s(80), why: s(300) }), 1, 5),
   scripts: z.object({
-    call: s(2500),
+    call: s(4000),
     instagram: s(1200),
     whatsapp: s(1200),
-    followUps: z.array(z.object({ when: s(60), channel: s(40), text: s(800) })).min(1).max(4),
+    followUps: list(z.object({ when: s(60), channel: s(40), text: s(800) }), 1, 4),
   }),
-  content: z.object({ idea: s(700), format: s(80) }),
+  content: z.object({ idea: s(1200), format: s(120) }),
   video: z.object({
     hook: s(240),
-    scenes: z.array(z.object({ visual: s(300), onScreen: s(160), motion: z.string().trim().max(200).optional(), voiceOver: z.string().trim().max(400).optional(), seconds: z.coerce.number().min(1).max(30).optional() })).min(3).max(10),
+    scenes: list(z.object({ visual: s(300), onScreen: s(160), motion: opt(200), voiceOver: opt(400), seconds: secs }), 3, 10),
     caption: s(1200),
     cta: s(200),
   }),
-  checklist: z.array(z.object({ task: s(200), block: z.enum(["prospecting", "outreach", "follow-ups", "content", "tracking"]).catch("prospecting") })).min(3).max(14),
+  checklist: list(z.object({ task: s(200), block: z.enum(["prospecting", "outreach", "follow-ups", "content", "tracking"]).catch("prospecting") }), 3, 14),
   insight: s(500),
-  assumptions: z.array(s(240)).max(8).default([]),
+  assumptions: z.preprocess((v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim()).slice(0, 8) : v), z.array(s(240)).max(8)).default([]),
 });
 export type Plan = z.infer<typeof planSchema>;
 

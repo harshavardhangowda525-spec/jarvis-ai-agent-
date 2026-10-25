@@ -18,7 +18,7 @@ import { PLAN_TZ, parseTime, planSchema, type Plan } from "./schema";
  */
 
 export const MAX_ATTEMPTS = 3;
-const LEASE_MS = 3 * 60_000;
+const LEASE_MS = 9 * 60_000; // two Claude answers (plan + one repair) fit inside it
 /** The plan is prepared up to this long before your delivery time (the schedule checks every hour at :30 IST). */
 export const LEAD_MIN = 35;
 
@@ -71,6 +71,7 @@ Rules:
 - WhatsApp and Instagram messages: under 90 words, no spammy language, one clear question.
 - Follow-ups: 2–3 (e.g. "Day 2", "Day 5"), polite, and accept a no gracefully.
 - The video brief is for an Instagram Reel promoting ${DARWIN_BUSINESS.name} to this niche: a hook for the first 2 seconds, 4–7 scenes with visual, on-screen text and motion, optional voice-over, a caption with 3–6 relevant hashtags, and a CTA.
+- content.format is a short label (e.g. "Instagram carousel, 6 slides" or "Reel, 30 seconds") — the details go in content.idea.
 - Checklist: 6–10 concrete tasks across prospecting, outreach, follow-ups, content and tracking.
 - The plan may be opened from a share link: never include our CRM numbers, lead names or any customer details in it.
 
@@ -105,7 +106,8 @@ async function defaultAsk(userId: string): Promise<Ask> {
   const brain = await getLiveBrain(userId).catch(() => null);
   const pick = agentConfigs("aston", brain);
   if (!pick.configs.length) throw new Error(pick.missing ?? "No AI provider is configured for ASTON.");
-  return (system, user) => completeWithFallback(pick.configs, system, user, { maxTokens: 5000, timeoutMs: 120_000 });
+  // Claude on the PC can take a minute or two for a full plan — give it room
+  return (system, user) => completeWithFallback(pick.configs, system, user, { maxTokens: 6000, timeoutMs: 240_000 });
 }
 
 /**
