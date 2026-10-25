@@ -22,7 +22,7 @@ export interface TrackedHand { landmarks: Pt[]; handedness: string; score: numbe
 export class HandTracker {
   private constructor(private lm: HandLandmarker, public delegate: "GPU" | "CPU") {}
 
-  static async create(): Promise<HandTracker> {
+  static async create(o: { numHands?: number } = {}): Promise<HandTracker> {
     const vision = await import("@mediapipe/tasks-vision");
     // prefer our own copy of the runtime; fall back to the CDN build of the same version
     let fileset;
@@ -37,7 +37,7 @@ export class HandTracker {
         const lm = await vision.HandLandmarker.createFromOptions(fileset, {
           baseOptions: { modelAssetPath: LOCAL_MODEL, delegate },
           runningMode: "VIDEO",
-          numHands: 1,
+          numHands: o.numHands ?? 1,
           minHandDetectionConfidence: 0.6,
           minHandPresenceConfidence: 0.6,
           minTrackingConfidence: 0.5,
@@ -58,6 +58,12 @@ export class HandTracker {
     for (let i = 1; i < r.landmarks.length; i++) if ((r.handedness?.[i]?.[0]?.score ?? 0) > (r.handedness?.[best]?.[0]?.score ?? 0)) best = i;
     const h = r.handedness?.[best]?.[0];
     return { landmarks: r.landmarks[best].map((p) => ({ x: p.x, y: p.y, z: p.z })), handedness: h?.categoryName ?? "", score: h?.score ?? 0 };
+  }
+
+  /** Every hand in this frame (up to numHands). */
+  detectAll(video: HTMLVideoElement, tMs: number): TrackedHand[] {
+    const r = this.lm.detectForVideo(video, tMs);
+    return (r.landmarks ?? []).map((l, i) => ({ landmarks: l.map((p) => ({ x: p.x, y: p.y, z: p.z })), handedness: r.handedness?.[i]?.[0]?.categoryName ?? "", score: r.handedness?.[i]?.[0]?.score ?? 0 }));
   }
 
   close() { try { this.lm.close(); } catch { /* already closed */ } }

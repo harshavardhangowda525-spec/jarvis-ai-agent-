@@ -46,6 +46,7 @@ import { announcement, useJobs } from "@/components/jobs/use-jobs";
 import { JOB_STATUS_LABEL } from "@/lib/jobs/brief";
 import { AstonViewer } from "@/components/aston/viewer";
 import { astonPreviewCommand, buildCommand, isAstonActivation, teleprompterCommand } from "@/lib/aston/intent";
+import { fridayCommand, isFridayActivation, modeCommand } from "@/lib/friday/intent";
 
 // Weather intents ("what's the weather", "forecast for Tokyo", "will it rain").
 const WEATHER_RE = /\b(weather|forecast|temperature|humidity|how (hot|cold|warm)|(will|is|does|gonna) it (be )?(going to |gonna )?(rain|raining|snow|snowing|sunny|cloudy|cold|hot|windy|storm)|need an umbrella)\b/i;
@@ -692,6 +693,11 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         startBuild(bc.kind, bc.request);
         return;
       }
+      // FRIDAY: "Friday, model the EDITH glasses" / "make a 3D model of …" → Friday does it; "open Friday"; "activate agentic view"
+      const forFriday = fridayCommand(t);
+      if (forFriday) { say("Handing it to Friday."); router.push(`/dashboard/friday?ask=${encodeURIComponent(forFriday.slice(0, 2000))}`); return; }
+      if (isFridayActivation(t)) { say("Opening Friday."); router.push("/dashboard/friday"); return; }
+      if (modeCommand(t) === "activate") { say("Opening Friday's agentic view."); router.push("/dashboard/friday?view=agentic"); return; }
       // "Open ASTON" → ASTON's chat; "open the teleprompter" / "today's plan" → the teleprompter
       if (isAstonActivation(low)) { openChat("aston"); return; }
       if (teleprompterCommand(low)) { agent.appendLocalExchange(t, "Opening today's plan in the teleprompter."); sayRef.current("Opening the teleprompter."); router.push("/dashboard/teleprompter"); return; }

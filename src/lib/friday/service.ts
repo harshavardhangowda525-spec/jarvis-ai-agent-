@@ -4,6 +4,7 @@ import { createJob } from "@/lib/jobs/engine";
 import type { Brief } from "@/lib/jobs/brief";
 import type { FridayPayload } from "./runner";
 import { VIEWS } from "./plan";
+import { fileUrl, type VersionResult } from "./projects";
 
 /** Start Friday's work as a tracked task (it runs like any delegated task). */
 export async function requestFriday(userId: string, p: FridayPayload & { request?: string }) {
@@ -27,5 +28,11 @@ export async function requestFriday(userId: string, p: FridayPayload & { request
 
 export async function listProjects(userId: string, take = 20) {
   const ps = await getDb().fridayProject.findMany({ where: { userId }, orderBy: { updatedAt: "desc" }, take, include: { versions: { orderBy: { n: "desc" }, take: 1, select: { n: true, status: true, label: true } } } });
-  return ps.map((p) => ({ id: p.id, name: p.name, activeVersion: p.activeVersion, latest: p.versions[0] ?? null, updatedAt: p.updatedAt.toISOString(), folder: p.dir }));
+  const actives = await getDb().fridayVersion.findMany({ where: { OR: ps.map((p) => ({ projectId: p.id, n: p.activeVersion })) }, select: { projectId: true, n: true, result: true } });
+  return ps.map((p) => {
+    const a = actives.find((v) => v.projectId === p.id);
+    const r = (a?.result ?? null) as VersionResult | null;
+    const thumb = r?.renders.find((x) => x.view === "front_34") ?? r?.renders[0];
+    return { id: p.id, name: p.name, activeVersion: p.activeVersion, latest: p.versions[0] ?? null, updatedAt: p.updatedAt.toISOString(), folder: p.dir, thumb: thumb && a ? `${fileUrl(p.id, a.n, thumb.file)}?h=${thumb.hash}` : null };
+  });
 }
