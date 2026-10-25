@@ -66,7 +66,12 @@ export interface BuildJob {
   plan: Plan; outDir: string; views: ViewId[]; render: RenderSettings;
   exports: ("glb" | "gltf" | "stl")[]; saveBlend: boolean;
 }
-export interface Progress { stage: string; text: string; done: number | null; total: number | null; view?: string }
+/** One report line from Blender. Extra fields depend on the stage (a part being built, a render's file…). */
+export interface Progress {
+  stage: string; text: string; done: number | null; total: number | null; view?: string;
+  part?: string; shape?: string; group?: string; material?: string; faces?: number; cutter?: boolean; conceptual?: boolean; internal?: boolean; building?: boolean;
+  color?: string; fmt?: string; file?: string; seconds?: number;
+}
 export interface BlenderResult {
   ok: true; blender: string; engine: string; device: string;
   components: { id: string; name: string; group: string; material: string; polygons: number; internal: boolean; conceptual: boolean; bbox_mm: number[][] }[];

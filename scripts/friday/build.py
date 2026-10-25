@@ -85,7 +85,10 @@ def hex_rgba(h, a=1.0):
 
 
 materials = {}
-for m in PLAN["materials"]:
+progress("materials", f"Creating {len(PLAN['materials'])} materials", 0, len(PLAN["materials"]))
+for mi, m in enumerate(PLAN["materials"]):
+    finish = "glass/clear" if float(m.get("transmission", 0)) > 0.5 else "metal" if float(m.get("metallic", 0)) > 0.5 else "glossy" if float(m.get("roughness", 0.5)) < 0.25 else "matte" if float(m.get("roughness", 0.5)) > 0.6 else "satin"
+    progress("materials", f"Material {mi + 1}/{len(PLAN['materials'])}: {m['name']} — {finish}, {m['color']}", mi + 1, len(PLAN["materials"]), material=m["id"], color=m["color"])
     mat = bpy.data.materials.new(m["name"])
     mat.use_nodes = True
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
@@ -210,6 +213,8 @@ comps = PLAN["components"]
 visible = [c for c in comps if not c.get("cutter")]
 progress("geometry", f"Building geometry: 0 of {len(comps)} components", 0, len(comps))
 for i, c in enumerate(comps):
+    shape = c["shape"]["type"].replace("_", " ")
+    progress("geometry", f"Building {c['name']} — {shape}{' (cutter)' if c.get('cutter') else ''}", i, len(comps), part=c["id"], shape=c["shape"]["type"], group=c.get("group", "Model"), building=True)
     try:
         o = make_shape(c)
     except SystemExit:
@@ -234,7 +239,8 @@ for i, c in enumerate(comps):
         o.hide_render = True
         o.display_type = "WIRE"
     objects[c["id"]] = o
-    progress("geometry", f"Building geometry: {i + 1} of {len(comps)} components", i + 1, len(comps))
+    progress("geometry", f"Built {c['name']}: {len(o.data.vertices)} vertices, {len(o.data.polygons)} faces" + (" — used to cut another part" if c.get("cutter") else f", {materials[c['material']].name}"), i + 1, len(comps),
+             part=c["id"], shape=c["shape"]["type"], group=c.get("group", "Model"), material=materials[c["material"]].name, faces=len(o.data.polygons), cutter=bool(c.get("cutter")), conceptual=bool(c.get("conceptual")), internal=bool(c.get("internal")))
 
 # modifiers, in a sensible order: booleans -> solidify -> mirror -> bevel -> subdivision
 progress("modifiers", "Applying bevels, shells, cuts and symmetry")
@@ -270,6 +276,8 @@ for c in comps:
             o.data.shade_smooth_by_angle(angle=math.radians(35))
         except Exception:
             pass
+    if len(o.modifiers):
+        progress("modifiers", f"{c['name']}: {', '.join(md.name for md in o.modifiers)}", part=c["id"])
 for c in comps:
     if c.get("cutter"):
         objects[c["id"]].hide_set(True)
@@ -327,6 +335,7 @@ def area(name, loc, energy, size_m, color=(1, 1, 1)):
     lights.objects.link(ob)
 
 
+progress("lighting", f"Studio lighting: key, fill, rim and top area lights; {env.replace('_', ' ')} backdrop")
 k = radius * 4
 scale_e = (radius / 0.1) ** 2 * float(RENDER.get("lightScale", 0.3))  # light energy grows with the scene's size
 area("Key Light", center + Vector((-1.2, -1.4, 1.3)) * k, 60 * scale_e, radius * 2.5)
@@ -463,6 +472,8 @@ except Exception:
     pass
 scene["friday_render"] = json.dumps({"engine": scene.render.engine, "width": W, "height": H, "samples": int(RENDER.get("samples", 64))})
 scene.camera = camera_objs["front_34"]
+progress("cameras", f"Placed {len(camera_objs)} cameras: 6 orthographic (front, rear, left, right, top, bottom), front and rear three-quarter, a detail close-up on {objects[detail_id].name}, and {'an exploded view' if explode_ok else 'a hero angle'}")
+progress("render-setup", f"Renderer: {scene.render.engine.replace('BLENDER_', '').title()} on {device_used}, {W}×{H}" + (f", {scene.cycles.samples} samples, denoised" if scene.render.engine == "CYCLES" else ""))
 
 # ---------------------------------------------------------------- save & export (before any exploded offsets)
 files = {}
@@ -488,6 +499,7 @@ for fmt in JOB.get("exports", ["glb"]):
             warnings.append(f"Unknown export format {fmt}")
             continue
         files[fmt] = p
+        progress("exported", f"Exported {fmt.upper()} ({round(os.path.getsize(p) / 1024)} KB)", fmt=fmt, file=os.path.basename(p))
     except Exception as e:
         fail(f"Export to {fmt.upper()} failed: {e}")
 
@@ -556,7 +568,7 @@ for i, v in enumerate(views):
                     "camera": {"name": cam.name, "type": cam.data.type, "location": [round(x, 5) for x in cam.location],
                                "rotation": [round(x, 5) for x in cam.rotation_euler],
                                **({"ortho_scale": round(cam.data.ortho_scale, 5)} if cam.data.type == "ORTHO" else {"lens": cam.data.lens})}})
-    progress("render", f"Rendered view {i + 1} of {len(views)}: {v}", i + 1, len(views), view=v)
+    progress("render", f"Rendered view {i + 1} of {len(views)}: {v}", i + 1, len(views), view=v, seconds=round(time.time() - t0, 1), file=f"renders/{v}.png")
 
 result = {
     "ok": True, "blender": bpy.app.version_string, "engine": scene.render.engine, "device": device_used,

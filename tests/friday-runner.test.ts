@@ -48,7 +48,25 @@ d("FRIDAY's task runner (integration)", () => {
     expect(job.agent).toBe("friday");
     const prompts: string[] = [];
     const replies = [JSON.stringify({ ...glasses, materials: [] }), JSON.stringify(glasses)];
-    const evs = await run(job, async (_s: string, u: string) => { prompts.push(u); return replies.shift()!; });
+    // a brain that streams its answer, as Claude does
+    const evs = await run(job, async (_s: string, u: string, onDelta?: (t: string) => void) => { prompts.push(u); const r = replies.shift()!; for (let i = 0; i < r.length; i += 40) onDelta?.(r.slice(i, i + 40)); return r; });
+    // the live view saw the whole preparation
+    const L = await import("@/lib/friday/live");
+    const { snapshot: live, close } = L.subscribeFriday(job.id, () => {});
+    close();
+    expect(live.stages).toEqual(expect.arrayContaining(["specs", "plan", "materials", "geometry", "modifiers", "validate", "lighting", "cameras", "save", "export", "render", "verify", "done"]));
+    expect(live.stage?.stage).toBe("done");
+    expect(JSON.parse(live.plan).components).toHaveLength(glasses.components.length); // the corrected plan, streamed (the rejected one was reset)
+    expect(live.materials.map((m) => m.id)).toEqual(glasses.materials.map((m: { id: string }) => m.id));
+    expect(live.parts).toHaveLength(glasses.components.length);
+    expect(live.parts.every((p) => p.status === "built" && typeof p.faces === "number")).toBe(true);
+    expect(live.parts.find((p) => p.id === "rim_cut")?.cutter).toBe(true);
+    expect(live.model).toMatch(/\/api\/friday\/files\/.+\/1\/model\.glb/);
+    expect(live.renders.map((r) => r.view).sort()).toEqual([...(await import("@/lib/friday/plan")).VIEW_IDS].sort());
+    expect(live.renders.every((r) => /renders\/.+\.png/.test(r.url) && r.seconds != null)).toBe(true);
+    expect(live.log.some((l) => /didn't check out/.test(l.text))).toBe(true);
+    expect(live.log.some((l) => /^Built Lens rim/.test(l.text))).toBe(true);
+    expect(live.result?.ok).toBe(true);
     expect(prompts[0]).toMatch(/overall frame width 140 mm/);
     expect(prompts[0]).not.toMatch(/ULTRON/);
     expect(prompts[1]).toMatch(/couldn't be used: materials/);

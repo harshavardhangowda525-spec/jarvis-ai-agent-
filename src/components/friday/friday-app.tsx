@@ -14,6 +14,7 @@ import type { Output3D } from "@/lib/friday/gesture3d";
 import { FridayViewer, type ViewerHandle } from "./viewer";
 import { useHandControl } from "./use-hand-control";
 import { CSS } from "./styles";
+import { FridayProcess } from "./process";
 
 /**
  * FRIDAY. Default: a normal chatbot ("PROJECT: FRIDAY"). The exact command
@@ -99,6 +100,13 @@ export function FridayApp() {
   // —— Friday's tasks: real progress from the job (Blender's own lines) ——
   const fridayJobs = useMemo(() => jobs.jobs.filter((j) => j.agent === "friday"), [jobs.jobs]);
   const activeJob = fridayJobs.find((j) => ["planning", "assigned", "running"].includes(j.status)) ?? null;
+  // the live view of Friday's work: shown while a task runs, kept afterwards until you close it
+  const [shownJob, setShownJob] = useState<{ id: string; title: string } | null>(null);
+  const [processOpen, setProcessOpen] = useState(true);
+  const [liveModel, setLiveModel] = useState<string | null>(null);
+  useEffect(() => {
+    if (activeJob && activeJob.id !== shownJob?.id) { setShownJob({ id: activeJob.id, title: activeJob.title }); setLiveModel(null); setProcessOpen(true); }
+  }, [activeJob?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     for (const j of fridayJobs) {
       const steps = Array.isArray(j.progress) ? j.progress : [];
@@ -285,7 +293,8 @@ export function FridayApp() {
   };
 
   const status = activeJob ? (jobProgress?.last.replace(/^✓\s*/, "") ?? "Working") : version?.status === "failed" ? "FAILED" : "IDLE";
-  const modelUrl = version?.status === "ready" ? version.model : null;
+  // while Friday builds, the viewer shows the new model as soon as Blender exports it
+  const modelUrl = activeJob && liveModel ? liveModel : version?.status === "ready" ? version.model : liveModel;
   const sel = selected && viewer.current?.core ? { info: parts.find((p) => p.id === selected), mat: viewer.current.core.materialOf(selected), box: viewer.current.core.partBoxMm(selected) } : null;
 
   // ———————————————————— render ————————————————————
@@ -305,6 +314,10 @@ export function FridayApp() {
         </div>
       ))}
     </div>
+  );
+  const processPanel = (compact: boolean) => shownJob && processOpen && (
+    <FridayProcess key={shownJob.id} jobId={shownJob.id} title={shownJob.title} running={!!activeJob && activeJob.id === shownJob.id} compact={compact}
+      onCancel={() => void jobs.act(shownJob.id, "cancel")} onClose={() => setProcessOpen(false)} onModel={setLiveModel} />
   );
   const progressCard = jobProgress && (
     <div className="fr-prog">
@@ -336,7 +349,8 @@ export function FridayApp() {
                 <div className="fr-strip">{version.renders.map((r) => <img key={r.view} src={r.url} alt={r.label} title={r.label} onClick={() => setLightbox(r.url)} />)}</div></div>
             </div>
           )}
-          {progressCard}
+          {processPanel(false)}
+          {shownJob && !processOpen && <button className="fr-cta" style={{ alignSelf: "flex-start" }} onClick={() => setProcessOpen(true)}>{activeJob ? "Show Friday at work" : "Show the last build"}</button>}
           {chatList}
           {composer("Describe an invention, ask for a change, or say “activate agentic view”…")}
         </div>
@@ -367,7 +381,8 @@ export function FridayApp() {
             {/* the camera preview (mirrored) — frames stay in this browser */}
             <video ref={hands.video} className={`fw-cam${hands.state.on || hands.state.starting ? " on" : ""}`} muted playsInline aria-label="Camera preview for hand tracking" />
             {hands.state.on && hands.state.out && <GestureHud out={hands.state.out} />}
-            {progressCard && <div className="fw-progwrap">{progressCard}</div>}
+            {shownJob && processOpen && <div className="fw-process">{processPanel(true)}</div>}
+            {shownJob && !processOpen && <button className="fw-process-open" onClick={() => setProcessOpen(true)}>{activeJob ? "Show Friday at work" : "Show the last build"}</button>}
             {panel && panel !== "gallery" && (
               <div className="fw-drawer">
                 {panel === "new" && <NewProject onStart={(request, name) => { void startJob({ action: "create", request, name }); setPanel(null); }} disabled={!blender} />}

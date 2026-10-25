@@ -65,6 +65,8 @@ export const CSS = `
 .fw-grid figure{margin:0;border:1px solid var(--line);border-radius:8px;padding:4px;background:#050b12}.fw-grid .pair{display:flex;gap:4px}.fw-grid img{flex:1;min-width:0;width:100%;border-radius:4px;cursor:zoom-in}
 .fw-grid figcaption{font-size:11px;color:var(--dim);display:flex;justify-content:space-between;align-items:center;gap:4px;padding:2px}
 .fw-grid figcaption button{background:none;border:1px solid var(--line);border-radius:6px;padding:0 6px}.fw-grid figcaption button:disabled{opacity:.35}
+.fw-process{position:absolute;right:8px;top:84px;bottom:56px;width:min(440px,calc(100% - 16px));overflow:auto;z-index:3}
+.fw-process-open{position:absolute;right:84px;top:14px;z-index:3;background:var(--pan);border:1px solid var(--line);border-radius:8px;padding:4px 10px}
 .fw-progwrap{position:absolute;right:8px;top:8px;width:min(320px,calc(100% - 16px));z-index:2}
 .fw-hud{position:absolute;left:50%;transform:translateX(-50%);top:8px;z-index:2;background:var(--pan);border:1px solid var(--line);border-radius:8px;padding:4px 10px;font:11px ui-monospace,monospace;display:flex;gap:10px;align-items:center;pointer-events:none}
 .fw-hud b{color:var(--c);letter-spacing:.12em}.fw-hud .hold{position:absolute;left:0;bottom:0;height:2px;background:var(--c)}
