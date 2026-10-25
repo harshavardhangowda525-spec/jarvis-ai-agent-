@@ -34,17 +34,50 @@ export const astonBuildTool: ToolDefinition<z.infer<typeof buildSchema>> = {
 
 const demoSchema = z.object({
   action: z.enum(["list", "details", "open", "walkthrough", "changes", "approve"]),
-  siteId: z.string().max(60).optional().describe("Omit for the most recent demo."),
+  siteId: z.string().max(60).optional().describe("The demo's id, when you have it."),
+  name: z.string().trim().max(120).optional().describe("The business / demo name the user mentioned (e.g. 'Bean Story'). Always pass it for changes and approve."),
   feedback: z.string().trim().max(1500).optional().describe("For changes: exactly what to change."),
   version: z.number().int().positive().optional(),
 });
 
-async function pickSite(userId: string, siteId?: string) {
-  const s = siteId
-    ? await getDb().astonSite.findFirst({ where: { id: siteId, userId } })
-    : await getDb().astonSite.findFirst({ where: { userId, currentVersion: { gt: 0 } }, orderBy: { updatedAt: "desc" } });
-  if (!s) throw new ToolError(siteId ? "No demo with that id." : "There are no finished demos yet.");
-  return s;
+const norm = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, " ").trim();
+
+/**
+ * Which demo the user means (pure — tested): the one whose name they said, or
+ * whose name appears in what they asked. Longest name wins ("Bean Story Café"
+ * over "Bean"). Null when nothing matches.
+ */
+export function matchSite<T extends { name: string }>(sites: T[], ...texts: (string | undefined)[]): T | null {
+  const hay = texts.filter(Boolean).map((t) => ` ${norm(t!)} `);
+  if (!hay.length) return null;
+  const hits = sites.filter((st) => {
+    const n = norm(st.name);
+    return n.length >= 3 && hay.some((h) => h.includes(` ${n} `) || (h.trim().length >= 3 && ` ${n} `.includes(h)));
+  });
+  return hits.sort((a, b) => norm(b.name).length - norm(a.name).length)[0] ?? null;
+}
+
+/**
+ * The demo to act on. A change or an approval never falls back to "the most
+ * recent one" when you have several — that's how a Bean Story change once
+ * landed on Iron Temple. It asks which one instead.
+ */
+async function pickSite(userId: string, o: { siteId?: string; name?: string; text?: string; strict: boolean }) {
+  const db = getDb();
+  if (o.siteId) {
+    const byId = await db.astonSite.findFirst({ where: { id: o.siteId, userId } });
+    if (byId) return byId;
+  }
+  const sites = await db.astonSite.findMany({ where: { userId, currentVersion: { gt: 0 } }, orderBy: { updatedAt: "desc" }, take: 50 });
+  if (!sites.length) throw new ToolError("There are no finished demos yet.");
+  const named = o.name || (o.siteId && !/^c[a-z0-9]{20,}$/.test(o.siteId) ? o.siteId : undefined); // a name passed as the id
+  const said = matchSite(sites, named) ?? (named ? null : matchSite(sites, o.text));
+  if (said) return said;
+  const list = sites.slice(0, 8).map((x) => x.name).join(", ");
+  if (named) throw new ToolError(`There's no demo called "${named}". Your demos: ${list}.`);
+  if (o.siteId) throw new ToolError(`No demo with that id. Your demos: ${list}.`);
+  if (!o.strict || sites.length === 1) return sites[0];
+  throw new ToolError(`Which demo should I change? Your demos: ${list}. Ask again with its name.`);
 }
 
 function demoTool(name: string, scope: "aston" | "jarvis"): ToolDefinition<z.infer<typeof demoSchema>> {
@@ -55,15 +88,15 @@ function demoTool(name: string, scope: "aston" | "jarvis"): ToolDefinition<z.inf
     description:
       "ASTON's website/app demos. list · details (versions, checks, placeholders) · open (show the preview — ONLY when the user asked to see it) · " +
       "walkthrough (open it with a guided walkthrough — only when asked) · changes (a revision → a new version; the old one stays) · approve (records approval of a version; never deploys). " +
-      "Omit siteId for the most recent demo.",
+      "Say which demo with `name` (the business name the user said) — for changes and approve this is required when there's more than one demo; never guess.",
     schema: demoSchema,
-    inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "details", "open", "walkthrough", "changes", "approve"] }, siteId: { type: "string" }, feedback: { type: "string" }, version: { type: "integer" } }, required: ["action"] },
+    inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "details", "open", "walkthrough", "changes", "approve"] }, siteId: { type: "string" }, name: { type: "string", description: "The business / demo name the user mentioned" }, feedback: { type: "string" }, version: { type: "integer" } }, required: ["action"] },
     async execute(input, ctx) {
       if (input.action === "list") {
         const sites = await listSites(ctx.userId, 10);
         return { data: { demos: sites }, summary: `${sites.length} demo${sites.length === 1 ? "" : "s"}` };
       }
-      const site = await pickSite(ctx.userId, input.siteId);
+      const site = await pickSite(ctx.userId, { siteId: input.siteId, name: input.name, text: input.feedback, strict: input.action === "changes" || input.action === "approve" });
       if (input.action === "changes") {
         if (!input.feedback) throw new ToolError("Say what to change.");
         const job = await requestChanges(ctx.userId, site.id, input.feedback).catch((e) => { throw new ToolError((e as Error).message); });

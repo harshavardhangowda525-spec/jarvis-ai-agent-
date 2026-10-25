@@ -3,6 +3,7 @@ import type { ToolDefinition } from "./types";
 import { ToolError } from "./types";
 import { getDb } from "@/lib/db";
 import { requestFriday, listProjects } from "@/lib/friday/service";
+import { matchSite } from "./aston";
 import { projectView } from "@/lib/friday/projects";
 import { findBlender, installHint } from "@/lib/friday/blender";
 import { VIEW_IDS, VIEWS, type ViewId } from "@/lib/friday/plan";
@@ -28,7 +29,8 @@ const schema = z.object({
   request: z.string().trim().max(3000).optional().describe("create: the invention/product to model, with every detail and dimension the user gave."),
   change: z.string().trim().max(1500).optional().describe("change: exactly what to change (makes a new version; the old one stays)."),
   name: z.string().trim().max(80).optional().describe("create: the project name (e.g. 'EDITH Smart Glasses'). save_as: the version label."),
-  projectId: z.string().max(60).optional().describe("Omit for the most recent project."),
+  projectId: z.string().max(60).optional(),
+  project: z.string().trim().max(120).optional().describe("The project name the user mentioned (e.g. 'EDITH Smart Glasses'). Pass it whenever they name one."),
   version: z.coerce.number().int().positive().optional(),
   other: z.coerce.number().int().positive().optional().describe("compare: the second version."),
   views: views.describe("render: which views to re-render (front, rear, left, right, top, bottom, front_34, rear_34, detail, exploded). Omit for all ten."),
@@ -36,10 +38,18 @@ const schema = z.object({
 });
 type Input = z.infer<typeof schema>;
 
-async function pickProject(userId: string, id?: string) {
-  const p = id ? await getDb().fridayProject.findFirst({ where: { id, userId } }) : await getDb().fridayProject.findFirst({ where: { userId }, orderBy: { updatedAt: "desc" } });
-  if (!p) throw new ToolError(id ? "No Friday project with that id." : "There are no Friday projects yet.");
-  return p;
+/** The project the user named (or whose name is in the request); the most recent only when there's no name and just one fits. */
+async function pickProject(userId: string, o: { id?: string; name?: string; text?: string; strict?: boolean }) {
+  if (o.id) { const p = await getDb().fridayProject.findFirst({ where: { id: o.id, userId } }); if (p) return p; }
+  const all = await getDb().fridayProject.findMany({ where: { userId }, orderBy: { updatedAt: "desc" }, take: 50 });
+  if (!all.length) throw new ToolError("There are no Friday projects yet.");
+  const named = o.name || (o.id && !/^c[a-z0-9]{20,}$/.test(o.id) ? o.id : undefined);
+  const hit = matchSite(all, named) ?? (named ? null : matchSite(all, o.text));
+  if (hit) return hit;
+  const list = all.slice(0, 8).map((p) => p.name).join(", ");
+  if (named) throw new ToolError(`There's no project called "${named}". Your projects: ${list}.`);
+  if (!o.strict || all.length === 1) return all[0];
+  throw new ToolError(`Which project? Your projects: ${list}. Ask again with its name.`);
 }
 const jobData = (job: { id: string; agent: string; title: string; status: string }, note: string) => ({ job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, note });
 
@@ -58,7 +68,7 @@ export function fridayTool(name: string, scope: "friday" | "jarvis"): ToolDefini
       type: "object",
       properties: {
         action: { type: "string", enum: ["create", "change", "render", "export", "list", "status", "open", "save_as", "compare"] },
-        request: { type: "string" }, change: { type: "string" }, name: { type: "string" }, projectId: { type: "string" },
+        request: { type: "string" }, change: { type: "string" }, name: { type: "string" }, projectId: { type: "string" }, project: { type: "string", description: "The project name the user mentioned" },
         version: { type: "integer" }, other: { type: "integer" },
         views: { type: "array", items: { type: "string", enum: [...VIEW_IDS] } },
         formats: { type: "array", items: { type: "string", enum: ["stl", "gltf"] } },
@@ -74,7 +84,7 @@ export function fridayTool(name: string, scope: "friday" | "jarvis"): ToolDefini
         const job = await start({ action: "create", request: input.request, name: input.name });
         return { data: jobData(job, "Friday is modelling it in Blender (plan → geometry → ten renders → GLB). Report only when the task finishes."), summary: `Modelling started: ${job.title}` };
       }
-      const project = await pickProject(ctx.userId, input.projectId);
+      const project = await pickProject(ctx.userId, { id: input.projectId, name: input.project, text: input.change, strict: input.action === "change" || input.action === "export" });
       if (input.action === "change") {
         if (!input.change) throw new ToolError("Say what to change.");
         const job = await start({ action: "edit", projectId: project.id, version: input.version, change: input.change });
