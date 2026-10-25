@@ -3,6 +3,8 @@ import type { ToolDefinition } from "./types";
 import { ToolError } from "./types";
 import { getDb } from "@/lib/db";
 import { approveVersion, listSites, requestBuild, requestChanges, siteDetail } from "@/lib/aston/service";
+import { listStudioProjects, requestStudio, requestStudioAction, studioDetail } from "@/lib/aston/studio/service";
+import { deployProject, prepareDeploy } from "@/lib/aston/studio/deploy";
 import { ensurePlan, listPlans, planView, tpPath } from "@/lib/plans/engine";
 import { PLAN_TZ, planSections } from "@/lib/plans/schema";
 import { todayIn } from "@/lib/activity/dates";
@@ -23,10 +25,15 @@ export const astonBuildTool: ToolDefinition<z.infer<typeof buildSchema>> = {
   name: "aston_build",
   agentScope: "aston",
   activityLabel: "Starting the build",
-  description: "Start building a website or app demo (a tracked build: content → page → checks → private preview link). Include every detail the user gave in `request`.",
+  description: "Start building a website (ASTON's studio: plan → design system → real multi-page code → run → browser tests → fixes → preview; the studio opens so the user watches the code and preview) or an app demo (kind app). Include every detail the user gave in `request`.",
   schema: buildSchema,
   inputSchema: { type: "object", properties: { request: { type: "string" }, kind: { type: "string", enum: ["website", "app"] }, leadId: { type: "string" }, business: { type: "string" } }, required: ["request"] },
   async execute(input, ctx) {
+    if (input.kind !== "app") {
+      // websites: the studio plans, writes the real code, runs it and tests it — opened so the user watches
+      const { project, job } = await requestStudio(ctx.userId, { request: input.request, ...(input.business ? { client: input.business } : {}) }).catch((e) => { throw new ToolError((e as Error).message); });
+      return { data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, navigate: `/dashboard/aston/studio?project=${project.id}`, note: "The website build started in ASTON's studio (code and preview side by side). Don't claim it's done — the result is reported when it's built and tested." }, summary: `Website build started: ${project.name}` };
+    }
     const job = await requestBuild(ctx.userId, input).catch((e) => { throw new ToolError((e as Error).message); });
     return { data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, note: "Build started. Don't claim it's done — the result is reported when it finishes." }, summary: `Build started: ${job.title}` };
   },
@@ -150,3 +157,69 @@ function planTool(name: string, scope: "aston" | "jarvis"): ToolDefinition<z.inf
 }
 export const astonPlanTool = planTool("marketing_plan", "aston");
 export const jarvisPlanTool = planTool("daily_plan", "jarvis");
+
+const projectSchema = z.object({
+  action: z.enum(["list", "open", "status", "change", "test", "fix", "prepare_deploy", "deploy", "submissions"]),
+  name: z.string().trim().max(120).optional().describe("The website/business name the user mentioned. Omit for their latest website."),
+  change: z.string().trim().max(3000).optional().describe("change: exactly what to change (e.g. 'make the typography more editorial', 'create a separate story page', 'fix all mobile layout issues')."),
+  confirm: z.boolean().optional().describe("deploy: true ONLY when the user explicitly asked to deploy/publish this website now."),
+});
+
+async function pickProject(userId: string, name?: string) {
+  const all = await getDb().astonProject.findMany({ where: { userId }, orderBy: { updatedAt: "desc" }, take: 50 });
+  if (!all.length) throw new ToolError("There are no website projects yet — ask ASTON to build one.");
+  if (!name) return all[0];
+  const hit = matchSite(all, name);
+  if (!hit) throw new ToolError(`There's no website called "${name}". Your websites: ${all.slice(0, 8).map((p) => p.name).join(", ")}.`);
+  return hit;
+}
+
+function projectTool(name: string, scope: "aston" | "jarvis"): ToolDefinition<z.infer<typeof projectSchema>> {
+  return {
+    name,
+    agentScope: scope,
+    activityLabel: "Checking ASTON's website projects",
+    description:
+      "ASTON's website projects (real coded sites built in ASTON's studio). list · open (show it in the studio: code + live preview — for 'open my latest website' / 'continue the last website project') · status (state, tests, tasks, what's left) · " +
+      "change (any edit: 'change the hero', 'make it more cinematic', 'create a separate story page', 'improve the animations' → a new tested version; the old one stays) · test (run the browser tests again) · fix (fix what the tests found, e.g. 'fix all mobile layout issues') · " +
+      "prepare_deploy (production checks + a zip, deploys nothing) · deploy (publish — ONLY when the user explicitly asked; set confirm true) · submissions (what visitors sent through the forms). Omit name for the latest website.",
+    schema: projectSchema,
+    inputSchema: { type: "object", properties: { action: { type: "string", enum: ["list", "open", "status", "change", "test", "fix", "prepare_deploy", "deploy", "submissions"] }, name: { type: "string" }, change: { type: "string" }, confirm: { type: "boolean" } }, required: ["action"] },
+    async execute(input, ctx) {
+      if (input.action === "list") {
+        const ps = await listStudioProjects(ctx.userId, 12);
+        return { data: { websites: ps.map((p) => ({ name: p.name, state: p.stateLabel, version: p.version, tests: p.tests, updated: p.updatedAt })) }, summary: `${ps.length} website project(s)` };
+      }
+      const p = await pickProject(ctx.userId, input.name);
+      const studio = `/dashboard/aston/studio?project=${p.id}`;
+      const err = (e: unknown) => { throw new ToolError((e as Error).message); };
+      if (input.action === "open") return { data: { navigate: studio, opened: p.name, state: p.state }, summary: `Opening ${p.name} in ASTON's studio` };
+      if (input.action === "change" || input.action === "fix") {
+        const text = input.change ?? (input.action === "fix" ? "Fix every issue the browser tests found" : "");
+        const { job } = await requestStudioAction(ctx.userId, p.id, input.action === "fix" && !input.change ? "fix" : "change", text || undefined).catch(err);
+        return { data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, navigate: studio, note: `ASTON is making version ${p.currentVersion + 1} of ${p.name}; version ${p.currentVersion} stays. The studio is open so the user can watch.` }, summary: `${input.action === "fix" ? "Fixing" : "Changing"} ${p.name}` };
+      }
+      if (input.action === "test") {
+        const { job } = await requestStudioAction(ctx.userId, p.id, "test").catch(err);
+        return { data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, navigate: studio }, summary: `Re-testing ${p.name}` };
+      }
+      if (input.action === "prepare_deploy") {
+        const c = await prepareDeploy(ctx.userId, p.id).catch(err);
+        return { data: { ready: c.ready, checks: c.checks.map((x) => `${x.ok ? "✓" : "✗"} ${x.text}`), package: c.zipUrl, provider: c.provider, note: "Nothing was deployed." }, summary: c.ready ? `${p.name} is ready to deploy` : `${p.name}: ${c.checks.filter((x) => !x.ok).length} thing(s) to sort out before deploying` };
+      }
+      if (input.action === "deploy") {
+        if (!input.confirm) throw new ToolError("Deploying publishes the website — only do it when the user explicitly asks to deploy (then pass confirm: true).");
+        const d = await deployProject(ctx.userId, p.id).catch(err);
+        return { data: { deployed: d }, summary: `Deployed ${p.name}: ${d.url}` };
+      }
+      const d = (await studioDetail(ctx.userId, p.id))!;
+      if (input.action === "submissions") return { data: { submissions: d.submissions.slice(0, 20) }, summary: `${d.submissions.length} submission(s) for ${p.name}` };
+      return {
+        data: { name: d.name, state: d.stateLabel, note: d.stateNote, version: d.currentVersion, preview: d.preview, folder: d.dir, stack: d.stack, tests: d.tests, tasks: d.tasks, envVars: d.envVars.map((e) => e.name), deploy: d.deploy ?? "not deployed", pages: d.spec?.pages.map((x) => x.file) },
+        summary: `${d.name}: ${d.stateLabel}`,
+      };
+    },
+  };
+}
+export const astonProjectTool = projectTool("website_projects", "aston");
+export const jarvisProjectTool = projectTool("website_project", "jarvis");

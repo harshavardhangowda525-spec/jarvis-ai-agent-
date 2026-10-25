@@ -1840,6 +1840,85 @@ Optional settings:
 | `FRIDAY_GPU` | GPU auto-detected | `0` = CPU only |
 | `FRIDAY_VOICE_ID` | | Friday's voice |
 
+## ASTON's website studio — real websites, written live, tested in a browser
+
+Say *"JARVIS, build a premium gym website with membership plans and a working
+enquiry form"*, or type it into ASTON's chat or **Systems → ASTON demos →
+Website studio** (`/dashboard/aston/studio`). JARVIS opens the studio
+straight away. The code appears on the left **as it's written**, with the live
+website on the right. Use the Desktop, Tablet and Mobile buttons to see the
+site at its real width.
+
+The stages, as the studio shows them:
+
+1. **Understanding / planning.** ASTON reads the brief and plans:
+   - the sitemap and each page's sections;
+   - a full design system (colours, fonts, type scale, spacing, grid,
+     breakpoints, motion, image treatment, form states);
+   - forms, features, artwork and acceptance criteria.
+
+   Facts (phone, prices, names) come only from your brief. Anything missing
+   becomes a visible placeholder.
+2. **Designing.** It writes `css/styles.css`, `js/main.js` and the SVG
+   artwork. The artwork is placeholder art until you supply real images.
+3. **Coding.** It writes each page as real HTML, two at a time.
+4. **Running.** The site is served at its preview address, `/s/<link>/`, in a
+   sandbox. Its scripts can't reach JARVIS or your session.
+5. **Testing.** Microsoft Edge or Chrome, already on your PC, opens the site
+   at desktop, tablet and mobile sizes and checks:
+   - every page loads, with no JavaScript errors or failed requests;
+   - images and fonts load;
+   - no sideways scrolling at any size;
+   - links and in-page anchors lead somewhere, the navigation works, and every
+     button does something;
+   - the mobile menu opens and closes with Escape;
+   - keyboard focus is visible;
+   - content stays visible with reduced motion;
+   - forms: an empty submit is blocked, a valid one is saved to the database,
+     and a booked slot can't be booked twice;
+   - it takes screenshots.
+6. **Refining.** Failures go back to the brain with the exact evidence, and
+   the site is tested again (two rounds at most).
+7. **Ready for review.** The summary shows what passed, and anything still
+   failing is listed, never hidden.
+
+**Design directions.** There are 13: editorial luxury, premium personal brand,
+modern SaaS, corporate, e-commerce, restaurant & hospitality, clinic &
+healthcare, fitness, real estate, creative agency, education, dark cinematic
+and minimalist product showcase. The brief decides which one; editorial
+luxury is not the default.
+
+**Forms work.** Every `<form data-aston-form>` sends to JARVIS's handler
+(`/api/aston/forms/<link>`), which checks every field again on the server and
+saves the submission. Submissions show under **Forms** in the studio, and
+bookings can't double-book a slot. The browser tests' own submissions are
+marked as tests and deleted afterwards. Payments, logins and similar are
+listed as integrations still to configure, by setting name only; they are
+never faked.
+
+**Changes keep history.** *"Make the typography more editorial"*, *"create a
+separate story page"* or *"fix all mobile layout issues"* (by voice, in the
+studio's change box, or to JARVIS) makes a new version folder copied from the
+last one. Earlier versions are never overwritten.
+
+```
+AstonProjects/<project>/project_metadata.json   (state, preview, tests, tasks, deployment, env var NAMES only)
+AstonProjects/<project>/versions/v001/site/…    (the website)
+AstonProjects/<project>/versions/v001/tests/…   (report.json + screenshots)
+```
+
+**Deploying.**
+- **Prepare deploy** runs the production checks (tests, secrets left in the
+  files, form endpoint, integrations) and makes a zip.
+- **Deploy** publishes to Vercel only when you confirm, and only when
+  `VERCEL_TOKEN` (optionally `VERCEL_TEAM_ID`) is set. The URL shown is the
+  one Vercel returned.
+- A deployed site's forms send to JARVIS at `APP_URL` (or `ASTON_FORMS_URL`).
+  This must be a public https address, such as your JARVIS on Vercel.
+
+Settings: `ASTON_PROJECTS_DIR` (where projects are saved), `ASTON_BROWSER`
+(a Chromium-based browser's path, if Edge or Chrome isn't found).
+
 ## Daily marketing plan & ASTON's teleprompter
 
 Every morning a cloud schedule (Vercel Cron, hourly 04:30–10:30 India time —

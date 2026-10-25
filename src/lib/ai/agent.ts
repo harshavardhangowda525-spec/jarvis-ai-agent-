@@ -49,6 +49,8 @@ export type AgentEvent =
   | { type: "provider"; name: string }
   /** Something an agent built (ASTON: a site version with a checked preview). */
   | { type: "artifact"; kind: "aston"; siteId: string; version: number; url: string; title: string; mode?: "open" | "walk" }
+  /** ASTON's studio: a built, browser-tested website version (opens in the studio). */
+  | { type: "artifact"; kind: "studio"; projectId: string; version: number; url: string; title: string }
   /** FRIDAY: a verified model version (opens in Friday's workspace). */
   | { type: "artifact"; kind: "friday"; projectId: string; version: number; url: string; title: string }
   /** A task JARVIS delegated to an agent (delegate_task) — tracked until it finishes. */

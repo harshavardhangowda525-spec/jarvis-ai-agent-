@@ -50,6 +50,7 @@ model User {
   crmBackups          CrmBackup[]
   agentJobs           AgentJob[]
   astonSites          AstonSite[]
+  astonProjects       AstonProject[]
   marketingPlans      MarketingPlan[]
   planSettings        MarketingPlanSettings?
   fridayProjects      FridayProject[]
@@ -1372,4 +1373,79 @@ model FridayVersion {
   project FridayProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, n])
+}
+
+/// ASTON's website projects: real multi-page sites written as code, run,
+/// tested in a browser and fixed — one folder per version on the PC.
+model AstonProject {
+  id             String    @id @default(cuid())
+  userId         String
+  name           String
+  client         String?
+  slug           String
+  /// Folder on the PC: AstonProjects/<slug>
+  dir            String
+  stack          String    @default("static")
+  style          String?
+  /// understanding | planning | designing | coding | running | testing | refining | review | deployed | failed
+  state          String    @default("understanding")
+  stateNote      String?
+  /// Unguessable preview link /s/<token>/
+  previewToken   String    @unique
+  /// Marks the browser tests' own form submissions (never counted as real)
+  testKey        String
+  brief          String    @db.Text
+  spec           Json?
+  envVars        Json      @default("[]")
+  tasks          Json      @default("[]")
+  tests          Json?
+  deploy         Json?
+  currentVersion Int       @default(0)
+  lastBuildAt    DateTime?
+  jobId          String?
+  error          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions    AstonProjectVersion[]
+  submissions AstonSubmission[]
+
+  @@unique([userId, slug])
+  @@index([userId, updatedAt])
+}
+
+model AstonProjectVersion {
+  id        String   @id @default(cuid())
+  projectId String
+  n         Int
+  /// building | ready | failed
+  status    String   @default("building")
+  change    String?  @db.Text
+  files     Json     @default("[]")
+  tests     Json?
+  error     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  project AstonProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, n])
+}
+
+/// What visitors sent through a generated site's forms (enquiries, bookings…).
+model AstonSubmission {
+  id        String   @id @default(cuid())
+  projectId String
+  form      String
+  data      Json
+  /// a booked slot ("2026-11-02 10:30") — one booking per slot
+  slot      String?
+  test      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  project AstonProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, form, slot])
+  @@index([projectId, createdAt])
 }

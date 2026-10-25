@@ -97,6 +97,17 @@ describe("Claude bridge server (with a stand-in claude command)", () => {
     expect(last.args[last.args.indexOf("--tools") + 1]).toBe("");
   });
 
+  it("streams a plain answer piece by piece as Claude writes it (ASTON's live code)", async () => {
+    const ai = new OpenAI({ apiKey: key, baseURL: `http://127.0.0.1:${port}/v1` });
+    const stream = await ai.chat.completions.create({ model: "sonnet", stream: true, messages: [{ role: "system", content: "You write websites." }, { role: "user", content: "WRITE CODE for a page" }] });
+    const pieces: string[] = [];
+    for await (const c of stream) { const t = c.choices[0]?.delta?.content; if (t) pieces.push(t); }
+    expect(pieces.length).toBeGreaterThan(3); // really arrived in pieces, not one block
+    expect(pieces.join("")).toBe("<!doctype html>\n<h1>Hello</h1>\n");
+    const last = fs.readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1);
+    expect(last.args).toEqual(expect.arrayContaining(["stream-json", "--include-partial-messages"]));
+  });
+
   it("reports a plan limit as 429 so JARVIS moves to the next brain", async () => {
     const r = await fetch(`http://127.0.0.1:${port}/v1/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ messages: [{ role: "user", content: "LIMIT" }] }) });
     expect(r.status).toBe(429);

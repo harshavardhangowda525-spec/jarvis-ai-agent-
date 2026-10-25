@@ -117,6 +117,20 @@ export function parseResult(stdout, toolNames) {
   return { text: String(ans.reply ?? ""), toolCalls };
 }
 
+/**
+ * One line of `--output-format stream-json`: a piece of text as it's written,
+ * the final result line, or nothing of interest.
+ */
+export function streamLine(line) {
+  let o;
+  try { o = JSON.parse(line); } catch { return {}; }
+  if (o?.type === "stream_event" && o.event?.type === "content_block_delta" && o.event.delta?.type === "text_delta") return { delta: String(o.event.delta.text ?? "") };
+  // Claude reasoning before it writes: no text yet, but it's working (shown as "thinking")
+  if (o?.type === "stream_event" && o.event?.type === "content_block_delta" && o.event.delta?.type === "thinking_delta") return { thinking: true };
+  if (o?.type === "result") return { result: line };
+  return {};
+}
+
 /** { text, toolCalls } → an OpenAI chat.completion. */
 export function toCompletion(model, r) {
   return {
@@ -146,9 +160,10 @@ export function toChunks(model, r) {
  * The `claude` command-line arguments. The prompt goes on stdin and the system
  * prompt in a file (JARVIS's tool list is too long for a Windows command line).
  */
-export function claudeArgs({ model, systemFile, schema }) {
+export function claudeArgs({ model, systemFile, schema, stream = false }) {
   return [
-    "-p", "--output-format", "json",
+    // stream: text arrives as Claude writes it (ASTON shows code being written live)
+    "-p", ...(stream ? ["--output-format", "stream-json", "--verbose", "--include-partial-messages"] : ["--output-format", "json"]),
     "--tools", "",                 // none of Claude's own tools — JARVIS runs the tools
     "--strict-mcp-config",         // and none of your MCP servers
     "--setting-sources", "",       // ignore project/user settings, hooks and CLAUDE.md

@@ -25,7 +25,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadEnv } from "./src/loadenv.mjs";
 import { startTunnel, waitReachable, stopTunnel } from "./src/tunnel.mjs";
-import { BridgeError, buildRequest, claudeArgs, parseResult, shimTarget, toChunks, toCompletion, triedDirectToolCall } from "./src/claude-protocol.mjs";
+import { BridgeError, buildRequest, claudeArgs, parseResult, shimTarget, streamLine, toChunks, toCompletion, triedDirectToolCall } from "./src/claude-protocol.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 loadEnv(path.resolve(__dirname, ".env"));
@@ -38,6 +38,7 @@ const FIXED_URL = read("CLAUDE_BRIDGE_PUBLIC_URL").replace(/\/+$/, "");
 const LOCAL_ONLY = read("CLAUDE_BRIDGE_LOCAL_ONLY") === "1";
 const MAX_PARALLEL = Math.max(1, Number(read("CLAUDE_MAX_PARALLEL")) || 2);
 const TIMEOUT_MS = Math.max(30_000, Number(read("CLAUDE_TIMEOUT_MS")) || 290_000);
+const STREAM_MAX_MS = Math.max(TIMEOUT_MS, Number(read("CLAUDE_STREAM_MAX_MS")) || 20 * 60_000);
 const KEY_FILE = path.resolve(__dirname, ".claude-bridge-key");
 // CLAUDE_BRIDGE_DEBUG_DIR=folder → save each request and Claude's raw answer there (troubleshooting only)
 const DEBUG_DIR = read("CLAUDE_BRIDGE_DEBUG_DIR");
@@ -121,18 +122,43 @@ export function resolveClaude() {
 }
 const CLAUDE = resolveClaude();
 
-function runClaude(args, input, signal) {
+function runClaude(args, input, signal, onDelta, onThinking) {
   return new Promise((resolve, reject) => {
     const child = spawn(CLAUDE.cmd, [...CLAUDE.pre, ...args], { cwd: WORKDIR, windowsHide: true, env: { ...process.env, CLAUDE_CODE_ENTRYPOINT: "jarvis-bridge" } });
     let out = "", err = "";
-    const timer = setTimeout(() => { child.kill(); reject(new BridgeError(504, `Claude took longer than ${Math.round(TIMEOUT_MS / 1000)}s.`)); }, TIMEOUT_MS);
+    // A streamed answer that keeps writing (a whole website file) may run long: there the limit is
+    // TIMEOUT_MS without any new output, up to STREAM_MAX_MS in total. Otherwise TIMEOUT_MS in total.
+    const started = Date.now();
+    let timer;
+    const arm = () => {
+      clearTimeout(timer);
+      const left = onDelta ? Math.min(TIMEOUT_MS, STREAM_MAX_MS - (Date.now() - started)) : TIMEOUT_MS;
+      timer = setTimeout(() => { child.kill(); reject(new BridgeError(504, onDelta && Date.now() - started >= STREAM_MAX_MS ? `Claude was still writing after ${Math.round(STREAM_MAX_MS / 60000)} minutes and was stopped.` : `Claude ${onDelta ? "went quiet for" : "took longer than"} ${Math.round(TIMEOUT_MS / 1000)}s.`)); }, Math.max(1000, left));
+    };
+    arm();
     const abort = () => child.kill();
     signal?.addEventListener("abort", abort);
-    child.stdout.on("data", (b) => { out += b; });
+    let buf = "", resultLine = "";
+    child.stdout.on("data", (b) => {
+      if (!onDelta) { out += b; return; }
+      arm(); // still writing — keep going
+      // streaming: pass each piece of text on as it's written; keep the final result line
+      buf += b;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        const r = streamLine(line);
+        if (r.delta) onDelta(r.delta);
+        else if (r.thinking) onThinking?.();
+        else if (r.result) resultLine = r.result;
+      }
+      out = resultLine;
+    });
     child.stderr.on("data", (b) => { err += b; });
     child.on("error", (e) => { clearTimeout(timer); reject(new BridgeError(500, `Couldn't start Claude: ${e.message}`)); });
     child.on("close", (code) => {
       clearTimeout(timer); signal?.removeEventListener("abort", abort);
+      if (onDelta && buf.trim()) { const r = streamLine(buf); if (r.result) out = r.result; }
       if (out.trim()) resolve(out);
       else reject(new BridgeError(502, `Claude exited (${code})${err.trim() ? `: ${err.trim().slice(0, 300)}` : ""}`));
     });
@@ -147,13 +173,14 @@ const slot = () => new Promise((r) => { if (running < MAX_PARALLEL) { running++;
 const release = () => { const next = queue.shift(); if (next) next(); else running--; };
 
 /** One JARVIS turn → one `claude -p` run → { text, toolCalls }. */
-async function think(body, signal) {
+async function think(body, signal, onDelta, onThinking) {
   const { system, prompt, schema, toolNames } = buildRequest(body);
+  const live = !!onDelta && !toolNames.length; // tool turns need the whole structured answer first
   const sysFile = path.join(WORKDIR, `system-${crypto.randomBytes(6).toString("hex")}.txt`);
   fs.writeFileSync(sysFile, system || "You are a helpful assistant.");
   await slot();
   try {
-    const stdout = await runClaude(claudeArgs({ model: MODEL, systemFile: sysFile, schema }), prompt, signal);
+    const stdout = await runClaude(claudeArgs({ model: MODEL, systemFile: sysFile, schema, stream: live }), prompt, signal, live ? onDelta : undefined, live ? onThinking : undefined);
     if (DEBUG_DIR) fs.writeFileSync(path.join(DEBUG_DIR, `${Date.now()}.json`), JSON.stringify({ system, prompt, schema, stdout }, null, 1));
     const r = parseResult(stdout, toolNames);
     if (!toolNames.length || !triedDirectToolCall(r)) return r;
@@ -200,9 +227,30 @@ export const server = http.createServer(async (req, res) => {
     res.write(": thinking\n\n");
     ping = setInterval(() => res.write(": still thinking\n\n"), 5000);
   }
+  // a plain (no tools) streamed answer goes out piece by piece as Claude writes it
+  let sent = false;
+  const base = { id: `claude-${Date.now()}`, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: MODEL };
+  const onDelta = body.stream && !(body.tools ?? []).length ? (text) => {
+    if (!sent) { if (ping) clearInterval(ping); res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] })}\n\n`); sent = true; }
+    res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\n`);
+  } : undefined;
+  // while Claude reasons (no text yet) say so every few seconds — OpenAI-style reasoning_content
+  let lastThought = 0;
+  const onThinking = onDelta ? () => {
+    if (Date.now() - lastThought < 3000) return;
+    lastThought = Date.now();
+    if (!sent) { if (ping) clearInterval(ping); res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] })}\n\n`); sent = true; }
+    res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { reasoning_content: "…" }, finish_reason: null }] })}\n\n`);
+  } : undefined;
   try {
-    const r = await think(body, ac.signal);
+    const r = await think(body, ac.signal, onDelta, onThinking);
     if (ping) clearInterval(ping);
+    if (sent) {
+      say(`  ${stamp()}  ✓ answered in ${((Date.now() - t0) / 1000).toFixed(1)}s (streamed)`);
+      res.write(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
     say(`  ${stamp()}  ✓ answered in ${((Date.now() - t0) / 1000).toFixed(1)}s${r.toolCalls.length ? ` — calls ${r.toolCalls.map((c) => c.name).join(", ")}` : ""}`);
     if (body.stream) {
       for (const c of toChunks(MODEL, r)) res.write(`data: ${JSON.stringify(c)}\n\n`);

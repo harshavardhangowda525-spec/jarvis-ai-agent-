@@ -3,6 +3,7 @@ import type { AgentJob, Prisma } from "@prisma/client";
 import { getDb } from "@/lib/db";
 import { runAgent, type AgentEvent, type AgentInput } from "@/lib/ai/agent";
 import { astonRunner, type AstonPayload } from "@/lib/aston/build";
+import { studioRunner, type StudioPayload } from "@/lib/aston/studio/build";
 import { fridayRunner, type FridayPayload } from "@/lib/friday/runner";
 import { ACTIVE, FINISHED, JOB_AGENT_NAME, briefPrompt, briefSchema, judgeOutcome, type Brief, type JobAgent, type JobStatus } from "./brief";
 
@@ -32,7 +33,7 @@ const db = () => getDb();
 const step = (text: string, kind: Step["kind"] = "info"): Step => ({ at: new Date().toISOString(), text: text.slice(0, 300), kind });
 const pushSteps = (j: Pick<AgentJob, "progress">, ...s: Step[]) => [...((Array.isArray(j.progress) ? j.progress : []) as Step[]), ...s].slice(-60) as unknown as Prisma.InputJsonValue;
 
-export async function createJob(userId: string, p: { agent: JobAgent; title: string; request: string; brief: Brief; dependsOn?: string[]; payload?: AstonPayload | FridayPayload }) {
+export async function createJob(userId: string, p: { agent: JobAgent; title: string; request: string; brief: Brief; dependsOn?: string[]; payload?: AstonPayload | FridayPayload | StudioPayload }) {
   const brief = briefSchema.parse(p.brief);
   const deps = p.dependsOn?.length ? await db().agentJob.findMany({ where: { userId, id: { in: p.dependsOn } }, select: { id: true } }) : [];
   if (p.dependsOn?.length && deps.length !== p.dependsOn.length) throw new Error("A task it depends on doesn't exist.");
@@ -133,7 +134,7 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date;
   }, Math.max(200, Math.floor(LEASE / 3)));
 
   try {
-    const runner: Runner = o.runner ?? (job.agent === "aston" ? astonRunner(job) : job.agent === "friday" ? fridayRunner(job) : runAgent);
+    const runner: Runner = o.runner ?? (job.agent === "aston" ? ((job.payload as { mode?: string } | null)?.mode === "studio" ? studioRunner(job) : astonRunner(job)) : job.agent === "friday" ? fridayRunner(job) : runAgent);
     const run = runner({
       userId: job.userId, timezone: profile?.timezone ?? "UTC", assistantName: profile?.assistantName ?? "JARVIS",
       displayName: profile?.displayName ?? null, history: [], message: prompt,
@@ -229,8 +230,8 @@ export async function resumeJob(userId: string, id: string, note: string) {
 export const jobView = (j: AgentJob) => ({
   id: j.id, agent: j.agent, agentName: JOB_AGENT_NAME[j.agent as JobAgent] ?? j.agent, title: j.title, status: j.status as JobStatus,
   request: j.request, brief: j.brief as unknown as Brief, dependsOn: j.dependsOn, progress: j.progress as unknown as Step[],
-  result: j.result, resultData: j.resultData as { tools?: { name: string; status: string; summary: string }[]; links?: { url: string; label: string }[]; artifacts?: ({ kind: "aston"; siteId: string; version: number; url: string; title: string } | { kind: "friday"; projectId: string; version: number; url: string; title: string })[] } | null,
-  payload: (j.payload ?? null) as (AstonPayload & Partial<FridayPayload>) | null,
+  result: j.result, resultData: j.resultData as { tools?: { name: string; status: string; summary: string }[]; links?: { url: string; label: string }[]; artifacts?: ({ kind: "aston"; siteId: string; version: number; url: string; title: string } | { kind: "friday" | "studio"; projectId: string; version: number; url: string; title: string })[] } | null,
+  payload: (j.payload ?? null) as (AstonPayload & Partial<FridayPayload> & Partial<Omit<StudioPayload, "action">>) | null,
   error: j.error, attempts: j.attempts, cancelRequested: j.cancelRequested, conversationId: j.conversationId,
   createdAt: j.createdAt.toISOString(), startedAt: j.startedAt?.toISOString() ?? null, finishedAt: j.finishedAt?.toISOString() ?? null,
   updatedAt: j.updatedAt.toISOString(), announced: !!j.announcedAt,

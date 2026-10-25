@@ -63,7 +63,7 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
       const art = j.resultData?.artifacts?.[0];
       setMsgs((all) => [...all, {
         id: uid(), role: "assistant", status: "done", content: announcement(j),
-        links: [...(art?.kind === "aston" ? [{ url: `/dashboard/aston?site=${art.siteId}`, label: "Open the preview" }, { url: `/dashboard/aston?site=${art.siteId}&walk=1`, label: "Walk me through it" }] : art?.kind === "friday" ? [{ url: art.url, label: "Open in Friday" }] : []), { url: `/dashboard/jobs?task=${j.id}`, label: "Task details" }],
+        links: [...(art?.kind === "aston" ? [{ url: `/dashboard/aston?site=${art.siteId}`, label: "Open the preview" }, { url: `/dashboard/aston?site=${art.siteId}&walk=1`, label: "Walk me through it" }] : art?.kind === "friday" ? [{ url: art.url, label: "Open in Friday" }] : art?.kind === "studio" ? [{ url: art.url, label: "Open in ASTON's studio" }] : []), { url: `/dashboard/jobs?task=${j.id}`, label: "Task details" }],
       }]);
     }
   }, [agent.id, jobs.jobs]);

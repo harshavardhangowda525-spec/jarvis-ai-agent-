@@ -668,6 +668,19 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       const say = (m: string) => { agent.appendLocalExchange(t, m); sayRef.current(m); };
       const startBuild = (kind: "website" | "app", request: string) => {
         astonAsk.current = null;
+        if (kind === "website") {
+          // websites: ASTON's studio writes the real code — open it so you watch the code and the preview side by side
+          say("Understood. ASTON is planning the website now — I'm opening the studio so you can watch the code being written next to the live preview.");
+          void fetch("/api/aston/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request: request.slice(0, 4000) }) })
+            .then(async (r) => {
+              const j = await r.json().catch(() => null);
+              if (!r.ok || !j?.ok) { const m = `ASTON couldn't start: ${j?.error ?? `HTTP ${r.status}`}`; agent.appendLocalExchange("", m, undefined, { note: true }); sayRef.current(m); return; }
+              void jobsRef.current.refresh();
+              router.push(j.data.studio);
+            })
+            .catch(() => { agent.appendLocalExchange("", "I couldn't reach ASTON — check that JARVIS is running.", undefined, { note: true }); });
+          return;
+        }
         say(`On it — ASTON is building the ${kind} now. I'll tell you when the preview is ready.`);
         void fetch("/api/aston/sites", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request: request.slice(0, 2000), kind }) })
           .then(async (r) => {

@@ -78,5 +78,6 @@ export const isFresh = (g: GateClaims | null, nowSec = Math.floor(Date.now() / 1
 
 /** API paths that work while JARVIS is locked (signing in, unlocking, health checks, secret-protected crons). */
 export function apiOpenWhileLocked(pathname: string): boolean {
-  return /^\/api\/(auth|gate|health|version|cron)(\/|$)/.test(pathname);
+  // aston/forms: the visitors of the websites ASTON builds
+  return /^\/api\/(auth|gate|health|version|cron|aston\/forms)(\/|$)/.test(pathname);
 }

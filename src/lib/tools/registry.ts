@@ -4,7 +4,7 @@
  * lets the model decide what to call. No command matching lives in the agent.
  */
 import { delegateTaskTool, taskControlTool, taskStatusTool } from "./jobs";
-import { astonBuildTool, astonDemosTool, astonPlanTool, jarvisAstonDemoTool, jarvisPlanTool } from "./aston";
+import { astonBuildTool, astonDemosTool, astonPlanTool, astonProjectTool, jarvisAstonDemoTool, jarvisPlanTool, jarvisProjectTool } from "./aston";
 import { fridayAgentTool, jarvisFridayTool } from "./friday";
 import type { ToolDefinition } from "./types";
 import { capabilities } from "@/lib/env";
@@ -56,6 +56,8 @@ const ALL_TOOLS: ToolDefinition[] = [
   taskStatusTool as ToolDefinition,
   taskControlTool as ToolDefinition,
   jarvisAstonDemoTool as ToolDefinition,
+  jarvisProjectTool as ToolDefinition,
+  astonProjectTool as ToolDefinition,
   jarvisFridayTool as ToolDefinition,
   fridayAgentTool as ToolDefinition,
   jarvisPlanTool as ToolDefinition,

@@ -13,7 +13,7 @@ const nextConfig = {
   },
   experimental: {
     // satori + resvg draw the Reel's text overlays (resvg is a native module — never bundled)
-    serverComponentsExternalPackages: ["@prisma/client", "bcryptjs", "satori", "@resvg/resvg-js"],
+    serverComponentsExternalPackages: ["@prisma/client", "bcryptjs", "satori", "@resvg/resvg-js", "playwright-core"],
     // EV renders its daily Reel with ffmpeg + the bundled Inter font — ship both
     // with the functions that render.
     outputFileTracingIncludes: {
@@ -33,7 +33,7 @@ const nextConfig = {
     return [
       // ASTON's previews (/p/…) set their own framing rules: JARVIS shows them
       // in its walkthrough frame (same site only); everything else is never framed.
-      { source: "/((?!p/).*)", headers: [{ key: "X-Frame-Options", value: "DENY" }] },
+      { source: "/((?!p/|s/).*)", headers: [{ key: "X-Frame-Options", value: "DENY" }] },
       {
         source: "/(.*)",
         headers: [

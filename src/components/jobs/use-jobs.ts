@@ -56,6 +56,11 @@ export function announcement(j: JobView): string {
   const first = (s: string | null) => (s ?? "").replace(/[*_`]+/g, "").replace(/[#>|]+/g, " ").replace(/\s+/g, " ").trim().match(/^.{1,180}?[.!?](\s|$)/)?.[0]?.trim() ?? (s ?? "").slice(0, 160);
   const model = j.resultData?.artifacts?.find((a) => a.kind === "friday");
   if (j.status === "completed" && model) return `FRIDAY has finished ${model.title} — version ${model.version}. The model, renders and viewer are ready. Shall I open it in Friday's workspace, or would you like to change anything first?`;
+  const web = j.resultData?.artifacts?.find((a) => a.kind === "studio");
+  if (j.status === "completed" && web) {
+    const tests = (j.result ?? "").match(/Browser tests[^\n]*?: (\d+) passed, (\d+) failed/);
+    return `The website ${web.title} is ready for review — version ${web.version}. ${tests ? `Browser tests: ${tests[1]} passed${Number(tests[2]) ? `, ${tests[2]} still failing` : ", none failing"}.` : "It wasn't browser-tested on this computer."} The preview is open in ASTON's studio next to the code.`;
+  }
   const site = j.resultData?.artifacts?.find((a) => a.kind === "aston");
   if (j.status === "completed" && site) return `ASTON has finished ${site.title}${j.payload?.siteId ? ` — version ${site.version}` : ""}. The preview is ready. Would you like me to open it in a new tab so I can walk you through the design, or would you like to change anything first?`;
   if (j.status === "completed") return `${j.agentName} finished "${j.title}". ${first(j.result)}`.trim();
