@@ -38,7 +38,7 @@ Reply with ONE JSON object only (no prose, no code fences):
   "placeholders": ["content the client must still supply"],
   "assumptions": ["decisions you made that the brief didn't specify"],
   "acceptance": ["checkable criteria, e.g. 'Booking form saves a booking and rejects a taken slot'"],
-  "envVars": [{ "NAME": "only if a real integration needs a secret, e.g. a payment key", "why": "..." }]
+  "envVars": [{ "name": "UPPER_SNAKE_CASE, e.g. STRIPE_SECRET_KEY — only if a real integration needs a secret", "why": "..." }]
 }
 
 Rules:

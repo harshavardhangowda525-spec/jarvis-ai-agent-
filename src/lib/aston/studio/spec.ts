@@ -15,6 +15,25 @@ export const pageFile = z.preprocess((v) => (typeof v === "string" ? v.trim().to
 /** asset paths: "assets/hero.svg" */
 export const assetPath = z.preprocess((v) => (typeof v === "string" ? v.trim().replace(/^\/+/, "") : v), z.string().regex(/^assets\/[a-z0-9][a-z0-9_-]*\.(svg|png|jpg|jpeg|webp)$/i, "assets/<name>.svg"));
 
+/**
+ * Environment variables are a side note in the plan — a slightly-off entry must
+ * never block a build. Accepts { name }, { NAME }, { key }, { var } or a plain
+ * string, turns the name into UPPER_SNAKE_CASE, and drops entries with no name.
+ */
+export function envVarList(v: unknown): { name: string; why: string }[] {
+  if (!Array.isArray(v)) return [];
+  const out: { name: string; why: string }[] = [];
+  for (const e of v.slice(0, 10)) {
+    const o = (typeof e === "string" ? { name: e } : e && typeof e === "object" ? e : {}) as Record<string, unknown>;
+    const raw = [o.name, o.NAME, o.Name, o.key, o.var, o.variable].find((x) => typeof x === "string" && x.trim()) as string | undefined;
+    const name = raw?.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(\d)/, "_$1").replace(/^_/, "VAR_");
+    if (!name || !/^[A-Z][A-Z0-9_]{1,60}$/.test(name) || out.some((x) => x.name === name)) continue;
+    const why = [o.why, o.description, o.purpose].find((x) => typeof x === "string") as string | undefined;
+    out.push({ name, why: (why ?? "").trim().slice(0, 200) });
+  }
+  return out;
+}
+
 export const fieldSchema = z.object({
   name: z.preprocess((v) => (typeof v === "string" ? v.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_") : v), z.string().regex(/^[a-z][a-z0-9_]{0,39}$/)),
   label: clip(80),
@@ -67,7 +86,7 @@ export const projectSpecSchema = z.object({
   placeholders: list(clip(200), 20).default([]),
   assumptions: list(clip(240), 16).default([]),
   acceptance: list(clip(240), 20).default([]),
-  envVars: list(z.object({ name: z.string().regex(/^[A-Z][A-Z0-9_]{1,60}$/), why: clip(200) }), 10).default([]),
+  envVars: z.preprocess(envVarList, z.array(z.object({ name: z.string().regex(/^[A-Z][A-Z0-9_]{1,60}$/), why: z.string().max(200) })).max(10)).default([]),
 }).superRefine((s, ctx) => {
   const files = new Set(s.pages.map((p) => p.file));
   if (files.size !== s.pages.length) ctx.addIssue({ code: "custom", path: ["pages"], message: "duplicate page files" });

@@ -25,6 +25,10 @@ describe("ASTON studio: the plan", () => {
     expect(plannedFiles(r.data)).toEqual(["css/styles.css", "js/main.js", "assets/portrait.svg", "index.html", "story.html", "contact.html"]);
   });
   it("refuses no homepage, unsafe paths and a form on a page that doesn't exist", () => {
+    // the exact plan that failed for the user: envVars written with "NAME" instead of "name"
+    const withEnv = projectSpecSchema.safeParse({ ...spec, envVars: [{ NAME: "Payment gateway key", why: "online payments" }, { NAME: "MAPS_API_KEY", why: "map" }] });
+    expect(withEnv.success).toBe(true);
+    expect(withEnv.success && withEnv.data.envVars).toEqual([{ name: "PAYMENT_GATEWAY_KEY", why: "online payments" }, { name: "MAPS_API_KEY", why: "map" }]);
     expect(projectSpecSchema.safeParse({ ...spec, pages: spec.pages.slice(1) }).success).toBe(false);
     expect(projectSpecSchema.safeParse({ ...spec, pages: [...spec.pages, { ...spec.pages[0], file: "../evil.html" }] }).success).toBe(false);
     expect(projectSpecSchema.safeParse({ ...spec, forms: [{ ...spec.forms[0], page: "nope.html" }] }).success).toBe(false);
@@ -93,5 +97,17 @@ describe("'JARVIS, build …' reaches ASTON however it's phrased", () => {
   });
   it("questions and edits aren't", () => {
     for (const s of ["how do I build a website?", "what does a website cost?", "Open the website you just created and improve its animations.", "Make the typography more editorial", "Fix the mobile layout and test every button."]) expect(buildCommand(s), s).toBeNull();
+  });
+});
+
+describe("plan env vars never block a build", () => {
+  it("accepts NAME / key / strings, normalises, and drops nameless entries", async () => {
+    const { envVarList } = await import("@/lib/aston/studio/spec");
+    expect(envVarList([{ NAME: "stripe secret key", why: "payments" }, { key: "MAPS_API_KEY" }, "resend-api-key", { why: "no name" }, { name: "STRIPE_SECRET_KEY" }])).toEqual([
+      { name: "STRIPE_SECRET_KEY", why: "payments" },
+      { name: "MAPS_API_KEY", why: "" },
+      { name: "RESEND_API_KEY", why: "" },
+    ]);
+    expect(envVarList(undefined)).toEqual([]);
   });
 });
