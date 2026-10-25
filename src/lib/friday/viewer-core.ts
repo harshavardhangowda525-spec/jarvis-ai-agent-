@@ -106,7 +106,7 @@ export class ViewerCore {
   }
 
   /** Frames actually drawn in the last second (measured, not estimated). */
-  get fps(): number | null { return this.frames.length > 5 ? this.frames.length : null; }
+  get fps(): number | null { return this.frames.length >= 2 ? this.frames.length : null; }
   get isOrtho() { return this.camera === this.ortho; }
   get partList(): PartInfo[] { return this.parts.map((p) => p.info); }
 

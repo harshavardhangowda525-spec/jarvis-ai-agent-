@@ -205,11 +205,11 @@ export class FrameStats {
   private lat: number[] = [];
   frame(t: number, latencyMs: number | null) {
     this.times.push(t);
-    while (this.times.length && t - this.times[0] > 2000) this.times.shift();
+    while (this.times.length && t - this.times[0] > 4000) this.times.shift();
     if (latencyMs != null && Number.isFinite(latencyMs) && latencyMs >= 0 && latencyMs < 2000) { this.lat.push(latencyMs); if (this.lat.length > 60) this.lat.shift(); }
   }
   get fps(): number | null {
-    if (this.times.length < 5) return null;
+    if (this.times.length < 3) return null;
     const span = this.times[this.times.length - 1] - this.times[0];
     return span > 0 ? Math.round(((this.times.length - 1) * 1000) / span) : null;
   }

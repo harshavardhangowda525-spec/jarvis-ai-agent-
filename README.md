@@ -1334,6 +1334,7 @@ Google shows a warning for the Drive permission until the app is verified.
 | MIKE   | `MIKE_PROVIDER`     | `groq,gemini` | Groq, Gemini as backup              |
 | RUBIN  | `RUBIN_PROVIDER`    | `groq,gemini` | Groq, Gemini as backup              |
 | ASTON  | `ASTON_PROVIDER`    | `groq,gemini` | Groq, Gemini as backup              |
+| FRIDAY | `FRIDAY_PROVIDER`   | `claude,groq,gemini` | Claude on your PC when connected, then Groq, then Gemini |
 | ULTRON | `ULTRON_AI_PROVIDER` (edith/.env) | `openrouter,ollama` | OpenRouter (`OPENROUTER_API_KEY`, model `OPENROUTER_MODEL`), with this PC's Ollama as the backup (model: `ULTRON_OLLAMA_MODEL`, else `OLLAMA_MODEL`, else `qwen2.5:3b`) |
 
 `JARVIS_PROVIDER=ollama` puts JARVIS back on your PC brain (then `npm run local`
@@ -1736,6 +1737,108 @@ Previews are sandboxed: the page's scripts run in their own isolated origin
 (they can't reach JARVIS or your session), can't connect anywhere and forms
 send nothing. *New preview link* revokes the old one. All demos:
 **Systems → ASTON demos** (`/dashboard/aston`); ASTON's chat: *"open ASTON"*.
+
+## FRIDAY — 3D models, renders & the agentic workspace
+
+Tell JARVIS *"Friday, model the EDITH smart glasses"* or *"make a 3D model of a
+coffee grinder"*, or open **FRIDAY** (`/dashboard/friday`, or say *"open Friday"*).
+Friday's brain writes a structured model plan (millimetres; front faces −Y,
++X = right in the front view, +Z = up). **Blender** builds the real geometry
+from it (`scripts/friday/build.py`). Then Friday saves `model.blend`, exports
+`model.glb`, and renders ten views: front, rear, left, right, top and bottom
+(orthographic), front and rear three-quarter, a detail close-up, and an
+exploded/internal view.
+
+**Nothing is called done until it's checked.** Every file must exist, the GLB
+must be a valid glTF binary, and every render must be a decodable, non-blank
+image of the right size. Progress comes from Blender's own report lines. Cancel
+a task and Blender itself stops.
+
+**Specs.** Friday searches your notes and memory. What they say, and what you
+said, is listed as *verified*. Everything else is listed as an *assumption*,
+and parts your specs don't establish are marked *conceptual*. A hit on "EDITH"
+alone isn't enough to count, because that was also ULTRON's old name.
+
+**Versions.** Every change ("make the frame thinner", "change the material to
+matte black") is a new version. Earlier versions are never touched. A view
+whose model and settings didn't change is copied instead of re-rendered.
+
+```
+FridayProjects/<project>/project_metadata.json
+FridayProjects/<project>/versions/v001/{plan.json, model.blend, model.glb, renders/*.png, manifest.json}
+```
+
+**Exports:** BLEND, GLB, glTF, PNG, JPEG and STL. These are visual concepts,
+not engineering-ready CAD.
+
+### Two modes
+
+- **Chat (the default).** A normal chatbot: "PROJECT: FRIDAY".
+- **`activate agentic view`** opens the full-screen workspace. It has:
+  - the status strip;
+  - the tool rail: New/Open Project, Model Library, Render Gallery,
+    Components, Gesture Controls, Export;
+  - the 3D viewer, with view cube, presets, perspective/ortho, material, solid
+    and wireframe shading, exploded view, section cut, part selection,
+    material preview and full screen;
+  - the inspector;
+  - the command console.
+- **`deactivate agentic view`** (or Esc, or ✕) goes back to chat. The
+  conversation, project and version are kept.
+
+Natural phrasings work too: *"open the 3D workspace"*, *"back to chat"*.
+Talking about the phrase doesn't switch modes (*"what does activate agentic
+view do?"*). Mode switches and instant view commands never go to the AI. View
+commands include *"top view"*, *"wireframe"*, *"explode it"*, *"section view"*
+and *"reset view"*.
+
+### Hand control
+
+Turn it on under **Gesture Controls**. The camera is only requested then, and
+it's released when you turn it off or leave the agentic view. Frames are
+processed in the browser and never uploaded.
+
+| Gesture | Effect |
+|---|---|
+| Open palm, move | Rotate |
+| Pinch, move up/down | Zoom |
+| Two hands pinching, apart/together | Scale |
+| Fist, move | Pan |
+| Both palms, hold | Pause/resume |
+| Thumbs-up, hold | Reset |
+
+How it stays steady:
+- confidence, activation and release thresholds;
+- pinch hysteresis;
+- One-Euro smoothing;
+- no jump when a hand is picked up again;
+- neutral when no hand is visible;
+- calibration.
+
+The FPS and latency readouts are measured. Latency runs from the camera's
+capture time to the hand result, or is labelled "processing" when the browser
+doesn't give a capture time. Priority: a spoken or typed view command wins
+briefly, then hands. The mouse works whenever no hand gesture is active.
+
+### Setup
+
+Install **Blender** on the PC that runs JARVIS:
+[blender.org/download](https://www.blender.org/download/), or on Windows run
+`winget install BlenderFoundation.Blender`. Friday finds it on PATH or in the
+usual install folders. Set `FRIDAY_BLENDER=<path to blender.exe>` if it's
+somewhere else. Without Blender, Friday says so plainly and models nothing. On
+Vercel there's no Blender: model on your PC (`npm run local`).
+
+Optional settings:
+
+| Setting | Default | What it does |
+|---|---|---|
+| `FRIDAY_PROJECTS_DIR` | `./FridayProjects` | Where projects are saved |
+| `FRIDAY_RENDER_SCALE` | 1 | 1 = 1600×1200; lower it for faster renders |
+| `FRIDAY_RENDER_SAMPLES` | 64 | Render samples |
+| `FRIDAY_RENDER_ENGINE` | Cycles | Set to `eevee` to use EEVEE |
+| `FRIDAY_GPU` | GPU auto-detected | `0` = CPU only |
+| `FRIDAY_VOICE_ID` | | Friday's voice |
 
 ## Daily marketing plan & ASTON's teleprompter
 

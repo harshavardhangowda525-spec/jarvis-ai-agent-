@@ -69,6 +69,7 @@ export const CSS = `
 .fw-hud{position:absolute;left:50%;transform:translateX(-50%);top:8px;z-index:2;background:var(--pan);border:1px solid var(--line);border-radius:8px;padding:4px 10px;font:11px ui-monospace,monospace;display:flex;gap:10px;align-items:center;pointer-events:none}
 .fw-hud b{color:var(--c);letter-spacing:.12em}.fw-hud .hold{position:absolute;left:0;bottom:0;height:2px;background:var(--c)}
 .fw-hud .dot{position:fixed;width:14px;height:14px;margin:-7px;border-radius:50%;border:2px solid var(--c);box-shadow:0 0 10px var(--c)}
+.fw-cam{position:absolute;left:8px;bottom:56px;width:160px;aspect-ratio:4/3;object-fit:cover;transform:scaleX(-1);border:1px solid var(--line);border-radius:8px;z-index:2;display:none}.fw-cam.on{display:block}
 /* viewer */
 .fv{position:absolute;inset:0;background:#05080f}.fv-host{position:absolute;inset:0}
 .fv-empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--dim);text-align:center;padding:24px;pointer-events:none}

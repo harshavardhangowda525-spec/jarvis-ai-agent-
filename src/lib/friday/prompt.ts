@@ -10,6 +10,7 @@ Reply with ONLY the JSON object (no prose, no code fences).
 
 UNITS AND AXES
 - Millimetres. Origin = centre of the product. +X = the product's right as seen in the FRONT view (viewer's right), the front faces −Y (towards the front camera), +Z = up.
+- "Left"/"right" in the user's words: for anything worn, held or driven (glasses, helmets, gloves, vehicles, drones) they mean the wearer's/driver's own left/right. The wearer faces the same way as the front (−Y), so the wearer's LEFT is +X and their RIGHT is −X. For other objects, left/right are as seen in the front view. Say which you used in assumptions.
 - Rotation is in degrees (XYZ). Flat shapes (rounded_rect, profile, cylinder, cone) are built lying in the XY plane with thickness along Z: rotate [90,0,0] to stand one up facing the front camera.
 
 JSON SHAPE

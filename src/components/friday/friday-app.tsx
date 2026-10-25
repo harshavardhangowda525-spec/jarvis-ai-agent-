@@ -92,7 +92,8 @@ export function FridayApp() {
     if (projectId) q.set("project", projectId);
     if (version) q.set("v", String(version.n));
     if (mode === "agentic") q.set("view", "agentic");
-    router.replace(`/dashboard/friday${q.toString() ? `?${q}` : ""}`, { scroll: false });
+    // no server round trip — just the address bar
+    window.history.replaceState(window.history.state, "", `/dashboard/friday${q.toString() ? `?${q}` : ""}`);
   }, [projectId, version?.n, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // —— Friday's tasks: real progress from the job (Blender's own lines) ——
@@ -363,6 +364,8 @@ export function FridayApp() {
 
           <main className="fw-view">
             <FridayViewer ref={viewer} url={modelUrl} onParts={setParts} onSelect={setSelected} onLog={(s) => log(s)} />
+            {/* the camera preview (mirrored) — frames stay in this browser */}
+            <video ref={hands.video} className={`fw-cam${hands.state.on || hands.state.starting ? " on" : ""}`} muted playsInline aria-label="Camera preview for hand tracking" />
             {hands.state.on && hands.state.out && <GestureHud out={hands.state.out} />}
             {progressCard && <div className="fw-progwrap">{progressCard}</div>}
             {panel && panel !== "gallery" && (

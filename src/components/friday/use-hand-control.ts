@@ -53,7 +53,7 @@ export function useHandControl(onFrame: (o: Output3D) => void) {
     setSt((s) => ({ ...s, starting: true, error: null }));
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error("This browser can't use the camera here (it needs https or localhost)."), { name: "NotSupported" });
-      const ms = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60, min: 24 }, facingMode: "user" }, audio: false });
+      const ms = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 60 }, facingMode: "user" }, audio: false });
       stream.current = ms;
       const v = video.current ?? document.createElement("video");
       video.current = v;
