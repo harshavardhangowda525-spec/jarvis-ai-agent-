@@ -126,6 +126,32 @@ export async function pendingMigrations(root, url, timeoutMs = 40_000) {
   }
 }
 
+/**
+ * Compare the real database with this version and add anything additive it
+ * missed (tables, columns, indexes) — repeat-safe — then mark those changes done
+ * in Prisma's history so its updater can carry on. Null if it couldn't connect.
+ */
+export async function repairDatabase(root, url, timeoutMs = 90_000) {
+  const path = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  const { createRequire } = await import("node:module");
+  let client;
+  try {
+    const require = createRequire(`${root.replace(/\\/g, "/")}/package.json`);
+    const { PrismaClient } = require("@prisma/client");
+    const { tuneDatabaseUrl } = await import("./db-url.mjs");
+    const core = await import(pathToFileURL(path.join(root, "src", "lib", "schema", "repair-core.mjs")).href);
+    // a pooled Neon address can't change tables reliably — use the direct one
+    client = new PrismaClient({ datasources: { db: { url: tuneDatabaseUrl(url.replace("-pooler.", ".")) } }, log: [] });
+    const migrations = await core.loadMigrations(path.join(root, "prisma", "migrations"));
+    return await Promise.race([core.repairSchema(client, migrations), new Promise((_, rej) => setTimeout(() => rej(new Error("no answer")), timeoutMs))]);
+  } catch (e) {
+    return { error: String(e?.message ?? e).split("\n").filter(Boolean).pop() };
+  } finally {
+    await client?.$disconnect().catch(() => {});
+  }
+}
+
 /** AI keys/models JARVIS, EV and DARWIN can use (the same names the app reads). */
 const CLOUD_AI_VARS = ["GROQ_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "OPENROUTER_API_KEY", "OPENAI_API_KEY", "AI_API_KEY", "GROQ_MODEL", "GEMINI_MODEL"];
 const realValue = (v) => typeof v === "string" && v.trim() !== "" && !/^\[sensitive\]$/i.test(v.trim());

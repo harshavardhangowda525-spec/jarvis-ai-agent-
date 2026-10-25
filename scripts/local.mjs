@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { retireOldUltronProvider, stopPort, probeDatabase, pendingMigrations, describeDbError, cloudAiKeys, prismaClientMatches, resolveKeys, pruneBuildCache } from "./local-helpers.mjs";
+import { retireOldUltronProvider, stopPort, probeDatabase, pendingMigrations, repairDatabase, describeDbError, cloudAiKeys, prismaClientMatches, resolveKeys, pruneBuildCache } from "./local-helpers.mjs";
 import { ensureSecret, searxngAnswers, startDocker } from "./searxng.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -282,6 +282,14 @@ if (!built || (head && stamp !== head) || process.argv.includes("--rebuild")) {
     // this version's database changes (e.g. RUBIN's lead numbers) — applied once per update, safe to repeat
     // Ask the database itself which of this version's changes it still needs (never trust a
     // stamp alone — an update that failed once must not leave tables missing for good).
+    // First: add anything this version needs that the database is missing (e.g. "column payload
+    // does not exist" after an update that failed part-way) — additive, safe to repeat.
+    const fix = await repairDatabase(ROOT, dbUrl);
+    if (fix?.error) say(`  ! Couldn't check the database tables: ${fix.error}`);
+    else if (fix) {
+      if (fix.repaired.length) say(`  Database: added what it was missing (${fix.repaired.join(", ")}).`);
+      for (const f of fix.failed) say(`  ! Database change ${f.name} couldn't be added: ${f.error}`);
+    }
     const before = await pendingMigrations(ROOT, dbUrl);
     const needed = !before || before.missing.length > 0 || before.failed.length > 0 || process.argv.includes("--migrate");
     if (needed) {

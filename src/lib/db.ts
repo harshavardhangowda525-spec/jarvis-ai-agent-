@@ -8,7 +8,9 @@
 import "server-only";
 import { PrismaClient } from "@prisma/client";
 import { env } from "./env";
+import path from "node:path";
 import { tuneDatabaseUrl, isConnectError, dbHost } from "./db-url";
+import { loadMigrations, repairSchema, type RepairResult } from "./schema/repair-core.mjs";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
@@ -24,6 +26,34 @@ export class DbNotConfiguredError extends Error {
 }
 
 const RETRY_MS = [1_500, 3_000, 6_000];
+
+/** Prisma's "table/column … does not exist" — the database missed an update. */
+export const isSchemaError = (e: unknown) => {
+  const code = (e as { code?: string })?.code;
+  return code === "P2021" || code === "P2022" || /does not exist in the current database/i.test(String((e as Error)?.message ?? ""));
+};
+
+let repairing: Promise<RepairResult | null> | null = null;
+/**
+ * Add what this version's database changes need and the database lacks
+ * (repeat-safe, additive only — see schema/repair-core.mjs). Once per process;
+ * a failed attempt can be retried a minute later.
+ */
+function repairOnce(client: PrismaClient): Promise<RepairResult | null> {
+  repairing ??= (async () => {
+    const migrations = await loadMigrations(path.join(process.cwd(), "prisma", "migrations"));
+    if (!migrations.length) return null;
+    const r = await repairSchema(client, migrations);
+    if (r.repaired.length) console.log(`[db] The database was missing ${r.repaired.join(", ")} — added it.`);
+    if (r.failed.length) console.error("[db] Couldn't add a missing database change:", r.failed);
+    return r;
+  })().catch((e) => {
+    console.error("[db] Database check failed:", (e as Error)?.message ?? e);
+    setTimeout(() => { repairing = null; }, 60_000);
+    return null;
+  });
+  return repairing;
+}
 let lastConnectWarn = 0;
 
 /**
@@ -44,10 +74,18 @@ function createClient(): PrismaClient {
   const extended = base.$extends({
     query: {
       async $allOperations({ args, query }) {
+        let repaired = false;
         for (let attempt = 0; ; attempt++) {
           try {
             return await query(args);
           } catch (e) {
+            // "column … does not exist": add the missing change, then run the query again (once)
+            if (!repaired && isSchemaError(e)) {
+              repaired = true;
+              const r = await repairOnce(base);
+              if (r?.repaired.length) continue;
+              throw e;
+            }
             if (!isConnectError(e) || attempt >= RETRY_MS.length) throw e;
             if (Date.now() - lastConnectWarn > 30_000) {
               lastConnectWarn = Date.now();
