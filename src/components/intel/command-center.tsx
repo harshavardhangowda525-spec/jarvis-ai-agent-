@@ -80,12 +80,19 @@ function FeedCard({ it, on, onClick }: { it: ItemView; on: boolean; onClick: () 
   );
 }
 
-function VideoPanel({ videos, yt, now }: { videos: ItemView[]; yt: CC["status"]["youtube"]; now: number }) {
+function VideoPanel({ videos, yt, now, last }: { videos: ItemView[]; yt: CC["status"]["youtube"]; now: number; last: NonNullable<CC["status"]["report"]>["youtube"] | null }) {
   const [playing, setPlaying] = useState<string | null>(null);
   const [pick, setPick] = useState<string | null>(null);
   const main = videos.find((v) => v.id === pick) ?? videos[0];
   if (!yt.configured) return <div className="cc-empty"><b>Live intelligence is off.</b><br />{yt.message}</div>;
-  if (!main) return <div className="cc-empty">No official videos collected yet — press Refresh.</div>;
+  if (!main) return (
+    <div className="cc-empty">
+      {last?.configured && last.errors.length
+        ? <><b>YouTube answered with an error:</b><br />{last.errors.slice(0, 3).map((e, i) => <span key={i}>{e}<br /></span>)}<span className="cc-dim">Check the key in Google Cloud: YouTube Data API v3 enabled, and no website/IP restriction on the key. Then press Refresh.</span></>
+        : last && !last.configured ? <>The key was added after the last refresh — press Refresh.</>
+        : <>No official videos collected yet — press Refresh.</>}
+    </div>
+  );
   const m = main.media!;
   return (
     <div className="cc-video">
@@ -353,7 +360,7 @@ export function CommandCenter() {
         <div className="cc-right">
           <div ref={liveRef}>
             <Panel title="LIVE INTELLIGENCE" actions={st?.youtube.configured ? <span className="cc-dim">{st.counts.liveNow} live now</span> : undefined}>
-              {cc ? <VideoPanel videos={videos.length ? videos : liveOnly ? [] : cc.videos} yt={cc.status.youtube} now={now} /> : <div className="cc-empty">Loading…</div>}
+              {cc ? <VideoPanel videos={videos.length ? videos : liveOnly ? [] : cc.videos} yt={cc.status.youtube} now={now} last={cc.status.report?.youtube ?? null} /> : <div className="cc-empty">Loading…</div>}
               {liveOnly && cc?.status.youtube.configured && !videos.length && <div className="cc-dim">No official channel is live right now. <button className="cc-btn sm" onClick={() => setLiveOnly(false)}>Show recent videos</button></div>}
             </Panel>
           </div>
@@ -371,7 +378,7 @@ export function CommandCenter() {
         <div><b>Latest news refresh</b><span>{st ? ago(st.lastRefreshAt, now) : "…"}</span></div>
         <div><b>Sources</b><span>{st?.report ? `${st.report.sources.length - failedSources.length}/${st.report.sources.length} answered${failedSources.length ? ` · failed: ${failedSources.slice(0, 2).map((s) => s.name).join(", ")}` : ""}` : "not fetched yet"}</span></div>
         <div><b>Feed</b><span>{loading || refreshing ? "loading…" : `${st?.counts.news ?? 0} items · ${st?.counts.analysed ?? 0} analysed`}</span></div>
-        <div><b>Video</b><span>{st?.youtube.configured ? `${st.counts.videos} official videos · ${st.counts.liveNow} live` : "YOUTUBE_API_KEY missing"}</span></div>
+        <div><b>Video</b><span>{!st?.youtube.configured ? "YOUTUBE_API_KEY missing" : st.report?.youtube.errors.length && !st.counts.videos ? `YouTube error: ${st.report.youtube.errors[0].slice(0, 80)}` : `${st.counts.videos} official videos · ${st.counts.liveNow} live`}</span></div>
         <div><b>Search</b><span>{st?.report?.tavily ? "Tavily on" : "Tavily off (SEARCH_API_KEY)"}</span></div>
         <div className="cc-honest">Every item links to its source. Live status is YouTube&apos;s own at the time shown. Nothing here is generated or simulated.</div>
         <button className="cc-btn sm" onClick={() => setDrawer({ open: true, tab: "internal" })}>Internal metrics</button>

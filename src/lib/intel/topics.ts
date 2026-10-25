@@ -67,7 +67,7 @@ export const CHANNELS: { handle: string; name: string; category: CategoryId }[] 
   { handle: "@Meta", name: "Meta", category: "consumer" },
   { handle: "@anthropic-ai", name: "Anthropic", category: "ai" },
   { handle: "@Samsung", name: "Samsung", category: "consumer" },
-  { handle: "@awsevents", name: "AWS Events", category: "software" },
+  { handle: "@AWSEventsChannel", name: "AWS Events", category: "software" },
 ];
 
 const KEYWORDS: Record<CategoryId, RegExp> = {

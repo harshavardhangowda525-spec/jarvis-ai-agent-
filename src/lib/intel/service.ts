@@ -33,9 +33,9 @@ export async function commandCenter(userId: string, f: FeedFilter = {}) {
   const now = new Date();
   const since = new Date(now.getTime() - (f.days ?? 7) * 86_400_000);
   const st = await intelSettings(userId);
-  const all = await db().intelItem.findMany({ where: { userId, OR: [{ publishedAt: { gte: since } }, { publishedAt: null, fetchedAt: { gte: since } }] }, orderBy: [{ publishedAt: { sort: "desc", nulls: "last" } }], take: 600 });
-  const news = all.filter((i) => i.via !== "youtube");
-  const videos = all.filter((i) => i.via === "youtube").map((i) => itemView(i, now.getTime()));
+  const news = await db().intelItem.findMany({ where: { userId, via: { not: "youtube" }, OR: [{ publishedAt: { gte: since } }, { publishedAt: null, fetchedAt: { gte: since } }] }, orderBy: [{ publishedAt: { sort: "desc", nulls: "last" } }], take: 600 });
+  // official channels post less often than news sites — show their latest videos from the last 60 days, separately from the news window
+  const videos = (await db().intelItem.findMany({ where: { userId, via: "youtube", publishedAt: { gte: new Date(now.getTime() - 60 * 86_400_000) } }, orderBy: { publishedAt: "desc" }, take: 40 })).map((i) => itemView(i, now.getTime()));
   const q = f.q?.trim().toLowerCase();
   const filtered = news.filter((i) =>
     (!f.category || f.category === "all" || i.category === f.category) && (!f.topic || i.topic === f.topic) && (!f.minRelevance || (i.relevance ?? 0) >= f.minRelevance) &&
