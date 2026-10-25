@@ -14,6 +14,7 @@ import { Mic, MicOff, Paperclip, Loader2, Power, X, LayoutGrid, Volume2 } from "
 import { type OrbState } from "@/components/orb";
 import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
 import { instantAnswer } from "@/lib/instant";
+import { businessEnvCommand } from "@/lib/intel/intent";
 import { inIndia, parseOpenLinkRef, parseOpenSite, pickLink, type SiteTarget } from "@/lib/open-site";
 import { installedAppNames, openLocalApp, openUrlOnPc, parseOpenApp, planOpen, refreshInstalledApps, ultronKnown } from "@/lib/local-apps";
 import { parseMemoryCommand } from "@/lib/memory/intent";
@@ -475,6 +476,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // "mute" / "unmute" (typed — spoken ones are handled by the voice engine itself)
       const muted = typedMute(t);
       if (muted) { agent.appendLocalExchange(t, muted); return; }
+      // ===== "Open business environment" / "how's the business environment?" → the Command Center with today's full briefing =====
+      if (businessEnvCommand(t)) {
+        agent.appendLocalExchange(t, "Opening the business environment with today's briefing.");
+        sayRef.current("Opening the business environment.");
+        router.push("/dashboard/intel?brief=1");
+        return;
+      }
       // ===== "Analyze the system": the holographic self-diagnostic (read-only) =====
       if (isSystemAnalysis(t)) {
         agent.appendLocalExchange(t, "Entering system analysis mode — checking the core, every agent, the connections between them, performance and security. Nothing is changed.");

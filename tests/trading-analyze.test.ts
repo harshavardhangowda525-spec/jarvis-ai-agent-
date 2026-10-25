@@ -114,6 +114,12 @@ describe("the written review", () => {
     expect(unknownNumbers(bad, allowed)).toEqual(expect.arrayContaining(["87", "45210"]));
   });
 
+  it("reads thousands separators the same way in sources and replies", () => {
+    const allowed = allowedNumbers({ headline: "UPI charge above Rs 2,000 and 1,20,000 merchants" });
+    const body = { executiveSummary: "A charge applies above Rs 2,000 for 1,20,000 merchants.", strategies: [], risk: "", learning: "", discipline: "", comparison: "", nextWeek: [{ action: "Check UPI fees", why: "Rs 2000 threshold" }] };
+    expect(unknownNumbers(body, allowed)).toEqual([]);
+  });
+
   it("the rule-based write-up states the facts and next steps", () => {
     const n = rulesNarrative(m, history);
     expect(n.executiveSummary).toMatch(/2 backtest runs \(23 historical simulated trades\)/);

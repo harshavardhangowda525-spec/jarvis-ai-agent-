@@ -192,6 +192,7 @@ export function CommandCenter() {
   useEffect(() => {
     const b = params.get("briefing");
     if (b) setDrawer({ open: true, tab: b.startsWith("weekly") ? "weekly" : "daily" });
+    if (params.get("brief")) setDrawer({ open: true, tab: "daily" });
   }, [params]);
 
   const refresh = useCallback(async () => {
@@ -385,7 +386,7 @@ export function CommandCenter() {
         <button className="cc-btn sm" onClick={() => setDrawer({ open: true, tab: "topics" })}>Topics &amp; alerts</button>
       </footer>
 
-      <BriefingDrawer open={drawer.open} initial={drawer.tab} cc={cc} onClose={() => setDrawer((d) => ({ ...d, open: false }))} onSaved={load} speak={(t) => void say(t)} />
+      <BriefingDrawer open={drawer.open} initial={drawer.tab} cc={cc} autoBrief={!!params.get("brief")} onClose={() => setDrawer((d) => ({ ...d, open: false }))} onSaved={load} speak={(t) => void say(t)} />
     </div>
   );
 }

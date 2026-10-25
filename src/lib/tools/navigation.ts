@@ -17,7 +17,7 @@ const DESTINATIONS = {
   demos: "/dashboard/aston",
   friday: "/dashboard/friday",
   teleprompter: "/dashboard/teleprompter",
-  intel: "/dashboard/intel",
+  intel: "/dashboard/intel?brief=1",
   trading: "/dashboard/trading",
   crm: "/dashboard/crm",
   agent_tasks: "/dashboard/jobs",

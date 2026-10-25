@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CATEGORIES } from "@/lib/intel/topics";
 import { api, when, type CC } from "./types";
 
@@ -24,7 +24,10 @@ function Cited({ text, hs }: { text: string; hs: Headline[] }) {
   })}</>;
 }
 
-export function BriefingDrawer({ open, onClose, initial, cc, onSaved, speak }: { open: boolean; onClose: () => void; initial: "daily" | "weekly" | "internal" | "topics"; cc: CC | null; onSaved: () => void; speak: (t: string) => void }) {
+const todayIST = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+
+export function BriefingDrawer({ open, onClose, initial, cc, onSaved, speak, autoBrief = false }: { open: boolean; onClose: () => void; initial: "daily" | "weekly" | "internal" | "topics"; cc: CC | null; onSaved: () => void; speak: (t: string) => void; autoBrief?: boolean }) {
+  const autoDone = useRef(false);
   const [tab, setTab] = useState(initial);
   const [b, setB] = useState<Briefing | null>(null);
   const [internal, setInternal] = useState<Internal | null>(null);
@@ -35,13 +38,21 @@ export function BriefingDrawer({ open, onClose, initial, cc, onSaved, speak }: {
   useEffect(() => setTab(initial), [initial, open]);
   useEffect(() => { if (cc) setTopics(cc.topics); }, [cc]);
 
-  const load = useCallback(async (kind: "daily" | "weekly") => {
+  const load = useCallback(async (kind: "daily" | "weekly"): Promise<Briefing | null> => {
     setErr(null);
-    try { setB((await api<{ briefing: Briefing | null }>(`/api/intel/briefings?kind=${kind}`)).briefing); } catch (e) { setErr((e as Error).message); }
+    try { const got = (await api<{ briefing: Briefing | null }>(`/api/intel/briefings?kind=${kind}`)).briefing; setB(got); return got; } catch (e) { setErr((e as Error).message); return null; }
   }, []);
   useEffect(() => {
     if (!open) return;
-    if (tab === "daily" || tab === "weekly") void load(tab);
+    if (tab === "daily" || tab === "weekly") {
+      void load(tab).then((got) => {
+        // "open business environment" / "how's the business environment?": show today's whole briefing — write it first if there isn't one yet
+        if (!autoBrief || tab !== "daily" || autoDone.current) return;
+        autoDone.current = true;
+        if (got?.status === "ready" && got.period === todayIST() && got.content) speak(got.content.summary.summary.replace(/\[\d+\]/g, ""));
+        else if (got?.status !== "generating" || got.period !== todayIST()) void generate("daily");
+      });
+    }
     if (tab === "internal") api<Internal>("/api/intel/internal").then(setInternal).catch((e) => setErr((e as Error).message));
   }, [open, tab, load]);
 
@@ -82,7 +93,8 @@ export function BriefingDrawer({ open, onClose, initial, cc, onSaved, speak }: {
             <span className="cc-dim">{tab === "daily" ? "Every day at 08:00 IST" : "Every Sunday at 19:00 IST"}{b ? ` · showing ${b.label} (${b.status}${b.revision > 1 ? `, revision ${b.revision}` : ""}, ${TRIGGER[b.trigger] ?? b.trigger})` : ""}</span>
             <button className="cc-btn" onClick={() => generate(tab)} disabled={busy}>{busy ? "Working…" : tab === "daily" ? "Generate today's briefing" : "Generate this week's review"}</button>
           </div>
-          {!b && <p className="cc-dim">No {tab} briefing yet.</p>}
+          {busy && <p className="cc-reply">Preparing {tab === "daily" ? "today's briefing" : "this week's review"} — reading the latest sources and analysing them. This takes about a minute…</p>}
+          {!b && !busy && <p className="cc-dim">No {tab} briefing yet.</p>}
           {b && b.status !== "ready" && <p className="cc-warn">{b.status === "generating" ? "Being written…" : `Failed: ${b.error}`}</p>}
           {c && (
             <>

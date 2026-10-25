@@ -80,7 +80,7 @@ export async function writeSummary(hs: Headline[], ai: { ask: Ask; provider: str
     if (cited.some((c) => !ns.has(c))) return { ...rules, by: "rules", rejected: "The AI summary cited a headline that isn't in the briefing, so it was discarded." };
     if (!/\[\d+\]/.test(p.data.summary)) return { ...rules, by: "rules", rejected: "The AI summary had no citations, so it was discarded." };
     const allowed = allowedNumbers(facts);
-    const bad = (text.replace(/\[\d+\]/g, "").replace(/(\d),(\d)/g, "$1$2").match(/\d+(?:\.\d+)?/g) ?? []).filter((x) => !allowed.has(x) && !allowed.has(String(Number(x))));
+    const bad = (text.replace(/\[\d+\]/g, "").replace(/(\d),(?=\d)/g, "$1").match(/\d+(?:\.\d+)?/g) ?? []).filter((x) => !allowed.has(x) && !allowed.has(String(Number(x))));
     if (bad.length) return { ...rules, by: "rules", rejected: `The AI summary used numbers not in the sources (${[...new Set(bad)].slice(0, 4).join(", ")}), so it was discarded.` };
     return { ...p.data, by: "ai", provider: ai.provider };
   } catch (e) {

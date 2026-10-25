@@ -68,7 +68,8 @@ export function allowedNumbers(facts: unknown): Set<string> {
   };
   const walk = (v: unknown) => {
     if (typeof v === "number" && Number.isFinite(v)) add(v);
-    else if (typeof v === "string") for (const m of v.match(/\d+(?:\.\d+)?/g) ?? []) add(Number(m));
+    // "Rs 2,000" / "1,20,000" are one number, read the same way as in the reply
+    else if (typeof v === "string") for (const m of v.replace(/(\d),(?=\d)/g, "$1").match(/\d+(?:\.\d+)?/g) ?? []) add(Number(m));
     else if (Array.isArray(v)) v.forEach(walk);
     else if (v && typeof v === "object") Object.values(v).forEach(walk);
   };
