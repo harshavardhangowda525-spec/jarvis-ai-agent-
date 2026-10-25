@@ -293,6 +293,7 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
           {(agent.id === "darwin" || agent.id === "robin") && <Link href="/dashboard/crm" className="ac-console">Open CRM</Link>}
           {agent.id === "aston" && <Link href="/dashboard/aston" className="ac-console">Demos</Link>}
           {agent.id === "aston" && <Link href="/dashboard/teleprompter" className="ac-console">Teleprompter</Link>}
+          {agent.id === "mike" && <Link href="/dashboard/trading" className="ac-console">Trading Intelligence</Link>}
           <span className="ac-avatar" style={{ background: agent.color }} aria-hidden>{agent.name[0]}</span>
         </header>
 
