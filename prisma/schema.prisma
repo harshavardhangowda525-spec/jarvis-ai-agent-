@@ -60,6 +60,8 @@ model User {
   intelOpportunities  IntelOpportunity[]
   proposals           Proposal[]
   approvalDecisions   ApprovalDecision[]
+  phoneLink           PhoneLink?
+  phoneEvents         PhoneEvent[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
   gateCredentials     GateCredential[]
@@ -1646,4 +1648,57 @@ model ApprovalDecision {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+}
+
+/// Phone calls without a calling provider: a spare Android phone (Termux) is
+/// JARVIS's phone. It checks in here, and when something happens it texts you
+/// the details and rings your number from its own SIM.
+model PhoneLink {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  enabled      Boolean   @default(true)
+  /// Your number: the one JARVIS calls.
+  toNumber     String?
+  /// The spare phone's own number (JARVIS's number) — for display only.
+  jarvisNumber String?
+  /// sha256 of the pairing token the spare phone sends.
+  tokenHash    String?   @unique
+  onCompleted  Boolean   @default(true)
+  onFailed     Boolean   @default(true)
+  onApproval   Boolean   @default(true)
+  /// "HH:MM" in your timezone; calls wait until quiet hours end. Both empty = off.
+  quietFrom    String?
+  quietTo      String?
+  /// Only things that happen after this moment are called about (no backlog).
+  since        DateTime  @default(now())
+  lastSeenAt   DateTime?
+  device       String?
+  lastCallAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// One thing JARVIS has to tell you by phone. Several are grouped into one call.
+model PhoneEvent {
+  id        String    @id @default(cuid())
+  userId    String
+  /// e.g. job:<id>:completed — so the same thing is never called about twice
+  key       String
+  /// completed | failed | approval | test
+  kind      String
+  text      String
+  /// queued | sending | sent | failed
+  status    String    @default("queued")
+  batchId   String?
+  attempts  Int       @default(0)
+  error     String?
+  createdAt DateTime  @default(now())
+  sentAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, key])
+  @@index([userId, status, createdAt])
 }

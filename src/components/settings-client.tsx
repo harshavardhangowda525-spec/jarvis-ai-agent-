@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { Check, Link2, Unplug } from "lucide-react";
 import { GateSettings } from "@/components/gate/gate-settings";
+import { PhoneSettings } from "@/components/phone/phone-settings";
 
 interface Profile {
   displayName: string | null;
@@ -341,6 +342,9 @@ export function SettingsClient() {
           </div>
         )}
       </section>
+
+      {/* JARVIS calls you from a spare Android phone */}
+      <PhoneSettings />
 
       {/* Face unlock (the biometric gate) */}
       <GateSettings />
