@@ -22,9 +22,10 @@ const ago = (iso: string | null) => {
 };
 
 /**
- * Settings → Phone calls. A spare Android phone becomes JARVIS's phone: it
- * texts you what happened and rings your number from its own SIM. No calling
- * provider, no API key — just a pairing token between JARVIS and that phone.
+ * Settings → Phone calls. A spare Android phone on Wi-Fi becomes JARVIS's
+ * phone: it sends you what happened on WhatsApp and WhatsApp-calls you. No SIM
+ * plan, no calling provider, no API key — just a pairing token between JARVIS
+ * and that phone.
  */
 export function PhoneSettings() {
   const [st, setSt] = useState<Status | null>(null);
@@ -64,7 +65,7 @@ export function PhoneSettings() {
   const l = st?.link;
   const url = st?.lanUrls[0] ?? "http://<PC-IP>:3000";
   const setup = token ? [
-    "pkg update -y && pkg install -y curl jq termux-api",
+    "pkg update -y && pkg install -y curl jq android-tools",
     `curl -fsSL ${url}/api/phone/script -o jarvis-phone.sh`,
     `bash jarvis-phone.sh ${url} ${token}`,
   ].join("\n") : "";
@@ -73,7 +74,7 @@ export function PhoneSettings() {
     <section className="glass rounded-2xl p-5" id="phone">
       <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground"><PhoneCall className="h-4 w-4" /> Phone calls</h2>
       <p className="mb-4 text-[12px] leading-relaxed text-muted-foreground">
-        JARVIS uses a <b className="text-foreground">spare Android phone with its own SIM</b> as its phone. That SIM&apos;s number is JARVIS&apos;s number. When something happens, the spare phone texts you the details and rings you. You don&apos;t need a calling service or an API key, only that SIM&apos;s normal call and SMS plan.
+        JARVIS uses a <b className="text-foreground">spare Android phone on Wi-Fi with WhatsApp</b> as its phone, and its WhatsApp number is JARVIS&apos;s number. When something happens, the spare phone sends you the details on WhatsApp, then <b className="text-foreground">WhatsApp-calls you</b>. You don&apos;t need a SIM plan, a calling service or an API key.
       </p>
 
       {/* the real link state */}
@@ -86,9 +87,9 @@ export function PhoneSettings() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Your number (JARVIS calls this)</span>
+        <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Your WhatsApp number (JARVIS calls this)</span>
           <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="+919876543210" inputMode="tel" /></label>
-        <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">JARVIS&apos;s number (the spare phone&apos;s SIM)</span>
+        <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">JARVIS&apos;s WhatsApp number (on the spare phone)</span>
           <Input value={jn} onChange={(e) => setJn(e.target.value)} placeholder="+91…" inputMode="tel" /></label>
         <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Quiet hours from (optional)</span>
           <Input value={qf} onChange={(e) => setQf(e.target.value)} placeholder="23:00" /></label>
@@ -121,16 +122,18 @@ export function PhoneSettings() {
         <div className="mt-4 rounded-xl border border-accent/30 bg-accent/5 p-3 text-[12px] leading-relaxed">
           <div className="mb-2 font-medium text-foreground">Set up the spare phone (this token is shown only once)</div>
           <ol className="mb-2 list-decimal space-y-1 pl-5 text-muted-foreground">
-            <li>On the spare phone, install <b className="text-foreground">Termux</b> and <b className="text-foreground">Termux:API</b> from F-Droid. Install both from the same place.</li>
-            <li>Connect it to the same Wi-Fi as this PC.</li>
-            <li>Open Termux and paste:</li>
+            <li>Connect the spare phone to the same Wi-Fi as this PC. It needs Android 11 or newer.</li>
+            <li>Install <b className="text-foreground">WhatsApp</b> on it and sign in. WhatsApp sends a code once, by SMS or a voice call, and an unrecharged SIM can usually still receive it. Then save <b className="text-foreground">your</b> number in its Contacts and, in WhatsApp, tap New chat → ⋮ → Refresh.</li>
+            <li>Set its screen lock to <b className="text-foreground">None</b> (Settings → Security) and keep it plugged in. A locked phone can&apos;t start a call by itself.</li>
+            <li>Install <b className="text-foreground">Termux</b> from F-Droid.</li>
+            <li>Turn on Developer options (Settings → About phone → tap Build number 7 times). Then go to Developer options → turn on <b className="text-foreground">Wireless debugging</b> → <b className="text-foreground">Pair device with pairing code</b>. With that screen open in split screen, run this in Termux, using the port and code it shows: <code className="text-accent">pkg install -y android-tools &amp;&amp; adb pair 127.0.0.1:PORT CODE</code>. This lets the script start WhatsApp calls. It needs no root and stays on the phone.</li>
+            <li>Then paste this in Termux:</li>
           </ol>
           <pre className="overflow-x-auto whitespace-pre rounded-lg bg-black/40 p-2.5 text-[11px] text-accent">{setup}</pre>
           <button type="button" onClick={() => navigator.clipboard?.writeText(setup).catch(() => {})} className="mt-1.5 flex items-center gap-1 text-[11px] text-accent hover:underline"><Copy className="h-3 w-3" /> Copy</button>
-          <ol start={4} className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
-            <li>When Android asks, allow <b className="text-foreground">Phone</b> and <b className="text-foreground">SMS</b> for Termux:API.</li>
-            <li>Turn off battery optimisation for Termux, and keep it running.</li>
-            <li>Save JARVIS&apos;s number in your own phone&apos;s contacts as &ldquo;JARVIS&rdquo;.</li>
+          <ol start={7} className="mt-2 list-decimal space-y-1 pl-5 text-muted-foreground">
+            <li>Turn off battery optimisation for Termux, and keep it running. Leave Wireless debugging on. If it switches off after a Wi-Fi drop or a restart, turn it back on and the script reconnects by itself.</li>
+            <li>On your own phone, save JARVIS&apos;s WhatsApp number as &ldquo;JARVIS&rdquo;.</li>
           </ol>
           {st && st.lanUrls.length > 1 && <p className="mt-2 text-muted-foreground">This PC has more than one network address. If the phone can&apos;t connect, try {st.lanUrls.slice(1).map((u) => <code key={u} className="mr-1 text-accent">{u}</code>)} instead.</p>}
           <p className="mt-2 text-muted-foreground">If the phone says it can&apos;t reach JARVIS, Windows Firewall is probably blocking it. When Windows asks, allow Node.js on <b className="text-foreground">Private networks</b>. Or run this once in an administrator Command Prompt: <code className="break-all text-accent">netsh advfirewall firewall add rule name=&quot;JARVIS phone&quot; dir=in action=allow protocol=TCP localport=3000 profile=private</code></p>

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb, isDbConfigured } from "@/lib/db";
-import { cleanNumber, inQuiet, smsText } from "@/lib/phone/service";
+import { cleanNumber, inQuiet, messageText } from "@/lib/phone/service";
 
 describe("phone calls: pure helpers", () => {
   it("accepts real-looking numbers only", () => {
@@ -20,7 +20,7 @@ describe("phone calls: pure helpers", () => {
     expect(inQuiet({ quietFrom: "23:00", quietTo: "07:00" }, at(18, 0), "Asia/Kolkata")).toBe(true);
   });
   it("the text is plain ASCII and groups updates", () => {
-    const t = smsText([{ kind: "completed", text: "Done - ASTON: Build the café site" }, { kind: "approval", text: "Needs your approval - EV: Post" }]);
+    const t = messageText([{ kind: "completed", text: "Done - ASTON: Build the café site" }, { kind: "approval", text: "Needs your approval - EV: Post" }]);
     expect(t).toMatch(/^JARVIS: 2 updates\n- Done - ASTON: Build the cafe site\n- Needs your approval - EV: Post\nOpen JARVIS > Activity Center to approve\.$/);
   });
 });
@@ -62,11 +62,11 @@ d("phone calls: the spare phone's path (integration)", () => {
     const r = await P.deviceNext(token, null);
     if (!r.authorized || !r.call) throw new Error("expected a call");
     expect(r.call.to).toBe("+919876543210");
-    expect(r.call.sms).toContain("JARVIS: 3 updates");
-    expect(r.call.sms).toContain("Done - ASTON: Gym website");
-    expect(r.call.sms).toContain("Failed - DARWIN: Find gyms (Search offline)");
-    expect(r.call.sms).toMatch(/Needs your approval - EV(IE)?: Post the reel/);
-    expect(r.call.sms).not.toContain("Old site");
+    expect(r.call.message).toContain("JARVIS: 3 updates");
+    expect(r.call.message).toContain("Done - ASTON: Gym website");
+    expect(r.call.message).toContain("Failed - DARWIN: Find gyms (Search offline)");
+    expect(r.call.message).toMatch(/Needs your approval - EV(IE)?: Post the reel/);
+    expect(r.call.message).not.toContain("Old site");
 
     // a new event right away waits for the gap; the same events are never queued again
     await db.agentJob.create({ data: { userId, agent: "mike", title: "Market scan", request: "r", brief, status: "completed", finishedAt: new Date() } });
@@ -80,8 +80,8 @@ d("phone calls: the spare phone's path (integration)", () => {
     await db.phoneLink.update({ where: { userId }, data: { lastCallAt: new Date(Date.now() - P.CALL_GAP_MS - 1000) } });
     const r3 = await P.deviceNext(token, null);
     if (!r3.authorized || !r3.call) throw new Error("expected the second call");
-    expect(r3.call.sms).toBe("JARVIS:\n- Done - MIKE: Market scan");
-    await P.deviceAck(token, { id: r3.call.id, ok: false, error: "the call couldn't be placed" });
+    expect(r3.call.message).toBe("JARVIS:\n- Done - MIKE: Market scan");
+    await P.deviceAck(token, { id: r3.call.id, ok: false, error: "WhatsApp didn't open the call screen" });
     expect((await db.phoneEvent.findFirst({ where: { userId, batchId: r3.call.id } }))!.status).toBe("failed");
   });
 
@@ -94,7 +94,7 @@ d("phone calls: the spare phone's path (integration)", () => {
     await db.phoneEvent.deleteMany({ where: { userId, status: "queued" } });
     await P.queueTest(userId);
     const t = await P.deviceNext(token, null);
-    expect(t.authorized && t.call?.sms).toBe("JARVIS:\n- Test call - JARVIS can reach you.");
+    expect(t.authorized && t.call?.message).toBe("JARVIS:\n- Test call - JARVIS can reach you.");
     await P.saveSettings(userId, { enabled: false });
     await P.queueTest(userId);
     await db.phoneLink.update({ where: { userId }, data: { lastCallAt: null } });

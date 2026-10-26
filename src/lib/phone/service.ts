@@ -8,11 +8,11 @@ import { listCenter } from "@/lib/approvals/center";
 import { localClock } from "@/lib/ev/daily/schedule";
 
 /**
- * JARVIS calls you — with no calling provider and no API key. A spare Android
- * phone (Termux + Termux:API) is JARVIS's phone: it checks in every few
- * seconds with its pairing token, and when something happened it texts you
- * the details and rings your number from its own SIM. Its SIM's number is
- * JARVIS's number.
+ * JARVIS calls you over Wi-Fi, with no calling provider, no API key and no SIM
+ * plan. A spare Android phone (Termux, with WhatsApp signed in) is JARVIS's
+ * phone. It checks in every few seconds with its pairing token. When something
+ * has happened, it sends you the details on WhatsApp and WhatsApp-calls you.
+ * Its WhatsApp number is JARVIS's number.
  *
  * Only real events are called about (a task completed or failed, something
  * waiting for your approval), each at most once, grouped into one call, and
@@ -96,7 +96,7 @@ export async function saveSettings(userId: string, i: PhoneSettingsInput) {
   }
   if (i.jarvisNumber !== undefined) {
     const n = i.jarvisNumber ? cleanNumber(i.jarvisNumber) : null;
-    if (i.jarvisNumber && !n) throw new PhoneError("JARVIS's number doesn't look like a phone number.");
+    if (i.jarvisNumber && !n) throw new PhoneError("JARVIS's WhatsApp number doesn't look like a phone number.");
     data.jarvisNumber = n;
   }
   for (const k of ["quietFrom", "quietTo"] as const) if (i[k] !== undefined) {
@@ -151,8 +151,8 @@ export async function collect(userId: string, link: PhoneLink) {
   return rows.length;
 }
 
-/** The text message for a batch (plain ASCII so it stays a cheap, normal SMS). */
-export function smsText(events: { kind: string; text: string }[]) {
+/** The WhatsApp message for a batch (plain text, no emoji, so it reads the same everywhere). */
+export function messageText(events: { kind: string; text: string }[]) {
   const head = events.length === 1 ? "JARVIS:" : `JARVIS: ${events.length} updates`;
   const lines = events.slice(0, 6).map((e) => `- ${e.text}`);
   if (events.length > 6) lines.push(`- and ${events.length - 6} more`);
@@ -170,7 +170,7 @@ export async function deviceNext(token: string, device: string | null, now = new
   const link = await db().phoneLink.findUnique({ where: { tokenHash: hashToken(token) } });
   if (!link) return { authorized: false as const };
   await db().phoneLink.update({ where: { id: link.id }, data: { lastSeenAt: now, ...(device ? { device: clip(device, 80) } : {}) } });
-  const out = { authorized: true as const, pollSeconds: POLL_SECONDS, call: null as null | { id: string; to: string; sms: string } };
+  const out = { authorized: true as const, pollSeconds: POLL_SECONDS, call: null as null | { id: string; to: string; message: string } };
   if (!link.enabled || !link.toNumber) return out;
 
   // batches the phone took but never confirmed (it lost power mid-call): back in the queue, or give up
@@ -191,7 +191,7 @@ export async function deviceNext(token: string, device: string | null, now = new
   if (!claimed.count) return out;
   await db().phoneLink.update({ where: { id: link.id }, data: { lastCallAt: now } });
   const events = await db().phoneEvent.findMany({ where: { batchId }, orderBy: { createdAt: "asc" } });
-  out.call = { id: batchId, to: link.toNumber, sms: smsText(events) };
+  out.call = { id: batchId, to: link.toNumber, message: messageText(events) };
   return out;
 }
 

@@ -1650,16 +1650,16 @@ model ApprovalDecision {
   @@index([userId, createdAt])
 }
 
-/// Phone calls without a calling provider: a spare Android phone (Termux) is
-/// JARVIS's phone. It checks in here, and when something happens it texts you
-/// the details and rings your number from its own SIM.
+/// Phone calls over Wi-Fi with no calling provider: a spare Android phone
+/// (Termux + WhatsApp) is JARVIS's phone. It checks in here, and when
+/// something happens it sends you the details on WhatsApp and WhatsApp-calls you.
 model PhoneLink {
   id           String    @id @default(cuid())
   userId       String    @unique
   enabled      Boolean   @default(true)
-  /// Your number: the one JARVIS calls.
+  /// Your WhatsApp number: the one JARVIS calls.
   toNumber     String?
-  /// The spare phone's own number (JARVIS's number) — for display only.
+  /// The WhatsApp number on the spare phone (JARVIS's number) — for display only.
   jarvisNumber String?
   /// sha256 of the pairing token the spare phone sends.
   tokenHash    String?   @unique
