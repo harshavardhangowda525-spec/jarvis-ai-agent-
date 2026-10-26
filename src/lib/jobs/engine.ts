@@ -243,7 +243,7 @@ export async function resumeJob(userId: string, id: string, note: string) {
 export const jobView = (j: AgentJob) => ({
   id: j.id, agent: j.agent, agentName: JOB_AGENT_NAME[j.agent as JobAgent] ?? j.agent, title: j.title, status: j.status as JobStatus,
   request: j.request, brief: j.brief as unknown as Brief, dependsOn: j.dependsOn, progress: j.progress as unknown as Step[],
-  result: j.result, resultData: j.resultData as { tools?: { name: string; status: string; summary: string }[]; links?: { url: string; label: string }[]; artifacts?: ({ kind: "aston"; siteId: string; version: number; url: string; title: string } | { kind: "friday" | "studio"; projectId: string; version: number; url: string; title: string })[] } | null,
+  result: j.result, resultData: j.resultData as { tools?: { name: string; status: string; summary: string }[]; links?: { url: string; label: string }[]; artifacts?: ({ kind: "aston"; siteId: string; version: number; url: string; title: string } | { kind: "friday" | "studio"; projectId: string; version: number; url: string; title: string } | { kind: "chart"; asset: string; timeframe: string; title: string })[] } | null,
   payload: (j.payload ?? null) as (AstonPayload & Partial<FridayPayload> & Partial<Omit<StudioPayload, "action">>) | null,
   liveText: j.liveText,
   error: j.error, attempts: j.attempts, cancelRequested: j.cancelRequested, conversationId: j.conversationId,

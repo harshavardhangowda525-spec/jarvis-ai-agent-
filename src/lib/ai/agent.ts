@@ -53,6 +53,8 @@ export type AgentEvent =
   | { type: "artifact"; kind: "studio"; projectId: string; version: number; url: string; title: string }
   /** FRIDAY: a verified model version (opens in Friday's workspace). */
   | { type: "artifact"; kind: "friday"; projectId: string; version: number; url: string; title: string }
+  /** MIKE: the live chart of a market (opens in MIKE's window). */
+  | { type: "artifact"; kind: "chart"; asset: string; timeframe: string; title: string }
   /** A task JARVIS delegated to an agent (delegate_task) — tracked until it finishes. */
   | { type: "job"; id: string; agent: string; title: string; status: string }
   /**
@@ -460,6 +462,10 @@ async function* runOneTool(
     const ap = data?.astonPreview as { siteId?: unknown; version?: unknown; url?: unknown; title?: unknown; mode?: unknown } | undefined;
     if (ap && typeof ap.siteId === "string" && typeof ap.url === "string" && ap.url.startsWith("/p/")) {
       yield { type: "artifact", kind: "aston", siteId: ap.siteId, version: Number(ap.version) || 0, url: ap.url, title: String(ap.title ?? "Preview"), mode: ap.mode === "walk" ? "walk" : "open" };
+    }
+    const ch = data?.chart as { asset?: unknown; timeframe?: unknown; title?: unknown } | undefined;
+    if (ch && typeof ch.asset === "string" && ch.asset) {
+      yield { type: "artifact", kind: "chart", asset: ch.asset.slice(0, 60), timeframe: String(ch.timeframe ?? "1h"), title: String(ch.title ?? ch.asset).slice(0, 80) };
     }
     if (data && Array.isArray(data.openApp)) {
       yield { type: "open_app", names: (data.openApp as unknown[]).map(String).slice(0, 4) };

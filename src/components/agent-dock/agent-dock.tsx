@@ -10,6 +10,9 @@ import { CHAT_AGENTS } from "@/lib/agents/catalog";
 import { AgentGlyph } from "@/components/omega/glyphs";
 import { Markdown } from "@/components/chat/markdown";
 import { StudioMini } from "./studio-mini";
+import { ChartPanel } from "@/components/mike/chart-panel";
+import { TIMEFRAMES, type Timeframe } from "@/lib/mike/types";
+import { chartRequest } from "@/lib/mike/command";
 import { DISPLAY_COLOR, DISPLAY_LABEL, displayState, isActive, isFinished, planGroups, planSummary } from "./state";
 
 /**
@@ -28,9 +31,12 @@ export interface DockApi {
   openJob: (jobId: string, agent?: string) => void;
   /** Bring back every window that has active tasks. */
   showWorking: () => void;
+  /** MIKE's live chart of a market, in MIKE's window. */
+  openChart: (asset: string, timeframe?: string) => void;
 }
 
-type Thread = { jobIds: string[]; open: boolean; min: boolean; at: number };
+type Thread = { jobIds: string[]; open: boolean; min: boolean; at: number; chart?: { asset: string; tf: Timeframe } | null; chartFrom?: string[] };
+const asTf = (t: string | undefined): Timeframe => ((TIMEFRAMES as readonly string[]).includes(t ?? "") ? (t as Timeframe) : "1h");
 type Store = { threads: Partial<Record<JobAgent, Thread>>; reported: string[] };
 type Cap = { tool: string; label: string; description: string; needsApproval: boolean };
 const KEY = "jarvis-agent-dock-v1";
@@ -78,6 +84,9 @@ export const AgentDock = forwardRef<DockApi, { liveJobs: JobView[]; onReport: (t
   }, [touch]);
 
   const send = useCallback(async (agent: JobAgent, text: string) => {
+    // a chart asked of MIKE opens straight away (live data, no AI turn needed)
+    const ch = agent === "mike" ? chartRequest(/\bmike\b/i.test(text) ? text : `mike ${text}`) : null;
+    if (ch) { touch("mike", (t) => ({ ...t, open: true, min: false, at: Date.now(), chart: { asset: ch.query, tf: ch.timeframe ?? t.chart?.tf ?? "1h" } })); return null; }
     touch(agent, (t) => ({ ...t, open: true, min: false, at: Date.now() }));
     const r = await fetch("/api/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent, text }) }).then((x) => x.json()).catch(() => null);
     if (!r?.ok) return r?.error ?? "Couldn't reach JARVIS.";
@@ -98,6 +107,7 @@ export const AgentDock = forwardRef<DockApi, { liveJobs: JobView[]; onReport: (t
       if (a) { addJob(a, id); void fetchJob(id); return; }
       void fetchJob(id).then((j) => { const b = asAgent(j?.agent); if (b) addJob(b, id); });
     },
+    openChart: (asset, timeframe) => touch("mike", (t) => ({ ...t, open: true, min: false, at: Date.now(), chart: { asset, tf: asTf(timeframe) } })),
     showWorking: () => setStore((s) => {
       const threads = { ...s.threads };
       for (const [a, t] of Object.entries(threads) as [JobAgent, Thread][]) if (t.jobIds.some((id) => isActive(jobsRef.current[id]?.status ?? ""))) threads[a] = { ...t, open: true, min: false };
@@ -150,6 +160,19 @@ export const AgentDock = forwardRef<DockApi, { liveJobs: JobView[]; onReport: (t
     }
   }, [jobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // a MIKE task that pulled up a market shows its live chart (once per task)
+  useEffect(() => {
+    const t = store.threads.mike;
+    if (!t) return;
+    for (const id of t.jobIds) {
+      const j = jobs[id];
+      const art = j?.resultData?.artifacts?.find((a) => a.kind === "chart") as { asset: string; timeframe: string } | undefined;
+      if (!art || t.chartFrom?.includes(id)) continue;
+      touch("mike", (x) => ({ ...x, chart: { asset: art.asset, tf: asTf(art.timeframe) }, chartFrom: [...(x.chartFrom ?? []), id].slice(-20) }));
+      break;
+    }
+  }, [jobs, store.threads.mike]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const act = async (id: string, action: "cancel" | "retry" | "approve", note?: string) => {
     await fetch(`/api/jobs/${id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ...(note ? { note } : {}) }) }).catch(() => {});
     void fetchJob(id); onChanged();
@@ -174,7 +197,9 @@ export const AgentDock = forwardRef<DockApi, { liveJobs: JobView[]; onReport: (t
             onMin={() => touch(agent, (x) => ({ ...x, min: !x.min }))}
             onClose={() => touch(agent, (x) => ({ ...x, open: false }))}
             onFocus={() => touch(agent, (x) => ({ ...x, min: false, at: Date.now() }))}
-            onSend={(text) => send(agent, text)} onAct={act} />
+            onSend={(text) => send(agent, text)} onAct={act}
+            onChartTf={(tf) => touch(agent, (x) => ({ ...x, chart: x.chart ? { ...x.chart, tf } : x.chart }))}
+            onChartClose={() => touch(agent, (x) => ({ ...x, chart: null }))} />
         ))}
       </div>
       {hidden.length > 0 && (
@@ -192,9 +217,10 @@ export const AgentDock = forwardRef<DockApi, { liveJobs: JobView[]; onReport: (t
   );
 });
 
-function AgentWindow({ agent, thread, compact, jobs, caps, statusOf, wide, onWide, onMin, onClose, onFocus, onSend, onAct }: {
+function AgentWindow({ agent, thread, compact, jobs, caps, statusOf, wide, onWide, onMin, onClose, onFocus, onSend, onAct, onChartTf, onChartClose }: {
   agent: JobAgent; thread: Thread; compact: boolean; jobs: Record<string, JobView>; caps: Cap[] | null; statusOf: (id: string) => string | undefined; wide: boolean;
   onWide: () => void; onMin: () => void; onClose: () => void; onFocus: () => void; onSend: (text: string) => Promise<string | null>; onAct: (id: string, a: "cancel" | "retry" | "approve", note?: string) => void;
+  onChartTf: (tf: Timeframe) => void; onChartClose: () => void;
 }) {
   const m = meta(agent); const chat = CHAT_AGENTS[agent];
   const list = (thread.jobIds.map((id) => jobs[id]).filter(Boolean) as JobView[]).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
@@ -238,7 +264,7 @@ function AgentWindow({ agent, thread, compact, jobs, caps, statusOf, wide, onWid
   };
 
   return (
-    <section className={`ad-win${thread.min || compact ? " min" : ""}${wide && !compact ? " wide" : ""}`} style={{ ["--ac" as string]: m?.color ?? "#5fe1ff" }} aria-label={`${m?.name ?? agent} window`}>
+    <section className={`ad-win${thread.min || compact ? " min" : ""}${(wide || thread.chart) && !compact ? " wide" : ""}`} style={{ ["--ac" as string]: m?.color ?? "#5fe1ff" }} aria-label={`${m?.name ?? agent} window`}>
       <header className="ad-h" onClick={compact ? onFocus : undefined} title={compact ? `Show ${m?.name ?? agent}` : undefined} style={compact ? { cursor: "pointer" } : undefined}>
         <span className="ad-glyph"><AgentGlyph motif={m?.motif ?? ""} size={16} color={m?.color} /></span>
         <span className="ad-id"><b>{m?.name ?? agent}</b><small>{current ? current.title : chat?.role ?? m?.title}</small></span>
@@ -249,6 +275,7 @@ function AgentWindow({ agent, thread, compact, jobs, caps, statusOf, wide, onWid
       </header>
       {!thread.min && !compact && (
         <>
+          {thread.chart && <div className="ad-chart"><ChartPanel key={thread.chart.asset} asset={thread.chart.asset} timeframe={thread.chart.tf} onTimeframe={onChartTf} onClose={onChartClose} /></div>}
           <div className="ad-body" ref={bodyRef} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; }}>
             {!list.length && (
               <div className="ad-empty">
@@ -317,6 +344,8 @@ const CSS = `
 .ad-win.min{height:auto;width:min(300px,calc(100vw - 24px))}
 @media (max-width:640px){.ad-win.min{width:100%}}
 .ad-win.wide{width:min(760px,calc(100vw - 24px))}
+.ad-chart{padding:8px 10px 0;flex:none}
+.ad-win:has(.ad-chart){height:min(820px,calc(100dvh - 24px))}
 @keyframes ad-in{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
 .ad-h{display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:1px solid rgba(140,200,255,.12);flex:none;cursor:default}
 .ad-glyph{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;border:1px solid var(--ac);box-shadow:0 0 12px color-mix(in srgb,var(--ac) 40%,transparent);flex:none}

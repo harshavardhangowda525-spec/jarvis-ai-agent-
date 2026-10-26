@@ -42,6 +42,8 @@ interface UseAgentOptions {
   onTool?: (t: { name: string; status: "ok" | "error"; summary: string }) => void;
   /** ASTON preview you asked to see (open = show it, walk = guided walkthrough). */
   onArtifact?: (a: { siteId: string; version: number; url: string; title: string; mode?: "open" | "walk" }) => void;
+  /** MIKE pulled up a market's chart. */
+  onChart?: (c: { asset: string; timeframe: string; title: string }) => void;
   /** The turn failed (no provider answered, rate limit, connection error…) — the message to show/say. */
   onError?: (message: string) => void;
 }
@@ -59,7 +61,7 @@ const nextId = () => `m${Date.now()}_${idc++}`;
  * and exposes messages, the live-activity feed, and the currently streaming
  * assistant text. Voice and text share this same flow.
  */
-export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onArtifact, onError }: UseAgentOptions = {}) {
+export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onArtifact, onChart, onError }: UseAgentOptions = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [streaming, setStreaming] = useState(false);
@@ -223,7 +225,8 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
                 onJob?.({ id: ev.id, agent: ev.agent, title: ev.title, status: ev.status });
                 break;
               case "artifact":
-                onArtifact?.({ siteId: ev.siteId, version: ev.version, url: ev.url, title: ev.title, mode: ev.mode });
+                if (ev.kind === "chart") onChart?.({ asset: ev.asset, timeframe: ev.timeframe, title: ev.title });
+                else if (ev.kind === "aston") onArtifact?.({ siteId: ev.siteId, version: ev.version, url: ev.url, title: ev.title, mode: ev.mode });
                 break;
               case "pending_media":
                 onPendingMedia?.({ kind: ev.kind, projectId: ev.projectId, label: ev.label, fallback: ev.fallback });
@@ -286,7 +289,7 @@ export function useAgent({ onAssistantComplete, onTextDelta, onTurnEnd, onEmail,
         onTurnEnd?.();
       }
     },
-    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onArtifact, onError, pushActivity, setConversation, streaming],
+    [onAssistantComplete, onTextDelta, onTurnEnd, onEmail, onNavigate, onJob, onOpen, onOpenApp, onPendingMedia, onTool, onArtifact, onChart, onError, pushActivity, setConversation, streaming],
   );
 
   return {

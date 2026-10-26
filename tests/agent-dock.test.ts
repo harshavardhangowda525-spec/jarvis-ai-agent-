@@ -107,3 +107,17 @@ d("tasks from agent windows (integration)", () => {
     expect(r!.attempts).toBe(1);
   });
 });
+
+describe("chart requests go to MIKE's live chart", () => {
+  it("recognises a market chart, with or without MIKE named, and leaves other 'show me' requests alone", async () => {
+    const { chartRequest } = await import("@/lib/mike/command");
+    expect(chartRequest("Show me the chart of Reliance")).toMatchObject({ timeframe: null });
+    expect(chartRequest("Show me the chart of Reliance")!.query.toUpperCase()).toContain("RELIANCE");
+    expect(chartRequest("Mike, pull up Bitcoin on the 4 hour")).toMatchObject({ timeframe: "4h" });
+    expect(chartRequest("chart gold on the daily")).toMatchObject({ timeframe: "1d" });
+    expect(chartRequest("show me my leads")).toBeNull();
+    expect(chartRequest("open Mike")).toBeNull();
+    expect(chartRequest("show me the sales chart")).toBeNull();
+    expect(chartRequest("Ask Mike to explain why NIFTY fell today")).toBeNull();
+  });
+});

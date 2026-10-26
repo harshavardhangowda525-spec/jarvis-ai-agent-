@@ -54,7 +54,7 @@ export const mikeAnalyzeTool: ToolDefinition<z.infer<typeof analyzeSchema>> = {
       status: "info", importance: 2,
     });
     return {
-      data: compactAnalysis(a),
+      data: { ...compactAnalysis(a), chart: { asset: a.asset.symbol, timeframe, title: a.asset.name ?? a.asset.display } },
       summary: a.data.freshness === "unavailable"
         ? `${a.asset.display}: LIVE DATA UNAVAILABLE.`
         : a.decision === "setup" && a.setup
@@ -227,6 +227,8 @@ export const mikeChartTool: ToolDefinition<z.infer<typeof chartSchema>> = {
       data: {
         asset: asset.display, name: asset.name ?? null, exchange: s.asset.exchange, timeframe: TF_LABEL[timeframe],
         data: status, note: s.note, lastPrice: last ? fmtPrice(last.c) : null, currency: s.currency ?? null,
+        // shown live in MIKE's window
+        chart: { asset: asset.symbol, timeframe, title: asset.name ?? asset.display },
       },
       summary: s.freshness === "unavailable" ? `${asset.display}: ${status} — ${s.note}` : `Chart: ${asset.name ?? asset.display} · ${TF_LABEL[timeframe]} · ${status}${last ? ` · ${fmtPrice(last.c)}` : ""}`,
     };

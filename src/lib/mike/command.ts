@@ -75,3 +75,18 @@ export function parseMikeCommand(raw: string): MikeCommand {
   }
   return { kind: "ask", text: raw.trim() };
 }
+
+/**
+ * "Show me the chart of Reliance", "Mike, pull up Bitcoin on the 4 hour",
+ * "chart gold daily" → that market's live chart. Needs a chart word, or MIKE
+ * being addressed, so "show me my leads" never becomes a chart.
+ */
+export function chartRequest(text: string): { query: string; timeframe: Timeframe | null } | null {
+  const low = text.toLowerCase();
+  const chartWord = /\b(chart|charts|graph|candles?|candlesticks?|price action)\b/.test(low);
+  const toMike = /\bmike\b/.test(low);
+  if (!chartWord && !toMike) return null;
+  if (/\b(trading (review|intelligence|playbook)|equity curve|activity|analytics|sales|leads?|crm)\b/.test(low)) return null;
+  const c = parseMikeCommand(text.replace(/\bmike\b[,:]?/gi, " ").replace(/\s+/g, " ").trim());
+  return c.kind === "chart" && c.query ? { query: c.query, timeframe: c.timeframe } : null;
+}

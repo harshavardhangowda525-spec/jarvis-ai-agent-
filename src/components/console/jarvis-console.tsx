@@ -48,6 +48,7 @@ import { HoloPanel } from "./jarvis/holo-panel";
 import { cn } from "@/lib/utils";
 import { CHAT_AGENTS, type ChatAgentId } from "@/lib/agents/catalog";
 import { agentInstruction, agentsNamed } from "@/lib/agents/instruction";
+import { chartRequest } from "@/lib/mike/command";
 import { announcement, useJobs } from "@/components/jobs/use-jobs";
 import { JOB_STATUS_LABEL } from "@/lib/jobs/brief";
 import { AstonViewer } from "@/components/aston/viewer";
@@ -261,6 +262,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   // "build a website" without saying for whom → JARVIS asks once; the next thing you say is the brief
   const astonAsk = useRef<{ kind: "website" | "app"; request: string; at: number } | null>(null);
   const agent = useAgent({
+    onChart: (c) => dockRef.current?.openChart(c.asset, c.timeframe),
     onJob: (j) => { dockRef.current?.openJob(j.id, j.agent); void jobsRef.current.refresh(); },
     // ASTON preview you asked for (via aston_demo open/walkthrough)
     onArtifact: (a) => { setAstonOffer(null); setAstonPanel({ siteId: a.siteId, walk: a.mode === "walk", key: Date.now() }); },
@@ -609,6 +611,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       // ===== one agent + an instruction ("activate Darwin and find 30 salons", "ask Evie to …", "tell Aston to …")
       // → that agent's window opens and the instruction runs as its task. Several agents in one
       // sentence go to JARVIS's brain, which plans the tasks and their order (each window opens as it's assigned).
+      // "show me the chart of Reliance" / "Mike, pull up Bitcoin on the 4 hour" → MIKE's live chart, right away
+      const chartAsk = chartRequest(t);
+      if (chartAsk) {
+        agent.appendLocalExchange(t, `Pulling up the ${chartAsk.query} chart in MIKE's window.`);
+        sayRef.current(`Here's ${chartAsk.query}.`);
+        dockRef.current?.openChart(chartAsk.query, chartAsk.timeframe ?? undefined);
+        return;
+      }
       const named = agentsNamed(low);
       if (named.length > 1) { void agent.send(t); return; }
       if (named.length === 1) {
