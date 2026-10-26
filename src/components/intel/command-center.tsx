@@ -8,7 +8,6 @@ import { voiceWasOn } from "@/hooks/useVoice";
 import { isVoiceSilent } from "@/lib/voice/silence";
 import { claimRecognizer, releaseRecognizer } from "@/lib/voice/mic-lock";
 import { OMEGA_CSS } from "@/components/omega/tokens";
-import { OmegaNav } from "@/components/omega/omega-nav";
 import { Globe } from "./globe";
 import { OpportunityRadar } from "./opportunity-radar";
 import { StreamItem, AnalystModal } from "./stream";
@@ -228,11 +227,10 @@ export function CommandCenter() {
   return (
     <div className="cc om">
       <style dangerouslySetInnerHTML={{ __html: OMEGA_CSS + CC_CSS }} />
-      <div className="cc-navrow"><OmegaNav /></div>
       <div className="cc-top">
         <div>
-          <div className="om-title">Dashboard A · Business Environment Intelligence</div>
-          <h1 className="om-h1">Global intelligence observatory</h1>
+          <div className="om-title">Dashboard A</div>
+          <h1 className="om-h1">Business Environment Intelligence</h1>
           <div className="cc-dim">Powered by EVIE · for Infinity Web &amp; Apps</div>
         </div>
         <div className="cc-actions">

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { OmegaNav } from "./omega-nav";
 import { STATE_COLOR } from "./tokens";
 import { STATE_LABEL, type AgentState } from "@/lib/nexus/agents";
 
@@ -30,7 +29,6 @@ export function HomeOmega({ phase }: { phase: HomePhase }) {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
-      <div className="ho-nav"><OmegaNav compact /></div>
       <div className="ho-phases" aria-label={`JARVIS state: ${phase}`}>
         {HOME_PHASES.map((p) => <span key={p} className={p === phase ? "on" : ""}>{p}</span>)}
       </div>

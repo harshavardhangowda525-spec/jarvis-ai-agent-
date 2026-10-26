@@ -11,24 +11,50 @@ import {
   Brain,
   LogOut,
   Lock,
-  Maximize2, Handshake,
+  Maximize2, Bell, Radar, Network, Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ReactorLogo, Chevrons } from "@/components/hud/visuals";
-import { useClock } from "@/hooks/useDeviceMetrics";
 import { GestureProvider, useGesture } from "@/components/gesture/gesture-provider";
 import { Hand, VolumeX } from "lucide-react";
 import { isVoiceSilent, onVoiceSilent, setVoiceSilent } from "@/lib/voice/silence";
 import { useMutedWake } from "@/hooks/useMutedWake";
 
-// Compact nav for the mobile bottom bar (real, distinct pages only).
+// The OMEGA workspaces (top bar on desktop, bottom bar on phones).
+const TABS = [
+  { href: "/dashboard", label: "Home" },
+  { href: "/dashboard/intel", label: "Business Intelligence" },
+  { href: "/dashboard/nexus", label: "Agent Command Nexus" },
+  { href: "/dashboard/activity", label: "Activity Center" },
+];
 const MOBILE_NAV = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
-  { href: "/dashboard/tasks", label: "Tasks", icon: ListChecks },
-  { href: "/dashboard/notes", label: "Notes", icon: StickyNote },
-  { href: "/dashboard/memory", label: "Memory", icon: Brain },
+  { href: "/dashboard/intel", label: "Intel", icon: Radar },
+  { href: "/dashboard/nexus", label: "Nexus", icon: Network },
+  { href: "/dashboard/activity", label: "Activity", icon: Inbox },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
+
+const BAR_CSS = `
+html[data-home-view="omega"] .om-bar.is-home{display:none}
+html[data-home-view="omega"] .jarvis-os{height:100dvh}
+.om-bar{position:relative;z-index:40;display:flex;align-items:center;gap:18px;height:56px;flex-shrink:0;padding:0 18px;background:linear-gradient(180deg,rgba(6,14,28,.96),rgba(3,8,18,.92));border-bottom:1px solid rgba(120,200,255,.10);box-shadow:0 1px 0 rgba(95,225,255,.06),0 10px 30px rgba(0,0,0,.35)}
+.om-bar::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,rgba(95,225,255,.45),rgba(155,123,255,.35),transparent)}
+.om-bar-brand{font:500 19px "Barlow Condensed",Barlow,sans-serif;letter-spacing:.42em;color:#eef7ff;text-decoration:none;text-shadow:0 0 18px rgba(95,225,255,.35)}
+.om-bar-tabs{display:flex;align-items:stretch;gap:4px;height:100%;margin-left:12px}
+.om-bar-tabs a{position:relative;display:flex;align-items:center;padding:0 14px;font:500 11px "Barlow Condensed",Barlow,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:#7f97b2;text-decoration:none;white-space:nowrap;transition:color .2s}
+.om-bar-tabs a:hover{color:#dcecff}
+.om-bar-tabs a.on{color:#f2f9ff}
+.om-bar-tabs a.on::after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;border-radius:2px;background:linear-gradient(90deg,#5fe1ff,#9b7bff);box-shadow:0 0 12px rgba(95,225,255,.7)}
+.om-bar-right{margin-left:auto;display:flex;align-items:center;gap:6px}
+.om-bar-icon{position:relative;display:flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;color:#8fa9c4;transition:background .2s,color .2s}
+.om-bar-icon:hover{background:rgba(95,225,255,.08);color:#e8f3ff}
+.om-bar-badge{position:absolute;top:3px;right:2px;min-width:15px;height:15px;padding:0 4px;border-radius:99px;background:#f4c35a;color:#1a1200;font:700 9.5px/15px Barlow,sans-serif;text-align:center}
+.om-bar-user{display:flex;align-items:center;gap:6px;margin-left:4px;padding:3px 8px 3px 3px;border:1px solid rgba(120,200,255,.16);border-radius:999px;color:#8fa9c4}
+.om-bar-user button{display:flex;padding:3px;border-radius:6px;transition:color .2s}.om-bar-user button:hover{color:#e8f3ff}
+.om-bar-avatar{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#5fe1ff,#4f5fd8 60%,#2a1e6e);color:#fff;font:600 12px Barlow,sans-serif;box-shadow:0 0 12px rgba(95,225,255,.35)}
+@media (max-width:1100px){.om-bar-tabs a{padding:0 9px;letter-spacing:.14em;font-size:10.5px}}
+@media (max-width:860px){.om-bar-tabs{display:none}.om-bar{height:52px}}
+`;
 
 export function AppShell({
   user,
@@ -39,10 +65,6 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const now = useClock();
-  // The clock is client-only: the server's time (and timezone) never matches the browser's.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
   // JARVIS, ULTRON and the agent chats are full-immersion screens: no bottom bar on
   // phones either. (There's no side bar anywhere — JARVIS's Systems menu has every page.)
@@ -89,62 +111,42 @@ export function AppShell({
 
   const isActive = (href: string) => href === "/dashboard" ? pathname === href : pathname.startsWith(href);
 
-  const weekday = mounted ? now.toLocaleDateString("en-US", { weekday: "long" }).toUpperCase() : "";
-  const date = mounted ? now
-    .toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-    .toUpperCase() : "";
-  const time = mounted ? now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }) : "";
+  // the bell: how many things are really waiting for your approval
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    let stop = false;
+    const load = () => fetch("/api/approvals", { cache: "no-store" }).then((r) => r.json()).then((j) => { if (!stop && j?.ok) setPending(j.data.approvals.length); }).catch(() => {});
+    load();
+    const t = setInterval(load, 60_000);
+    return () => { stop = true; clearInterval(t); };
+  }, [pathname]);
+
 
   return (
     <GestureProvider>
     <div className="flex min-h-screen flex-col">
-      {/* Top bar */}
-      <header className="relative flex h-16 shrink-0 items-center gap-4 border-b border-accent/15 px-4">
-        <Link href="/dashboard" className="flex items-center gap-3">
-          <div className="leading-none">
-            <span className="hud-display text-2xl text-foreground text-glow sm:text-3xl">JARVIS</span>
-            <span className="mt-0.5 hidden text-[8px] uppercase tracking-[0.28em] text-muted-foreground sm:block">
-              Just a rather very intelligent system
-            </span>
-          </div>
-        </Link>
-
-        {/* center: SYSTEM ONLINE */}
-        <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center gap-2 md:flex">
-          <Chevrons />
-          <span className="hud-label text-[11px] text-accent-bright text-glow">System Online</span>
-          <Chevrons dir="left" />
-        </div>
-
-        {/* right: clock + reactor + user */}
-        <div className="ml-auto flex items-center gap-3">
-          <div className="hidden text-right leading-tight sm:block">
-            <div className="hud-label text-[9px] text-muted-foreground">{weekday}</div>
-            <div className="flex items-baseline justify-end gap-2">
-              <span className="hud-label text-[10px] text-accent">{date}</span>
-              <span className="hud-display text-lg text-foreground text-glow tabular-nums">{time}</span>
-            </div>
-          </div>
-          <ReactorLogo size={44} className="hidden sm:block" />
+      {/* OMEGA top bar: JARVIS · the workspaces · approvals · you */}
+      <header className={cn("om-bar", pathname === "/dashboard" && "is-home")}>
+        <style dangerouslySetInnerHTML={{ __html: BAR_CSS }} />
+        <Link href="/dashboard" className="om-bar-brand" aria-label="JARVIS home">JARVIS</Link>
+        <nav className="om-bar-tabs" aria-label="Workspaces">
+          {TABS.map((t) => (
+            <Link key={t.href} href={t.href} className={isActive(t.href) ? "on" : ""} aria-current={isActive(t.href) ? "page" : undefined}>{t.label}</Link>
+          ))}
+        </nav>
+        <div className="om-bar-right">
+          <Link href="/dashboard/activity" className="om-bar-icon" aria-label={pending ? `${pending} waiting for your approval` : "Approval & Activity Center"} title="Approval & Activity Center">
+            <Bell className="h-4 w-4" />
+            {pending ? <span className="om-bar-badge">{pending}</span> : null}
+          </Link>
           <GestureToggle />
-          <button
-            onClick={() => document.documentElement.requestFullscreen?.().catch(() => {})}
-            className="hidden h-9 w-9 items-center justify-center rounded text-muted-foreground transition hover:bg-accent/10 hover:text-accent lg:flex"
-            aria-label="Fullscreen"
-          >
+          <button onClick={() => document.documentElement.requestFullscreen?.().catch(() => {})} className="om-bar-icon hidden lg:flex" aria-label="Fullscreen" title="Fullscreen">
             <Maximize2 className="h-4 w-4" />
           </button>
-          <div className="flex items-center gap-2 rounded border border-accent/20 px-2.5 py-1.5 box-glow-soft">
-            <span className="flex h-6 w-6 items-center justify-center rounded bg-accent/15 text-xs font-semibold text-accent">
-              {name[0]?.toUpperCase()}
-            </span>
-            <span className="hidden text-sm text-foreground/90 md:block">{name}</span>
-            <button onClick={lock} aria-label="Lock JARVIS" title="Lock JARVIS (face unlock to return)">
-              <Lock className="h-4 w-4 text-muted-foreground transition hover:text-accent" />
-            </button>
-            <button onClick={logout} aria-label="Log out" title="Log out">
-              <LogOut className="h-4 w-4 text-muted-foreground transition hover:text-destructive" />
-            </button>
+          <div className="om-bar-user">
+            <span className="om-bar-avatar" title={name}>{name[0]?.toUpperCase()}</span>
+            <button onClick={lock} aria-label="Lock JARVIS" title="Lock JARVIS (face unlock to return)"><Lock className="h-3.5 w-3.5" /></button>
+            <button onClick={logout} aria-label="Log out" title="Log out"><LogOut className="h-3.5 w-3.5" /></button>
           </div>
         </div>
       </header>

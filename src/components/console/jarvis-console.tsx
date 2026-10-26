@@ -16,6 +16,7 @@ import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
 import { instantAnswer } from "@/lib/instant";
 import { businessEnvCommand } from "@/lib/intel/intent";
 import { HomeOmega, type HomePhase } from "@/components/omega/home-omega";
+import { OmegaStage } from "@/components/omega/omega-stage";
 import { inIndia, parseOpenLinkRef, parseOpenSite, pickLink, type SiteTarget } from "@/lib/open-site";
 import { installedAppNames, openLocalApp, openUrlOnPc, parseOpenApp, planOpen, refreshInstalledApps, ultronKnown } from "@/lib/local-apps";
 import { parseMemoryCommand } from "@/lib/memory/intent";
@@ -170,6 +171,16 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const [briefSpeaking, setBriefSpeaking] = useState(false);
   const openBriefingRef = useRef<(range?: { from: string; to: string; label: string }) => Promise<void>>(async () => {});
   const [layout, setLayout] = useState<{ hub: Pt; agents: Record<AgentName, Pt>; ribbonY: number } | null>(null);
+  // OMEGA (the waveform home) is the default; the classic motion OS stays one click away in Systems
+  const [homeView, setHomeView] = useState<"omega" | "classic">("omega");
+  useEffect(() => { try { if (localStorage.getItem("jarvis-home-view") === "classic") setHomeView("classic"); } catch { /* storage blocked */ } }, []);
+  const omega = homeView === "omega";
+  useEffect(() => {
+    try { localStorage.setItem("jarvis-home-view", homeView); } catch { /* storage blocked */ }
+    if (homeView === "omega") { setIntro({ logo: true, online: true, done: true }); setLayout(null); }
+    document.documentElement.dataset.homeView = homeView;
+    return () => { delete document.documentElement.dataset.homeView; };
+  }, [homeView]);
   const [processing, setProcessing] = useState(false);
   const [anomalyAt, setAnomalyAt] = useState<Pt | null>(null);
   const [buildLabel, setBuildLabel] = useState(false);
@@ -1153,7 +1164,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         </div>
       )}
       <NiosAlerts watch={nios} />
-      {jobs.jobs.length > 0 && (
+      {!omega && jobs.jobs.length > 0 && (
         <div className="absolute bottom-24 left-4 z-30 w-72 space-y-1.5" aria-label="Agent tasks">
           {jobs.jobs.slice(0, 3).map((j) => (
             <button key={j.id} onClick={(e) => { e.stopPropagation(); router.push(`/dashboard/jobs?task=${j.id}`); }}
@@ -1185,21 +1196,22 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       )}
       {emails.current && <EmailComposePopup key={emails.current.id} email={emails.current} waiting={emails.waiting} onClose={emails.close} />}
 
-      {/* the living environment */}
-      <JarvisMotion ref={motion} className="absolute inset-0" cssTarget={stageRef}
+      {/* the living environment: the OMEGA waveform (default) or the classic motion OS */}
+      {omega && <OmegaStage phase={homePhase} userName={userName} micLevel={voice.status === "recording" ? voice.level : 0} voiceLevel={voice.status === "speaking" ? voice.getOutputLevel : undefined} />}
+      {!omega && <JarvisMotion ref={motion} className="absolute inset-0" cssTarget={stageRef}
         state={jState} micLevel={voice.status === "recording" ? voice.level : 0} voiceLevel={voice.getOutputLevel}
         paused={humanoidPhase === "active"}
         onIntro={(p) => setIntro((s) => ({ ...s, [p]: true }))}
         onLayout={setLayout}
         onProcessing={() => setProcessing(true)}
         onAnomaly={(p) => { setAnomalyAt(p); setTimeout(() => setAnomalyAt(null), 2700); }}
-        onBuildReady={() => setBuildLabel(true)} />
+        onBuildReady={() => setBuildLabel(true)} />}
 
       {/* cinematic vignette (composited by the browser, not repainted) */}
       <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 47%, transparent 45%, rgba(0,0,0,0.55) 100%)" }} />
 
       {/* OMEGA: workspaces, the real-state strip and the live agent constellation */}
-      {intro.done && <HomeOmega phase={homePhase} />}
+      {intro.done && !omega && <HomeOmega phase={homePhase} />}
 
       {!intro.done && (
         <button onClick={(e) => { e.stopPropagation(); motion.current?.skipIntro(); }} className="absolute bottom-5 right-5 z-30 text-[10px] uppercase tracking-[0.35em] text-white/25 transition hover:text-white/60">Skip</button>
@@ -1244,7 +1256,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       )}
 
       {/* systems along the edges (real status) */}
-      {intro.done && (
+      {intro.done && !omega && (
         <>
           {([["NEURAL CORE", services?.ai], ["MEMORY", services?.database], ["NETWORK", services?.search]] as const).map(([label, on], i) => (
             <SideLabel key={label} label={label} on={on} side="left" top={`${22 + i * 26}%`} />
@@ -1265,7 +1277,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       )}
 
       {/* response — a spatial holographic panel */}
-      <div className="absolute left-1/2 top-[3.5%] z-20 w-[min(92vw,44rem)] -translate-x-1/2">
+      <div className={omega ? "os-reply" : "absolute left-1/2 top-[3.5%] z-20 w-[min(92vw,44rem)] -translate-x-1/2"}>
         <HoloPanel open={panelOpen}>
           <div className="px-5 pb-4 pt-3">
             <div className="mb-2 flex items-center gap-3">
@@ -1311,13 +1323,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       {/* top corners: operator / brain / status — system state, menu */}
       {intro.done && (
         <>
-          <div className="pointer-events-none absolute left-5 top-4 z-20 flex gap-6" style={{ animation: "ultron-emerge .8s ease both" }}>
+          <div className={cn("pointer-events-none absolute left-5 top-4 z-20 flex gap-6", omega && "hidden")} style={{ animation: "ultron-emerge .8s ease both" }}>
             <TopMeta label="Operator" value={userName} />
             <TopMeta label="Brain" value={agent.activeProvider ? (PROVIDER_LABELS[agent.activeProvider] ?? agent.activeProvider) : "Standing by"} className="hidden sm:block" />
             <TopMeta label="Status" value={!voiceStarted ? "Voice off" : voice.muted ? "Muted" : voice.status === "speaking" ? "Speaking" : voice.status === "recording" ? "Hearing you" : "Listening"}
               dot={!voiceStarted ? "bg-white/25" : voice.muted ? "bg-amber-300/70" : "bg-cyan-300"} />
           </div>
-          <div className="absolute right-4 top-4 z-30 flex items-center gap-3" style={{ animation: "ultron-emerge .8s ease both" }}>
+          <div className={cn("absolute right-4 z-30 flex items-center gap-3", omega ? "top-12 min-[1180px]:top-4" : "top-4")} style={{ animation: "ultron-emerge .8s ease both" }}>
             <span className="hidden text-[10px] uppercase tracking-[0.3em] text-white/45 sm:inline">
               System: <span className={agent.streaming ? "text-rose-300" : "text-white/75"}>{agent.streaming ? "Active" : "Ready"}</span>
               {agent.streaming && <span className="ml-1.5 inline-block text-rose-300">◂</span>}
@@ -1327,7 +1339,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
               <LayoutGrid className="h-4 w-4" />
             </button>
           </div>
-          <div className="absolute right-4 top-16 z-30 w-60">
+          <div className={cn("absolute right-4 z-30 w-60", omega ? "top-24 min-[1180px]:top-16" : "top-16")}>
             <HoloPanel open={menuOpen} depth={0.6}>
               <nav className="grid grid-cols-2 gap-1 p-3 text-[12px]">
                 {[
@@ -1337,6 +1349,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                   <button key={href} onClick={() => { setMenuOpen(false); router.push(href); }} className="rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">{label}</button>
                 ))}
                 <button onClick={() => { setMenuOpen(false); openHumanoid(); }} className="rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">Humanoid</button>
+                <button onClick={() => { setMenuOpen(false); setHomeView(omega ? "classic" : "omega"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">{omega ? "Classic view" : "OMEGA waveform view"}</button>
                 {/* the agents' chat screens (the side nav is folded away on this screen) */}
                 <a href="/app" onClick={() => setMenuOpen(false)} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Phone app</a>
                 <button onClick={() => { setMenuOpen(false); launchUltron(); }} className="rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">ULTRON</button>
@@ -1358,7 +1371,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
       {/* what JARVIS is hearing */}
       {voiceStarted && !voice.muted && (voice.transcript || voice.error) && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-[5.6rem] z-20 flex justify-center px-6">
+        <div className={omega ? "os-heard" : "pointer-events-none absolute inset-x-0 bottom-[5.6rem] z-20 flex justify-center px-6"}>
           <span key={voice.transcript} className="jv-voice-text max-w-xl truncate text-[13px] font-light text-white/80" style={{ animation: "ultron-word .4s ease both" }}>
             {voice.transcript ? <>“{voice.transcript}”</> : <span className="text-amber-200/80">{voice.error}</span>}
           </span>
@@ -1367,7 +1380,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
       {/* thin liquid-glass command bar */}
       {intro.logo && (
-        <div className="absolute inset-x-0 bottom-5 z-20 flex flex-col items-center px-4" style={{ animation: "ultron-emerge .9s ease both" }} onClick={(e) => e.stopPropagation()}>
+        <div className={omega ? "os-cmd" : "absolute inset-x-0 bottom-5 z-20 flex flex-col items-center px-4"} style={{ animation: "ultron-emerge .9s ease both" }} onClick={(e) => e.stopPropagation()}>
           <div ref={barRef} className={cn("jv-bar w-full transition-[max-width,transform] duration-500 ease-out", focused ? "max-w-2xl -translate-y-0.5" : "max-w-xl")}>
             {focused && <span aria-hidden className="jv-bar-border" />}
             <form onSubmit={handleSend} className="relative flex items-center gap-1 py-1 pl-2 pr-1">

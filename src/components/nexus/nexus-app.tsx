@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useAgent } from "@/hooks/useAgent";
 import { useJobs } from "@/components/jobs/use-jobs";
 import { OMEGA_CSS, STATE_COLOR } from "@/components/omega/tokens";
+import { AgentGlyph } from "@/components/omega/glyphs";
 import { STATE_LABEL } from "@/lib/nexus/agents";
-import { OmegaNav } from "@/components/omega/omega-nav";
 import type { AgentStatus } from "@/lib/nexus/status";
 import type { Signal } from "@/lib/nexus/events";
 import type { JobView } from "@/lib/jobs/engine";
@@ -129,13 +129,10 @@ export function NexusApp() {
   return (
     <div className="om nx">
       <style dangerouslySetInnerHTML={{ __html: OMEGA_CSS + NX_CSS }} />
-      <div className="nx-top">
-        <OmegaNav />
-      </div>
       <header className="nx-head">
         <div>
-          <div className="om-title">Dashboard B · Agent Command Nexus</div>
-          <h1 className="om-h1">The agent team, live</h1>
+          <div className="om-title">Dashboard B</div>
+          <h1 className="om-h1">Agent Command Nexus</h1>
         </div>
         <div className="nx-status">
           <span className={`om-chip${live === "live" ? " on" : ""}`}><span className="om-dot" style={{ ["--c" as string]: live === "live" ? "#4ce0a6" : live === "lost" ? "#ff6b7a" : "#f4c35a" }} />{live === "live" ? "Live task stream" : live === "lost" ? "Stream lost — reconnecting" : "Connecting…"}</span>
@@ -145,24 +142,61 @@ export function NexusApp() {
       </header>
       {err && <div className="nx-err" role="alert">{err}</div>}
 
-      <section className={`nx-stage${selected ? " has-panel" : ""}`}>
-        <div className="nx-map">
-          <NeuralCore energy={energy} pulseKey={pulseKey} className="nx-core" />
-          {snap ? <Network agents={nodes} selected={sel} onSelect={setSel} pulses={pulses} reduced={reduced} narrow={narrow} flashes={flashes} /> : <div className="nx-loading">Reading the agents…</div>}
+      <div className="nx-top-grid">
+        <section className="om-glass nx-core-panel">
+          <div className="om-title">Central AI neural core</div>
+          <div className="nx-core-body">
+            <div className="nx-core-text">
+              <p className="om-sub">JARVIS interprets each request, picks the agents, plans the dependencies, stops for your approval before anything external, and collects the results.</p>
+              <ul className="nx-core-stats">
+                <li><b>{snap?.agents.filter((a) => a.state === "working").length ?? "—"}</b><span>working now</span></li>
+                <li><b>{snap?.agents.reduce((n, a) => n + a.counts.queued, 0) ?? "—"}</b><span>queued</span></li>
+                <li><b>{snap?.agents.reduce((n, a) => n + a.counts.approval, 0) ?? "—"}</b><span>awaiting approval</span></li>
+                <li><b>{snap?.agents.reduce((n, a) => n + a.counts.completed24h, 0) ?? "—"}</b><span>done in 24 h</span></li>
+              </ul>
+              <div className="nx-phases" aria-label="JARVIS state">{PHASES.map((p) => <span key={p} className={p === phase ? "on" : ""}>{p}</span>)}</div>
+            </div>
+            <div className="nx-core-visual">
+              <NeuralCore energy={energy} pulseKey={pulseKey} className="nx-core-big" />
+              <span className="nx-core-name">JARVIS</span>
+            </div>
+          </div>
+        </section>
+
+        <section className="om-glass nx-entities">
+          <div className="om-title">Agent entities</div>
+          <div className="nx-cards">
+            {(snap?.agents ?? []).map((a) => (
+              <button key={a.id} className={`nx-card${sel === a.id ? " on" : ""}`} style={{ ["--ac" as string]: a.color }} onClick={() => setSel(sel === a.id ? null : a.id)} aria-pressed={sel === a.id}>
+                <span className="nx-card-hex"><svg viewBox="-36 -36 72 72" aria-hidden><polygon points="0,-30 26,-15 26,15 0,30 -26,15 -26,-15" /></svg><span><AgentGlyph motif={a.motif} size={22} color={a.color} /></span></span>
+                <span className="nx-card-txt">
+                  <span className="nx-card-n">{a.name}</span>
+                  <span className="nx-card-r">{a.title}</span>
+                  <span className="nx-card-s"><span className="om-dot" style={{ ["--c" as string]: STATE_COLOR[a.state] }} />{STATE_LABEL[a.state]}{a.counts.queued ? ` · ${a.counts.queued} queued` : ""}</span>
+                </span>
+              </button>
+            ))}
+            {!snap && <div className="om-dim">Reading the agents…</div>}
+          </div>
+        </section>
+      </div>
+
+      <section className="om-glass nx-conn">
+        <div className="nx-row between"><span className="om-title">Live neural connections</span><span className="om-dim">Pathways light only when a real task is dispatched, returns, fails or waits for approval.</span></div>
+        <div className="nx-conn-body">
+          <div className="nx-map">
+            <NeuralCore energy={energy} pulseKey={pulseKey} className="nx-core" />
+            {snap ? <Network agents={nodes} selected={sel} onSelect={setSel} pulses={pulses} reduced={reduced} narrow={narrow} flashes={flashes} /> : <div className="nx-loading">Reading the agents…</div>}
+          </div>
+          <div className="nx-feed">
+            <span className="om-title">Signals</span>
+            {events.length === 0 ? <div className="om-dim" style={{ marginTop: 8 }}>No task has changed since you opened the Nexus. Signals appear the moment a task is planned, dispatched, needs approval, returns or fails.</div>
+              : <ul>{events.map((e, i) => <li key={i}><span className="om-dot" style={{ ["--c" as string]: SIGNAL_COLOR[e.kind] }} /><b>{e.kind}</b> · {snap?.agents.find((a) => a.id === e.agent)?.name ?? e.agent} · {e.title}{e.text ? <span className="om-dim"> — {e.text}</span> : null}<span className="om-dim"> · {new Date(e.at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" })}</span></li>)}</ul>}
+          </div>
         </div>
-        {/* phones: the same agents as tappable tiles */}
-        <div className="nx-tiles">
-          {nodes.map((a) => (
-            <button key={a.id} className={`nx-tile${sel === a.id ? " on" : ""}`} style={{ ["--ac" as string]: a.color }} onClick={() => setSel(sel === a.id ? null : a.id)} aria-pressed={sel === a.id}>
-              <span className="nx-tile-n">{a.name}</span>
-              <span className="nx-tile-s"><span className="om-dot" style={{ ["--c" as string]: STATE_COLOR[a.state] }} />{STATE_LABEL[a.state]}</span>
-              <span className="om-dim">{a.title}</span>
-            </button>
-          ))}
-        </div>
-        <div className="nx-phases" aria-label="JARVIS state">{PHASES.map((p) => <span key={p} className={p === phase ? "on" : ""}>{p}</span>)}</div>
-        {selected && <AgentPanel a={selected} onClose={() => setSel(null)} onAct={act} busy={busy} />}
       </section>
+
+      {selected && <div className="nx-drawer" onClick={(e) => { if (e.target === e.currentTarget) setSel(null); }}><AgentPanel a={selected} onClose={() => setSel(null)} onAct={act} busy={busy} /></div>}
 
       <form className="nx-cmd om-glass" onSubmit={(e) => { e.preventDefault(); send(cmd); }}>
         <span className="om-title">Command</span>
@@ -206,11 +240,6 @@ export function NexusApp() {
               </div>
             </div>
           )}
-        </div>
-        <div className="om-glass nx-feed">
-          <span className="om-title">Live signals</span>
-          {events.length === 0 ? <div className="om-dim" style={{ marginTop: 8 }}>No task has changed since you opened the Nexus. Signals appear here the moment a task is planned, dispatched, needs approval, returns or fails.</div>
-            : <ul>{events.map((e, i) => <li key={i}><span className="om-dot" style={{ ["--c" as string]: SIGNAL_COLOR[e.kind] }} /><b>{e.kind}</b> · {snap?.agents.find((a) => a.id === e.agent)?.name ?? e.agent} · {e.title}{e.text ? <span className="om-dim"> — {e.text}</span> : null}<span className="om-dim"> · {new Date(e.at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", second: "2-digit" })}</span></li>)}</ul>}
         </div>
       </section>
     </div>

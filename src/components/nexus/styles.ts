@@ -30,7 +30,7 @@ export const NX_CSS = `
 .nx-trace{animation:om-pulse 1.6s ease-in-out}
 @keyframes nx-dash{to{stroke-dashoffset:-32}}
 @keyframes nx-spin{to{transform:rotate(360deg)}}
-.nx-phases{grid-column:1/-1;display:flex;gap:4px;flex-wrap:wrap;justify-content:center;margin-top:-4px}
+.nx-phases{display:flex;gap:4px;flex-wrap:wrap;margin-top:12px}
 .nx-phases span{font:500 10px "Barlow Condensed",sans-serif;letter-spacing:.24em;color:#4b6178;padding:4px 9px;border-radius:999px;border:1px solid transparent;transition:all .3s}
 .nx-phases span.on{color:#eaf8ff;border-color:rgba(95,225,255,.5);background:rgba(95,225,255,.1);box-shadow:0 0 16px rgba(95,225,255,.25)}
 .nx-panel{padding:16px;max-height:calc(100dvh - 9rem);overflow:auto;scrollbar-width:thin;align-self:start;position:sticky;top:12px;border-color:color-mix(in srgb,var(--ac) 45%,transparent)}
@@ -64,7 +64,7 @@ export const NX_CSS = `
 .nx-acts{list-style:none;padding:0;margin:0 0 8px;font-size:12.5px;color:var(--om-ink-2)}
 .nx-acts li.error{color:#ffa3ad}
 .nx-reply{white-space:pre-wrap;line-height:1.55;font-size:14px}
-.nx-lower{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(260px,1fr);gap:14px;margin-top:14px}
+.nx-lower{display:grid;grid-template-columns:1fr;gap:14px;margin-top:14px}
 .nx-tl-wrap{padding:14px}
 .nx-tl{position:relative;margin-top:10px}
 .nx-tl svg{width:100%;height:auto;display:block}
@@ -91,4 +91,37 @@ export const NX_CSS = `
 .om-input.sm{padding:5px 8px;font-size:12px;border-radius:9px}
 @media (max-width:1100px){.nx-stage.has-panel{grid-template-columns:1fr}.nx-panel{position:static;max-height:none}.nx-lower{grid-template-columns:1fr}}
 @media (max-width:640px){.nx-map{aspect-ratio:auto;height:240px;min-height:0}.nx-net{display:none}.nx-core{width:80%}.nx-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}.nx-cmd{flex-wrap:wrap}.nx-cmd .om-input{flex-basis:100%}.nx-head .om-h1{font-size:20px}}
+
+.nx-top-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:14px;margin-top:10px}
+.nx-core-panel,.nx-entities,.nx-conn{padding:16px}
+.nx-core-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:12px;align-items:center;margin-top:6px}
+.nx-core-stats{list-style:none;padding:0;margin:12px 0 0;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.nx-core-stats li{border:1px solid var(--om-line);border-radius:10px;padding:8px 10px;background:rgba(4,12,24,.45)}
+.nx-core-stats b{display:block;font:600 22px "Barlow Condensed",sans-serif;color:#eaf8ff}
+.nx-core-stats span{font-size:11px;color:var(--om-ink-3);letter-spacing:.06em}
+.nx-core-visual{position:relative;aspect-ratio:1;max-height:340px;max-width:340px;justify-self:center;width:100%}
+.nx-core-big{position:absolute;left:50%;top:50%;width:180%;height:180%;transform:translate(-50%,-50%)}
+.nx-core-name{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font:500 14px "Barlow Condensed",sans-serif;letter-spacing:.5em;padding-left:.5em;color:#fff;text-shadow:0 0 14px #5fe1ff,0 0 2px #000}
+.nx-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+.nx-card{display:flex;gap:10px;align-items:center;text-align:left;padding:10px;border-radius:14px;border:1px solid color-mix(in srgb,var(--ac) 30%,transparent);background:linear-gradient(160deg,color-mix(in srgb,var(--ac) 10%,rgba(6,16,30,.85)),rgba(4,10,20,.85));color:var(--om-ink);font:inherit;cursor:pointer;transition:border-color .25s,box-shadow .25s,transform .25s}
+.nx-card:hover{border-color:color-mix(in srgb,var(--ac) 70%,transparent);transform:translateY(-1px)}
+.nx-card.on{border-color:var(--ac);box-shadow:0 0 0 1px var(--ac),0 0 24px color-mix(in srgb,var(--ac) 30%,transparent)}
+.nx-card-hex{position:relative;flex:none;width:52px;height:52px;display:flex;align-items:center;justify-content:center}
+.nx-card-hex>svg{position:absolute;inset:0;width:100%;height:100%}
+.nx-card-hex polygon{fill:rgba(4,14,28,.85);stroke:var(--ac);stroke-width:1.6;filter:drop-shadow(0 0 6px color-mix(in srgb,var(--ac) 60%,transparent))}
+.nx-card-hex>span{position:relative;display:flex}
+.nx-card-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.nx-card-n{font:600 13px "Barlow Condensed",sans-serif;letter-spacing:.24em;color:var(--ac)}
+.nx-card-r{font-size:12px;color:var(--om-ink-2)}
+.nx-card-s{display:flex;gap:5px;align-items:center;font-size:11.5px;color:#cfe2f5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nx-conn{margin-top:14px}
+.nx-conn-body{display:grid;grid-template-columns:minmax(0,2fr) minmax(260px,1fr);gap:14px;margin-top:10px}
+.nx-conn .nx-feed{padding:0;max-height:520px;overflow:auto}
+.nx-drawer{position:fixed;inset:0;z-index:45;background:rgba(1,5,12,.45);backdrop-filter:blur(2px);display:flex;justify-content:flex-end}
+.nx-drawer .nx-panel{position:relative;top:auto;width:min(460px,100%);height:100%;max-height:none;border-radius:0;animation:nx-slide .35s var(--om-ease) both}
+@keyframes nx-slide{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
+@media (max-width:1100px){.nx-top-grid{grid-template-columns:1fr}.nx-conn-body{grid-template-columns:1fr}}
+@media (max-width:760px){.nx-cards{grid-template-columns:1fr 1fr}.nx-core-body{grid-template-columns:1fr}.nx-core-visual{max-height:220px;max-width:220px}}
+@media (max-width:420px){.nx-cards{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){.nx-drawer .nx-panel{animation:none}}
 `;

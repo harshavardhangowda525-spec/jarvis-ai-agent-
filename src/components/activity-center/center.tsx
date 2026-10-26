@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { OMEGA_CSS } from "@/components/omega/tokens";
-import { OmegaNav } from "@/components/omega/omega-nav";
 import { AgentGlyph } from "@/components/omega/glyphs";
 import { NEXUS_AGENTS } from "@/lib/nexus/agents";
 import type { CenterItem, Decision } from "@/lib/approvals/center";
@@ -25,9 +24,12 @@ function Card({ it, onDecide, busy }: { it: CenterItem; onDecide: (it: CenterIte
   const a = agentOf(it.agent);
   return (
     <article className="ac-card om-glass om-fade-in" style={{ ["--ac" as string]: a?.color ?? "#5fe1ff" }}>
+      <div className="ac-visual" aria-hidden>
+        <span className="ac-visual-ring"><AgentGlyph motif={a?.motif ?? ""} size={30} color={a?.color} /></span>
+        <span className="ac-visual-k">{KIND_LABEL[it.kind]}</span>
+      </div>
       <header>
-        <span className="ac-glyph"><AgentGlyph motif={a?.motif ?? ""} size={20} color={a?.color} /></span>
-        <div><div className="ac-kind">{KIND_LABEL[it.kind]} · {a?.name ?? it.agent}</div><h3>{it.title}</h3></div>
+        <div><div className="ac-kind">{a?.name ?? it.agent}</div><h3>{it.title}</h3></div>
         <span className="om-dim ac-when">{when(it.createdAt)}</span>
       </header>
       <dl>
@@ -79,9 +81,8 @@ export function ActivityCenter() {
   return (
     <div className="om ac">
       <style dangerouslySetInnerHTML={{ __html: OMEGA_CSS + AC_CSS }} />
-      <div className="ac-top"><OmegaNav /></div>
       <header className="ac-head">
-        <div><div className="om-title">Approval &amp; Activity Center</div><h1 className="om-h1">Waiting for you</h1></div>
+        <div><div className="om-title">Actions waiting for you</div><h1 className="om-h1">Approval &amp; Activity Center</h1></div>
         <p className="om-sub">Nothing here happens until you press a button. Each decision is carried out by the agent&apos;s own system and recorded below.</p>
       </header>
       {err && <div className="ac-err" role="alert">{err}</div>}
@@ -90,11 +91,11 @@ export function ActivityCenter() {
         <div className="ac-grid">
           <section>
             <h2 className="om-title">Pending approvals ({data.approvals.length})</h2>
-            {data.approvals.length ? data.approvals.map((it) => <Card key={`${it.kind}-${it.id}`} it={it} onDecide={decide} busy={busy === it.id} />) : <div className="ac-empty om-glass">Nothing is waiting for your approval.</div>}
+            {data.approvals.length ? <div className="ac-cards">{data.approvals.map((it) => <Card key={`${it.kind}-${it.id}`} it={it} onDecide={decide} busy={busy === it.id} />)}</div> : <div className="ac-empty om-glass">Nothing is waiting for your approval.</div>}
             <h2 className="om-title">Needs intervention ({data.attention.length})</h2>
-            {data.attention.length ? data.attention.map((it) => <Card key={it.id} it={it} onDecide={decide} busy={busy === it.id} />) : <div className="ac-empty om-glass">No failed tasks in the last 7 days.</div>}
+            {data.attention.length ? <div className="ac-cards">{data.attention.map((it) => <Card key={it.id} it={it} onDecide={decide} busy={busy === it.id} />)}</div> : <div className="ac-empty om-glass">No failed tasks in the last 7 days.</div>}
             <h2 className="om-title">Finished — awaiting your review ({data.review.length})</h2>
-            {data.review.length ? data.review.map((it) => <Card key={it.id} it={it} onDecide={decide} busy={busy === it.id} />) : <div className="ac-empty om-glass">Nothing new to review.</div>}
+            {data.review.length ? <div className="ac-cards">{data.review.map((it) => <Card key={it.id} it={it} onDecide={decide} busy={busy === it.id} />)}</div> : <div className="ac-empty om-glass">Nothing new to review.</div>}
           </section>
           <aside className="ac-log om-glass">
             <h2 className="om-title">Decision log</h2>
@@ -116,16 +117,22 @@ const AC_CSS = `
 .ac-msg{border:1px solid rgba(76,224,166,.4);background:rgba(76,224,166,.08);color:#c6f7e2}
 .ac-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,340px);gap:16px;align-items:start}
 .ac-grid h2{margin:18px 0 8px}
-.ac-card{padding:14px;margin-bottom:10px;border-color:color-mix(in srgb,var(--ac) 35%,transparent)}
+.ac-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
+.ac-card{padding:0 14px 14px;overflow:hidden;border-color:color-mix(in srgb,var(--ac) 35%,transparent);display:flex;flex-direction:column}
+.ac-visual{position:relative;height:96px;margin:0 -14px 12px;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 120%,color-mix(in srgb,var(--ac) 45%,transparent),transparent 70%),linear-gradient(180deg,rgba(10,26,48,.9),rgba(4,10,20,.6));border-bottom:1px solid color-mix(in srgb,var(--ac) 30%,transparent);overflow:hidden}
+.ac-visual::before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(140,200,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(140,200,255,.07) 1px,transparent 1px);background-size:18px 18px;mask-image:radial-gradient(ellipse at center,#000 30%,transparent 75%)}
+.ac-visual-ring{position:relative;width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1px solid var(--ac);box-shadow:0 0 24px color-mix(in srgb,var(--ac) 45%,transparent),inset 0 0 14px color-mix(in srgb,var(--ac) 30%,transparent);background:rgba(3,10,20,.7)}
+.ac-visual-k{position:absolute;left:12px;bottom:8px;font:500 9.5px "Barlow Condensed",sans-serif;letter-spacing:.22em;text-transform:uppercase;color:color-mix(in srgb,var(--ac) 80%,#fff)}
+.ac-card .ac-actions{margin-top:auto;padding-top:10px}
 .ac-card header{display:flex;gap:10px;align-items:flex-start}
 .ac-glyph{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid color-mix(in srgb,var(--ac) 45%,transparent);flex:none}
 .ac-kind{font:500 10.5px "Barlow Condensed",sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--ac)}
 .ac-card h3{margin:2px 0 0;font-size:15px;font-weight:600}
 .ac-when{margin-left:auto;white-space:nowrap}
-.ac-card dl{display:grid;grid-template-columns:90px 1fr;gap:4px 10px;margin:10px 0;font-size:13px}
+.ac-card dl{display:grid;grid-template-columns:84px 1fr;gap:4px 10px;margin:10px 0;font-size:13px}
 .ac-card dt{color:#8fd8ff;font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding-top:2px}
 .ac-card dd{margin:0;color:var(--om-ink-2);line-height:1.45}
-.ac-preview{border:1px solid var(--om-line);border-radius:10px;padding:8px 10px;background:rgba(3,10,20,.55);display:grid;gap:6px;max-height:260px;overflow:auto}
+.ac-preview{border:1px solid var(--om-line);border-radius:10px;padding:8px 10px;background:rgba(3,10,20,.55);display:grid;gap:6px;max-height:150px;overflow:auto}
 .ac-preview span{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--om-ink-3)}
 .ac-preview pre{margin:2px 0 0;white-space:pre-wrap;font:400 13px Barlow,sans-serif;color:var(--om-ink)}
 .ac-note{width:100%;margin-top:8px;resize:vertical}
