@@ -322,6 +322,18 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     }
   }, [jobs.announce]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // a website JARVIS hands to ASTON opens ASTON's studio: the code being written next to the live preview
+  useEffect(() => {
+    for (const j of jobs.jobs) {
+      const pid = j.payload?.mode === "studio" ? j.payload.projectId : undefined;
+      if (j.agent !== "aston" || !pid || !["planning", "assigned", "running"].includes(j.status) || Date.now() - Date.parse(j.createdAt) > 3 * 60_000) continue;
+      const seen = `jarvis-studio-opened:${j.id}`;
+      try { if (sessionStorage.getItem(seen)) continue; sessionStorage.setItem(seen, "1"); } catch { /* storage blocked */ }
+      router.push(`/dashboard/aston/studio?project=${pid}`);
+      break;
+    }
+  }, [jobs.jobs]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const sleep = useCallback(() => { voice.stop(); setVoiceStarted(false); }, [voice]);
   sayRef.current = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
   // "open Spotify" → the installed app on this PC (via ULTRON); "open YouTube"
