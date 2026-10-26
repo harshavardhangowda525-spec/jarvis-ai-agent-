@@ -1235,6 +1235,8 @@ model AgentJob {
   conversationId  String?
   /// Set when the finished job has been announced to you.
   announcedAt     DateTime?
+  /// While running: what the agent has written so far (its live answer, for the pop-up).
+  liveText        String?   @db.Text
   /// Agent-specific input, e.g. ASTON: { siteId, feedback, leadId, kind }.
   payload         Json?
   createdAt       DateTime  @default(now())

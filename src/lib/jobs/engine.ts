@@ -24,6 +24,9 @@ import { ACTIVE, FINISHED, JOB_AGENT_NAME, briefPrompt, briefSchema, judgeOutcom
  */
 
 export const LEASE_MS = 90_000;
+/** Errors worth one more attempt: the network, a timeout, a rate limit, an overloaded or restarting service. */
+export const isTransient = (reason: string | null | undefined) =>
+  !!reason && /timed? ?out|timeout|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|fetch failed|socket hang up|network|\b429\b|rate.?limit|too many requests|overloaded|\b50[234]\b|temporarily unavailable|try again later/i.test(reason);
 export const MAX_ATTEMPTS = 3;
 type Step = { at: string; text: string; kind: "info" | "tool" | "error" | "approval" };
 
@@ -115,6 +118,7 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date;
   await db().message.create({ data: { conversationId: conversation.id, userId: job.userId, role: "user", content: prompt } });
 
   let text = "", error: string | null = null, cancelled = false, lastWrite = 0;
+  let lastLive: string | null = null;
   const tools: { name: string; status: "ok" | "error"; summary: string }[] = [];
   const links: { url: string; label: string }[] = [];
   const artifacts: Extract<AgentEvent, { type: "artifact" }>[] = [];
@@ -124,7 +128,9 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date;
     lastWrite = Date.now();
     const cur = await db().agentJob.findUnique({ where: { id }, select: { progress: true, cancelRequested: true } });
     if (cur?.cancelRequested) cancelled = true;
-    await db().agentJob.update({ where: { id }, data: { leaseUntil: new Date(now().getTime() + LEASE), ...(pending.length ? { progress: pushSteps(cur ?? job, ...pending.splice(0)) } : {}) } });
+    const live = text.trim() ? text.slice(-4000) : null;
+    const liveChanged = live !== lastLive; lastLive = live;
+    await db().agentJob.update({ where: { id }, data: { leaseUntil: new Date(now().getTime() + LEASE), ...(liveChanged ? { liveText: live } : {}), ...(pending.length ? { progress: pushSteps(cur ?? job, ...pending.splice(0)) } : {}) } });
   };
   // Heartbeat: an agent can be silent for minutes (ASTON waiting for Claude to write
   // a site) — keep the lease alive while this runner is really working, so a long
@@ -142,7 +148,7 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date;
       agent: job.agent as AgentInput["agent"],
     });
     for await (const ev of run) {
-      if (ev.type === "text") text += ev.delta;
+      if (ev.type === "text") { text += ev.delta; await flush(); continue; }
       else if (ev.type === "done") text = ev.text;
       else if (ev.type === "error") error = ev.message;
       else if (ev.type === "tool") {
@@ -165,10 +171,17 @@ export async function runJob(id: string, o: { runner?: Runner; now?: () => Date;
   const shown = outcome.text || (cancelled ? "" : text.trim());
   await db().message.create({ data: { conversationId: conversation.id, userId: job.userId, role: "assistant", content: (shown || outcome.reason || "(no answer)") + (cancelled ? "\n\n_(cancelled)_" : "") } });
   const status: JobStatus = outcome.status;
+  // a recoverable failure (network, timeout, rate limit, overloaded) runs again, within MAX_ATTEMPTS
+  if (status === "failed" && job.attempts < MAX_ATTEMPTS && !job.cancelRequested && isTransient(outcome.reason)) {
+    return db().agentJob.update({
+      where: { id },
+      data: { status: "assigned", leaseUntil: null, liveText: null, error: null, progress: pushSteps(job, step(`Recoverable error (${(outcome.reason ?? "").slice(0, 120)}) — trying again, attempt ${job.attempts + 1} of ${MAX_ATTEMPTS}`, "error")) },
+    });
+  }
   return db().agentJob.update({
     where: { id },
     data: {
-      status, leaseUntil: null, result: shown || null,
+      status, leaseUntil: null, liveText: null, result: shown || null,
       resultData: { tools, links, artifacts } as unknown as Prisma.InputJsonValue,
       error: status === "failed" ? outcome.reason : null,
       finishedAt: status === "waiting_approval" ? null : new Date(),
@@ -232,6 +245,7 @@ export const jobView = (j: AgentJob) => ({
   request: j.request, brief: j.brief as unknown as Brief, dependsOn: j.dependsOn, progress: j.progress as unknown as Step[],
   result: j.result, resultData: j.resultData as { tools?: { name: string; status: string; summary: string }[]; links?: { url: string; label: string }[]; artifacts?: ({ kind: "aston"; siteId: string; version: number; url: string; title: string } | { kind: "friday" | "studio"; projectId: string; version: number; url: string; title: string })[] } | null,
   payload: (j.payload ?? null) as (AstonPayload & Partial<FridayPayload> & Partial<Omit<StudioPayload, "action">>) | null,
+  liveText: j.liveText,
   error: j.error, attempts: j.attempts, cancelRequested: j.cancelRequested, conversationId: j.conversationId,
   createdAt: j.createdAt.toISOString(), startedAt: j.startedAt?.toISOString() ?? null, finishedAt: j.finishedAt?.toISOString() ?? null,
   updatedAt: j.updatedAt.toISOString(), announced: !!j.announcedAt,

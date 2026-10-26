@@ -2,9 +2,9 @@ import { z } from "zod";
 import type { ToolDefinition } from "./types";
 import { ToolError } from "./types";
 import { JOB_AGENTS, JOB_AGENT_NAME, JOB_STATUS_LABEL, briefSchema } from "@/lib/jobs/brief";
-import { cancelJob, createJob, listJobs, retryJob, jobView } from "@/lib/jobs/engine";
+import { cancelJob, listJobs, retryJob, jobView } from "@/lib/jobs/engine";
 import { getDb } from "@/lib/db";
-import { requestStudio } from "@/lib/aston/studio/service";
+import { dispatchTask } from "@/lib/jobs/dispatch";
 
 /**
  * JARVIS's delegation tools — JARVIS only (agents can't delegate onwards).
@@ -67,13 +67,8 @@ export const delegateTaskTool: ToolDefinition<z.infer<typeof delegateSchema>> = 
     required: ["agent", "title", "request", "brief"],
   },
   async execute(input, ctx) {
-    const { kind, leadId, ...rest } = input;
-    // ASTON websites run in the studio (real code, run and browser-tested); app demos stay as they are
-    if (input.agent === "aston" && kind !== "app" && !leadId) {
-      const { job } = await requestStudio(ctx.userId, { request: [input.request, input.brief.objective, ...input.brief.context, ...input.brief.requirements].filter(Boolean).join("\n").slice(0, 4000) });
-      return { data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, note: "Assigned to ASTON's studio. It runs in the background; JARVIS reports when it's built and tested. Don't claim results yet." }, summary: `Assigned to ASTON: ${job.title}` };
-    }
-    const job = await createJob(ctx.userId, { ...rest, brief: input.brief, ...(input.agent === "aston" ? { payload: { kind, leadId } } : input.agent === "friday" ? { payload: { action: "create" as const } } : {}) });
+    const { job, studio } = await dispatchTask(ctx.userId, input);
+    if (studio) return { data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, note: "Assigned to ASTON's studio. Its pop-up shows the code being written next to the live preview. It runs in the background; JARVIS reports when it's built and tested. Don't claim results yet." }, summary: `Assigned to ASTON: ${job.title}` };
     return {
       data: { job: { id: job.id, agent: job.agent, title: job.title, status: job.status }, note: "Assigned. It runs in the background; JARVIS reports when it finishes. Don't claim results yet." },
       summary: `Assigned to ${JOB_AGENT_NAME[input.agent]}: ${job.title}`,

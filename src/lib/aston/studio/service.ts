@@ -13,7 +13,7 @@ import type { TestReport } from "./test";
 const db = () => getDb();
 
 /** "Build me a website for …" → the project exists at once (so the studio can open), then the build runs as a tracked ASTON task. */
-export async function requestStudio(userId: string, p: { request: string; name?: string; client?: string }) {
+export async function requestStudio(userId: string, p: { request: string; name?: string; client?: string; dependsOn?: string[] }) {
   const guess = suggestStyle(p.request);
   const project = await createProject(userId, { name: p.name || p.client || projectName(p.request), brief: p.request, client: p.client ?? null, style: guess.id });
   await setState(project.id, "understanding", "Queued — ASTON is starting");
@@ -24,7 +24,7 @@ export async function requestStudio(userId: string, p: { request: string; name?:
     constraints: ["Never deploy without the user asking"], acceptance: ["Browser tests pass or remaining failures are reported"], approvals: [],
   };
   const payload: StudioPayload = { mode: "studio", action: "create", projectId: project.id, ...(p.name ? { name: p.name } : {}), ...(p.client ? { client: p.client } : {}) };
-  const job = await createJob(userId, { agent: "aston", title: `Website — ${project.name}`.slice(0, 120), request: p.request.slice(0, 4000), brief, payload });
+  const job = await createJob(userId, { agent: "aston", title: `Website — ${project.name}`.slice(0, 120), request: p.request.slice(0, 4000), brief, payload, ...(p.dependsOn?.length ? { dependsOn: p.dependsOn } : {}) });
   await db().astonProject.update({ where: { id: project.id }, data: { jobId: job.id } });
   return { project, job };
 }

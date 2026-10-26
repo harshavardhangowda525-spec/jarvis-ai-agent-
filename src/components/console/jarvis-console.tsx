@@ -17,6 +17,8 @@ import { instantAnswer } from "@/lib/instant";
 import { businessEnvCommand } from "@/lib/intel/intent";
 import { HomeOmega, type HomePhase } from "@/components/omega/home-omega";
 import { OmegaStage } from "@/components/omega/omega-stage";
+import { AgentDock, type DockApi } from "@/components/agent-dock/agent-dock";
+import { JOB_AGENTS, type JobAgent } from "@/lib/jobs/brief";
 import { inIndia, parseOpenLinkRef, parseOpenSite, pickLink, type SiteTarget } from "@/lib/open-site";
 import { installedAppNames, openLocalApp, openUrlOnPc, parseOpenApp, planOpen, refreshInstalledApps, ultronKnown } from "@/lib/local-apps";
 import { parseMemoryCommand } from "@/lib/memory/intent";
@@ -45,6 +47,7 @@ import { KineticStage, KineticWord, type KineticStyle } from "./jarvis/kinetic";
 import { HoloPanel } from "./jarvis/holo-panel";
 import { cn } from "@/lib/utils";
 import { CHAT_AGENTS, type ChatAgentId } from "@/lib/agents/catalog";
+import { agentInstruction, agentsNamed } from "@/lib/agents/instruction";
 import { announcement, useJobs } from "@/components/jobs/use-jobs";
 import { JOB_STATUS_LABEL } from "@/lib/jobs/brief";
 import { AstonViewer } from "@/components/aston/viewer";
@@ -199,8 +202,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const turnTool = useRef(false);
   const turnFailed = useRef(false);
 
+  // agents open as floating windows over the console — never a page change
+  const dockRef = useRef<DockApi>(null);
   const onNavigate = useCallback((path: string) => {
     if (!path.startsWith("/dashboard") || path === "/dashboard") return;
+    const chat = path.match(/^\/dashboard\/chat\/([a-z]+)/)?.[1];
+    if (chat && (JOB_AGENTS as readonly string[]).includes(chat)) { dockRef.current?.openAgent(chat as JobAgent); return; }
+    if (/^\/dashboard\/aston\/studio/.test(path)) { dockRef.current?.openAgent("aston"); return; }
     router.push(path);
   }, [router]);
 
@@ -243,6 +251,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const gestureRef = useRef(gesture); gestureRef.current = gesture;
   // Tasks JARVIS delegated to the agents: started here as soon as they're assigned, announced when they finish
   const jobs = useJobs({ status: "active" });
+  const dockJobs = useMemo(() => [...jobs.jobs, ...jobs.announce], [jobs.jobs, jobs.announce]);
   const jobsRef = useRef(jobs); jobsRef.current = jobs;
   // ASTON: the finished demo JARVIS offered to show, and the preview panel
   const [astonOffer, setAstonOffer] = useState<{ siteId: string; version: number; url: string; title: string; jobId: string; at: number } | null>(null);
@@ -252,7 +261,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   // "build a website" without saying for whom → JARVIS asks once; the next thing you say is the brief
   const astonAsk = useRef<{ kind: "website" | "app"; request: string; at: number } | null>(null);
   const agent = useAgent({
-    onJob: () => { void jobsRef.current.refresh(); },
+    onJob: (j) => { dockRef.current?.openJob(j.id, j.agent); void jobsRef.current.refresh(); },
     // ASTON preview you asked for (via aston_demo open/walkthrough)
     onArtifact: (a) => { setAstonOffer(null); setAstonPanel({ siteId: a.siteId, walk: a.mode === "walk", key: Date.now() }); },
     onTextDelta: (delta) => {
@@ -321,18 +330,6 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       void jobs.act(j.id, "announced");
     }
   }, [jobs.announce]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // a website JARVIS hands to ASTON opens ASTON's studio: the code being written next to the live preview
-  useEffect(() => {
-    for (const j of jobs.jobs) {
-      const pid = j.payload?.mode === "studio" ? j.payload.projectId : undefined;
-      if (j.agent !== "aston" || !pid || !["planning", "assigned", "running"].includes(j.status) || Date.now() - Date.parse(j.createdAt) > 3 * 60_000) continue;
-      const seen = `jarvis-studio-opened:${j.id}`;
-      try { if (sessionStorage.getItem(seen)) continue; sessionStorage.setItem(seen, "1"); } catch { /* storage blocked */ }
-      router.push(`/dashboard/aston/studio?project=${pid}`);
-      break;
-    }
-  }, [jobs.jobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sleep = useCallback(() => { voice.stop(); setVoiceStarted(false); }, [voice]);
   sayRef.current = (t: string) => { if (voiceStarted && !voice.muted && voice.enabled) { try { voice.speak(t); } catch { /* ignore */ } } };
@@ -428,9 +425,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     const a = CHAT_AGENTS[id];
     logActivity({ category: "agent", agent: a.name, action: `Opened ${a.name}`, importance: 1 });
     if (id === "darwin" || id === "ev") motion.current?.activateAgent(id === "darwin" ? "DARWIN" : "EV");
-    if (voiceStarted && !voice.muted && voice.enabled) voice.speak(`Opening ${a.name}.`);
-    router.push(`/dashboard/chat/${id}${ask ? `?ask=${encodeURIComponent(ask)}` : ""}`);
-  }, [router, voice, voiceStarted]);
+    if (voiceStarted && !voice.muted && voice.enabled) voice.speak(ask ? `${a.name} is on it.` : `Opening ${a.name}.`);
+    dockRef.current?.openAgent(id, ask);
+  }, [voice, voiceStarted]);
   const launchDarwin = useCallback(() => openChat("darwin"), [openChat]);
   const launchMike = useCallback(() => openChat("mike"), [openChat]);
   const launchRobin = useCallback((cmd?: string) => openChat("robin", cmd), [openChat]);
@@ -609,8 +606,23 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         router.push("/dashboard/crm");
         return;
       }
+      // ===== one agent + an instruction ("activate Darwin and find 30 salons", "ask Evie to …", "tell Aston to …")
+      // → that agent's window opens and the instruction runs as its task. Several agents in one
+      // sentence go to JARVIS's brain, which plans the tasks and their order (each window opens as it's assigned).
+      const named = agentsNamed(low);
+      if (named.length > 1) { void agent.send(t); return; }
+      if (named.length === 1) {
+        const ins = agentInstruction(t, named[0]);
+        if (ins) {
+          logActivity({ category: "agent", agent: named[0].toUpperCase(), action: `Assigned: ${ins.slice(0, 80)}`, importance: 2 });
+          agent.appendLocalExchange(t, `Assigned to ${CHAT_AGENTS[named[0]].name} — its window shows the progress.`, undefined);
+          sayRef.current(`${CHAT_AGENTS[named[0]].name} is on it.`);
+          dockRef.current?.openAgent(named[0], ins);
+          return;
+        }
+      }
       // ===== EV marketing agent: "open EV", "activate EV" → EV's chat =====
-      if (/\b(activate|open|start|launch|bring up|switch to|go to)\s+ev\b|\bev\s+mode\b|^ev[\s!.,]*$/.test(low)) {
+      if (/\b(activate|open|start|launch|bring up|switch to|go to)\s+(?:ev|evie)\b|\bev\s+mode\b|^(?:ev|evie)[\s!.,]*$/.test(low)) {
         openEv();
         return;
       }
@@ -702,13 +714,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         astonAsk.current = null;
         if (kind === "website") {
           // websites: ASTON's studio writes the real code — open it so you watch the code and the preview side by side
-          say("Understood. ASTON is planning the website now — I'm opening the studio so you can watch the code being written next to the live preview.");
+          say("Understood. ASTON is planning the website now — its window shows the code being written next to the live preview.");
           void fetch("/api/aston/projects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request: request.slice(0, 4000) }) })
             .then(async (r) => {
               const j = await r.json().catch(() => null);
               if (!r.ok || !j?.ok) { const m = `ASTON couldn't start: ${j?.error ?? `HTTP ${r.status}`}`; agent.appendLocalExchange("", m, undefined, { note: true }); sayRef.current(m); return; }
               void jobsRef.current.refresh();
-              router.push(j.data.studio);
+              dockRef.current?.openJob(j.data.job.id, "aston");
             })
             .catch(() => { agent.appendLocalExchange("", "I couldn't reach ASTON — check that JARVIS is running.", undefined, { note: true }); });
           return;
@@ -740,11 +752,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
       }
       // FRIDAY: "Friday, model the EDITH glasses" / "make a 3D model of …" → Friday does it; "open Friday"; "activate agentic view"
       const forFriday = fridayCommand(t);
-      if (forFriday) { say("Handing it to Friday."); router.push(`/dashboard/friday?ask=${encodeURIComponent(forFriday.slice(0, 2000))}`); return; }
-      if (isFridayActivation(t)) { say("Opening Friday."); router.push("/dashboard/friday"); return; }
+      if (forFriday) { say("Handing it to Friday."); dockRef.current?.openAgent("friday", forFriday.slice(0, 2000)); return; }
+      if (isFridayActivation(t)) { say("Opening Friday."); dockRef.current?.openAgent("friday"); return; }
       if (modeCommand(t) === "activate") { say("Opening Friday's agentic view."); router.push("/dashboard/friday?view=agentic"); return; }
       // "Open ASTON" → ASTON's chat; "open the teleprompter" / "today's plan" → the teleprompter
       if (isAstonActivation(low)) { openChat("aston"); return; }
+      // "which agents are working?" → their windows come back up (JARVIS still answers from the task records)
+      if (/\b(which|what|show)\b.*\bagents?\b.*\b(working|busy|running|doing)\b/.test(low)) dockRef.current?.showWorking();
       if (teleprompterCommand(low)) { agent.appendLocalExchange(t, "Opening today's plan in the teleprompter."); sayRef.current("Opening the teleprompter."); router.push("/dashboard/teleprompter"); return; }
       // "Rubin", "Activate Rubin", "Open Rubin", "Start Rubin" → RUBIN takes over (sales & CRM);
       // "Rubin, show me today's follow-ups" → Rubin opens and does it. ("Ask Rubin …" stays with JARVIS.)
@@ -1176,6 +1190,8 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         </div>
       )}
       <NiosAlerts watch={nios} />
+      <AgentDock ref={dockRef} liveJobs={dockJobs} onChanged={() => void jobs.refresh()}
+        onReport={(text) => { agent.appendLocalExchange("", text, undefined, { note: true }); sayRef.current(text.split("\n")[0]); }} />
       {!omega && jobs.jobs.length > 0 && (
         <div className="absolute bottom-24 left-4 z-30 w-72 space-y-1.5" aria-label="Agent tasks">
           {jobs.jobs.slice(0, 3).map((j) => (
@@ -1403,7 +1419,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
               </button>
               <input ref={inputRef} value={input} onChange={(e) => onType(e.target.value)}
                 onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
-                placeholder="Talk to JARVIS..."
+                placeholder={voiceStarted && !voice.muted && voice.transcript ? `“${voice.transcript}”` : "Talk to JARVIS..."}
                 className="min-w-0 flex-1 border-0 bg-transparent px-1 py-1.5 text-sm font-light text-white shadow-none outline-none ring-0 placeholder:text-white/35 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0" />
               <button type="button" onClick={() => (voiceStarted ? voice.toggleMute() : enableVoice())}
                 aria-label={voiceStarted ? (voice.muted ? "Unmute" : "Mute") : "Enable voice"} title={voiceStarted ? (voice.muted ? "Unmute" : "Mute") : "Enable voice"}
