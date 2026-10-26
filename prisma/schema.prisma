@@ -58,6 +58,8 @@ model User {
   intelItems          IntelItem[]
   intelBriefings      IntelBriefing[]
   intelOpportunities  IntelOpportunity[]
+  proposals           Proposal[]
+  approvalDecisions   ApprovalDecision[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
   gateCredentials     GateCredential[]
@@ -1595,4 +1597,49 @@ model IntelSettings {
   lastRefreshAt  DateTime?
   lastRefresh    Json?
   updatedAt      DateTime  @updatedAt
+}
+
+/// An action an agent proposes (e.g. EVIE from an insight) for JARVIS to review and assign. Nothing runs until you approve it.
+model Proposal {
+  id        String   @id @default(cuid())
+  userId    String
+  /// ev | jarvis | …
+  source    String
+  /// intel_item | intel_opportunity
+  refKind   String?
+  refId     String?
+  title     String
+  detail    String   @db.Text
+  /// the agent it would be assigned to
+  agent     String
+  evidence  Json     @default("[]")
+  /// pending | approved | rejected
+  status    String   @default("pending")
+  jobId     String?
+  createdAt DateTime @default(now())
+  decidedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+}
+
+/// Every approve / reject / revise you make in the Approval Center, with what actually happened.
+model ApprovalDecision {
+  id        String   @id @default(cuid())
+  userId    String
+  /// job | darwin_message | ev_daily | proposal
+  kind      String
+  refId     String
+  /// approve | reject | revise
+  decision  String
+  note      String?  @db.Text
+  /// ok | failed
+  outcome   String
+  detail    String?  @db.Text
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
 }
