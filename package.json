@@ -8,6 +8,7 @@
     "local": "node scripts/local.mjs",
     "searxng": "node scripts/searxng.mjs",
     "rubin": "node scripts/rubin.mjs",
+    "orb": "node scripts/orb.mjs",
     "darwin:check": "tsx scripts/darwin-check.ts",
     "storage": "node scripts/storage-report.mjs",
     "ev:check-video": "node scripts/magichour-check.mjs",

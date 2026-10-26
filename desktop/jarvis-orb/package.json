@@ -1,0 +1,14 @@
+{
+  "name": "jarvis-orb",
+  "productName": "JARVIS Orb",
+  "version": "2.0.0",
+  "private": true,
+  "description": "JARVIS 2.0 — the floating holographic assistant that controls apps on your desktop.",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "44.5.1"
+  }
+}
