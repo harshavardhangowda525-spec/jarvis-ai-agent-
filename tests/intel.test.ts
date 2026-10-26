@@ -160,6 +160,16 @@ d("business intelligence pipeline (integration)", () => {
     expect((wk.content as { trend: Record<string, { now: number }> }).trend.ai.now).toBeGreaterThan(0);
     expect((wk.content as { internal: { leadsTotal: number } }).internal.leadsTotal).toBe(0);
   });
+  it("the next briefing doesn't repeat stories the previous one covered", async () => {
+    const first = await B.generateBriefing(userId, "daily", "2026-10-25", { trigger: "manual", ai: null, refresh: false, now, force: true });
+    const before = (first.content as { headlines: { url: string }[] }).headlines.map((h) => h.url);
+    expect(before.length).toBeGreaterThan(0);
+    const next = await B.generateBriefing(userId, "daily", "2026-10-26", { trigger: "manual", ai: null, refresh: false, now: new Date(istInstant("2026-10-26", 9)) });
+    const c = next.content as { headlines: { url: string }[]; changes: { previousPeriod: string; repeatsSkipped: number } };
+    expect(c.changes.previousPeriod).toBe("2026-10-25");
+    expect(c.changes.repeatsSkipped).toBeGreaterThan(0);
+    expect(c.headlines.some((h) => before.includes(h.url))).toBe(false);
+  });
   it("'how's the business environment?' with no briefing yet answers from the latest real items", async () => {
     const { businessIntelTool } = await import("@/lib/tools/intel");
     await getDb().intelBriefing.deleteMany({ where: { userId } });

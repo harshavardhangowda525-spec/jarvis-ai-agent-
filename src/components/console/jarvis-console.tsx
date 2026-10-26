@@ -15,6 +15,7 @@ import { type OrbState } from "@/components/orb";
 import { useVoice, useResumeVoice, type SpeechStream } from "@/hooks/useVoice";
 import { instantAnswer } from "@/lib/instant";
 import { businessEnvCommand } from "@/lib/intel/intent";
+import { HomeOmega, type HomePhase } from "@/components/omega/home-omega";
 import { inIndia, parseOpenLinkRef, parseOpenSite, pickLink, type SiteTarget } from "@/lib/open-site";
 import { installedAppNames, openLocalApp, openUrlOnPc, parseOpenApp, planOpen, refreshInstalledApps, ultronKnown } from "@/lib/local-apps";
 import { parseMemoryCommand } from "@/lib/memory/intent";
@@ -964,6 +965,13 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
     return "idle";
   })();
   useEffect(() => { if (jState !== "thinking") setProcessing(false); }, [jState]);
+  // OMEGA state strip: the same real state, plus ROUTING while JARVIS hands work to an agent
+  const homePhase: HomePhase =
+    jState === "listening" ? "LISTENING"
+    : jState === "speaking" ? "RESPONDING"
+    : jState === "thinking" ? "THINKING"
+    : jState === "executing" || jState === "research" ? (/assigning the task|starting the build|working with friday|delegat|^assigned to/i.test(latest?.label ?? "") ? "ROUTING" : "EXECUTING")
+    : "IDLE";
   // SYSTEM ONLINE types itself once, then steps back.
   const [onlineVisible, setOnlineVisible] = useState(false);
   useEffect(() => { if (!intro.online) return; setOnlineVisible(true); const t = setTimeout(() => setOnlineVisible(false), 3600); return () => clearTimeout(t); }, [intro.online]);
@@ -1189,6 +1197,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
       {/* cinematic vignette (composited by the browser, not repainted) */}
       <div aria-hidden className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(ellipse at 50% 47%, transparent 45%, rgba(0,0,0,0.55) 100%)" }} />
+
+      {/* OMEGA: workspaces, the real-state strip and the live agent constellation */}
+      {intro.done && <HomeOmega phase={homePhase} />}
 
       {!intro.done && (
         <button onClick={(e) => { e.stopPropagation(); motion.current?.skipIntro(); }} className="absolute bottom-5 right-5 z-30 text-[10px] uppercase tracking-[0.35em] text-white/25 transition hover:text-white/60">Skip</button>

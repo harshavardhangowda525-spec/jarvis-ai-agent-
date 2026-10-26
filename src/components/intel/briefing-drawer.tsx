@@ -7,8 +7,8 @@ import { api, when, type CC } from "./types";
 type Headline = { n: number; itemId: string; title: string; publisher: string | null; url: string; publishedAt: string | null; category: string | null; analysis: { whyItMatters: string; recommendedAction: string; confidence: { level: string } } | null };
 type Briefing = {
   kind: string; period: string; label: string; status: string; revision: number; trigger: string; error: string | null; generatedAt: string | null;
-  content: { summary: { summary: string; actions: { action: string; cite: number[] }[]; risks: { text: string; cite: number[] }[]; by: string; provider?: string; rejected?: string }; headlines: Headline[]; itemsConsidered: number; trend: Record<string, { now: number; before: number }> | null; opportunities: { id: string; title: string; score: number }[]; internal: Internal | null } | null;
-  sources: { ok: number; failed: string[]; youtube: { configured: boolean; message: string | null }; tavily: boolean } | null;
+  content: { changes?: { previousPeriod: string | null; newStories: number; repeatsSkipped: number } | null; summary: { summary: string; actions: { action: string; cite: number[] }[]; risks: { text: string; cite: number[] }[]; by: string; provider?: string; rejected?: string }; headlines: Headline[]; itemsConsidered: number; trend: Record<string, { now: number; before: number }> | null; opportunities: { id: string; title: string; score: number }[]; internal: Internal | null } | null;
+  sources: { ok: number; failed: string[]; youtube: { configured: boolean; message: string | null }; tavily: boolean; lastSuccessfulSync?: string; stale?: string | null } | null;
 };
 type Internal = { asOf: string; leadsByStage: Record<string, number>; leadsTotal: number; newLeads7d: number; activeClients: number; quotationsAwaiting: number; quotationsAccepted30d: number; payments30d: { count: number; amount: number }; darwinLeads7d: number | null; websiteProjects30d: number | null };
 
@@ -54,7 +54,7 @@ export function BriefingDrawer({ open, onClose, initial, cc, onSaved, speak, aut
       });
     }
     if (tab === "internal") api<Internal>("/api/intel/internal").then(setInternal).catch((e) => setErr((e as Error).message));
-  }, [open, tab, load]);
+  }, [open, tab, load]); // eslint-disable-line react-hooks/exhaustive-deps -- runs when the tab opens; the auto-brief must fire once, not on every render
 
   const generate = async (kind: "daily" | "weekly") => {
     setBusy(true); setErr(null);
@@ -98,6 +98,7 @@ export function BriefingDrawer({ open, onClose, initial, cc, onSaved, speak, aut
           {b && b.status !== "ready" && <p className="cc-warn">{b.status === "generating" ? "Being written…" : `Failed: ${b.error}`}</p>}
           {c && (
             <>
+              {c.changes && <p className="cc-dim">{c.changes.previousPeriod ? `Since the ${b.kind} briefing of ${c.changes.previousPeriod}: ${c.changes.newStories} new stor${c.changes.newStories === 1 ? "y" : "ies"}${c.changes.repeatsSkipped ? `, ${c.changes.repeatsSkipped} already covered and left out` : ""}.` : "First briefing of this kind."}</p>}
               <p className="cc-prose"><Cited text={c.summary.summary} hs={c.headlines} /></p>
               <p className="cc-dim">{c.summary.by === "ai" ? `Written by AI (${c.summary.provider}) from the ${c.headlines.length} cited sources; citations and numbers were checked.` : `Rule-based summary.${c.summary.rejected ? ` ${c.summary.rejected}` : ""}`} {c.itemsConsidered} items considered.</p>
               {c.summary.actions.length > 0 && <><h4>Recommended actions</h4><ul>{c.summary.actions.map((a, i) => <li key={i}><Cited text={a.action} hs={c.headlines} /> {a.cite.map((n) => <Cited key={n} text={` [${n}]`} hs={c.headlines} />)}</li>)}</ul></>}
@@ -106,7 +107,7 @@ export function BriefingDrawer({ open, onClose, initial, cc, onSaved, speak, aut
               <ol className="cc-sources">{c.headlines.map((h) => <li key={h.n} value={h.n}><a href={h.url} target="_blank" rel="noreferrer">{h.title}</a> <span className="cc-dim">— {h.publisher ?? "unknown publisher"} · {when(h.publishedAt)}{h.analysis ? ` · confidence ${h.analysis.confidence.level}` : ""}</span></li>)}</ol>
               {c.opportunities.length > 0 && <><h4>Top opportunities</h4><ul>{c.opportunities.map((o) => <li key={o.id}>{o.title} <span className="cc-dim">score {o.score}</span></li>)}</ul></>}
               {c.trend && <><h4>Week vs previous week</h4><div className="cc-trend">{CATEGORIES.map((k) => c.trend![k.id] && <span key={k.id}>{k.label}: {c.trend![k.id].before} → <b>{c.trend![k.id].now}</b></span>)}</div></>}
-              {b.sources && <p className="cc-dim">Sources answered: {b.sources.ok}{b.sources.failed.length ? ` · failed: ${b.sources.failed.slice(0, 3).join("; ")}` : ""}{b.sources.youtube.configured ? "" : " · YouTube not configured"}{b.sources.tavily ? "" : " · Tavily not configured"}</p>}
+              {b.sources && <p className="cc-dim">{b.sources.lastSuccessfulSync ? `Last successful sync ${when(b.sources.lastSuccessfulSync)}. ` : ""}{b.sources.stale ? `${b.sources.stale}. ` : ""}Sources answered: {b.sources.ok}{b.sources.failed.length ? ` · failed: ${b.sources.failed.slice(0, 3).join("; ")}` : ""}{b.sources.youtube.configured ? "" : " · YouTube not configured"}{b.sources.tavily ? "" : " · Tavily not configured"}</p>}
               {c.internal && <p className="cc-dim">Internal: {c.internal.leadsTotal} leads ({c.internal.newLeads7d} new in 7 days), {c.internal.activeClients} active clients, {c.internal.quotationsAwaiting} quotations awaiting a reply.</p>}
             </>
           )}
@@ -149,6 +150,15 @@ export function BriefingDrawer({ open, onClose, initial, cc, onSaved, speak, aut
             <select value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })} aria-label="Category">{CATEGORIES.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
             <button className="cc-btn" type="submit">Add topic</button>
           </form>
+          <h4>Impact score weights</h4>
+          <p className="cc-dim">How the business-impact score weighs each part (relevance and urgency include AI judgement; evidence and recency are measured).</p>
+          <div className="cc-weights">
+            {(["relevance", "urgency", "evidence", "recency"] as const).map((k) => (
+              <label key={k}>{k[0].toUpperCase() + k.slice(1)} <input type="range" min={0} max={100} step={5} defaultValue={Math.round((cc.weights?.[k] ?? 0.25) * 100)}
+                onPointerUp={(e) => void save({ weights: { ...cc.weights, [k]: Number(e.currentTarget.value) / 100 } })}
+                onKeyUp={(e) => void save({ weights: { ...cc.weights, [k]: Number(e.currentTarget.value) / 100 } })} aria-label={`${k} weight`} /></label>
+            ))}
+          </div>
           <h4>Schedule &amp; notifications</h4>
           <div className="cc-topics">
             {([["dailyEnabled", "Daily briefing 08:00 IST"], ["weeklyEnabled", "Weekly review Sunday 19:00 IST"], ["notifyWhatsapp", "WhatsApp me"], ["notifyEmail", "Email me"]] as const).map(([k, label]) => (

@@ -2,7 +2,7 @@
   "name": "jarvis-ai-agent",
   "version": "1.0.0",
   "private": true,
-  "description": "JARVIS AI \u2014 a production-ready general-purpose voice AI agent",
+  "description": "JARVIS AI — a production-ready general-purpose voice AI agent",
   "scripts": {
     "dev": "next dev",
     "local": "node scripts/local.mjs",
@@ -55,6 +55,8 @@
     "sharp": "^0.34.5",
     "tailwind-merge": "^2.6.0",
     "three": "^0.170.0",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -64,6 +66,7 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@types/three": "^0.170.0",
+    "@types/topojson-client": "^3.1.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "eslint": "^8.57.1",

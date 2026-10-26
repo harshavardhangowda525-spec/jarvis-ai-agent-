@@ -17,6 +17,8 @@ export async function GET(req: Request) {
       q: u.searchParams.get("q") ?? undefined,
       minRelevance: Number(u.searchParams.get("minRelevance")) || undefined,
       days: Math.min(30, Number(u.searchParams.get("days")) || 7),
+      source: u.searchParams.get("source") ?? undefined,
+      saved: u.searchParams.get("saved") === "1",
     }));
   } catch (e) {
     return handleError(e);

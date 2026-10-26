@@ -22,11 +22,13 @@ const oppSchema = z.object({
   howWeCouldUseIt: z.string().max(600),
   difficulty: z.enum(["low", "medium", "high"]),
   evidence: z.array(z.string()).min(1).max(8),
+  whyItMatters: z.string().max(500).optional(),
+  nextAction: z.string().max(300).optional(),
 });
 
 export const SYSTEM = `You find business opportunities for ${BUSINESS.name}, ${BUSINESS.what}, from analysed news items.
 Rules: use only the items given; each opportunity must cite the ids of the items that support it in "evidence"; no invented facts, numbers or companies; be specific (a service to offer, a niche to target, a tool to adopt).
-Reply with ONE JSON object: {"opportunities":[{"title","whatHappened","whoBenefits","howWeCouldUseIt","difficulty":"low"|"medium"|"high","evidence":["id",...]}]} — at most 6, best first.`;
+Reply with ONE JSON object: {"opportunities":[{"title","whatHappened","whyItMatters","whoBenefits","howWeCouldUseIt","nextAction","difficulty":"low"|"medium"|"high","evidence":["id",...]}]} — at most 6, best first. "whoBenefits" names the target customers; "nextAction" is one concrete first step.`;
 
 const CONF = { high: 1, medium: 0.6, low: 0.25 } as const;
 
@@ -64,7 +66,7 @@ export async function detectOpportunities(userId: string, ask: Ask, o: { days?: 
     if (!ev.length) continue; // no real evidence → dropped
     const { score, parts } = scoreOpportunity(ev.map((e) => ({ relevance: e.relevance, publishedAt: e.publishedAt, analysis: e.analysis as unknown as ItemAnalysis })), p.data.difficulty, now.getTime());
     const key = p.data.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
-    const detail = { whatHappened: p.data.whatHappened, whoBenefits: p.data.whoBenefits, howWeCouldUseIt: p.data.howWeCouldUseIt, difficulty: p.data.difficulty, scoreParts: parts, rule: SCORE_RULE };
+    const detail = { whatHappened: p.data.whatHappened, whyItMatters: p.data.whyItMatters ?? null, whoBenefits: p.data.whoBenefits, howWeCouldUseIt: p.data.howWeCouldUseIt, nextAction: p.data.nextAction ?? null, difficulty: p.data.difficulty, scoreParts: parts, rule: SCORE_RULE };
     const evidence = ev.map((e) => ({ itemId: e.id, title: e.title, publisher: e.publisher, url: e.url, publishedAt: e.publishedAt?.toISOString() ?? null, confidence: (e.analysis as unknown as ItemAnalysis).confidence.level }));
     await db().intelOpportunity.upsert({
       where: { userId_key: { userId, key } },

@@ -33,7 +33,7 @@ export async function intelSettings(userId: string) {
   const saved = (s?.topics ?? null) as Topic[] | null;
   // keep the user's on/off and custom topics; add any new default topics
   const topics = saved?.length ? [...saved, ...DEFAULT_TOPICS.filter((d) => !saved.some((t) => t.id === d.id))] : DEFAULT_TOPICS;
-  return { userId, topics, dailyEnabled: s?.dailyEnabled ?? true, weeklyEnabled: s?.weeklyEnabled ?? true, notifyEmail: s?.notifyEmail ?? false, notifyWhatsapp: s?.notifyWhatsapp ?? false, lastRefreshAt: s?.lastRefreshAt ?? null, lastRefresh: (s?.lastRefresh ?? null) as RefreshReport | null };
+  return { userId, topics, weights: s?.weights ?? null, dailyEnabled: s?.dailyEnabled ?? true, weeklyEnabled: s?.weeklyEnabled ?? true, notifyEmail: s?.notifyEmail ?? false, notifyWhatsapp: s?.notifyWhatsapp ?? false, lastRefreshAt: s?.lastRefreshAt ?? null, lastRefresh: (s?.lastRefresh ?? null) as RefreshReport | null };
 }
 
 export interface SourceRun { name: string; kind: "rss" | "google_news" | "tavily" | "youtube"; ok: boolean; count: number; error?: string }
@@ -127,7 +127,7 @@ export async function refreshIntel(userId: string, o: { force?: boolean; fetch?:
   const after = await db().intelItem.count({ where: { userId } });
 
   // keep 30 days
-  await db().intelItem.deleteMany({ where: { userId, fetchedAt: { lt: new Date(now.getTime() - 30 * 86_400_000) } } });
+  await db().intelItem.deleteMany({ where: { userId, saved: false, fetchedAt: { lt: new Date(now.getTime() - 30 * 86_400_000) } } });
 
   const report: RefreshReport = { at: now.toISOString(), sources: sources.sort((a, b) => a.name.localeCompare(b.name)), added: after - before, youtube: ytReport, tavily: !!env.searchApiKey };
   await db().intelSettings.upsert({ where: { userId }, create: { userId, lastRefreshAt: now, lastRefresh: report as unknown as Prisma.InputJsonValue }, update: { lastRefreshAt: now, lastRefresh: report as unknown as Prisma.InputJsonValue } });

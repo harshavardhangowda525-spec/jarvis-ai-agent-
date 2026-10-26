@@ -1,10 +1,14 @@
-import type { ItemView } from "@/lib/intel/service";
-export type { ItemView };
+import type { ItemView as BaseItem } from "@/lib/intel/service";
+import type { ImpactPart, Weights } from "@/lib/intel/impact";
+
+/** A feed item as the command center gets it (videos don't carry impact/duplicates). */
+export type ItemView = BaseItem & { impact?: { score: number; parts: ImpactPart[]; weights: Weights }; alsoReportedBy?: { publisher: string | null; url: string; title: string }[] };
+export type PlaceAgg = { id: string; name: string; level: string; lat: number; lng: number; count: number; items: { id: string; title: string }[] };
 
 export type Radar = { id: string; label: string; total: number; last24: number; perDayBefore: number; emerging: boolean; analysed: number }[];
 export type Opportunity = {
-  id: string; title: string; score: number; status: string; updatedAt: string;
-  detail: { whatHappened: string; whoBenefits: string; howWeCouldUseIt: string; difficulty: "low" | "medium" | "high"; scoreParts: { relevance: number; confidence: number; recency: number; evidence: number; ease: number } };
+  id: string; title: string; score: number; status: string; createdAt: string; updatedAt: string;
+  detail: { whatHappened: string; whyItMatters?: string | null; whoBenefits: string; howWeCouldUseIt: string; nextAction?: string | null; difficulty: "low" | "medium" | "high"; scoreParts: { relevance: number; confidence: number; recency: number; evidence: number; ease: number } };
   evidence: { itemId: string; title: string; publisher: string | null; url: string; publishedAt: string | null; confidence: string }[];
 };
 export type SourceRun = { name: string; kind: string; ok: boolean; count: number; error?: string };
@@ -18,6 +22,7 @@ export type CC = {
   };
   topics: { id: string; label: string; query: string; category: string; on: boolean }[];
   settings: { dailyEnabled: boolean; weeklyEnabled: boolean; notifyEmail: boolean; notifyWhatsapp: boolean };
+  weights: Weights; publishers: { name: string; count: number }[]; places: PlaceAgg[];
   radar: Radar; priority: ItemView[]; videos: ItemView[]; opportunities: Opportunity[]; scoreRule: string;
   briefings: { id: string; kind: string; period: string; label: string; status: string; revision: number; generatedAt: string | null }[];
 };

@@ -1536,6 +1536,8 @@ model IntelItem {
   importance  Int?
   relevance   Int?
   analyzedAt  DateTime?
+  /// you saved it (kept beyond the 30-day clean-up)
+  saved       Boolean   @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1596,6 +1598,8 @@ model IntelSettings {
   notifyWhatsapp Boolean   @default(false)
   lastRefreshAt  DateTime?
   lastRefresh    Json?
+  /// impact-score weights { relevance, urgency, evidence, recency } (0–1 each)
+  weights        Json?
   updatedAt      DateTime  @updatedAt
 }
 

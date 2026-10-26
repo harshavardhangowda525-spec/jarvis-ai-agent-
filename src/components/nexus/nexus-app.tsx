@@ -151,9 +151,9 @@ export function NexusApp() {
           {snap ? <Network agents={nodes} selected={sel} onSelect={setSel} pulses={pulses} reduced={reduced} narrow={narrow} flashes={flashes} /> : <div className="nx-loading">Reading the agents…</div>}
         </div>
         {/* phones: the same agents as tappable tiles */}
-        <div className="nx-tiles" role="list">
+        <div className="nx-tiles">
           {nodes.map((a) => (
-            <button key={a.id} role="listitem" className={`nx-tile${sel === a.id ? " on" : ""}`} style={{ ["--ac" as string]: a.color }} onClick={() => setSel(sel === a.id ? null : a.id)} aria-pressed={sel === a.id}>
+            <button key={a.id} className={`nx-tile${sel === a.id ? " on" : ""}`} style={{ ["--ac" as string]: a.color }} onClick={() => setSel(sel === a.id ? null : a.id)} aria-pressed={sel === a.id}>
               <span className="nx-tile-n">{a.name}</span>
               <span className="nx-tile-s"><span className="om-dot" style={{ ["--c" as string]: STATE_COLOR[a.state] }} />{STATE_LABEL[a.state]}</span>
               <span className="om-dim">{a.title}</span>

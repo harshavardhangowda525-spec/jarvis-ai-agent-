@@ -11,7 +11,7 @@ import { notifySelf } from "@/lib/notify/channels";
 import { publicBase } from "@/lib/public-url";
 import { allowedNumbers } from "@/lib/trading/narrative";
 import { istDate, istInstant, latestDueWeek, weekLabel, type Week } from "@/lib/trading/week";
-import { analyzePending, type Ask, type ItemAnalysis } from "./analyze";
+import { analyzePending, similar, type Ask, type ItemAnalysis } from "./analyze";
 import { intelSettings, refreshIntel, type RefreshReport } from "./collect";
 import { internalSnapshot } from "./internal";
 import { detectOpportunities, SCORE_RULE } from "./opportunities";
@@ -126,8 +126,14 @@ export async function generateBriefing(
       await detectOpportunities(userId, ai.ask, { now, days: kind === "weekly" ? 7 : 3 }).catch((e) => console.error("[intel] opportunities:", (e as Error).message));
     }
     const { from, to } = windowFor(kind, period);
-    const items = (await itemsIn(userId, from, to)).sort((a, b) => rank(b) - rank(a));
+    const all = (await itemsIn(userId, from, to)).sort((a, b) => rank(b) - rank(a));
+    // never repeat old stories as new: drop what the previous briefing of this kind already covered
+    const prev = await db().intelBriefing.findFirst({ where: { userId, kind, status: "ready", period: { lt: period } }, orderBy: { period: "desc" } });
+    const prevHs = ((prev?.content as { headlines?: { url: string; title: string }[] } | null)?.headlines ?? []);
+    const seen = (it: IntelItem) => prevHs.some((h) => h.url === it.url || similar(h.title, it.title));
+    const items = all.filter((it) => !seen(it));
     const hs = items.slice(0, kind === "weekly" ? 12 : 8).map((it, k) => headline(it, k + 1));
+    const prevByCat = (prev?.content as { byCategory?: Record<string, number> } | null)?.byCategory ?? null;
     const summary = await writeSummary(hs, ai);
     const opportunities = await db().intelOpportunity.findMany({ where: { userId, status: { not: "dismissed" }, updatedAt: { gte: from } }, orderBy: { score: "desc" }, take: 5 });
     const byCat = Object.fromEntries(CATEGORIES.map((c) => [c.id, items.filter((i) => i.category === c.id).length]));
@@ -140,12 +146,20 @@ export async function generateBriefing(
     const content = {
       kind, period, window: { from: from.toISOString(), to: to.toISOString() },
       summary, headlines: hs, byCategory: byCat, trend, itemsConsidered: items.length,
+      changes: {
+        previousPeriod: prev?.period ?? null,
+        newStories: items.length,
+        repeatsSkipped: all.length - items.length,
+        byCategory: prevByCat ? Object.fromEntries(CATEGORIES.map((c) => [c.id, { before: prevByCat[c.id] ?? 0, now: byCat[c.id] }])) : null,
+      },
       opportunities: opportunities.map((x) => ({ id: x.id, title: x.title, score: x.score, detail: x.detail, evidence: x.evidence })),
       scoreRule: SCORE_RULE,
       internal: await internalSnapshot(userId, now).catch(() => null),
       analysis: analysis && { analyzed: analysis.analyzed, failed: analysis.failed, error: analysis.error ?? null },
     };
-    const sources = refresh && { at: refresh.at, ok: refresh.sources.filter((s) => s.ok).length, failed: refresh.sources.filter((s) => !s.ok).map((s) => `${s.name}: ${s.error}`), youtube: refresh.youtube, tavily: refresh.tavily };
+    const st = await intelSettings(userId);
+    const rep = refresh ?? st.lastRefresh;
+    const sources = rep && { at: rep.at, lastSuccessfulSync: st.lastRefreshAt?.toISOString() ?? rep.at, stale: !refresh || refresh.note === "cached" ? `Using sources fetched ${rep.at}` : null, ok: rep.sources.filter((s) => s.ok).length, failed: rep.sources.filter((s) => !s.ok).map((s) => `${s.name}: ${s.error}`), youtube: rep.youtube, tavily: rep.tavily };
     const saved = await db().intelBriefing.update({ where: { id: row.id }, data: { status: "ready", revision: row.revision + 1, content: content as unknown as Prisma.InputJsonValue, sources: (sources ?? undefined) as Prisma.InputJsonValue | undefined, generatedAt: new Date(), leaseUntil: null, error: null } });
     void recordActivity(userId, { category: "notice", agent: "JARVIS", status: "success", importance: 3, source: "business-intel", action: `${kind === "daily" ? "Daily business briefing" : "Weekly business review"} ready — ${period}`, result: summary.summary.slice(0, 300) });
     return saved;

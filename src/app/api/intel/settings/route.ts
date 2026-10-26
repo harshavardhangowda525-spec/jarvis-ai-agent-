@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 const topic = z.object({ id: z.string().min(1).max(60), label: z.string().min(1).max(80), query: z.string().min(2).max(200), category: z.enum(CATEGORIES.map((c) => c.id) as [string, ...string[]]), on: z.boolean() });
 const schema = z.object({
   topics: z.array(topic).max(40).optional(),
+  weights: z.object({ relevance: z.number().min(0).max(1), urgency: z.number().min(0).max(1), evidence: z.number().min(0).max(1), recency: z.number().min(0).max(1) }).optional(),
   dailyEnabled: z.boolean().optional(), weeklyEnabled: z.boolean().optional(), notifyEmail: z.boolean().optional(), notifyWhatsapp: z.boolean().optional(),
 });
 
