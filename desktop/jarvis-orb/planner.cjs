@@ -108,7 +108,8 @@ function parseStep(p, ctx = {}) {
   if (/^(?:take|grab|capture)\s+(?:a\s+)?screen ?shot$|^screen ?shot$/i.test(t)) return { kind: "screenshot" };
 
   // type / press (always confirmed by the executor)
-  if ((m = t.match(/^(?:type|write)\s+["“']?([\s\S]+?)["”']?\s+(?:in|into|on)\s+(.+)$/i))) return { kind: "type", text: m[1], app: appName(m[2]) };
+  // the app is the LAST "in/into <app>" (the text itself may say "in" too); quoted text is taken as-is
+  if ((m = t.match(/^(?:type|write)\s+["“]([\s\S]+)["”]\s+(?:in|into|on)\s+(.+)$/i)) || (m = t.match(/^(?:type|write)\s+([\s\S]+)\s+(?:in|into|on)\s+((?:\S+\s*){1,4})$/i))) return { kind: "type", text: trimEnd(m[1]), app: appName(m[2]) };
   if ((m = t.match(/^(?:type|write)\s+["“']?([\s\S]+?)["”']?$/i))) return { kind: "type", text: m[1], app: null };
   if ((m = t.match(/^(?:press|hit)\s+(.+?)(?:\s+(?:in|on)\s+(.+))?$/i))) {
     const keys = keysFor(m[1]);

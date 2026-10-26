@@ -68,7 +68,19 @@ async function linuxWin(a) {
   // wmctrl -b takes at most two properties per call
   const ops = { focus: [["-ia", id]], close: [["-ic", id]], minimize: [["-ir", id, "-b", "add,hidden"]], maximize: [["-ir", id, "-b", "add,maximized_vert,maximized_horz"]], restore: [["-ir", id, "-b", "remove,hidden"], ["-ir", id, "-b", "remove,maximized_vert,maximized_horz"], ["-ia", id]] };
   if (ops[a.op]) { let r = { ok: true, stderr: "" }; for (const args of ops[a.op]) { r = await run("wmctrl", args); if (!r.ok) break; } return { ok: r.ok, error: r.stderr.trim() }; }
-  if (a.op === "keys") { if (!(await has("xdotool"))) return { ok: false, error: "xdotool isn't installed" }; await run("wmctrl", ["-ia", id]); const r = await run("xdotool", ["type", "--window", String(a.id), "--", String(a.keys).replace(/\{ENTER\}/g, "\n")]); return { ok: r.ok, error: r.stderr.trim() }; }
+  if (a.op === "keys") {
+    if (!(await has("xdotool"))) return { ok: false, error: "xdotool isn't installed" };
+    await run("wmctrl", ["-ia", id]);
+    await new Promise((r) => setTimeout(r, 250));
+    // only type if that window really is in front — never into whatever else has focus
+    const front = parseInt((await run("xdotool", ["getactivewindow"])).stdout.trim(), 10);
+    if (front !== Number(a.id)) return { ok: false, error: "That window didn't come to the front, so nothing was typed." };
+    for (const st of L.xdoSteps(a.keys)) {
+      const r = st.text !== undefined ? await run("xdotool", ["type", "--delay", "8", "--", st.text]) : await run("xdotool", ["key", "--", st.key]);
+      if (!r.ok) return { ok: false, error: r.stderr.trim() };
+    }
+    return { ok: true };
+  }
   if (a.op === "arrange") {
     const d = screen.getPrimaryDisplay().workArea, half = Math.floor(d.width / 2);
     // a maximised window ignores a new size — un-maximise both first

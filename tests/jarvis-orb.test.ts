@@ -200,3 +200,14 @@ describe("JARVIS 2.0: stop during a slow step", () => {
     expect(r.results.map((x: { say: string }) => x.say)).toEqual(["Started Spotify, but its window hasn't appeared yet.", "Stopped before this step."]);
   });
 });
+
+describe("JARVIS 2.0: keys on Linux", () => {
+  it("presses Enter as a real key (a typed newline doesn't submit in many apps)", () => {
+    expect(L.xdoSteps("hello{ENTER}")).toEqual([{ text: "hello" }, { key: "Return" }]);
+    expect(L.xdoSteps("{ENTER}")).toEqual([{ key: "Return" }]);
+    expect(L.xdoSteps("^s")).toEqual([{ key: "ctrl+s" }]);
+    expect(L.xdoSteps("^+{TAB}")).toEqual([{ key: "ctrl+shift+Tab" }]);
+    expect(L.xdoSteps("1{+}1 is 2{PGDN}")).toEqual([{ text: "1+1 is 2" }, { key: "Next" }]);
+    expect(L.xdoSteps(P.literalKeys("a (b) ^c\nd"))).toEqual([{ text: "a (b) ^c" }, { key: "Return" }, { text: "d" }]);
+  });
+});

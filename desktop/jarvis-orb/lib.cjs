@@ -50,4 +50,35 @@ function readSettings(text) {
   };
 }
 
-module.exports = { ORB, POPUP, MARGIN, orbBounds, displayFor, readSettings };
+const XDO = { ENTER: "Return", TAB: "Tab", ESC: "Escape", BS: "BackSpace", DEL: "Delete", UP: "Up", DOWN: "Down", LEFT: "Left", RIGHT: "Right", HOME: "Home", END: "End", PGUP: "Prior", PGDN: "Next" };
+/**
+ * SendKeys text ("hello{ENTER}", "^s", "^+{TAB}") → xdotool steps for Linux:
+ * [{ text }] runs typed as-is, [{ key }] real key presses ("Return", "ctrl+s").
+ * A typed newline is not Enter in many apps, so Enter is always a key press.
+ */
+function xdoSteps(keys) {
+  const out = [];
+  const s = String(keys);
+  let i = 0, text = "";
+  const flush = () => { if (text) { out.push({ text }); text = ""; } };
+  while (i < s.length) {
+    let mods = [];
+    let j = i;
+    while ("^%+".includes(s[j]) && j < s.length - 1) { mods.push({ "^": "ctrl", "%": "alt", "+": "shift" }[s[j]]); j++; }
+    let name = null, lit = null, end = j + 1;
+    if (s[j] === "{") {
+      const close = s.indexOf("}", j + 2);
+      const tok = close > 0 ? s.slice(j + 1, close) : "";
+      end = close + 1;
+      if (/^F([1-9]|1[0-2])$/.test(tok)) name = tok; else if (XDO[tok]) name = XDO[tok]; else lit = tok; // {+} {^} {%} {~} {(} … are literal
+    } else lit = s[j];
+    if (!mods.length && lit !== null) { text += lit; i = end; continue; }
+    flush();
+    out.push({ key: [...mods, name || (lit.length === 1 ? lit : lit)].join("+") });
+    i = end;
+  }
+  flush();
+  return out;
+}
+
+module.exports = { ORB, POPUP, MARGIN, orbBounds, displayFor, readSettings, xdoSteps };
