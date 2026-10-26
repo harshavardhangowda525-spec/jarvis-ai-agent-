@@ -437,12 +437,15 @@ start("jarvis", [nextBin, "start", "-p", String(PORT)], {
     CRON_SECRET: cronSecret,
     // Google (Gmail, Calendar, Drive): hand the values over directly, so a blank
     // duplicate line or an empty Windows variable can't hide them
-    ...Object.fromEntries(["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"].filter((k) => !isPlaceholder(appEnv[k])).map((k) => [k, appEnv[k].trim()])),
+    ...Object.fromEntries(["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YOUTUBE_API_KEY", "SEARCH_API_KEY"].filter((k) => !isPlaceholder(appEnv[k])).map((k) => [k, appEnv[k].trim()])),
   },
 });
 const local = `http://localhost:${PORT}`;
 if (await waitFor(`${local}/login`, 120)) {
   say(`\n  ✓ JARVIS is running on this PC: ${local}`);
+  say(isPlaceholder(appEnv.YOUTUBE_API_KEY)
+    ? "    Business environment: live YouTube videos are off — add the key with:  npm run set-key -- YOUTUBE_API_KEY your-key"
+    : "    Business environment: YouTube key found — official videos and livestreams are on.");
   const only = (pick) => (pick.includes("auto") ? "all providers" : pick.map((p) => (p === "ollama" ? "Ollama" : p === "claude" ? "Claude (this PC)" : p[0].toUpperCase() + p.slice(1))).join(" → "));
   if (claudeUrl) say(`    Claude on this PC answers first for ${["1", "true", "yes", "on"].includes(String(appEnv.CLAUDE_FOR_ALL_AGENTS ?? "").toLowerCase()) ? "every agent" : "the agents whose list starts with claude"} (your Claude plan's limits apply; their other brains take over when it can't).`);
   const withModel = (pick, m) => only(pick).replace(/^Ollama\b/, `Ollama (${m})`);

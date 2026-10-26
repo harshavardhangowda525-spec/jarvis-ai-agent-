@@ -2,7 +2,7 @@
   "name": "jarvis-ai-agent",
   "version": "1.0.0",
   "private": true,
-  "description": "JARVIS AI — a production-ready general-purpose voice AI agent",
+  "description": "JARVIS AI \u2014 a production-ready general-purpose voice AI agent",
   "scripts": {
     "dev": "next dev",
     "local": "node scripts/local.mjs",
@@ -25,7 +25,8 @@
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
-    "postinstall": "prisma generate && node scripts/copy-vision-assets.mjs"
+    "postinstall": "prisma generate && node scripts/copy-vision-assets.mjs",
+    "set-key": "node scripts/set-key.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.32.1",
