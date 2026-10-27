@@ -105,7 +105,7 @@ export function useOrbVoice(o: {
       const f = new FormData(); f.append("audio", blob, "speech.webm");
       const r = await fetch("/api/voice/stt", { method: "POST", body: f });
       const j = await r.json().catch(() => null);
-      if (!r.ok || !j?.ok) { opts.current.onError(r.status === 401 ? "Sign in to JARVIS to use voice (type any message and press Sign in)." : r.status === 423 ? "JARVIS is locked — unlock it to use voice." : j?.error ?? "Speech recognition didn't answer."); return; }
+      if (!r.ok || !j?.ok) { opts.current.onError(r.status === 401 && (!j?.error || /authentication required/i.test(j.error)) ? "Sign in to JARVIS to use voice (type any message and press Sign in)." : r.status === 423 ? "JARVIS is locked — unlock it to use voice." : j?.error ?? "Speech recognition didn't answer."); return; }
       const text = String(j.data.text || "").trim();
       if (!text) return;
       const { woke, rest } = splitWake(text, opts.current.wakePhrase);

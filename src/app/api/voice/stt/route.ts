@@ -28,11 +28,19 @@ export async function POST(req: NextRequest) {
     if (file.size === 0) return fail("Empty audio.", 400);
     if (file.size > 25 * 1024 * 1024) return fail("Audio too large.", 413);
 
-    const result = useGroq ? await groqTranscribe(file) : await provider.transcribe(file, file.type || "audio/webm");
+    let result;
+    try {
+      result = useGroq ? await groqTranscribe(file) : await provider.transcribe(file, file.type || "audio/webm");
+    } catch (e) {
+      // ElevenLabs refused (bad key, no speech-to-text permission, quota…) → Groq's Whisper, if there's a key
+      if (!useGroq && e instanceof VoiceProviderError && groqSttAvailable()) result = await groqTranscribe(file);
+      else throw e;
+    }
     return ok({ text: result.text, language: result.language ?? null });
   } catch (err) {
     if (err instanceof VoiceNotConfiguredError) return fail(err.message, 503);
-    if (err instanceof VoiceProviderError) return fail(err.message, err.status);
+    // a speech provider rejecting its API key is not you being signed out: 401 here only ever means "sign in to JARVIS"
+    if (err instanceof VoiceProviderError) return fail(err.status === 401 ? `${err.message} Check the key in .env.local (an ElevenLabs key needs the Speech to Text permission), then restart JARVIS.` : err.message, err.status === 401 ? 502 : err.status);
     return handleError(err);
   }
 }
