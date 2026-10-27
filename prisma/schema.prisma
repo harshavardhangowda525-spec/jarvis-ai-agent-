@@ -1659,6 +1659,10 @@ model PhoneLink {
   id           String    @id @default(cuid())
   userId       String    @unique
   enabled      Boolean   @default(true)
+  /// "android" (Termux + WhatsApp, the phone polls JARVIS) or "iphone" (JARVIS emails the iPhone; a Shortcuts automation calls you).
+  mode         String    @default("android")
+  /// iPhone mode: the email address the spare iPhone's Mail app receives (best: its iCloud address).
+  iphoneEmail  String?
   /// Your WhatsApp number: the one JARVIS calls.
   toNumber     String?
   /// The WhatsApp number on the spare phone (JARVIS's number) — for display only.

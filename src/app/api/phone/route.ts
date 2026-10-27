@@ -20,6 +20,7 @@ export async function GET(req: Request) {
 
 const hhmm = z.string().max(5).nullable().optional();
 const Settings = z.object({
+  mode: z.enum(["android", "iphone"]).optional(), iphoneEmail: z.string().max(200).nullable().optional(),
   enabled: z.boolean().optional(), toNumber: z.string().max(24).nullable().optional(), jarvisNumber: z.string().max(24).nullable().optional(),
   onCompleted: z.boolean().optional(), onFailed: z.boolean().optional(), onApproval: z.boolean().optional(),
   quietFrom: hhmm, quietTo: hhmm,

@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 interface Link {
+  mode: "android" | "iphone"; iphoneEmail: string | null;
   enabled: boolean; toNumber: string | null; jarvisNumber: string | null; paired: boolean;
   onCompleted: boolean; onFailed: boolean; onApproval: boolean;
   quietFrom: string | null; quietTo: string | null;
@@ -31,6 +32,7 @@ export function PhoneSettings() {
   const [st, setSt] = useState<Status | null>(null);
   const [to, setTo] = useState(""); const [jn, setJn] = useState("");
   const [qf, setQf] = useState(""); const [qt, setQt] = useState("");
+  const [mail, setMail] = useState("");
   const [token, setToken] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export function PhoneSettings() {
   const apply = useCallback((d: Status) => {
     setSt(d);
     setTo(d.link?.toNumber ?? ""); setJn(d.link?.jarvisNumber ?? "");
-    setQf(d.link?.quietFrom ?? ""); setQt(d.link?.quietTo ?? "");
+    setQf(d.link?.quietFrom ?? ""); setQt(d.link?.quietTo ?? ""); setMail(d.link?.iphoneEmail ?? "");
   }, []);
   const load = useCallback(async () => {
     const j = await fetch("/api/phone", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
@@ -58,7 +60,9 @@ export function PhoneSettings() {
     if (done) setMsg({ ok: true, text: done });
     return j.data;
   };
-  const save = () => call("PATCH", { toNumber: to || null, jarvisNumber: jn || null, quietFrom: qf || null, quietTo: qt || null, ...(st?.link ? {} : { enabled: true }) }, "save", "Saved.");
+  const iphone = st?.link?.mode === "iphone";
+  const save = () => call("PATCH", { toNumber: to || null, jarvisNumber: jn || null, quietFrom: qf || null, quietTo: qt || null, ...(iphone ? { iphoneEmail: mail || null } : {}), ...(st?.link ? {} : { enabled: true }) }, "save", "Saved.");
+  const setMode = (mode: "android" | "iphone") => call("PATCH", { mode, ...(st?.link ? {} : { enabled: true }) }, "mode");
   const flag = (k: keyof Link, v: boolean) => call("PATCH", { [k]: v }, k);
   const doPair = async () => { const d = await call("POST", { action: "pair" }, "pair"); if (d?.token) setToken(d.token); };
 
@@ -73,24 +77,52 @@ export function PhoneSettings() {
   return (
     <section className="glass rounded-2xl p-5" id="phone">
       <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground"><PhoneCall className="h-4 w-4" /> Phone calls</h2>
+      <div className="mb-3 inline-flex rounded-xl bg-muted/40 p-1 text-xs">
+        {(["iphone", "android"] as const).map((m) => (
+          <button key={m} type="button" onClick={() => void setMode(m)} className={cn("rounded-lg px-3 py-1.5", (st?.link?.mode ?? "android") === m ? "bg-accent text-accent-foreground" : "text-muted-foreground")}>{m === "iphone" ? "Spare iPhone" : "Spare Android"}</button>
+        ))}
+      </div>
+      {iphone ? (
+        <>
+          <p className="mb-4 text-[12px] leading-relaxed text-muted-foreground">
+            The <b className="text-foreground">spare iPhone on Wi-Fi</b> is JARVIS&apos;s phone. You don&apos;t need a SIM plan. When something happens, JARVIS emails it (from your connected Gmail) with the subject <b className="text-foreground">JARVIS CALL</b>, and a Shortcuts automation on that iPhone <b className="text-foreground">calls you with FaceTime Audio or WhatsApp</b>. The email holds the details.
+          </p>
+          <label className="mb-3 block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">The spare iPhone&apos;s email address (best: its iCloud address, so the email arrives instantly)</span>
+            <Input value={mail} onChange={(e) => setMail(e.target.value)} placeholder="jarvis.phone@icloud.com" inputMode="email" /></label>
+          <div className="mb-4 rounded-xl border border-accent/30 bg-accent/5 p-3 text-[12px] leading-relaxed">
+            <div className="mb-2 font-medium text-foreground">One-time setup on the spare iPhone (iOS 17 or newer)</div>
+            <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
+              <li>Connect it to Wi-Fi, sign in with an Apple ID, and set up <b className="text-foreground">Mail</b> with the address above. iCloud Mail arrives instantly; Gmail in the iPhone&apos;s Mail app can take up to 15 minutes.</li>
+              <li>Save <b className="text-foreground">your</b> number as a contact called <b className="text-foreground">Me</b> (with your Apple ID email for FaceTime). For WhatsApp, also sign in to WhatsApp on that iPhone.</li>
+              <li>Open <b className="text-foreground">Shortcuts → Automation → New Automation → Email</b>. Sender: your Gmail address. Subject contains: <code className="text-accent">JARVIS CALL</code>. Choose <b className="text-foreground">Run Immediately</b> and turn off &ldquo;Notify When Run&rdquo;.</li>
+              <li>Add the action <b className="text-foreground">Call</b> → pick <b className="text-foreground">Me</b> → tap the app and choose <b className="text-foreground">FaceTime Audio</b> (or WhatsApp). Save.</li>
+              <li>Keep the iPhone on charge, on Wi-Fi, with Auto-Lock set to Never. iOS may hold an automatic call while the phone is locked.</li>
+              <li>Connect Google (Gmail) in Settings → Integrations, then press <b className="text-foreground">Test call</b> below.</li>
+            </ol>
+          </div>
+        </>
+      ) : (
       <p className="mb-4 text-[12px] leading-relaxed text-muted-foreground">
         JARVIS uses a <b className="text-foreground">spare Android phone on Wi-Fi with WhatsApp</b> as its phone, and its WhatsApp number is JARVIS&apos;s number. When something happens, the spare phone sends you the details on WhatsApp, then <b className="text-foreground">WhatsApp-calls you</b>. You don&apos;t need a SIM plan, a calling service or an API key.
       </p>
+      )}
 
       {/* the real link state */}
-      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl bg-muted/40 px-3 py-2.5 text-sm">
+      {!iphone && <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl bg-muted/40 px-3 py-2.5 text-sm">
         <Smartphone className="h-4 w-4 text-muted-foreground" />
         {!l?.paired ? <span className="text-muted-foreground">No phone paired yet.</span>
           : l.online ? <span><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-success" />Phone connected{l.device ? ` (${l.device.replace(/\+/g, " ")})` : ""}. Last check-in {ago(l.lastSeenAt)}.</span>
           : <span><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-warning" />Paired, but the phone isn&apos;t checking in (last seen {ago(l.lastSeenAt)}). Open Termux on it and run <code className="text-accent">bash jarvis-phone.sh</code>.</span>}
         {l?.paired && <button className="ml-auto text-[11px] text-muted-foreground hover:text-destructive" onClick={() => call("POST", { action: "unpair" }, "unpair", "Unpaired. That phone can't reach JARVIS any more.")}>Unpair</button>}
-      </div>
+      </div>}
 
       <div className="grid gap-3 sm:grid-cols-2">
+        {!iphone && <>
         <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Your WhatsApp number (JARVIS calls this)</span>
           <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="+919876543210" inputMode="tel" /></label>
         <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">JARVIS&apos;s WhatsApp number (on the spare phone)</span>
           <Input value={jn} onChange={(e) => setJn(e.target.value)} placeholder="+91…" inputMode="tel" /></label>
+        </>}
         <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Quiet hours from (optional)</span>
           <Input value={qf} onChange={(e) => setQf(e.target.value)} placeholder="23:00" /></label>
         <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">until</span>
@@ -114,8 +146,8 @@ export function PhoneSettings() {
       )}
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <Button variant="outline" onClick={doPair} disabled={busy === "pair"}>{l?.paired ? "Pair again (new token)" : "Pair the spare phone"}</Button>
-        <Button variant="outline" onClick={() => call("POST", { action: "test" }, "test", "Test call queued. The phone picks it up at its next check-in, within about 15 seconds.")} disabled={busy === "test" || !l?.paired || !l?.toNumber}>Test call</Button>
+        {!iphone && <Button variant="outline" onClick={doPair} disabled={busy === "pair"}>{l?.paired ? "Pair again (new token)" : "Pair the spare phone"}</Button>}
+        <Button variant="outline" onClick={() => call("POST", { action: "test" }, "test", iphone ? "Test call queued. Within a minute JARVIS emails the iPhone, and its Shortcut calls you." : "Test call queued. The phone picks it up at its next check-in, within about 15 seconds.")} disabled={busy === "test" || (iphone ? !l?.iphoneEmail : !l?.paired || !l?.toNumber)}>Test call</Button>
       </div>
 
       {token && (

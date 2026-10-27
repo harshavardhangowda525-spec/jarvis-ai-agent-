@@ -60,6 +60,7 @@ export async function phoneStatus(userId: string, port?: string) {
   const events = await db().phoneEvent.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 8 });
   return {
     link: link && {
+      mode: link.mode as "android" | "iphone", iphoneEmail: link.iphoneEmail,
       enabled: link.enabled, toNumber: link.toNumber, jarvisNumber: link.jarvisNumber, paired: !!link.tokenHash,
       onCompleted: link.onCompleted, onFailed: link.onFailed, onApproval: link.onApproval,
       quietFrom: link.quietFrom, quietTo: link.quietTo,
@@ -82,6 +83,7 @@ export function lanUrls(port = "3000") {
 }
 
 export interface PhoneSettingsInput {
+  mode?: "android" | "iphone"; iphoneEmail?: string | null;
   enabled?: boolean; toNumber?: string | null; jarvisNumber?: string | null;
   onCompleted?: boolean; onFailed?: boolean; onApproval?: boolean;
   quietFrom?: string | null; quietTo?: string | null;
@@ -104,6 +106,12 @@ export async function saveSettings(userId: string, i: PhoneSettingsInput) {
     data[k] = i[k] || null;
   }
   for (const k of ["onCompleted", "onFailed", "onApproval"] as const) if (i[k] !== undefined) data[k] = i[k];
+  if (i.mode !== undefined) data.mode = i.mode === "iphone" ? "iphone" : "android";
+  if (i.iphoneEmail !== undefined) {
+    const e = (i.iphoneEmail ?? "").trim().toLowerCase();
+    if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw new PhoneError("That doesn't look like an email address.");
+    data.iphoneEmail = e || null;
+  }
   const existing = await getLink(userId);
   // turning calls back on starts fresh — no calls about what happened while they were off
   if (i.enabled !== undefined) { data.enabled = i.enabled; if (i.enabled && !existing?.enabled) data.since = new Date(); }
@@ -124,8 +132,11 @@ export async function unpair(userId: string) {
 /** Queue a test call so you can check the whole path end to end. */
 export async function queueTest(userId: string) {
   const link = await getLink(userId);
-  if (!link?.toNumber) throw new PhoneError("Add your phone number first.");
-  if (!link.tokenHash) throw new PhoneError("Pair the spare phone first.");
+  if (link?.mode === "iphone") { if (!link.iphoneEmail) throw new PhoneError("Add the iPhone's email address first."); }
+  else {
+    if (!link?.toNumber) throw new PhoneError("Add your phone number first.");
+    if (!link.tokenHash) throw new PhoneError("Pair the spare phone first.");
+  }
   await db().phoneEvent.create({ data: { userId, key: `test:${Date.now()}`, kind: "test", text: "Test call - JARVIS can reach you." } });
 }
 
@@ -171,28 +182,60 @@ export async function deviceNext(token: string, device: string | null, now = new
   if (!link) return { authorized: false as const };
   await db().phoneLink.update({ where: { id: link.id }, data: { lastSeenAt: now, ...(device ? { device: clip(device, 80) } : {}) } });
   const out = { authorized: true as const, pollSeconds: POLL_SECONDS, call: null as null | { id: string; to: string; message: string } };
-  if (!link.enabled || !link.toNumber) return out;
+  if (!link.enabled || !link.toNumber || link.mode === "iphone") return out;
+  const b = await claimBatch(link, now);
+  if (b) out.call = { id: b.batchId, to: link.toNumber, message: messageText(b.events) };
+  return out;
+}
 
+/** What's due for one call now (grouped, spaced, quiet hours respected) — claimed so it's never sent twice. */
+async function claimBatch(link: PhoneLink, now: Date) {
   // batches the phone took but never confirmed (it lost power mid-call): back in the queue, or give up
   const stale = new Date(now.getTime() - CLAIM_TIMEOUT_MS);
   await db().phoneEvent.updateMany({ where: { userId: link.userId, status: "sending", sentAt: { lt: stale }, attempts: { gte: MAX_ATTEMPTS } }, data: { status: "failed", error: "The phone never confirmed the call." } });
   await db().phoneEvent.updateMany({ where: { userId: link.userId, status: "sending", sentAt: { lt: stale } }, data: { status: "queued", batchId: null } });
 
   await collect(link.userId, link);
-  if (link.lastCallAt && now.getTime() - link.lastCallAt.getTime() < CALL_GAP_MS) return out;
+  if (link.lastCallAt && now.getTime() - link.lastCallAt.getTime() < CALL_GAP_MS) return null;
   const tz = (await db().profile.findUnique({ where: { userId: link.userId }, select: { timezone: true } }))?.timezone ?? "UTC";
   // in quiet hours only a test call you asked for goes through; the rest wait
   const quiet = inQuiet(link, now, tz);
   const queued = await db().phoneEvent.findMany({ where: { userId: link.userId, status: "queued", ...(quiet ? { kind: "test" } : {}) }, orderBy: { createdAt: "asc" }, take: 20 });
-  if (!queued.length) return out;
+  if (!queued.length) return null;
 
   const batchId = randomBytes(8).toString("hex");
   const claimed = await db().phoneEvent.updateMany({ where: { id: { in: queued.map((e) => e.id) }, status: "queued" }, data: { status: "sending", batchId, sentAt: now, attempts: { increment: 1 } } });
-  if (!claimed.count) return out;
+  if (!claimed.count) return null;
   await db().phoneLink.update({ where: { id: link.id }, data: { lastCallAt: now } });
   const events = await db().phoneEvent.findMany({ where: { batchId }, orderBy: { createdAt: "asc" } });
-  out.call = { id: batchId, to: link.toNumber, message: messageText(events) };
-  return out;
+  return { batchId, events };
+}
+
+export const IPHONE_SUBJECT = "JARVIS CALL";
+/**
+ * iPhone mode (run every minute by npm run local): what's due goes as one email
+ * with the subject "JARVIS CALL" from your Gmail to the spare iPhone. Its
+ * Shortcuts automation ("when I get an email … subject contains JARVIS CALL")
+ * calls you over Wi-Fi (FaceTime Audio / WhatsApp). The email holds the details.
+ */
+export async function iphoneTick(now = new Date(), send?: (userId: string, to: string, subject: string, body: string) => Promise<unknown>) {
+  const doSend = send ?? (async (u: string, to: string, s: string, b: string) => (await import("@/lib/darwin/email")).sendEmail(u, to, s, b));
+  const links = await db().phoneLink.findMany({ where: { mode: "iphone", enabled: true, iphoneEmail: { not: null } } });
+  const results: { userId: string; sent: number; error?: string }[] = [];
+  for (const link of links) {
+    const b = await claimBatch(link, now);
+    if (!b) continue;
+    try {
+      await doSend(link.userId, link.iphoneEmail!, IPHONE_SUBJECT, `${messageText(b.events)}\n\n(Sent by JARVIS to call you. Open JARVIS to see more.)`);
+      await db().phoneEvent.updateMany({ where: { batchId: b.batchId }, data: { status: "sent", error: null, sentAt: new Date() } });
+      results.push({ userId: link.userId, sent: b.events.length });
+    } catch (e) {
+      const msg = /NOT CONNECTED/i.test(String((e as Error)?.message)) ? "Gmail isn't connected — connect Google in JARVIS Settings so JARVIS can email the iPhone." : `Couldn't email the iPhone: ${String((e as Error)?.message ?? e).slice(0, 200)}`;
+      await db().phoneEvent.updateMany({ where: { batchId: b.batchId }, data: { status: "failed", error: msg } });
+      results.push({ userId: link.userId, sent: 0, error: msg });
+    }
+  }
+  return { results };
 }
 
 /** The spare phone reporting how the call went. */

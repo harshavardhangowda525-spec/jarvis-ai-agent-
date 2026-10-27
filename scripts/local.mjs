@@ -536,6 +536,17 @@ if (await waitFor(`${local}/login`, 120)) {
       for (const x of j?.data?.results ?? []) if (x.skipped === "gmail" && !rbWarned) { rbWarned = true; say("  [robin] A follow-up is coming up, but Gmail isn't connected — connect Google in JARVIS Settings for reminder emails."); break; }
     } catch { /* offline — next round */ } finally { rbTicking = false; }
   };
+  // JARVIS phone calls, iPhone mode: email the spare iPhone what's due (its Shortcut calls you) — every minute
+  let phTicking = false;
+  const phoneTick = async () => {
+    if (phTicking) return;
+    phTicking = true;
+    try {
+      const r = await fetch(`${local}/api/cron/phone`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(60_000) });
+      const j = await r.json().catch(() => ({}));
+      for (const x of j?.data?.results ?? []) say(x.error ? `  [phone] ${x.error}` : `  [phone] Asked the iPhone to call you (${x.sent} update${x.sent === 1 ? "" : "s"}).`);
+    } catch { /* offline — next round */ } finally { phTicking = false; }
+  };
   // JARVIS's delegated tasks: run what's waiting and pick up any a restart interrupted — every minute
   let jobTicking = false;
   const jobsTick = async () => {
@@ -585,6 +596,8 @@ if (await waitFor(`${local}/login`, 120)) {
   setInterval(jobsTick, 60_000);
   setTimeout(robinTick, 45_000);
   setInterval(robinTick, 60_000);
+  setTimeout(phoneTick, 50_000);
+  setInterval(phoneTick, 60_000);
   setTimeout(mikeTick, 90_000);
   setInterval(mikeTick, 5 * 60_000);
   setTimeout(evDaily, 120_000);

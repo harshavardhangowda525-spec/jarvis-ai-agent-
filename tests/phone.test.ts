@@ -103,3 +103,29 @@ d("phone calls: the spare phone's path (integration)", () => {
     expect((await P.deviceNext(token, null)).authorized).toBe(false);
   });
 });
+
+d("phone calls: iPhone mode (integration)", () => {
+  let userId = "";
+  let P: typeof import("@/lib/phone/service");
+  beforeAll(async () => {
+    P = await import("@/lib/phone/service");
+    userId = (await getDb().user.create({ data: { email: `iphone-${Date.now()}@example.com`, passwordHash: "x" } })).id;
+  });
+  afterAll(async () => { await getDb().user.deleteMany({ where: { id: userId } }).catch(() => {}); });
+
+  it("emails the spare iPhone one grouped 'JARVIS CALL', marks it sent, and reports Gmail problems honestly", async () => {
+    await expect(P.saveSettings(userId, { mode: "iphone", iphoneEmail: "not-an-email" })).rejects.toThrow(/email address/);
+    await P.saveSettings(userId, { enabled: true, mode: "iphone", iphoneEmail: "Jarvis.Phone@icloud.com" });
+    await P.queueTest(userId);
+    const sent: { to: string; subject: string; body: string }[] = [];
+    const r = await P.iphoneTick(new Date(), async (_u, to, subject, body) => { sent.push({ to, subject, body }); });
+    expect(r.results.find((x) => x.userId === userId)).toEqual({ userId, sent: 1 });
+    expect(sent).toEqual([{ to: "jarvis.phone@icloud.com", subject: "JARVIS CALL", body: expect.stringContaining("Test call - JARVIS can reach you.") }]);
+    expect((await getDb().phoneEvent.findFirst({ where: { userId } }))!.status).toBe("sent");
+    // the Android phone's check-in never gets iPhone calls
+    await getDb().phoneLink.update({ where: { userId }, data: { lastCallAt: null } });
+    await P.queueTest(userId);
+    const failing = await P.iphoneTick(new Date(), async () => { throw new Error("COMMUNICATION SERVICE NOT CONNECTED"); });
+    expect(failing.results.find((x) => x.userId === userId)?.error).toMatch(/Gmail isn't connected/);
+  });
+});
