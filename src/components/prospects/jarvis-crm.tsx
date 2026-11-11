@@ -166,7 +166,7 @@ export function JarvisCrm({ openLead }: { openLead?: string | null }) {
                     {items.map((p) => {
                       const fresh = Date.now() - Date.parse(p.createdAt) < 90_000;
                       return (
-                        <button key={p.id} type="button" onClick={() => setSel(p.id)} className={cn("rounded-xl border border-white/10 bg-white/[0.03] p-2 text-left text-xs transition hover:border-cyan-400/40", sel === p.id && "border-cyan-400/60", fresh && "animate-pulse border-cyan-400/60 shadow-[0_0_14px_-4px_rgba(34,211,238,.7)]")}>
+                        <button key={p.id} type="button" onClick={() => setSel(p.id)} className={cn("rounded-xl border border-white/10 bg-white/[0.03] p-2 text-left text-xs transition hover:border-cyan-400/40", sel === p.id && "border-cyan-400/60", fresh && "jarvis-lead-in border-cyan-400/60 shadow-[0_0_14px_-4px_rgba(34,211,238,.7)]")}>
                           <div className="flex items-start gap-1.5"><b className="line-clamp-2 flex-1 text-white">{p.businessName}</b><span className={cn("flex-none rounded-md border px-1 text-[10px] font-semibold", scoreTone(p.leadScore))}>{p.leadScore}</span></div>
                           <div className="mt-0.5 truncate text-white/55">{[p.category, p.area].filter(Boolean).join(" · ")}</div>
                           <div className="mt-1 flex flex-wrap gap-1">

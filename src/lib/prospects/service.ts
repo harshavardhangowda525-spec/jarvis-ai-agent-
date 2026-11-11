@@ -294,6 +294,18 @@ export async function device(token: string | null, body: { action: string; devic
   await db().mapsFinder.update({ where: { id: f.id }, data: { lastSeenAt: now, ...(body.device ? { device: body.device.slice(0, 80) } : {}) } });
   const tz = validTz(await tzOf(userId));
 
+  if (body.action === "live") {
+    // the live CRM window next to Google Maps: the current search and the leads it just added
+    const [search, recent, addedToday] = await Promise.all([
+      db().mapsSearch.findFirst({ where: { userId }, orderBy: { createdAt: "desc" } }),
+      db().prospect.findMany({ where: { userId, source: "google_maps" }, orderBy: { createdAt: "desc" }, take: 40,
+        select: { id: true, businessName: true, category: true, area: true, rating: true, reviews: true, leadScore: true, websiteStatus: true, signals: true, phone: true, createdAt: true, searchId: true } }),
+      addedTodayCount(userId, now, tz),
+    ]);
+    const total = await db().prospect.count({ where: { userId } });
+    return { authorized: true, search, recent, addedToday, dailyLimit: f.dailyLimit, total };
+  }
+
   if (body.action === "next") {
     const running = await db().mapsSearch.findFirst({ where: { userId, status: { in: ["running", "stopping"] } } });
     if (running) {
@@ -384,7 +396,7 @@ async function ingest(userId: string, s: { id: string; category: string; area: s
     });
     await event(userId, p.id, "created", `Found on Google Maps (${s.category} in ${s.area}) — ${signalsFor(sc)[0] ?? "lead"}, score ${p.leadScore}.`);
     await bump({ visited: { increment: 1 }, kept: { increment: 1 }, added: { increment: 1 }, currentText: `Added ${name} to the CRM.` });
-    return { kept: true, added: true, prospectId: p.id };
+    return { kept: true, added: true, prospectId: p.id, score: p.leadScore, signal: signalsFor(sc)[0] ?? null };
   } catch (e) {
     if ((e as { code?: string }).code === "P2002") { await bump({ visited: { increment: 1 }, kept: { increment: 1 }, duplicates: { increment: 1 } }); return { kept: true, added: false, reason: "already in the CRM" }; }
     throw e;

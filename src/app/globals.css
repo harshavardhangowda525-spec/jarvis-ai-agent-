@@ -546,3 +546,12 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .gate-in, .gate-sheet, .gate-glitch, .gate-float, .gate-bar { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* JARVIS CRM: a lead JARVIS just added slides in with a glow */
+@keyframes jarvis-lead-in {
+  0% { opacity: 0; transform: translateX(-28px) scale(0.96); filter: blur(3px); box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
+  55% { opacity: 1; filter: none; box-shadow: 0 0 26px -2px rgba(34, 211, 238, 0.85); }
+  100% { transform: none; box-shadow: 0 0 14px -4px rgba(34, 211, 238, 0.7); }
+}
+.jarvis-lead-in { animation: jarvis-lead-in 0.8s cubic-bezier(0.2, 0.9, 0.25, 1.15) both; }
+@media (prefers-reduced-motion: reduce) { .jarvis-lead-in { animation: none; } }

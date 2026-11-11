@@ -30,6 +30,15 @@ export function readLink(env = process.env) {
  * Never solves or works around a CAPTCHA: it stops, saves a screenshot and
  * tells JARVIS ("blocked").
  */
+/** Move a page's browser window (Chrome DevTools Protocol). */
+export async function placeWindow(ctx, page, bounds) {
+  const cs = await ctx.newCDPSession(page);
+  const { windowId } = await cs.send("Browser.getWindowForTarget");
+  await cs.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } });
+  await cs.send("Browser.setWindowBounds", { windowId, bounds });
+  await cs.detach().catch(() => {});
+}
+
 export class MapsFinder {
   constructor({ mgr, pollMs = 20_000, fetchImpl = fetch, pauseFn = pause } = {}) {
     this.mgr = mgr; this.pollMs = pollMs; this.fetch = fetchImpl; this.pause = pauseFn;
@@ -80,6 +89,8 @@ export class MapsFinder {
       page = await this.mgr.context.newPage();
       await page.bringToFront().catch(() => {});
       await label.on(`Searching Google Maps: ${s.query}`);
+      // Google Maps on the left half, JARVIS's live CRM on the right half
+      if (process.env.OPERATOR_SIDE_BY_SIDE !== "off") await this.sideBySide(page, link).catch((e) => log.warn(`[maps] couldn't place the windows side by side: ${e.message}`));
       await page.goto(`https://www.google.com/maps/search/${encodeURIComponent(s.query)}?hl=en`, { waitUntil: "domcontentloaded", timeout: 45_000 });
       await this.consent(page);
       if (await this.blocked(page)) return await this.block(page, s, status);
@@ -102,14 +113,17 @@ export class MapsFinder {
         await page.goto(f.href.includes("?") ? `${f.href}&hl=en` : `${f.href}?hl=en`, { waitUntil: "domcontentloaded", timeout: 45_000 });
         if (await this.blocked(page)) return await this.block(page, s, status);
         await page.waitForSelector('[role="main"] h1', { timeout: 20_000 }).catch(() => {});
+        await label.fx(page, { type: "scan", on: true });
         await sleep(1200);
         const l = await page.evaluate(readListing).catch(() => null);
+        await label.fx(page, { type: "scan", on: false });
         if (!l?.name) continue;
         if (l.reviews == null && f.reviews != null) l.reviews = f.reviews;
         if (l.rating == null && f.rating != null) l.rating = f.rating;
         l.mapsUrl = l.mapsUrl || f.href;
         const r = await this.call(link, { action: "listing", searchId: s.id, listing: l });
         log.info(`[maps]  ${r.added ? "+ added" : r.kept ? "= already in CRM" : "- skipped"}: ${l.name}${r.reason ? ` (${r.reason})` : ""}`);
+        await label.fx(page, r.added ? { type: "added", name: l.name, score: r.score, detail: r.signal ?? undefined } : { type: r.kept ? "dup" : "skipped", name: l.name, detail: r.reason });
         if (r.stop) { await status("stopped", "Stopped."); return; }
         if (r.done) break;
         await this.pause();
@@ -123,6 +137,29 @@ export class MapsFinder {
       await page?.close().catch(() => {});
       this.mgr.reset();
     }
+  }
+
+  /** Google Maps on the left half of the screen, JARVIS's live CRM window (opened once, reused) on the right. */
+  async sideBySide(mapsPage, link) {
+    const ctx = this.mgr.context;
+    const scr = await mapsPage.evaluate(() => ({ w: screen.availWidth, h: screen.availHeight, l: screen.availLeft || 0, t: screen.availTop || 0 }));
+    const half = Math.round(scr.w / 2);
+    if (!this.livePage || this.livePage.isClosed()) {
+      const opened = ctx.waitForEvent("page", { timeout: 15_000 });
+      const cs = await ctx.newCDPSession(mapsPage);
+      await cs.send("Target.createTarget", { url: `${link.url}/live/maps`, newWindow: true });
+      this.livePage = await opened;
+      await this.livePage.waitForLoadState("domcontentloaded").catch(() => {});
+      // hand it the token by message (never in the address bar), until it says it has it
+      for (let i = 0; i < 30; i++) {
+        const got = await this.livePage.evaluate((t) => { window.postMessage({ jarvisLiveToken: t }, location.origin); try { return !!sessionStorage.getItem("jarvis-live-token"); } catch { return false; } }, link.token).catch(() => false);
+        if (got) break;
+        await sleep(500);
+      }
+    }
+    await placeWindow(ctx, mapsPage, { left: scr.l, top: scr.t, width: half, height: scr.h });
+    await placeWindow(ctx, this.livePage, { left: scr.l + half, top: scr.t, width: scr.w - half, height: scr.h });
+    await mapsPage.bringToFront().catch(() => {});
   }
 
   /** Google's cookie screen (EU-style): choose "Reject all" (else "Accept all") so the search can load. */

@@ -187,3 +187,22 @@ d("JARVIS CRM: the Google Maps finder and the pipeline (integration)", () => {
     expect(await getDb().mapsSearch.findUniqueOrThrow({ where: { id } })).toMatchObject({ status: "failed", error: expect.stringMatching(/stopped answering/) });
   });
 });
+
+d("JARVIS CRM: the live window next to Google Maps (integration)", () => {
+  let userId = "";
+  beforeAll(async () => { userId = (await getDb().user.create({ data: { email: `live-${Date.now()}@example.com`, passwordHash: "x" } })).id; });
+  afterAll(async () => { await getDb().user.deleteMany({ where: { id: userId } }).catch(() => {}); });
+  it("shows the current search and the leads it just added — only with the operator's token", async () => {
+    const S = await import("@/lib/prospects/service");
+    expect((await S.device("jmf_wrong", { action: "live" })).authorized).toBe(false);
+    const token = await S.pairFinder(userId);
+    await S.queueSearch(userId, { category: "bakeries", area: "Jayanagar", limit: 2, trigger: "you" });
+    const n = await S.device(token, { action: "next" }) as unknown as { search: { id: string } };
+    const added = await S.device(token, { action: "listing", searchId: n.search.id, listing: { name: "Bliss bakehouse", category: "Bakery", phone: "+91 86603 26600", rating: 4.7, reviews: 45, mapsUrl: "https://www.google.com/maps/place/Bliss/data=!4m7!3m6!1s0x3bae1:0x99!8m2" } }, { checkSite: async () => ({}) });
+    expect(added).toMatchObject({ added: true, score: 65, signal: "No website" });
+    const live = await S.device(token, { action: "live" }) as unknown as { search: { category: string; added: number; status: string }; recent: { businessName: string; leadScore: number }[]; addedToday: number; total: number };
+    expect(live.search).toMatchObject({ category: "bakeries", added: 1, status: "running" });
+    expect(live.recent.map((l) => [l.businessName, l.leadScore])).toEqual([["Bliss bakehouse", 65]]);
+    expect(live).toMatchObject({ addedToday: 1, total: 1 });
+  });
+});
