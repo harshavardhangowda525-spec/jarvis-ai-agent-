@@ -22,6 +22,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { retireOldUltronProvider, stopPort, probeDatabase, pendingMigrations, repairDatabase, describeDbError, cloudAiKeys, prismaClientMatches, resolveKeys, pruneBuildCache } from "./local-helpers.mjs";
 import { ensureSecret, searxngAnswers, startDocker } from "./searxng.mjs";
+import { tuneDatabaseUrl } from "./db-url.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OPERATOR = path.join(ROOT, "operator");
@@ -296,11 +297,19 @@ if (!built || (head && stamp !== head) || process.argv.includes("--rebuild")) {
     const needed = !before || before.missing.length > 0 || before.failed.length > 0 || process.argv.includes("--migrate");
     if (needed) {
       say(`  Updating the database for this version…${before?.missing.length ? ` (${before.missing.length} change${before.missing.length === 1 ? "" : "s"}: ${before.missing.join(", ")})` : ""}`);
-      const r = spawnSync(process.execPath, [path.join(ROOT, "node_modules", "prisma", "build", "index.js"), "migrate", "deploy"], {
+      // a pooled Neon address can't run migrations — use the direct one; and give a sleeping
+      // Neon database time to wake up (Prisma's own default gives up after 5 seconds)
+      const migrate = () => spawnSync(process.execPath, [path.join(ROOT, "node_modules", "prisma", "build", "index.js"), "migrate", "deploy"], {
         cwd: ROOT, stdio: "inherit", timeout: 180_000,
-        // a pooled Neon address can't run migrations — use the direct one
-        env: { ...process.env, DATABASE_URL: dbUrl.replace("-pooler.", ".") },
+        env: { ...process.env, DATABASE_URL: tuneDatabaseUrl(dbUrl.replace("-pooler.", ".")) },
       });
+      let r = migrate();
+      if (r.status !== 0) {
+        say("  The database didn't answer in time — waking it up and trying once more…");
+        await probeDatabase(ROOT, dbUrl.replace("-pooler.", "."));
+        await repairDatabase(ROOT, dbUrl).catch(() => null); // finishes a change that failed part-way before
+        r = migrate();
+      }
       const after = await pendingMigrations(ROOT, dbUrl);
       if (r.status === 0 && after && !after.missing.length) say("  Database is up to date.");
       else {
