@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { Check, Link2, Unplug } from "lucide-react";
 import { GateSettings } from "@/components/gate/gate-settings";
 import { PhoneSettings } from "@/components/phone/phone-settings";
+import { OperatorSettings } from "@/components/operator/operator-settings";
 
 interface Profile {
   displayName: string | null;
@@ -342,6 +343,9 @@ export function SettingsClient() {
           </div>
         )}
       </section>
+
+      {/* The operating manual every agent follows */}
+      <OperatorSettings />
 
       {/* JARVIS calls you from a spare Android phone */}
       <PhoneSettings />

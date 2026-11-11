@@ -1,4 +1,5 @@
 import "server-only";
+import { operatorPromptFor } from "@/lib/ai/operator";
 import { recordActivity } from "@/lib/activity/record";
 import { describeToolEvent } from "@/lib/activity/tool-events";
 import type Anthropic from "@anthropic-ai/sdk";
@@ -229,6 +230,7 @@ export async function* runAgent(
     system += memoryPromptBlock(await memoriesLookup,
       `# What you know about ${input.displayName || "the user"} (shared memory with JARVIS — use it to personalise; never contradict it)`);
   }
+  system += await operatorPromptFor(input.userId, isEv ? "EV" : isDarwin ? "DARWIN" : isMike ? "MIKE" : isRobin ? "ROBIN" : isAston ? "ASTON" : isFriday ? "FRIDAY" : (input.assistantName || "JARVIS")).catch((e) => { console.error("[agent] operating manual failed:", e); return ""; });
   system += memoryNote;
 
   const brain = await brainLookup;

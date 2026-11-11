@@ -61,6 +61,7 @@ model User {
   proposals           Proposal[]
   approvalDecisions   ApprovalDecision[]
   phoneLink           PhoneLink?
+  operatorPrompt      OperatorPrompt?
   phoneEvents         PhoneEvent[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
@@ -1115,7 +1116,7 @@ model DarwinIgRun {
 
 /// A verified "Instagram + No Website" lead (kept apart from DarwinLead).
 model DarwinIgLead {
-  id                String   @id @default(cuid())
+  id                String    @id @default(cuid())
   userId            String
   runId             String?
   fingerprint       String
@@ -1129,27 +1130,27 @@ model DarwinIgLead {
   instagramUsername String
   instagramUrl      String
   /// verified (only verified accounts are saved)
-  instagramStatus   String   @default("verified")
-  instagramEvidence String[] @default([])
+  instagramStatus   String    @default("verified")
+  instagramEvidence String[]  @default([])
   followers         Int?
   posts             Int?
   instagramActivity String?
   /// no_official_website (only confirmed absences are saved)
-  websiteStatus     String   @default("no_official_website")
-  websiteReasons    String[] @default([])
-  qualityScore      Int      @default(0)
-  highPotential     Boolean  @default(false)
+  websiteStatus     String    @default("no_official_website")
+  websiteReasons    String[]  @default([])
+  qualityScore      Int       @default(0)
+  highPotential     Boolean   @default(false)
   scoreParts        Json?
   source            String
   foundDate         String
   /// not_contacted | contacted | replied | interested | not_interested | converted
-  contactStatus     String   @default("not_contacted")
+  contactStatus     String    @default("not_contacted")
   /// none | scheduled | due | done
-  followUpStatus    String   @default("none")
+  followUpStatus    String    @default("none")
   followUpAt        DateTime?
-  notes             String?  @db.Text
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  notes             String?   @db.Text
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1175,7 +1176,6 @@ model DarwinIgCheck {
   @@unique([userId, fingerprint])
   @@index([userId, placeId])
 }
-
 
 /// A restorable snapshot of the CRM and DARWIN's discovered leads (gzip JSON).
 model CrmBackup {
@@ -1325,14 +1325,14 @@ model MarketingPlan {
 }
 
 model MarketingPlanSettings {
-  userId       String   @id
-  enabled      Boolean  @default(true)
+  userId         String   @id
+  enabled        Boolean  @default(true)
   /// HH:MM in Asia/Kolkata — the plan is ready by then.
-  deliveryTime String   @default("07:00")
+  deliveryTime   String   @default("07:00")
   /// "Plan ready" notifications — off until you switch them on.
-  notifyEmail    Boolean @default(false)
-  notifyWhatsapp Boolean @default(false)
-  updatedAt    DateTime @updatedAt
+  notifyEmail    Boolean  @default(false)
+  notifyWhatsapp Boolean  @default(false)
+  updatedAt      DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -1506,14 +1506,14 @@ model TradingReportRevision {
 }
 
 model TradingSettings {
-  userId         String   @id
-  weeklyEnabled  Boolean  @default(true)
-  notifyEmail    Boolean  @default(false)
-  notifyWhatsapp Boolean  @default(false)
+  userId         String    @id
+  weeklyEnabled  Boolean   @default(true)
+  notifyEmail    Boolean   @default(false)
+  notifyWhatsapp Boolean   @default(false)
   /// a playbook backup (Settings → Export in the playbook) used only when cloud sync isn't set up
   backup         Json?
   backupAt       DateTime?
-  updatedAt      DateTime @updatedAt
+  updatedAt      DateTime  @updatedAt
 }
 
 /// External business-environment intelligence: one real article/video, with its source.
@@ -1551,16 +1551,16 @@ model IntelItem {
 }
 
 model IntelOpportunity {
-  id         String   @id @default(cuid())
-  userId     String
-  key        String
-  title      String
-  detail     Json
-  score      Int
-  evidence   Json
-  status     String   @default("new")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  key       String
+  title     String
+  detail    Json
+  score     Int
+  evidence  Json
+  status    String   @default("new")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1609,7 +1609,7 @@ model IntelSettings {
 
 /// An action an agent proposes (e.g. EVIE from an insight) for JARVIS to review and assign. Nothing runs until you approve it.
 model Proposal {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
   /// ev | jarvis | …
   source    String
@@ -1617,14 +1617,14 @@ model Proposal {
   refKind   String?
   refId     String?
   title     String
-  detail    String   @db.Text
+  detail    String    @db.Text
   /// the agent it would be assigned to
   agent     String
-  evidence  Json     @default("[]")
+  evidence  Json      @default("[]")
   /// pending | approved | rejected
-  status    String   @default("pending")
+  status    String    @default("pending")
   jobId     String?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
   decidedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1707,4 +1707,14 @@ model PhoneEvent {
 
   @@unique([userId, key])
   @@index([userId, status, createdAt])
+}
+
+/// The user's operating manual for JARVIS and its agents (a long system-prompt add-on).
+model OperatorPrompt {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  content   String   @db.Text
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
