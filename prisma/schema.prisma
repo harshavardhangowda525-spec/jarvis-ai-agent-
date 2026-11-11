@@ -1667,6 +1667,8 @@ model PhoneLink {
   enabled      Boolean   @default(true)
   /// "android" (Termux + WhatsApp, the phone polls JARVIS) or "iphone" (JARVIS emails the iPhone; a Shortcuts automation calls you).
   mode         String    @default("android")
+  /// Android mode: "normal" = a regular phone call from the spare phone's SIM (needs a recharge), "whatsapp" = a WhatsApp call over Wi-Fi.
+  callMethod   String    @default("whatsapp")
   /// iPhone mode: the email address the spare iPhone's Mail app receives (best: its iCloud address).
   iphoneEmail  String?
   /// Your WhatsApp number: the one JARVIS calls.

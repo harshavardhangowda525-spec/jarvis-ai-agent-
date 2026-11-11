@@ -129,3 +129,24 @@ d("phone calls: iPhone mode (integration)", () => {
     expect(failing.results.find((x) => x.userId === userId)?.error).toMatch(/Gmail isn't connected/);
   });
 });
+
+d("phone calls: normal call or WhatsApp call (integration)", () => {
+  let userId = "";
+  beforeAll(async () => { userId = (await getDb().user.create({ data: { email: `phone-method-${Date.now()}@example.com`, passwordHash: "x" } })).id; });
+  afterAll(async () => { await getDb().user.deleteMany({ where: { id: userId } }).catch(() => {}); });
+  it("tells the spare phone which kind of call to make", async () => {
+    const P = await import("@/lib/phone/service");
+    await P.saveSettings(userId, { enabled: true, toNumber: "+91 99808 01231" });
+    const token = await P.pair(userId);
+    await P.queueTest(userId);
+    const a = await P.deviceNext(token, null);
+    expect(a.authorized && a.call?.method).toBe("whatsapp");
+    await P.deviceAck(token, { id: (a as { call: { id: string } }).call.id, ok: true });
+    await P.saveSettings(userId, { callMethod: "normal" });
+    expect((await P.phoneStatus(userId)).link!.callMethod).toBe("normal");
+    await getDb().phoneLink.update({ where: { userId }, data: { lastCallAt: null } });
+    await P.queueTest(userId);
+    const b = await P.deviceNext(token, null);
+    expect(b.authorized && b.call).toMatchObject({ method: "normal", to: "+919980801231" });
+  });
+});

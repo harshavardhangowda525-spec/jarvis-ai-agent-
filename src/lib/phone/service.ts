@@ -60,7 +60,7 @@ export async function phoneStatus(userId: string, port?: string) {
   const events = await db().phoneEvent.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 8 });
   return {
     link: link && {
-      mode: link.mode as "android" | "iphone", iphoneEmail: link.iphoneEmail,
+      mode: link.mode as "android" | "iphone", iphoneEmail: link.iphoneEmail, callMethod: (link.callMethod === "normal" ? "normal" : "whatsapp") as "normal" | "whatsapp",
       enabled: link.enabled, toNumber: link.toNumber, jarvisNumber: link.jarvisNumber, paired: !!link.tokenHash,
       onCompleted: link.onCompleted, onFailed: link.onFailed, onApproval: link.onApproval,
       quietFrom: link.quietFrom, quietTo: link.quietTo,
@@ -83,7 +83,7 @@ export function lanUrls(port = "3000") {
 }
 
 export interface PhoneSettingsInput {
-  mode?: "android" | "iphone"; iphoneEmail?: string | null;
+  mode?: "android" | "iphone"; iphoneEmail?: string | null; callMethod?: "normal" | "whatsapp";
   enabled?: boolean; toNumber?: string | null; jarvisNumber?: string | null;
   onCompleted?: boolean; onFailed?: boolean; onApproval?: boolean;
   quietFrom?: string | null; quietTo?: string | null;
@@ -107,6 +107,7 @@ export async function saveSettings(userId: string, i: PhoneSettingsInput) {
   }
   for (const k of ["onCompleted", "onFailed", "onApproval"] as const) if (i[k] !== undefined) data[k] = i[k];
   if (i.mode !== undefined) data.mode = i.mode === "iphone" ? "iphone" : "android";
+  if (i.callMethod !== undefined) data.callMethod = i.callMethod === "normal" ? "normal" : "whatsapp";
   if (i.iphoneEmail !== undefined) {
     const e = (i.iphoneEmail ?? "").trim().toLowerCase();
     if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) throw new PhoneError("That doesn't look like an email address.");
@@ -181,10 +182,10 @@ export async function deviceNext(token: string, device: string | null, now = new
   const link = await db().phoneLink.findUnique({ where: { tokenHash: hashToken(token) } });
   if (!link) return { authorized: false as const };
   await db().phoneLink.update({ where: { id: link.id }, data: { lastSeenAt: now, ...(device ? { device: clip(device, 80) } : {}) } });
-  const out = { authorized: true as const, pollSeconds: POLL_SECONDS, call: null as null | { id: string; to: string; message: string } };
+  const out = { authorized: true as const, pollSeconds: POLL_SECONDS, call: null as null | { id: string; to: string; message: string; method: "normal" | "whatsapp" } };
   if (!link.enabled || !link.toNumber || link.mode === "iphone") return out;
   const b = await claimBatch(link, now);
-  if (b) out.call = { id: b.batchId, to: link.toNumber, message: messageText(b.events) };
+  if (b) out.call = { id: b.batchId, to: link.toNumber, message: messageText(b.events), method: link.callMethod === "normal" ? "normal" : "whatsapp" };
   return out;
 }
 

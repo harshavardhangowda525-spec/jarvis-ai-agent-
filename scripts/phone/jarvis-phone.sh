@@ -98,6 +98,20 @@ wa_call() {
   return 1
 }
 
+# A normal phone call from this phone's SIM (needs a recharge with outgoing calls)
+in_call() { ash dumpsys telephony.registry | grep -q 'mCallState=2'; }
+normal_call() {
+  local tel="$1"
+  ash am start -a android.intent.action.CALL -d "tel:$tel" >/dev/null
+  sleep 3
+  in_call && return 0
+  # dual-SIM phones may ask which SIM to use: take SIM 1
+  tap 'text="(SIM ?1|SIM1|Sim 1)' >/dev/null 2>&1 && sleep 3
+  in_call && return 0
+  echo "the phone didn't start the call (check the SIM has a recharge with outgoing calls, and that the Phone app has permission)"
+  return 1
+}
+
 echo "JARVIS phone is running. It checks $JARVIS_URL every few seconds."
 echo "Leave Termux running. Press Ctrl+C to stop."
 connect_adb || echo "$(now) Android control isn't connected yet: turn on Wireless debugging (it pairs once; see JARVIS > Settings > Phone calls)."
@@ -119,6 +133,7 @@ while true; do
   if [ -n "$ID" ]; then
     TO=$(printf '%s' "$R" | jq -r .data.call.to)
     MSG=$(printf '%s' "$R" | jq -r .data.call.message)
+    METHOD=$(printf '%s' "$R" | jq -r '.data.call.method // "whatsapp"')
     DIGITS="${TO//[^0-9]/}"
     NOTE=""; OK=false
     if ! adb_ok && ! connect_adb; then
@@ -126,11 +141,13 @@ while true; do
     else
       wake
       wa_message "$DIGITS" "$MSG" || NOTE="the WhatsApp message didn't send"
-      if OUT=$(wa_call "$DIGITS"); then OK=true; else NOTE="${NOTE:+$NOTE; }${OUT:-the WhatsApp call could not be started}"; fi
+      if [ "$METHOD" = "normal" ]; then
+        if OUT=$(normal_call "${TO//[^0-9+]/}"); then OK=true; else NOTE="${NOTE:+$NOTE; }${OUT:-the phone call could not be started}"; fi
+      elif OUT=$(wa_call "$DIGITS"); then OK=true; else NOTE="${NOTE:+$NOTE; }${OUT:-the WhatsApp call could not be started}"; fi
     fi
     BODY=$(jq -n --arg id "$ID" --argjson ok "$OK" --arg e "$NOTE" '{id:$id, ok:$ok, error:(if $e == "" then null else $e end)}')
     curl -sS -m 20 -X POST -H "Authorization: Bearer $JARVIS_TOKEN" -H "Content-Type: application/json" -d "$BODY" "$JARVIS_URL/api/phone/device/ack" >/dev/null 2>&1
-    echo "$(now) WhatsApp-called $TO: $([ "$OK" = true ] && echo ok || echo failed)${NOTE:+ ($NOTE)}"
+    echo "$(now) $([ "$METHOD" = normal ] && echo Phone-called || echo WhatsApp-called) $TO: $([ "$OK" = true ] && echo ok || echo failed)${NOTE:+ ($NOTE)}"
   fi
   sleep "$POLL"
 done

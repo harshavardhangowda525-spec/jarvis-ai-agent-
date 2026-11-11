@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 interface Link {
-  mode: "android" | "iphone"; iphoneEmail: string | null;
+  mode: "android" | "iphone"; iphoneEmail: string | null; callMethod: "normal" | "whatsapp";
   enabled: boolean; toNumber: string | null; jarvisNumber: string | null; paired: boolean;
   onCompleted: boolean; onFailed: boolean; onApproval: boolean;
   quietFrom: string | null; quietTo: string | null;
@@ -130,6 +130,18 @@ export function PhoneSettings() {
       </div>
       <p className="mt-1.5 text-[11px] text-muted-foreground">During quiet hours, calls wait until the quiet hours end. Times are in your timezone from Profile.</p>
       <Button className="mt-3" onClick={save} disabled={busy === "save"}>{busy === "save" ? "Saving…" : "Save"}</Button>
+
+      {l && !iphone && (
+        <div className="mt-5">
+          <div className="mb-1.5 text-sm">How the spare phone calls you</div>
+          <div className="flex gap-2">
+            {([["normal", "Normal phone call"], ["whatsapp", "WhatsApp call"]] as const).map(([m, label]) => (
+              <button key={m} type="button" onClick={() => call("PATCH", { callMethod: m }, "method")} className={cn("rounded-lg border px-3 py-1.5 text-sm", l.callMethod === m ? "border-accent text-accent" : "border-border text-muted-foreground")}>{label}</button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{l.callMethod === "normal" ? "A regular call from the spare phone's SIM — it needs a recharge with outgoing calls. The details still come on WhatsApp first." : "A WhatsApp call over Wi-Fi — no recharge needed."}</p>
+        </div>
+      )}
 
       {l && (
         <div className="mt-5 space-y-2.5">
