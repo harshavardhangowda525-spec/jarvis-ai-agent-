@@ -199,11 +199,52 @@ function stopDrag() {
   orb.setBounds(bounds()); // snap back on screen
 }
 
+// ---------------- prospect calls (Phone Link) ----------------
+let callerWin = null;
+const callerAlive = () => !!callerWin && !callerWin.isDestroyed();
+const PHONE_SIM = process.env.JARVIS_PHONE_SIM === "1"; // for testing off Windows: dialling "works", audio is up to the test
+let simInCall = false;
+function openCaller() {
+  if (callerAlive()) { callerWin.show(); callerWin.focus(); return; }
+  callerWin = new BrowserWindow({
+    width: 500, height: 780, minWidth: 420, minHeight: 560, title: "JARVIS — Prospect calls", autoHideMenuBar: true, backgroundColor: "#06101a", icon: path.join(__dirname, "assets", "icon.png"),
+    webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: false },
+  });
+  callerWin.webContents.on("will-navigate", (e, url) => { if (sameOrigin(url) && /^\/(orb\/caller|login|unlock)/.test(new URL(url).pathname)) return; e.preventDefault(); openLink(url); });
+  callerWin.webContents.setWindowOpenHandler(({ url }) => { openLink(url); return { action: "deny" }; });
+  callerWin.on("closed", () => { callerWin = null; workingLabel?.hide(0); void phoneOp({ op: "phone-hangup" }); settings.callsOpen = false; save(); updateTray(); });
+  callerWin.loadURL(`${settings.url}/orb/caller`).catch(() => {});
+  settings.callsOpen = true; save(); updateTray();
+}
+const fromCaller = (e) => callerAlive() && e.sender === callerWin.webContents && sameOrigin(e.senderFrame?.url || "");
+async function phoneOp(a) {
+  if (PHONE_SIM) {
+    if (a.op === "phone-check") return { ok: true, installed: true, running: true, cable: true, simulated: true };
+    if (a.op === "phone-dial") { simInCall = true; log({ action: "phone-dial (simulated)", to: a.to }); return { ok: true, simulated: true }; }
+    if (a.op === "phone-hangup") { simInCall = false; return { ok: true, pressed: true }; }
+    if (a.op === "phone-state") return { ok: true, inCall: simInCall };
+  }
+  if (process.platform !== "win32") return { ok: false, error: "Calling through Phone Link needs Windows (Phone Link is a Windows app)." };
+  return winPs(a);
+}
+ipcMain.handle("phone:check", async (e) => (fromCaller(e) ? phoneOp({ op: "phone-check" }) : { ok: false }));
+ipcMain.handle("phone:state", async (e) => (fromCaller(e) ? phoneOp({ op: "phone-state" }) : { ok: false }));
+ipcMain.handle("phone:hangup", async (e) => (fromCaller(e) ? phoneOp({ op: "phone-hangup" }) : { ok: false }));
+ipcMain.handle("phone:dial", async (e, to) => {
+  if (!fromCaller(e)) return { ok: false };
+  const n = String(to || "").replace(/[^\d+]/g, "");
+  if (!/^\+?\d{8,15}$/.test(n)) return { ok: false, error: "That number isn't dialable." };
+  log({ action: "phone-dial", to: n });
+  return phoneOp({ op: "phone-dial", to: n });
+});
+ipcMain.on("phone:working", (e, text) => { if (!fromCaller(e)) return; if (text) working().show(String(text).slice(0, 140)); else working().hide(); });
+const sendCaller = (type) => { if (callerAlive()) callerWin.webContents.send("orb:event", { type }); };
+
 // ---------------- the hands ----------------
 let paused = false;
 // "JARVIS is working": screen frame + pill with Stop, while JARVIS controls the laptop
 let workingLabel = null;
-const working = () => (workingLabel ??= createWorkingLabel({ onStop: () => { executor.stop(); log({ action: "stop (working label)" }); send("stop"); workingLabel?.hide(0); } }));
+const working = () => (workingLabel ??= createWorkingLabel({ onStop: () => { executor.stop(); log({ action: "stop (working label)" }); send("stop"); sendCaller("stop"); workingLabel?.hide(0); } }));
 const stepText = (p) => p.say || [String(p.step.kind || "").replace(/_/g, " "), p.step.app || p.step.folder || p.step.query || p.step.name || p.step.site || ""].filter(Boolean).join(" ");
 const executor = createExecutor({
   platform: process.platform,
@@ -306,6 +347,7 @@ function updateTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: alive() && orb.isVisible() ? "Hide the orb" : "Show the orb", click: () => { if (!alive()) return; if (orb.isVisible()) orb.hide(); else orb.showInactive(); updateTray(); } },
     { label: "Open chat", accelerator: SHORTCUTS.chat, click: () => { if (show()) { setMode("popup"); send("open"); } } },
+    { label: "Prospect calls (Phone Link)…", click: () => openCaller() },
     { label: "Move back to the bottom-right corner", click: () => { settings.anchor = null; save(); setMode(mode); } },
     { type: "separator" },
     { label: "Pause all automation", type: "checkbox", accelerator: SHORTCUTS.pause, checked: paused, click: (i) => { executor.setPaused(i.checked); paused = i.checked; send("paused", { paused }); updateTray(); } },
@@ -322,15 +364,22 @@ function registerShortcuts() {
   const reg = (acc, fn) => { try { if (!globalShortcut.register(acc, fn)) log(`shortcut ${acc} is taken by another app`); } catch { log(`shortcut ${acc} couldn't be registered`); } };
   reg(SHORTCUTS.chat, () => { if (show()) { setMode(mode === "popup" ? "orb" : "popup"); send(mode === "popup" ? "open" : "close"); } });
   reg(SHORTCUTS.talk, () => { if (show()) send("ptt"); });
-  reg(SHORTCUTS.stop, () => { executor.stop(); log({ action: "emergency stop (shortcut)" }); send("stop"); });
+  reg(SHORTCUTS.stop, () => { executor.stop(); log({ action: "emergency stop (shortcut)" }); send("stop"); sendCaller("stop"); });
   reg(SHORTCUTS.pause, () => { paused = !executor.isPaused(); executor.setPaused(paused); send("paused", { paused }); updateTray(); });
 }
 
 /** Microphone for JARVIS's own page only (audio only); nothing else is granted. */
 function lockPermissions() {
-  const ok = (permission, origin, details) => sameOrigin(origin) && permission === "media" && (!details?.mediaTypes || details.mediaTypes.every((t) => t === "audio"));
+  const ok = (permission, origin, details) => sameOrigin(origin) && ((permission === "media" && (!details?.mediaTypes || details.mediaTypes.every((t) => t === "audio"))) || permission === "speaker-selection");
   session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => cb(ok(permission, details?.requestingUrl || wc.getURL(), details)));
-  session.defaultSession.setPermissionCheckHandler((_wc, permission, origin) => permission === "media" && sameOrigin(origin));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission, origin) => (permission === "media" || permission === "speaker-selection") && sameOrigin(origin));
+  // the caller hears the call: Phone Link plays it on the speakers, JARVIS takes the speakers' sound (loopback).
+  // Only for the caller window on JARVIS's own page — any other request gets nothing.
+  session.defaultSession.setDisplayMediaRequestHandler((req, cb) => {
+    const fromCaller = callerAlive() && sameOrigin(req.securityOrigin || req.frame?.url || "") && String(req.frame?.url || "").includes("/orb/caller");
+    if (!fromCaller) return cb({});
+    desktopCapturer.getSources({ types: ["screen"] }).then((src) => cb(src[0] ? { video: src[0], audio: "loopback" } : {})).catch(() => cb({}));
+  });
 }
 
 app.on("second-instance", (_e, _argv, _cwd, data) => {
@@ -348,6 +397,7 @@ app.whenReady().then(async () => {
   } catch (e) { log(`no tray icon here: ${e.message}`); }
   updateTray();
   registerShortcuts();
+  if (settings.callsOpen || process.argv.includes("--calls")) openCaller();
   const reclamp = () => setMode(mode);
   screen.on("display-added", reclamp); screen.on("display-removed", reclamp); screen.on("display-metrics-changed", reclamp);
   powerMonitor.on("resume", () => (onJarvis ? send("refresh") : load()));

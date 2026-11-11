@@ -17,7 +17,7 @@ const s = (n: number) => z.string().trim().max(n).nullable().optional();
 const Patch = z.object({
   status: z.enum(STATUSES).optional(), lostReason: s(40), nextAction: s(200), nextActionAt: z.coerce.date().nullable().optional(), note: s(4000),
   contactPerson: s(120), phone: s(30), whatsapp: s(30), interestedServices: z.array(z.string().max(80)).max(20).optional(), budgetRange: s(80), decisionMaker: s(120),
-  value: z.number().nonnegative().nullable().optional(), contacted: z.boolean().optional(),
+  value: z.number().nonnegative().nullable().optional(), contacted: z.boolean().optional(), doNotContact: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, { params }: Ctx) {

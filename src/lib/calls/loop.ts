@@ -1,0 +1,104 @@
+/**
+ * The caller's loop — runs in the JARVIS desktop orb on your laptop. Pure
+ * logic over an IO interface (Phone Link, the virtual audio cable, JARVIS's
+ * server), so it is tested with fakes; the /orb/caller page wires the real IO.
+ *
+ * One call: dial → wait for them to say "hello" (that's how we know a person
+ * answered; ringing and silence aren't words) → JARVIS's opening line (it says
+ * it's an AI) → listen / answer until the call ends → hang up → report.
+ */
+export interface CallJob { id: string; to: string; name: string; maxMs: number; maxTurns: number }
+
+export interface CallerIO {
+  api: (body: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  dial: (to: string) => Promise<{ ok: boolean; error?: string }>;
+  hangup: () => Promise<void>;
+  /** Is Phone Link still on a call? null = can't tell. */
+  inCall: () => Promise<boolean | null>;
+  /** Speak into the call (the virtual cable is Phone Link's microphone). */
+  speak: (text: string) => Promise<void>;
+  /** The next thing said on the call: text, "" (noise / no words), or null (nothing within maxWaitMs). */
+  listen: (maxWaitMs: number) => Promise<string | null>;
+  label: (text: string | null) => void;
+  log: (line: { who: "jarvis" | "them" | "info"; text: string }) => void;
+  sleep: (ms: number) => Promise<void>;
+  now: () => number;
+  stopped: () => boolean;
+}
+
+export const RING_MS = 45_000;
+export const SILENCE_MS = 12_000;
+
+export async function runOneCall(io: CallerIO, c: CallJob): Promise<string> {
+  const finish = async (reason: string, error?: string) => {
+    await io.hangup().catch(() => {});
+    io.label(null);
+    const r: Record<string, unknown> = await io.api({ action: "finish", id: c.id, reason, error: error ?? null }).catch(() => ({}));
+    io.log({ who: "info", text: `Call ended (${reason})${r.outcome ? ` — ${String(r.outcome).replace(/_/g, " ")}` : ""}.` });
+    return reason;
+  };
+  io.label(`Calling ${c.name}`);
+  io.log({ who: "info", text: `Dialling ${c.name} (${c.to}) through Phone Link…` });
+  const d = await io.dial(c.to);
+  if (!d.ok) return finish("failed", d.error ?? "Phone Link couldn't place the call.");
+  const started = io.now();
+
+  // 1. ringing: wait for a person to say something
+  let first: string | null = null;
+  while (io.now() - started < RING_MS) {
+    if (io.stopped()) return finish("stopped");
+    const heard = await io.listen(Math.max(1000, RING_MS - (io.now() - started)));
+    if (heard === null) break;
+    if (heard.trim()) { first = heard.trim(); break; }
+    if ((await io.inCall()) === false && io.now() - started > 5000) return finish("no_answer");
+  }
+  if (!first) return finish("no_answer");
+  io.log({ who: "them", text: first });
+
+  // 2. the opening line (the server writes it: it always says JARVIS is an AI)
+  const open = await io.api({ action: "turn", id: c.id, heard: first, opener: true });
+  if (open.end || !open.say) return finish("ended"); // an operator message / voicemail
+  await io.api({ action: "event", id: c.id, state: "answered" }).catch(() => ({}));
+  io.label(`On a call with ${c.name}`);
+  io.log({ who: "jarvis", text: String(open.say) });
+  await io.speak(String(open.say));
+
+  // 3. the conversation
+  let silences = 0;
+  for (let turn = 0; turn < c.maxTurns; turn++) {
+    if (io.stopped()) return finish("stopped");
+    if (io.now() - started > c.maxMs) {
+      const bye = "I'll let you go now — thank you so much for your time! We'll follow up on WhatsApp. Have a great day!";
+      io.log({ who: "jarvis", text: bye }); await io.speak(bye);
+      return finish("timeout");
+    }
+    const heard = await io.listen(SILENCE_MS);
+    if (heard === null) {
+      if ((await io.inCall()) === false) return finish("hung_up");
+      silences++;
+      if (silences >= 2) return finish("hung_up");
+      const again = "Hello? Can you hear me?";
+      io.log({ who: "jarvis", text: again }); await io.speak(again);
+      continue;
+    }
+    if (!heard.trim()) { turn--; if ((await io.inCall()) === false) return finish("hung_up"); continue; }
+    silences = 0;
+    io.log({ who: "them", text: heard });
+    const t = await io.api({ action: "turn", id: c.id, heard });
+    if (t.say) { io.log({ who: "jarvis", text: String(t.say) }); await io.speak(String(t.say)); }
+    if (t.end) { await io.sleep(700); return finish("ended"); }
+  }
+  return finish("ended");
+}
+
+/** Keep calling while it's allowed: the server decides what may be dialled and when. */
+export async function runCaller(io: CallerIO, opts: { idleMs?: number; onWait?: (why: string) => void } = {}) {
+  while (!io.stopped()) {
+    let r: Record<string, unknown>;
+    try { r = await io.api({ action: "next" }); } catch (e) { opts.onWait?.(`JARVIS didn't answer (${(e as Error).message}).`); await io.sleep(opts.idleMs ?? 20_000); continue; }
+    const call = r.call as CallJob | null;
+    if (!call) { opts.onWait?.(String(r.wait ?? "Waiting.")); await io.sleep(opts.idleMs ?? 20_000); continue; }
+    await runOneCall(io, call);
+    await io.sleep(4000); // breathe between calls
+  }
+}

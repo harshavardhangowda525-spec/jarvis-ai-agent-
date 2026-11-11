@@ -66,6 +66,8 @@ model User {
   prospectEvents      ProspectEvent[]
   mapsFinder          MapsFinder?
   mapsSearches        MapsSearch[]
+  prospectCalls       ProspectCall[]
+  callSettings        CallSettings?
   phoneEvents         PhoneEvent[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
@@ -1765,11 +1767,14 @@ model Prospect {
   value              Float?
   wonAt              DateTime?
   searchId           String?
+  /// said "don't call again" (or you marked it): never called or messaged again
+  doNotContact       Boolean   @default(false)
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   events ProspectEvent[]
+  calls  ProspectCall[]
 
   @@unique([userId, phoneKey])
   @@unique([userId, placeId])
@@ -1851,4 +1856,55 @@ model MapsSearch {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, status, createdAt])
+}
+
+/// A call JARVIS makes to a prospect through Windows Phone Link (your own number). Only after you approve it.
+model ProspectCall {
+  id          String    @id @default(cuid())
+  userId      String
+  prospectId  String
+  toNumber    String
+  /// proposed | approved | dialing | in_call | completed | no_answer | failed | cancelled | skipped
+  status      String    @default("proposed")
+  batchId     String
+  approvedAt  DateTime?
+  startedAt   DateTime?
+  answeredAt  DateTime?
+  endedAt     DateTime?
+  heartbeatAt DateTime?
+  /// [{ who: "jarvis" | "them", text, at }]
+  transcript  Json      @default("[]")
+  summary     String?   @db.Text
+  /// interested | demo_booked | callback | not_interested | do_not_call | has_vendor | wrong_number | not_reachable | called
+  outcome     String?
+  callbackAt  DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prospect Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@index([prospectId, createdAt])
+}
+
+/// Calling rules (manual 6.2) and how JARVIS introduces itself.
+model CallSettings {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  enabled         Boolean  @default(false)
+  dailyCap        Int      @default(25)
+  hoursFrom       String   @default("10:00")
+  hoursTo         String   @default("19:00")
+  /// 0 = Sunday
+  days            Int[]    @default([1, 2, 3, 4, 5, 6])
+  /// say "this call may be recorded for quality" (transcripts are kept)
+  recordingNotice Boolean  @default(true)
+  callerName      String   @default("Jarvis")
+  company         String   @default("Infinity Web & Apps")
+  ownerName       String   @default("Harshavardhan")
+  city            String   @default("Bengaluru")
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

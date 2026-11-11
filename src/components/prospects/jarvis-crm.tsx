@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { STATUS_LABEL, LOST_REASONS, type Status } from "@/lib/prospects/rules";
+import { CallsPanel } from "./calls-panel";
 
 interface Prospect {
   id: string; businessName: string; category: string | null; contactPerson: string | null; phone: string | null; whatsapp: string | null;
   address: string | null; area: string | null; city: string | null; mapsUrl: string | null; rating: number | null; reviews: number | null;
   websiteStatus: string; website: string | null; instagram: string | null; hours: string | null; signals: string[]; leadScore: number; source: string;
   status: Status; lostReason: string | null; nextAction: string | null; nextActionAt: string | null; interestedServices: string[];
-  budgetRange: string | null; decisionMaker: string | null; value: number | null; createdAt: string;
+  budgetRange: string | null; decisionMaker: string | null; value: number | null; doNotContact: boolean; createdAt: string;
 }
 interface Ev { id: string; kind: string; text: string; by: string; at: string; prospectId: string | null; name: string | null }
 interface MapsSearch { id: string; category: string; area: string; city: string; limit: number; status: string; trigger: string; visited: number; withWebsite: number; kept: number; added: number; duplicates: number; currentText: string | null; error: string | null; createdAt: string }
@@ -53,6 +54,7 @@ export function JarvisCrm({ openLead }: { openLead?: string | null }) {
   const [token, setToken] = useState<string | null>(null);
   const [showSchedule, setShowSchedule] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [showCalls, setShowCalls] = useState(false);
 
   const load = useCallback(async () => {
     try { setB(await api<Board>("/api/prospects")); setErr(null); } catch (e) { setErr((e as Error).message); }
@@ -97,6 +99,7 @@ export function JarvisCrm({ openLead }: { openLead?: string | null }) {
             if (r.connectedHere) setMsg({ ok: true, text: "Connected — the JARVIS Operator on this laptop picks it up within 20 seconds." });
           })}>{f.paired ? "Reconnect laptop" : "Connect this laptop"}</Button>
           <Button size="sm" variant="outline" onClick={() => setShowSchedule((v) => !v)}><CalendarClock className="h-3.5 w-3.5" /> Daily search{f.scheduleOn ? " · on" : ""}</Button>
+          <Button size="sm" variant="outline" onClick={() => setShowCalls((v) => !v)}><Phone className="h-3.5 w-3.5" /> Calls</Button>
           <Button size="sm" variant="outline" onClick={() => setAdding(true)}><Plus className="h-3.5 w-3.5" /> Add lead</Button>
         </div>
       </div>
@@ -118,6 +121,7 @@ export function JarvisCrm({ openLead }: { openLead?: string | null }) {
       </form>
 
       {showSchedule && <Schedule finder={f} onSaved={load} />}
+      {showCalls && <CallsPanel onChanged={load} />}
 
       {/* live + recent searches */}
       {b.searches.length > 0 && (
@@ -271,6 +275,20 @@ function Drawer({ p, onClose, onChanged }: { p: Prospect; onClose: () => void; o
           <Button size="sm" disabled={busy || !note.trim()} onClick={() => { void patch({ note }); setNote(""); }}>Add</Button>
         </div>
         {err && <div className="text-xs text-red-300">{err}</div>}
+
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 p-3 text-xs">
+          <Button size="sm" variant="outline" disabled={busy || p.doNotContact || !p.phone || p.status === "won" || p.status === "lost"} onClick={async () => {
+            setBusy(true); setErr(null);
+            try {
+              const r = await api<{ batchId: string | null; skipped: { reason: string }[] }>("/api/prospects/calls", { method: "POST", body: JSON.stringify({ action: "plan", prospectIds: [p.id] }) });
+              if (!r.batchId) throw new Error(`Can't call: ${r.skipped[0]?.reason ?? "not eligible"}.`);
+              await api("/api/prospects/calls", { method: "POST", body: JSON.stringify({ action: "approve", batchId: r.batchId }) });
+              setErr(null); await onChanged(); await loadEvents();
+              alert("Approved — the caller on your laptop rings them during calling hours (Calls must be on).");
+            } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+          }}><Phone className="h-3.5 w-3.5" /> Call this lead</Button>
+          <label className="ml-auto flex items-center gap-1.5"><input type="checkbox" checked={p.doNotContact} disabled={busy} onChange={(e) => void patch({ doNotContact: e.target.checked })} /> Do not contact</label>
+        </div>
 
         <div>
           <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-white/50">History</div>

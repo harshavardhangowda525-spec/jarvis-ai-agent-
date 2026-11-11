@@ -1,6 +1,7 @@
 import { env } from "@/lib/env";
 import { ok, fail, handleError } from "@/lib/api";
 import { tick } from "@/lib/prospects/service";
+import { callsTick } from "@/lib/calls/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ export async function GET(req: Request) {
   try {
     if (!env.cronSecret) return fail("CRON_SECRET is not configured.", 503);
     if (req.headers.get("authorization") !== `Bearer ${env.cronSecret}`) return fail("Unauthorized.", 401);
-    return ok(await tick());
+    const r = await tick();
+    return ok({ ...r, staleCalls: await callsTick() });
   } catch (e) { return handleError(e); }
 }

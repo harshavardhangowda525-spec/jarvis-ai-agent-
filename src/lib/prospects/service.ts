@@ -74,7 +74,7 @@ export async function createProspect(userId: string, i: ProspectInput, by: "jarv
 export interface ProspectPatch {
   status?: Status; lostReason?: string | null; nextAction?: string | null; nextActionAt?: Date | null; note?: string | null;
   contactPerson?: string | null; phone?: string | null; whatsapp?: string | null; interestedServices?: string[]; budgetRange?: string | null;
-  decisionMaker?: string | null; value?: number | null; contacted?: boolean;
+  decisionMaker?: string | null; value?: number | null; contacted?: boolean; doNotContact?: boolean;
 }
 
 /** Pipeline rules (manual 5.2) live here, so the UI, chat and calls all follow them. */
@@ -128,6 +128,7 @@ export async function updateProspect(userId: string, id: string, patch: Prospect
     }
     data.phone = patch.phone; data.phoneKey = key; log.push(`phone: ${patch.phone ?? "—"}.`);
   }
+  if (patch.doNotContact !== undefined && patch.doNotContact !== cur.doNotContact) { data.doNotContact = patch.doNotContact; log.push(patch.doNotContact ? "Marked Do not contact — never called or messaged again." : "Do not contact removed."); }
   if (patch.interestedServices) { data.interestedServices = patch.interestedServices.slice(0, 20); log.push(`interested in: ${patch.interestedServices.join(", ") || "—"}.`); }
 
   const p = Object.keys(data).length ? await db().prospect.update({ where: { id }, data }) : cur;

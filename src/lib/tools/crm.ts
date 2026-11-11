@@ -126,3 +126,33 @@ export const crmAddTool: ToolDefinition<z.infer<typeof addSchema>> = {
     return { data: { id: p.id, name: p.businessName, score: p.leadScore, status: p.status }, summary: `Added ${p.businessName} to the CRM.` };
   },
 };
+
+const planSchema = z.object({
+  names: z.array(z.string().max(200)).max(30).optional().describe("Business names to call; omit for today's call list."),
+  limit: z.number().int().min(1).max(60).optional(),
+});
+export const crmPlanCallsTool: ToolDefinition<z.infer<typeof planSchema>> = {
+  name: "crm_plan_calls",
+  description:
+    "Plan prospect calls (JARVIS phones them from the user's own number through Windows Phone Link, as an AI assistant). This only PLANS a batch: nothing is dialled until the user presses Approve in CRM → Calls — you cannot approve it. " +
+    "Use for 'call today's leads', 'call the 12 new gyms', 'ring Posh & Pixie'. Respects calling hours, the daily limit, do-not-contact, one try a day and 3 tries total.",
+  schema: planSchema,
+  inputSchema: { type: "object", properties: { names: { type: "array", items: { type: "string" } }, limit: { type: "integer", minimum: 1, maximum: 60 } } },
+  agentScope: "jarvis",
+  activityLabel: "Planning calls",
+  async execute(i, ctx) {
+    let ids: string[] | undefined;
+    if (i.names?.length) {
+      const rows = await getDb().prospect.findMany({ where: { userId: ctx.userId, OR: i.names.map((n) => ({ businessName: { contains: n.trim(), mode: "insensitive" as const } })) }, select: { id: true }, take: 60 });
+      if (!rows.length) throw new ToolError(`None of those businesses are in the CRM.`);
+      ids = rows.map((r) => r.id);
+    }
+    const { planCalls, getSettings } = await import("@/lib/calls/service");
+    const r = await planCalls(ctx.userId, { prospectIds: ids, limit: i.limit });
+    const s = await getSettings(ctx.userId);
+    const note = r.batchId
+      ? `Waiting for the user's approval in CRM → Calls.${s.enabled ? "" : " Calling is switched off there too — they need to turn it on."} Then the caller on the laptop (orb tray → Prospect calls → Start calling) dials during ${s.hoursFrom}–${s.hoursTo}.`
+      : "Nothing to call.";
+    return { data: { planned: r.calls.map((c) => c.name), skipped: r.skipped.slice(0, 15), note }, summary: r.batchId ? `Planned ${r.calls.length} call${r.calls.length === 1 ? "" : "s"} — approve them in CRM → Calls.` : "No leads can be called right now." };
+  },
+};

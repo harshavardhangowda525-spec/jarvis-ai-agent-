@@ -37,6 +37,7 @@ function readSettings(text) {
     anchor: s.anchor && Number.isFinite(s.anchor.right) && Number.isFinite(s.anchor.bottom) ? { right: s.anchor.right, bottom: s.anchor.bottom } : null,
     floating: s.floating !== false,
     control: s.control === true, // desktop control is off until you allow it once
+    callsOpen: s.callsOpen === true, // the Prospect calls window reopens at start while calling is in use
     projects: list(s.projects, ["name", "path"]),
     sites: list(s.sites, ["name", "url"]),
     searchRoots: Array.isArray(s.searchRoots) ? s.searchRoots.filter((x) => typeof x === "string").slice(0, 20) : [],

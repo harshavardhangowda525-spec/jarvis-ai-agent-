@@ -39,6 +39,49 @@ Quit.
 Anything else ("what's on my calendar?", "ask Darwin to find gyms") goes to
 JARVIS's brain, with the same conversation, tools and agents as the main JARVIS.
 
+## Prospect calls through Phone Link (Windows)
+
+JARVIS phones the leads **you approved** in the CRM from **your own number**:
+Phone Link places the call through your Android phone, JARVIS speaks into it and
+listens, follows the call flow in your operating manual (Part 6), and updates
+the CRM after every call (outcome, 3-line summary, transcript, next action).
+
+**One-time setup on the laptop**
+1. **Phone Link** (Microsoft Store) with your Android phone paired and **Calls**
+   set up (Bluetooth). Make one call from Phone Link by hand to be sure it works.
+2. **VB-Audio Virtual Cable** (free, vb-audio.com/Cable). Restart afterwards.
+3. Windows **Settings → System → Sound → Volume mixer → Phone Link**: set its
+   **input (microphone) to "CABLE Output"**. Leave its output on your speakers or
+   headphones (that's how JARVIS hears the other person, and how you can listen in).
+4. JARVIS's voice must be configured (ElevenLabs key in JARVIS) — the phone
+   voice uses it.
+5. Orb tray icon → **Prospect calls…** → **Run check** (all green), choose
+   **CABLE Input** as where JARVIS's voice goes, then **Start calling**.
+
+**How a call goes.** JARVIS dials (`tel:` → Phone Link, presses Call), waits for
+the person to say hello, then opens: *"…This is Jarvis, an AI assistant calling
+from Infinity Web & Apps, on behalf of Harshavardhan…"*. It always says it's an
+AI and never claims to be human. "Don't call me again" ends the call at once and
+marks the lead **Do not contact** forever. Voicemail / operator messages
+("switched off", "not reachable") hang up and count as Not reachable. Calls last
+at most 4 minutes. It never asks for payment details and only quotes prices you
+filled in the catalogue.
+
+**Rules it follows** (CRM → Calls → Settings): calling hours (default 10:00–19:00
+Mon–Sat), calls per day (default 25), one try per lead per day, 3 tries total,
+the "this call may be recorded" notice. Nothing is dialled until you press
+**Approve** on the batch — JARVIS can plan calls but can't approve them.
+
+**While it calls** the screen shows the glowing frame and "JARVIS is working —
+On a call with …". **Stop** (or Ctrl+Alt+Backspace) hangs up at once.
+
+**Honest limits.** Phone Link has no official API: JARVIS drives its window
+with Windows UI Automation (the English button names "Call" / "End call"), so a
+Phone Link update or another language can break dialling — the setup check and
+the call log will say so. JARVIS hears the call through your speakers' sound,
+so mute other audio (music, videos, notifications) while it calls. There's a
+1–3 second pause before each reply (speech-to-text → JARVIS → voice).
+
 ## Permissions you grant
 
 - **Desktop control**: the orb asks once ("Let JARVIS control apps on this computer?"). Change it any time in the tray menu.

@@ -24,6 +24,15 @@ contextBridge.exposeInMainWorld("jarvisDesktop", {
   hide: () => ipcRenderer.send("orb:hide"),
   quit: () => ipcRenderer.send("orb:quit"),
   retry: () => ipcRenderer.send("orb:retry"),
+  /** Prospect calls (only the "Prospect calls" window may use these; the main process checks). */
+  phone: {
+    check: () => ipcRenderer.invoke("phone:check"),
+    dial: (to) => ipcRenderer.invoke("phone:dial", String(to)),
+    hangup: () => ipcRenderer.invoke("phone:hangup"),
+    state: () => ipcRenderer.invoke("phone:state"),
+    /** The "JARVIS is working" frame + pill on the screen (null hides it). */
+    working: (text) => ipcRenderer.send("phone:working", text ? String(text) : null),
+  },
   onEvent: (cb) => {
     const h = (_e, ev) => cb(ev);
     ipcRenderer.on("orb:event", h);

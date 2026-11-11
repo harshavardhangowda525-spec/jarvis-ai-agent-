@@ -45,6 +45,62 @@ if ($a.op -eq 'arrange') {
   [JarvisW]::MoveWindow($r.MainWindowHandle, $wa.X + $half, $wa.Y, $wa.Width - $half, $wa.Height, $true) | Out-Null
   '{"ok":true}'; exit
 }
+# ---- Phone Link (prospect calls from your own number). The number arrives as data and is checked here too. ----
+if ($a.op -like 'phone-*') {
+  Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+  $AE = [System.Windows.Automation.AutomationElement]; $TS = [System.Windows.Automation.TreeScope]
+  function PLWindows {
+    $ids = @(Get-Process -Name PhoneExperienceHost, YourPhone -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+    if (-not $ids.Count) { return @() }
+    $all = $AE::RootElement.FindAll($TS::Children, [System.Windows.Automation.Condition]::TrueCondition)
+    return @($all | Where-Object { $ids -contains $_.Current.ProcessId })
+  }
+  function Buttons($ws) {
+    $c = New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+    $out = @(); foreach ($w in $ws) { try { $out += @($w.FindAll($TS::Descendants, $c)) } catch {} }; return $out
+  }
+  function Press($ws, [string]$re) {
+    foreach ($b in (Buttons $ws)) {
+      if ($b.Current.Name -match $re -and $b.Current.IsEnabled) {
+        try { $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); return $true } catch {}
+      }
+    }
+    return $false
+  }
+  $endRe = '^(End call|Hang up|End|Call end)$'
+  function InCall { return [bool](@(Buttons (PLWindows) | Where-Object { $_.Current.Name -match $endRe }).Count) }
+  switch ($a.op) {
+    'phone-check' {
+      $installed = [bool](Get-AppxPackage -Name Microsoft.YourPhone -ErrorAction SilentlyContinue)
+      $running = [bool](Get-Process -Name PhoneExperienceHost, YourPhone -ErrorAction SilentlyContinue)
+      $cable = [bool](Get-CimInstance Win32_SoundDevice -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'VB-Audio|CABLE' })
+      ConvertTo-Json -Compress -InputObject @{ ok = $true; installed = $installed; running = $running; cable = $cable }; exit
+    }
+    'phone-dial' {
+      $to = [string]$a.to
+      if ($to -notmatch '^\+?\d{8,15}$') { '{"ok":false,"error":"That number is not dialable."}'; exit }
+      if (InCall) { '{"ok":false,"error":"Phone Link is already on a call."}'; exit }
+      Start-Process "tel:$to"
+      $pressed = $false
+      for ($i = 0; $i -lt 16; $i++) {
+        Start-Sleep -Milliseconds 500
+        if (InCall) { ConvertTo-Json -Compress -InputObject @{ ok = $true; pressed = $pressed }; exit }
+        if (-not $pressed) { $pressed = Press (PLWindows) '^(Call|Start call|Dial)$' }
+      }
+      if (-not @(PLWindows).Count) { '{"ok":false,"error":"Phone Link did not open. Open Phone Link, make sure your phone is connected and Calls are set up, then try again."}'; exit }
+      ConvertTo-Json -Compress -InputObject @{ ok = $false; error = "Phone Link opened but the call didn't start. Check that Calls is set up in Phone Link (Bluetooth paired)." }; exit
+    }
+    'phone-state' {
+      $names = @(Buttons (PLWindows) | ForEach-Object { $_.Current.Name } | Where-Object { $_ } | Select-Object -First 30)
+      ConvertTo-Json -Compress -InputObject @{ ok = $true; inCall = [bool](@($names | Where-Object { $_ -match $endRe }).Count); buttons = $names }; exit
+    }
+    'phone-hangup' {
+      $ok = Press (PLWindows) $endRe
+      ConvertTo-Json -Compress -InputObject @{ ok = $true; pressed = $ok }; exit
+    }
+  }
+  '{"ok":false,"error":"Unknown phone action."}'; exit
+}
 $p = Win $a.id
 if (-not $p) { '{"ok":false,"error":"That window is no longer open."}'; exit }
 $h = $p.MainWindowHandle
