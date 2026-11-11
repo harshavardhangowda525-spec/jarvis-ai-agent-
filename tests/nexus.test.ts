@@ -4,7 +4,7 @@ import { env } from "@/lib/env";
 import { diffJobs, type JobRow } from "@/lib/nexus/events";
 
 describe("Nexus signals come only from real record changes", () => {
-  const row = (status: string, steps: number, id = "j1"): JobRow => ({ id, agent: "darwin", title: "Find gyms", status, dependsOn: [], progress: Array.from({ length: steps }, (_, i) => ({ text: `step ${i + 1}` })), updatedAt: new Date().toISOString() });
+  const row = (status: string, steps: number, id = "j1"): JobRow => ({ id, agent: "ev", title: "Find gyms", status, dependsOn: [], progress: Array.from({ length: steps }, (_, i) => ({ text: `step ${i + 1}` })), updatedAt: new Date().toISOString() });
   it("a baseline produces nothing visible; transitions and new steps do", () => {
     const prev = new Map();
     diffJobs(prev, [row("assigned", 1)]); // the baseline (stream start) — the caller discards these
@@ -22,37 +22,37 @@ d("Nexus states and the Approval Center (integration)", () => {
   let userId = "";
   let S: typeof import("@/lib/nexus/status");
   let C: typeof import("@/lib/approvals/center");
-  const saved = { g: env.groqApiKey, j: env.jarvisProvider, d: env.darwinProvider };
+  const saved = { g: env.groqApiKey, j: env.jarvisProvider, d: env.evProvider };
   const brief = { objective: "Find gyms without websites", expectedOutcome: "A list", context: [], requirements: [], constraints: [], acceptance: ["real leads"], approvals: [] };
   beforeAll(async () => {
     S = await import("@/lib/nexus/status"); C = await import("@/lib/approvals/center");
     userId = (await getDb().user.create({ data: { email: `nexus-${Date.now()}@example.com`, passwordHash: "x" } })).id;
   });
-  afterAll(async () => { Object.assign(env, { groqApiKey: saved.g, jarvisProvider: saved.j, darwinProvider: saved.d }); await getDb().user.deleteMany({ where: { id: userId } }).catch(() => {}); });
+  afterAll(async () => { Object.assign(env, { groqApiKey: saved.g, jarvisProvider: saved.j, evProvider: saved.d }); await getDb().user.deleteMany({ where: { id: userId } }).catch(() => {}); });
 
   it("an agent without a brain is offline; RUBEN is 'not reported', never invented", async () => {
     Object.assign(env, { groqApiKey: "", geminiApiKey: "" });
     const s = await S.agentStatuses(userId);
-    expect(s.agents.find((a) => a.id === "darwin")!.state).toBe("offline");
+    expect(s.agents.find((a) => a.id === "ev")!.state).toBe("offline");
     expect(s.agents.find((a) => a.id === "ruben")!.state).toBe("unknown");
   });
 
   it("derives states from real tasks: queued ≠ working, running with a live lease = working, approval, error", async () => {
-    Object.assign(env, { groqApiKey: "gsk_test", darwinProvider: "groq", jarvisProvider: "groq" });
+    Object.assign(env, { groqApiKey: "gsk_test", evProvider: "groq", jarvisProvider: "groq" });
     const db = getDb();
-    await db.agentJob.create({ data: { userId, agent: "darwin", title: "Find gyms", request: "r", brief, status: "assigned" } });
-    let darwin = (await S.agentStatuses(userId)).agents.find((a) => a.id === "darwin")!;
-    expect(darwin.state).toBe("ready");
-    expect(darwin.reason).toBe("1 task queued");
-    expect(darwin.capabilities.length).toBeGreaterThan(3);
-    expect(darwin.capabilities.some((c) => c.tool === "darwin_message" && c.needsApproval)).toBe(true);
-    await db.agentJob.updateMany({ where: { userId, agent: "darwin" }, data: { status: "running", leaseUntil: new Date(Date.now() + 60_000), startedAt: new Date() } });
-    darwin = (await S.agentStatuses(userId)).agents.find((a) => a.id === "darwin")!;
-    expect(darwin.state).toBe("working");
-    expect(darwin.reason).toBe("Working on: Find gyms");
-    await db.agentJob.updateMany({ where: { userId, agent: "darwin" }, data: { status: "waiting_approval", leaseUntil: null, progress: [{ at: new Date().toISOString(), text: "Waiting for your approval: send 3 emails", kind: "approval" }] } });
-    darwin = (await S.agentStatuses(userId)).agents.find((a) => a.id === "darwin")!;
-    expect(darwin.state).toBe("waiting_approval");
+    await db.agentJob.create({ data: { userId, agent: "ev", title: "Find gyms", request: "r", brief, status: "assigned" } });
+    let evie = (await S.agentStatuses(userId)).agents.find((a) => a.id === "ev")!;
+    expect(evie.state).toBe("ready");
+    expect(evie.reason).toBe("1 task queued");
+    expect(evie.capabilities.length).toBeGreaterThan(3);
+    expect(evie.capabilities.some((c) => c.tool === "ev_instagram" && c.needsApproval)).toBe(true);
+    await db.agentJob.updateMany({ where: { userId, agent: "ev" }, data: { status: "running", leaseUntil: new Date(Date.now() + 60_000), startedAt: new Date() } });
+    evie = (await S.agentStatuses(userId)).agents.find((a) => a.id === "ev")!;
+    expect(evie.state).toBe("working");
+    expect(evie.reason).toBe("Working on: Find gyms");
+    await db.agentJob.updateMany({ where: { userId, agent: "ev" }, data: { status: "waiting_approval", leaseUntil: null, progress: [{ at: new Date().toISOString(), text: "Waiting for your approval: send 3 emails", kind: "approval" }] } });
+    evie = (await S.agentStatuses(userId)).agents.find((a) => a.id === "ev")!;
+    expect(evie.state).toBe("waiting_approval");
     await db.agentJob.create({ data: { userId, agent: "aston", title: "Demo site", request: "r", brief, status: "failed", error: "Claude bridge offline", finishedAt: new Date() } });
     const aston = (await S.agentStatuses(userId)).agents.find((a) => a.id === "aston")!;
     expect(aston.state).toBe("error");
@@ -87,14 +87,14 @@ d("Nexus states and the Approval Center (integration)", () => {
     expect((await db.darwinMessage.findUniqueOrThrow({ where: { id: msg.id } })).status).toBe("rejected");
     // EVIE proposal from an intel item → approve creates a real task for the chosen agent
     const item = await db.intelItem.create({ data: { userId, urlHash: `h${Date.now()}`, url: "https://techcrunch.com/x", title: "Clinics adopt online booking", publisher: "TechCrunch", via: "rss", analysis: { recommendedAction: "Offer a booking site package to clinics.", opportunity: "Clinic booking sites" } } });
-    const p = await C.propose(userId, { refKind: "intel_item", refId: item.id, agent: "darwin" });
-    expect(await C.propose(userId, { refKind: "intel_item", refId: item.id, agent: "darwin" })).toMatchObject({ id: p.id }); // no duplicates
+    const p = await C.propose(userId, { refKind: "intel_item", refId: item.id, agent: "ev" });
+    expect(await C.propose(userId, { refKind: "intel_item", refId: item.id, agent: "ev" })).toMatchObject({ id: p.id }); // no duplicates
     expect((await C.listCenter(userId)).approvals.some((i) => i.kind === "proposal" && i.id === p.id)).toBe(true);
     r = await C.decide(userId, { kind: "proposal", id: p.id, decision: "approve" });
     expect(r.ok).toBe(true);
     const pr = await db.proposal.findUniqueOrThrow({ where: { id: p.id } });
     const created = await db.agentJob.findUniqueOrThrow({ where: { id: pr.jobId! } });
-    expect(created).toMatchObject({ agent: "darwin", status: "assigned", title: "Act on: Clinics adopt online booking" });
+    expect(created).toMatchObject({ agent: "ev", status: "assigned", title: "Act on: Clinics adopt online booking" });
     expect(JSON.stringify(created.brief)).toMatch(/techcrunch\.com\/x/);
     const log = await db.approvalDecision.findMany({ where: { userId }, orderBy: { createdAt: "asc" } });
     expect(log.map((x) => [x.kind, x.decision, x.outcome])).toEqual([

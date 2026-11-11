@@ -47,6 +47,30 @@ It prints a **URL** and a **TOKEN**. In the JARVIS web app go to
 **Dashboard → Operator**, paste both, and click **Pair**. That's it — type or
 speak a command and watch the browser work.
 
+## JARVIS CRM: Google Maps lead finder
+
+JARVIS finds leads itself. `npm run local` starts this operator automatically;
+then in **JARVIS → CRM** press **Connect this laptop** once. From then on:
+
+- Ask JARVIS ("find gyms without websites in Indiranagar"), use **Find on Google
+  Maps** in the CRM, or turn on **Daily search** (days, time, business types ×
+  areas; it rotates through them).
+- The operator opens Google Maps in its visible browser (your installed Chrome,
+  else Edge, with JARVIS's own profile), opens each listing, reads name, phone,
+  address, rating, reviews, website and hours, and sends them to JARVIS.
+- JARVIS keeps only businesses with **no website**, a **social page only**, or a
+  **broken / outdated** site, skips anything already in the CRM (same phone or
+  same Maps place), scores it (manual 4.3) and adds it as **New**. Max 30 new
+  leads a day; 3–8 s pauses between listings.
+- If Google shows a CAPTCHA or "unusual traffic" page, it **stops**, saves a
+  screenshot in `operator/screenshots/` and reports it. It never solves or works
+  around a CAPTCHA.
+
+**"JARVIS is working" label.** Every page the operator drives gets a glowing
+frame and a pill at the bottom saying what JARVIS is doing, with a **Stop**
+button (it stops Maps searches and commands alike). The desktop orb shows the
+same frame around the screen while it controls your apps.
+
 ## How logins work (important)
 
 - The browser uses a **persistent profile** in `operator/browser-data/`, so once

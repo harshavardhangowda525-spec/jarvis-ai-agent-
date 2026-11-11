@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { log } from "../log.mjs";
+import { WorkingLabel } from "../overlay.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PROFILE = path.resolve(__dirname, "../../browser-data");
@@ -27,19 +28,32 @@ export class BrowserManager {
     this.stopped = false;
     /** Pause flag — when true the session waits (used for Take Control). */
     this.paused = false;
+    /** The "JARVIS is working" frame + pill on every page while JARVIS drives. */
+    this.label = new WorkingLabel();
+    this.label.onStop = () => { this.stop(); this.onUserStop?.(); };
   }
 
   async launch() {
     if (this.context) return this.context;
     fs.mkdirSync(this.profileDir, { recursive: true });
     log.info(`Launching visible browser (profile: ${this.profileDir})`);
-    this.context = await chromium.launchPersistentContext(this.profileDir, {
+    const opts = {
       headless: false,
       viewport: null, // use the real window size
-      executablePath: this.executablePath,
       args: ["--start-maximized", "--disable-blink-features=AutomationControlled"],
       ignoreDefaultArgs: ["--enable-automation"],
-    });
+    };
+    if (this.executablePath) this.context = await chromium.launchPersistentContext(this.profileDir, { ...opts, executablePath: this.executablePath });
+    else {
+      // your installed Google Chrome (JARVIS's own profile folder), else Edge (every Windows PC has it), else Playwright's Chromium
+      let lastErr;
+      for (const channel of ["chrome", "msedge", undefined]) {
+        try { this.context = await chromium.launchPersistentContext(this.profileDir, channel ? { ...opts, channel } : opts); break; }
+        catch (e) { lastErr = e; }
+      }
+      if (!this.context) throw new Error(`Couldn't open a browser — install Google Chrome. (${lastErr?.message?.split("\n")[0]})`);
+    }
+    await this.label.attach(this.context);
     this.page = this.context.pages()[0] ?? (await this.context.newPage());
     // If the user closes the operator's page, don't crash — reopen lazily.
     this.context.on("close", () => { this.context = null; this.page = null; });

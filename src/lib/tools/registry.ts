@@ -42,6 +42,7 @@ import { darwinFollowUpTool } from "./darwin/followup";
 import { darwinOutreachTool } from "./darwin/outreach";
 import { darwinMessageTool } from "./darwin/message";
 import { darwinMapTool } from "./darwin/map";
+import { crmFindLeadsTool, crmLeadsTool, crmUpdateTool, crmAddTool } from "./crm";
 import { niosTool } from "./nios";
 import { tradingReviewTool } from "./trading";
 import { businessIntelTool } from "./intel";
@@ -100,6 +101,10 @@ const ALL_TOOLS: ToolDefinition[] = [
   darwinOutreachTool as ToolDefinition,
   darwinMessageTool as ToolDefinition,
   darwinMapTool as ToolDefinition,
+  crmFindLeadsTool as ToolDefinition,
+  crmLeadsTool as ToolDefinition,
+  crmUpdateTool as ToolDefinition,
+  crmAddTool as ToolDefinition,
   niosTool as ToolDefinition,
   activityTool as ToolDefinition,
   mikeAnalyzeTool as ToolDefinition,

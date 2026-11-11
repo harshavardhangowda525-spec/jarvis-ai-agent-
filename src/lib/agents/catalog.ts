@@ -42,4 +42,8 @@ export const CHAT_AGENTS: Record<ChatAgentId, ChatAgent> = {
   },
 };
 
-export const isChatAgent = (s: string | undefined | null): s is ChatAgentId => !!s && s in CHAT_AGENTS;
+/** Agents that were taken out: their data stays in the database, but they no longer appear or take work. JARVIS runs the CRM itself. */
+export const RETIRED_AGENTS: ReadonlySet<string> = new Set(["darwin"]);
+export const isChatAgent = (s: string | undefined | null): s is ChatAgentId => !!s && s in CHAT_AGENTS && !RETIRED_AGENTS.has(s);
+/** The agents you can open / chat with, in catalog order. */
+export const ACTIVE_CHAT_AGENTS: ChatAgent[] = Object.values(CHAT_AGENTS).filter((a) => !RETIRED_AGENTS.has(a.id));

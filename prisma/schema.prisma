@@ -62,6 +62,10 @@ model User {
   approvalDecisions   ApprovalDecision[]
   phoneLink           PhoneLink?
   operatorPrompt      OperatorPrompt?
+  prospects           Prospect[]
+  prospectEvents      ProspectEvent[]
+  mapsFinder          MapsFinder?
+  mapsSearches        MapsSearch[]
   phoneEvents         PhoneEvent[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
@@ -1717,4 +1721,134 @@ model OperatorPrompt {
   enabled   Boolean  @default(true)
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// JARVIS's own CRM (no agent): one business JARVIS found or you added.
+model Prospect {
+  id                 String    @id @default(cuid())
+  userId             String
+  businessName       String
+  category           String?
+  contactPerson      String?
+  phone              String?
+  /// last 10 digits of the phone: the duplicate check
+  phoneKey           String?
+  whatsapp           String?
+  address            String?
+  area               String?
+  city               String?
+  mapsUrl            String?
+  /// Google Maps place id (from the listing's own link)
+  placeId            String?
+  rating             Float?
+  reviews            Int?
+  /// none | social_only | broken | outdated | ok
+  websiteStatus      String    @default("none")
+  website            String?
+  instagram          String?
+  facebook           String?
+  hours              String?
+  signals            String[]  @default([])
+  leadScore          Int       @default(0)
+  /// google_maps | manual
+  source             String    @default("manual")
+  /// new | called | not_reachable | callback | interested | demo_booked | demo_done | quotation_sent | negotiating | won | lost
+  status             String    @default("new")
+  lostReason         String?
+  lastContactedAt    DateTime?
+  nextAction         String?
+  nextActionAt       DateTime?
+  interestedServices String[]  @default([])
+  budgetRange        String?
+  decisionMaker      String?
+  unreachableCount   Int       @default(0)
+  value              Float?
+  wonAt              DateTime?
+  searchId           String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events ProspectEvent[]
+
+  @@unique([userId, phoneKey])
+  @@unique([userId, placeId])
+  @@index([userId, status, nextActionAt])
+  @@index([userId, createdAt])
+}
+
+/// Everything that happened to a prospect (and JARVIS's searches), with who did it.
+model ProspectEvent {
+  id         String   @id @default(cuid())
+  userId     String
+  prospectId String?
+  /// created | status | note | call | message | meeting | edit
+  kind       String
+  text       String   @db.Text
+  /// jarvis | you
+  by         String   @default("jarvis")
+  meta       Json?
+  createdAt  DateTime @default(now())
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prospect Prospect? @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([prospectId, createdAt])
+}
+
+/// The JARVIS Operator on your laptop, paired to search Google Maps, plus the daily schedule.
+model MapsFinder {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  /// sha256 of the token the operator sends
+  tokenHash     String?   @unique
+  device        String?
+  lastSeenAt    DateTime?
+  scheduleOn    Boolean   @default(false)
+  /// days of the week, 0 = Sunday
+  scheduleDays  Int[]     @default([1, 2, 3, 4, 5, 6])
+  /// "HH:MM" in your timezone
+  scheduleTime  String    @default("10:30")
+  dailyLimit    Int       @default(30)
+  categories    String[]  @default([])
+  areas         String[]  @default([])
+  city          String    @default("Bengaluru")
+  rotateIndex   Int       @default(0)
+  /// the local date (YYYY-MM-DD) the schedule last queued a search
+  lastScheduled String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// One Google Maps search JARVIS runs in the operator's visible browser.
+model MapsSearch {
+  id          String    @id @default(cuid())
+  userId      String
+  category    String
+  area        String
+  city        String
+  /// new prospects wanted
+  limit       Int       @default(20)
+  /// queued | running | stopping | done | stopped | blocked | failed
+  status      String    @default("queued")
+  /// you | jarvis | schedule
+  trigger     String    @default("you")
+  visited     Int       @default(0)
+  withWebsite Int       @default(0)
+  kept        Int       @default(0)
+  added       Int       @default(0)
+  duplicates  Int       @default(0)
+  currentText String?
+  error       String?
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  heartbeatAt DateTime?
+  finishedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
 }

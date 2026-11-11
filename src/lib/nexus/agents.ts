@@ -19,8 +19,7 @@ export interface NexusAgent {
 }
 
 export const NEXUS_AGENTS: NexusAgent[] = [
-  { id: "darwin", name: "DARWIN", aliases: ["darwin"], title: "Lead Intelligence", purpose: "Finds businesses, checks their web presence, verifies contacts, qualifies and scores leads, and owns the CRM.", color: "#38d6ff", motif: "scan", chat: "/dashboard/chat/darwin" },
-  { id: "robin", name: "RUBIN", aliases: ["rubin", "robin"], title: "Sales Operations", purpose: "Follow-ups, call and message scripts, demos, quotations and conversions — working on DARWIN's CRM, never a second one.", color: "#4f7dff", motif: "pulse", chat: "/dashboard/chat/robin" },
+  { id: "robin", name: "RUBIN", aliases: ["rubin", "robin"], title: "Sales Operations", purpose: "Follow-ups, call and message scripts, demos, quotations and conversions — on its own sales pipeline.", color: "#4f7dff", motif: "pulse", chat: "/dashboard/chat/robin" },
   { id: "ev", name: "EVIE", aliases: ["ev", "evie", "eve"], title: "Growth & Business Intelligence", purpose: "Instagram content and analytics, campaigns, and the business-environment intelligence for Infinity Web & Apps.", color: "#b07cff", motif: "wave", chat: "/dashboard/chat/ev" },
   { id: "aston", name: "ASTON", aliases: ["aston"], title: "Development Intelligence", purpose: "Builds websites and app demos, writes and tests the code, previews and (when you approve) deploys.", color: "#ffb84d", motif: "geometry", chat: "/dashboard/chat/aston" },
   { id: "friday", name: "FRIDAY", aliases: ["friday"], title: "3D Production", purpose: "Blender automation: 3D models, scenes, renders and exports, with a holographic viewer.", color: "#3ee6d0", motif: "mesh", chat: "/dashboard/friday" },

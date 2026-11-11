@@ -18,6 +18,7 @@ import { Session } from "./src/session.mjs";
 import { startServer } from "./src/server.mjs";
 import { hasProvider, providerName } from "./src/provider.mjs";
 import { log } from "./src/log.mjs";
+import { MapsFinder } from "./src/maps/finder.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,12 @@ const mgr = new BrowserManager({
 });
 const session = new Session({ mgr, send: () => {} });
 startServer({ port, session, mgr });
+
+// JARVIS CRM: the Google Maps lead finder (searches JARVIS queues run here, in the visible browser)
+const finder = new MapsFinder({ mgr });
+if (process.env.OPERATOR_MAPS !== "off") finder.start();
+// the Stop button on the "JARVIS is working" label stops whatever JARVIS is doing
+mgr.onUserStop = () => { session.stop(); finder.stop(); };
 
 // Graceful shutdown — keep the browser open on Ctrl+C? No: close cleanly.
 for (const sig of ["SIGINT", "SIGTERM"]) {

@@ -7,8 +7,8 @@ import { displayState, planGroups, planOutcome, planSummary } from "@/components
 describe("commands addressed to agents", () => {
   it("finds the agents a sentence names, in order (Friday the day and 'mic' aren't agents unless addressed)", () => {
     expect(agentsNamed("JARVIS, ask Darwin to find 50 gyms in Bangalore without websites, then ask Ruben to prepare outreach scripts and tell Evie to create an Instagram promotional campaign"))
-      .toEqual(["darwin", "robin", "ev"]);
-    expect(agentsNamed("Make Darwin and Ruben work together on today's leads")).toEqual(["darwin", "robin"]);
+      .toEqual(["robin", "ev"]); // DARWIN was retired — JARVIS finds leads itself
+    expect(agentsNamed("Make Darwin and Ruben work together on today's leads")).toEqual(["robin"]);
     expect(agentsNamed("turn the mic on")).toEqual([]);
     expect(agentInstruction("Schedule the post for Friday", "friday")).toBeNull();
   });

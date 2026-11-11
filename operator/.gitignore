@@ -2,3 +2,5 @@ node_modules/
 browser-data/
 .operator-token
 *.log
+.finder.json
+screenshots/

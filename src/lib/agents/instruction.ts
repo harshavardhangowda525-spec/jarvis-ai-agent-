@@ -7,7 +7,6 @@ import type { ChatAgentId } from "./catalog";
  * as FRIDAY when it is addressed, and the instruction pattern requires that.
  */
 const NAMES: [ChatAgentId, RegExp][] = [
-  ["darwin", /\bdarwin\b/],
   ["robin", /\b(?:rubin|robin|ruben|reuben)\b/],
   ["ev", /\b(?:evie|ev|eve)\b/],
   ["mike", /\bmike\b/],

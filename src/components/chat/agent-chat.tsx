@@ -31,7 +31,7 @@ interface Msg {
 interface Convo { id: string; title: string; updatedAt: string }
 
 const uid = () => Math.random().toString(36).slice(2, 10);
-const AGENT_ORDER: ChatAgentId[] = ["darwin", "robin", "ev", "mike", "aston"];
+const AGENT_ORDER: ChatAgentId[] = ["robin", "ev", "mike", "aston"];
 
 export function AgentChat({ agent }: { agent: ChatAgent }) {
   const router = useRouter();
@@ -290,7 +290,7 @@ export function AgentChat({ agent }: { agent: ChatAgent }) {
           <button type="button" className="ac-menu" onClick={() => setSide((s) => !s)} aria-label="Chats and agents" aria-expanded={side}><Burger /></button>
           <div className="ac-title"><b>{agent.name}</b><span>{agent.role}</span></div>
           {agent.id === "ev" && <button type="button" className="ac-console" onClick={() => setToday(true)}>Today&apos;s content</button>}
-          {(agent.id === "darwin" || agent.id === "robin") && <Link href="/dashboard/crm" className="ac-console">Open CRM</Link>}
+          {agent.id === "robin" && <Link href="/dashboard/crm/sales" className="ac-console">Open pipeline</Link>}
           {agent.id === "aston" && <Link href="/dashboard/aston" className="ac-console">Demos</Link>}
           {agent.id === "aston" && <Link href="/dashboard/teleprompter" className="ac-console">Teleprompter</Link>}
           {agent.id === "mike" && <Link href="/dashboard/trading" className="ac-console">Trading Intelligence</Link>}

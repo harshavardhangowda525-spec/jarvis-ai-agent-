@@ -41,6 +41,7 @@ describe("voice mode", () => {
   it("knows the chat agents (JARVIS isn't one — it keeps its voice console)", () => {
     expect(Object.keys(CHAT_AGENTS).sort()).toEqual(["aston", "darwin", "ev", "friday", "mike", "robin"]);
     expect(isChatAgent("jarvis")).toBe(false);
-    expect(isChatAgent("darwin")).toBe(true);
+    expect(isChatAgent("darwin")).toBe(false); // retired — JARVIS runs the CRM
+    expect(isChatAgent("robin")).toBe(true);
   });
 });

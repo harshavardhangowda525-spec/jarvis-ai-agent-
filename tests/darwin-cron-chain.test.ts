@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-vi.hoisted(() => { process.env.CRON_SECRET = "cron-test-secret"; });
+vi.hoisted(() => { process.env.CRON_SECRET = "cron-test-secret"; process.env.DARWIN_DAILY = "force"; }); // DARWIN is retired; this still checks the chaining
 
 const run = vi.hoisted(() => ({ more: true, calls: [] as unknown[] }));
 vi.mock("@/lib/darwin/daily/run", () => ({

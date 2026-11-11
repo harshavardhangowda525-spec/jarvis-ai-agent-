@@ -7,6 +7,8 @@ import { z } from "zod";
 
 export const JOB_AGENTS = ["darwin", "robin", "ev", "mike", "aston", "friday"] as const;
 export type JobAgent = (typeof JOB_AGENTS)[number];
+/** Agents that still take delegated work (DARWIN was retired — JARVIS finds leads itself). */
+export const DELEGATE_AGENTS = JOB_AGENTS.filter((a) => a !== "darwin");
 export const JOB_AGENT_NAME: Record<JobAgent, string> = { darwin: "DARWIN", robin: "RUBIN", ev: "EV", mike: "MIKE", aston: "ASTON", friday: "FRIDAY" };
 
 export const JOB_STATUSES = ["planning", "assigned", "running", "waiting_approval", "completed", "failed", "cancelled"] as const;

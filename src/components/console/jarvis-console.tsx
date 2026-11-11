@@ -46,7 +46,7 @@ import { JarvisMotion, type JarvisMotionHandle, type JState, type AgentName, typ
 import { KineticStage, KineticWord, type KineticStyle } from "./jarvis/kinetic";
 import { HoloPanel } from "./jarvis/holo-panel";
 import { cn } from "@/lib/utils";
-import { CHAT_AGENTS, type ChatAgentId } from "@/lib/agents/catalog";
+import { CHAT_AGENTS, ACTIVE_CHAT_AGENTS, RETIRED_AGENTS, type ChatAgentId } from "@/lib/agents/catalog";
 import { agentInstruction, agentsNamed } from "@/lib/agents/instruction";
 import { chartRequest } from "@/lib/mike/command";
 import { announcement, useJobs } from "@/components/jobs/use-jobs";
@@ -208,7 +208,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   const onNavigate = useCallback((path: string) => {
     if (!path.startsWith("/dashboard") || path === "/dashboard") return;
     const chat = path.match(/^\/dashboard\/chat\/([a-z]+)/)?.[1];
-    if (chat && (JOB_AGENTS as readonly string[]).includes(chat)) { dockRef.current?.openAgent(chat as JobAgent); return; }
+    if (chat && (JOB_AGENTS as readonly string[]).includes(chat) && !RETIRED_AGENTS.has(chat)) { dockRef.current?.openAgent(chat as JobAgent); return; }
     if (/^\/dashboard\/aston\/studio/.test(path)) { dockRef.current?.openAgent("aston"); return; }
     router.push(path);
   }, [router]);
@@ -601,9 +601,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
 
       if (/\b(go to sleep|jarvis[,\s]*sleep|sleep now|power down|good ?night|stand ?by)\b/.test(low)) { sleep(); return; }
 
-      // ===== "open CRM", "open DARWIN CRM", "show my leads" → DARWIN's CRM (the one CRM) =====
+      // ===== "open CRM", "show my leads" → JARVIS's CRM =====
       if (/^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?(?:open|show|launch|bring up|pull up|go to)\s+(?:the\s+|my\s+)?(?:darwin'?s?\s+)?crm[.!\s]*$|^(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:open|show)\s+(?:me\s+)?my\s+leads[.!\s]*$/i.test(t)) {
-        logActivity({ category: "agent", agent: "DARWIN", action: "Opened the CRM", importance: 1 });
+        logActivity({ category: "agent", agent: "JARVIS", action: "Opened the CRM", importance: 1 });
         sayRef.current("Opening the CRM.");
         router.push("/dashboard/crm");
         return;
@@ -1394,9 +1394,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/aston"); }} className="rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">ASTON demos</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/teleprompter"); }} className="rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Teleprompter</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/jobs"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Agent tasks</button>
-                <button onClick={() => { setMenuOpen(false); router.push("/dashboard/crm"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">DARWIN CRM</button>
+                <button onClick={() => { setMenuOpen(false); router.push("/dashboard/crm"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">CRM</button>
                 <span className="col-span-2 mt-2 px-3 text-[10px] uppercase tracking-[0.25em] text-white/35">Agent chats</span>
-                {Object.values(CHAT_AGENTS).map((a) => (
+                {ACTIVE_CHAT_AGENTS.map((a) => (
                   <button key={a.id} onClick={() => { setMenuOpen(false); router.push(`/dashboard/chat/${a.id}`); }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">
                     <span className="h-1.5 w-1.5 rounded-full" style={{ background: a.color }} aria-hidden />{a.name}
                   </button>

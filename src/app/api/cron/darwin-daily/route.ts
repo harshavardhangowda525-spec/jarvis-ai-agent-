@@ -25,6 +25,8 @@ export async function GET(req: Request) {
   try {
     if (!env.cronSecret) return fail("CRON_SECRET is not configured.", 503);
     if (req.headers.get("authorization") !== `Bearer ${env.cronSecret}`) return fail("Unauthorized.", 401);
+    // DARWIN was retired: JARVIS's own CRM runs the daily Google Maps search (/api/cron/prospects)
+    if (process.env.DARWIN_DAILY !== "force") return ok({ retired: true, results: [], more: false });
     const url = new URL(req.url);
     const hop = Math.max(0, Math.min(Number(url.searchParams.get("hop")) || 0, MAX_HOPS));
     const result = await runDarwinDaily({ budgetMs: 250_000, earlyMin: EARLY_MIN });

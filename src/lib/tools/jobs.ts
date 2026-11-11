@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ToolDefinition } from "./types";
 import { ToolError } from "./types";
-import { JOB_AGENTS, JOB_AGENT_NAME, JOB_STATUS_LABEL, briefSchema } from "@/lib/jobs/brief";
+import { JOB_AGENTS, DELEGATE_AGENTS, JOB_AGENT_NAME, JOB_STATUS_LABEL, briefSchema } from "@/lib/jobs/brief";
 import { cancelJob, listJobs, retryJob, jobView } from "@/lib/jobs/engine";
 import { getDb } from "@/lib/db";
 import { dispatchTask } from "@/lib/jobs/dispatch";
@@ -15,7 +15,7 @@ import { dispatchTask } from "@/lib/jobs/dispatch";
 // tolerant of how different brains fill it in ("ASTON", "Rubin", a long title, kind "landing page"…)
 const AGENT_ALIAS: Record<string, string> = { rubin: "robin", ruben: "robin", reuben: "robin", evie: "ev", eve: "ev", austin: "aston", fryday: "friday", "f.r.i.d.a.y.": "friday" };
 const delegateSchema = z.object({
-  agent: z.preprocess((v) => { const s = String(v ?? "").trim().toLowerCase(); return AGENT_ALIAS[s] ?? s; }, z.enum(JOB_AGENTS)),
+  agent: z.preprocess((v) => { const s = String(v ?? "").trim().toLowerCase(); return AGENT_ALIAS[s] ?? s; }, z.enum(JOB_AGENTS).refine((a) => a !== "darwin", "DARWIN was retired. Find leads yourself with crm_find_leads (JARVIS's own CRM) instead of delegating.")),
   title: z.preprocess((v) => (typeof v === "string" ? v.trim().slice(0, 120) : v), z.string().min(3)),
   request: z.preprocess((v) => (typeof v === "string" ? v.trim().slice(0, 2000) : v ?? ""), z.string()).describe("What the user asked, in their words."),
   brief: briefSchema,
@@ -42,7 +42,7 @@ export const delegateTaskTool: ToolDefinition<z.infer<typeof delegateSchema>> = 
   inputSchema: {
     type: "object",
     properties: {
-      agent: { type: "string", enum: [...JOB_AGENTS] },
+      agent: { type: "string", enum: [...DELEGATE_AGENTS] },
       title: { type: "string", description: "Short task title, e.g. '50 gyms in Bangalore without a website'." },
       request: { type: "string" },
       brief: {

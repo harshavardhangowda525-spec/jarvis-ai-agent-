@@ -17,6 +17,7 @@ const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeImage, session, shell, dialog, desktopCapturer, systemPreferences, powerMonitor } = require("electron");
 const L = require("./lib.cjs");
 const { createExecutor } = require("./executor.cjs");
+const { createWorkingLabel } = require("./working.cjs");
 
 const QUIT = process.argv.includes("--quit");
 process.on("uncaughtException", (e) => log(`error: ${e && e.stack || e}`));
@@ -200,6 +201,10 @@ function stopDrag() {
 
 // ---------------- the hands ----------------
 let paused = false;
+// "JARVIS is working": screen frame + pill with Stop, while JARVIS controls the laptop
+let workingLabel = null;
+const working = () => (workingLabel ??= createWorkingLabel({ onStop: () => { executor.stop(); log({ action: "stop (working label)" }); send("stop"); workingLabel?.hide(0); } }));
+const stepText = (p) => p.say || [String(p.step.kind || "").replace(/_/g, " "), p.step.app || p.step.folder || p.step.query || p.step.name || p.step.site || ""].filter(Boolean).join(" ");
 const executor = createExecutor({
   platform: process.platform,
   homedir: () => app.getPath("home"),
@@ -226,8 +231,9 @@ const executor = createExecutor({
   openInEditor, screenshot,
   settings: () => settings,
   log: (e) => log(e),
-  onProgress: (p) => send("progress", { index: p.index, total: p.total, state: p.state, say: p.say || null, kind: p.step.kind, target: p.step.app || p.step.folder || p.step.query || p.step.name || p.step.site || null }),
+  onProgress: (p) => { if (workingLabel && p.state === "running") workingLabel.show(stepText(p)); progress(p); },
 });
+const progress = (p) => send("progress", { index: p.index, total: p.total, state: p.state, say: p.say || null, kind: p.step.kind, target: p.step.app || p.step.folder || p.step.query || p.step.name || p.step.site || null });
 
 async function askControl() {
   if (settings.control) return true;
@@ -251,9 +257,13 @@ ipcMain.handle("orb:run", async (e, text, ctx) => {
   if (!pl) return { handled: false };
   if (pl.steps && !["stop", "pause", "resume"].includes(pl.steps[0].kind) && !(await askControl())) return { handled: true, reply: "Desktop control is off — allow it from the tray icon when you want me to work with your apps.", results: [] };
   await appsModule().catch(() => null);
-  const r = await executor.run(t, ctx || {});
-  paused = executor.isPaused(); updateTray();
-  return r;
+  const acting = pl.steps && !["stop", "pause", "resume"].includes(pl.steps[0].kind);
+  if (acting) working().show(t);
+  try {
+    const r = await executor.run(t, ctx || {});
+    paused = executor.isPaused(); updateTray();
+    return r;
+  } finally { if (acting) working().hide(); }
 });
 ipcMain.handle("orb:apps", async (e) => (fromOrb(e) ? executor.apps().catch(() => []) : []));
 ipcMain.handle("orb:open-app", async (e, name) => {
@@ -261,9 +271,12 @@ ipcMain.handle("orb:open-app", async (e, name) => {
   if (executor.isPaused()) return { ok: false, say: "Automation is paused." };
   if (!(await askControl())) return { ok: false, say: "Desktop control is off." };
   await appsModule();
-  const r = await executor.step({ kind: "open_app", app: String(name).slice(0, 80) });
-  log({ action: "open_app", target: name, ok: r.ok, say: r.say });
-  return r;
+  working().show(`Opening ${String(name).slice(0, 80)}`);
+  try {
+    const r = await executor.step({ kind: "open_app", app: String(name).slice(0, 80) });
+    log({ action: "open_app", target: name, ok: r.ok, say: r.say });
+    return r;
+  } finally { working().hide(); }
 });
 ipcMain.on("orb:stop", (e) => { if (fromOrb(e)) { executor.stop(); log({ action: "stop (button)" }); } });
 ipcMain.on("orb:pause", (e, on) => { if (fromOrb(e)) { executor.setPaused(!!on); paused = !!on; updateTray(); send("paused", { paused }); } });
@@ -342,4 +355,4 @@ app.whenReady().then(async () => {
   console.log(`JARVIS orb is running (bottom-right of your screen, icon in the tray). JARVIS: ${settings.url}`);
 }).catch((e) => { dialog.showErrorBox("JARVIS orb couldn't start", String(e?.message || e)); app.quit(); });
 app.on("window-all-closed", () => {});
-app.on("will-quit", () => globalShortcut.unregisterAll());
+app.on("will-quit", () => { globalShortcut.unregisterAll(); workingLabel?.destroy(); });

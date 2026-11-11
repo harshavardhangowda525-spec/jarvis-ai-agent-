@@ -73,6 +73,11 @@ export class Session {
   }
 
   async _runOne(command) {
+    await this.mgr.label.on(command.length > 90 ? `${command.slice(0, 87)}…` : command);
+    try { await this._runCommand(command); } finally { await this.mgr.label.off(); }
+  }
+
+  async _runCommand(command) {
     this.send({ kind: "command", command });
     this.send({ kind: "activity", label: "Understanding command…" });
 

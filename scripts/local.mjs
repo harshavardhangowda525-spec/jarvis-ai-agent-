@@ -16,6 +16,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -23,6 +24,7 @@ import { retireOldUltronProvider, stopPort, probeDatabase, pendingMigrations, re
 import { ensureSecret, searxngAnswers, startDocker } from "./searxng.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const OPERATOR = path.join(ROOT, "operator");
 const EDITH = path.join(ROOT, "edith");
 const win = process.platform === "win32";
 const PORT = Number(process.env.JARVIS_LOCAL_PORT || 3000);
@@ -410,6 +412,22 @@ else if (ultronFirst && !new RegExp(`^${ultronFirst}\\b`, "i").test(String(runni
   else startUltron();
 } else say(`  ULTRON already running on ${running.brain || "its brain"} — using it.`);
 
+// ---- 5b. the JARVIS Operator: the visible browser JARVIS drives (Google Maps lead search for the CRM) ----
+{
+  const portBusy = (port) => new Promise((res) => { const sock = net.connect({ host: "127.0.0.1", port }, () => { sock.destroy(); res(true); }); sock.on("error", () => res(false)); sock.setTimeout(1500, () => { sock.destroy(); res(false); }); });
+  if (process.env.JARVIS_OPERATOR === "off" || !fs.existsSync(path.join(OPERATOR, "run.mjs"))) { /* turned off */ }
+  else if (await portBusy(Number(process.env.OPERATOR_PORT || 7317))) say("  The JARVIS Operator is already running — using it.");
+  else {
+    if (!fs.existsSync(path.join(OPERATOR, "node_modules", "playwright", "package.json"))) {
+      say("  Installing the JARVIS Operator (the browser JARVIS drives) — first time only…");
+      // Playwright drives your installed Google Chrome, so no extra browser download
+      spawnSync("npm install --no-audit --no-fund", { cwd: OPERATOR, stdio: "inherit", shell: true, env: { ...process.env, PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1" } });
+    }
+    if (fs.existsSync(path.join(OPERATOR, "node_modules", "playwright", "package.json"))) start("operator", ["run.mjs"], { cwd: OPERATOR, env: {} });
+    else say("  ! The JARVIS Operator couldn't be installed — Google Maps lead search needs it (see the output above).");
+  }
+}
+
 // ---- 6. the web app (every agent) ------------------------------------------------------------------
 // JARVIS, EV and DARWIN answer with Groq/Gemini. Their keys may be in .env.local
 // or — from when ULTRON ran on Groq — only in edith/.env: hand over whichever exists.
@@ -512,7 +530,8 @@ if (await waitFor(`${local}/login`, 120)) {
     clearTimeout(dwTimer);
     dwTimer = setTimeout(darwinDaily, more ? 5_000 : 5 * 60_000);
   };
-  dwTimer = setTimeout(darwinDaily, 60_000);
+  // DARWIN was retired — JARVIS's CRM runs the daily Google Maps search (crmTick)
+  void darwinDaily; void dwTimer;
   // MIKE: check market alerts and finish open journal setups every 5 minutes (it never trades).
   let mkTicking = false;
   const mikeTick = async () => {
@@ -546,6 +565,17 @@ if (await waitFor(`${local}/login`, 120)) {
       const j = await r.json().catch(() => ({}));
       for (const x of j?.data?.results ?? []) say(x.error ? `  [phone] ${x.error}` : `  [phone] Asked the iPhone to call you (${x.sent} update${x.sent === 1 ? "" : "s"}).`);
     } catch { /* offline — next round */ } finally { phTicking = false; }
+  };
+  // JARVIS CRM: queue the daily Google Maps searches when they're due — every minute
+  let crTicking = false;
+  const crmTick = async () => {
+    if (crTicking) return;
+    crTicking = true;
+    try {
+      const r = await fetch(`${local}/api/cron/prospects`, { headers: { Authorization: `Bearer ${cronSecret}` }, signal: AbortSignal.timeout(60_000) });
+      const j = await r.json().catch(() => ({}));
+      for (const x of j?.data?.results ?? []) say(x.error ? `  [crm] Daily search skipped: ${x.error}` : `  [crm] Daily Google Maps search queued: ${x.queued}.`);
+    } catch { /* offline — next round */ } finally { crTicking = false; }
   };
   // JARVIS's delegated tasks: run what's waiting and pick up any a restart interrupted — every minute
   let jobTicking = false;
@@ -598,6 +628,8 @@ if (await waitFor(`${local}/login`, 120)) {
   setInterval(robinTick, 60_000);
   setTimeout(phoneTick, 50_000);
   setInterval(phoneTick, 60_000);
+  setTimeout(crmTick, 55_000);
+  setInterval(crmTick, 60_000);
   setTimeout(mikeTick, 90_000);
   setInterval(mikeTick, 5 * 60_000);
   setTimeout(evDaily, 120_000);

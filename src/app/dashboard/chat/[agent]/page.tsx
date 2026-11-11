@@ -11,6 +11,7 @@ export function generateMetadata({ params }: { params: { agent: string } }) {
 
 /** Chat with an agent (DARWIN, RUBIN, EV, MIKE). JARVIS keeps its own voice-first console. */
 export default function AgentChatPage({ params }: { params: { agent: string } }) {
+  if (params.agent === "darwin") redirect("/dashboard/crm"); // DARWIN was retired — JARVIS runs the CRM
   if (!isChatAgent(params.agent)) notFound();
   // FRIDAY has its own app (chat + the agentic 3D workspace)
   if (params.agent === "friday") redirect("/dashboard/friday");

@@ -1,10 +1,9 @@
-import { Suspense } from "react";
-import { CrmPage } from "@/components/crm/crm-page";
+import { JarvisCrm } from "@/components/prospects/jarvis-crm";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "DARWIN CRM — JARVIS" };
+export const metadata = { title: "CRM — JARVIS" };
 
-/** DARWIN's CRM — the one CRM (RUBEN's "Open CRM" shows the same screen). */
-export default function DarwinCrmPage() {
-  return <Suspense fallback={<div style={{ height: "calc(100dvh - 4rem)", background: "#F5F7FA" }} />}><CrmPage /></Suspense>;
+/** JARVIS's own CRM. `?lead=<id>` opens that lead. */
+export default function CrmPage({ searchParams }: { searchParams: { lead?: string } }) {
+  return <div style={{ height: "calc(100dvh - 4rem)" }}><JarvisCrm openLead={searchParams.lead ?? null} /></div>;
 }
