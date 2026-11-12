@@ -16,6 +16,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import net from "node:net";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -31,6 +32,9 @@ const EDITH = path.join(ROOT, "edith");
 const win = process.platform === "win32";
 const PORT = Number(process.env.JARVIS_LOCAL_PORT || 3000);
 const BRAIN_PORT = 11500;
+// Smooth mode (default): don't start heavy extras you don't need (Docker for SearXNG, Ollama when the
+// cloud brains cover it), and run the helpers at lower priority so the laptop stays responsive.
+// JARVIS_MODE=full in .env.local (or the environment) starts everything like before.
 const OLLAMA = "http://127.0.0.1:11434";
 
 const say = (...a) => console.log(...a);
@@ -77,6 +81,8 @@ async function waitFor(url, seconds) {
 const children = [];
 function start(name, args, { cwd, env }) {
   const child = spawn(process.execPath, args, { cwd, env: { ...process.env, ...env }, stdio: ["ignore", "pipe", "pipe"] });
+  // the helpers (ULTRON, Claude bridge, brain, operator) run below normal priority, so your apps stay smooth; JARVIS itself stays normal
+  if (name !== "jarvis" && child.pid && SMOOTH) { try { os.setPriority(child.pid, os.constants.priority.PRIORITY_BELOW_NORMAL); } catch { /* not allowed here */ } }
   const tag = `[${name}]`.padEnd(9);
   const pipe = (stream, out) => {
     let buf = "";
@@ -112,6 +118,7 @@ say("\nJARVIS — running everything on this PC\n");
 // Same precedence as Next.js: .env.local wins over .env.
 const envFile = [".env.local", ".env"].map((f) => path.join(ROOT, f)).find((f) => fs.existsSync(f));
 const appEnv = { ...readEnv(path.join(ROOT, ".env")), ...readEnv(path.join(ROOT, ".env.local")) };
+const SMOOTH = String(process.env.JARVIS_MODE || appEnv.JARVIS_MODE || "smooth").toLowerCase() !== "full";
 // ULTRON runs on OpenRouter, then Ollama — a leftover old-default line in edith/.env would keep it elsewhere.
 for (const line of retireOldUltronProvider(path.join(EDITH, ".env"))) {
   say(`  edith/.env had ${line} (the old default) — turned that line off so ULTRON runs on OpenRouter, with this PC's Ollama as backup.`);
@@ -191,7 +198,9 @@ say(searches.length ? `  DARWIN web search: ${searches.join(", ")} ✓` : "  Not
 // your own SearXNG (npm run searxng) on this PC: start it if it isn't running
 const searxUrl = isPlaceholder(appEnv.SEARXNG_URL) ? "" : appEnv.SEARXNG_URL.trim().replace(/\/+$/, "");
 if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(searxUrl) && fs.existsSync(path.join(ROOT, "searxng", "docker-compose.yml"))) {
-  if ((await searxngAnswers(searxUrl, 2500)) !== "ok") {
+  if ((await searxngAnswers(searxUrl, 2500)) !== "ok" && SMOOTH) {
+    say("  Smooth mode: not starting Docker/SearXNG (it uses a lot of memory). Web search uses your other search keys; set JARVIS_MODE=full in .env.local to start it.");
+  } else if ((await searxngAnswers(searxUrl, 2500)) !== "ok") {
     // Docker Desktop installed but closed → open it (waits up to ~90 s; JARVIS starts either way)
     const docked = await startDocker({ waitMs: 90_000, log: say });
     const dockerUp = docked === "running" || docked === "started";
@@ -341,20 +350,23 @@ const brainKey = appEnv.OLLAMA_API_KEY || edithEnv.OLLAMA_API_KEY ||
 const model = process.env.OLLAMA_MODEL || edithEnv.OLLAMA_MODEL || appEnv.OLLAMA_MODEL || "qwen2.5:3b";
 const ultronModel = process.env.ULTRON_OLLAMA_MODEL || edithEnv.ULTRON_OLLAMA_MODEL || appEnv.ULTRON_OLLAMA_MODEL || model;
 let ollamaUp = await up(`${OLLAMA}/api/tags`);
-if (!ollamaUp && (usesOllama(ultronPick) || usesOllama(jarvisPick))) {
+const ollamaNeeded = usesOllama(jarvisPick) || ultronPick[0] === "ollama" || !openrouterKey;
+if (!ollamaUp && SMOOTH && !ollamaNeeded && usesOllama(ultronPick)) say("  Smooth mode: not starting Ollama (ULTRON runs on OpenRouter; Ollama is only its backup). Open the Ollama app yourself if you want the backup.");
+if (!ollamaUp && (usesOllama(ultronPick) || usesOllama(jarvisPick)) && (!SMOOTH || ollamaNeeded)) {
   // The Ollama app normally runs in the background; if it's installed but not running, start it.
   const found = spawnSync(win ? "where ollama" : "command -v ollama", { shell: true, encoding: "utf8" }).status === 0;
   if (found) {
     say("  Starting Ollama…");
     try {
-      const o = spawn("ollama", ["serve"], { detached: true, stdio: "ignore", windowsHide: true });
+      // unload a model after 2 idle minutes and keep only one in memory — frees RAM between uses
+      const o = spawn("ollama", ["serve"], { detached: true, stdio: "ignore", windowsHide: true, env: { ...process.env, OLLAMA_KEEP_ALIVE: process.env.OLLAMA_KEEP_ALIVE || (SMOOTH ? "2m" : "5m"), OLLAMA_MAX_LOADED_MODELS: process.env.OLLAMA_MAX_LOADED_MODELS || "1" } });
       o.on("error", () => {});
       o.unref();
     } catch { /* not startable */ }
     ollamaUp = await waitFor(`${OLLAMA}/api/tags`, 20);
   }
 }
-if (usesOllama(ultronPick)) {
+if (usesOllama(ultronPick) && (!SMOOTH || ollamaNeeded || ollamaUp)) {
   if (!ollamaUp) {
     say(ultronPick[0] === "ollama" || !openrouterKey
       ? "  ! Ollama isn't running — ULTRON runs on it. Install it from ollama.com (or open the Ollama app), then restart this."

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "local": "node scripts/local.mjs",
+    "clean": "node scripts/clean.mjs",
     "searxng": "node scripts/searxng.mjs",
     "rubin": "node scripts/rubin.mjs",
     "orb": "node scripts/orb.mjs",
