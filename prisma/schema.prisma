@@ -1688,6 +1688,9 @@ model PhoneLink {
   /// "HH:MM" in your timezone; calls wait until quiet hours end. Both empty = off.
   quietFrom    String?
   quietTo      String?
+  /// what JARVIS's Calls window on the laptop last reported (checks, waiting reason, live lines) and when
+  callerStatus Json?
+  callerSeenAt DateTime?
   /// Only things that happen after this moment are called about (no backlog).
   since        DateTime  @default(now())
   lastSeenAt   DateTime?

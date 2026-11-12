@@ -44,6 +44,7 @@ import { darwinMessageTool } from "./darwin/message";
 import { darwinMapTool } from "./darwin/map";
 import { crmFindLeadsTool, crmLeadsTool, crmUpdateTool, crmAddTool, crmPlanCallsTool, callMeTool, computerTaskTool } from "./crm";
 import { callPersonTool, saveContactTool, personalCallsTool } from "./personal";
+import { portalOverviewTool, portalProjectTool, portalReplyTool } from "./portal";
 import { niosTool } from "./nios";
 import { tradingReviewTool } from "./trading";
 import { businessIntelTool } from "./intel";
@@ -112,6 +113,9 @@ const ALL_TOOLS: ToolDefinition[] = [
   callPersonTool as ToolDefinition,
   saveContactTool as ToolDefinition,
   personalCallsTool as ToolDefinition,
+  portalOverviewTool as ToolDefinition,
+  portalProjectTool as ToolDefinition,
+  portalReplyTool as ToolDefinition,
   niosTool as ToolDefinition,
   activityTool as ToolDefinition,
   mikeAnalyzeTool as ToolDefinition,

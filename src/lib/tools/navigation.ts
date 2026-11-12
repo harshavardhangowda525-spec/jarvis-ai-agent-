@@ -20,12 +20,13 @@ const DESTINATIONS = {
   intel: "/dashboard/intel?brief=1",
   trading: "/dashboard/trading",
   crm: "/dashboard/crm",
+  portal: "/dashboard/portal",
   agent_tasks: "/dashboard/jobs",
 } as const;
 
 const schema = z.object({
   destination: z
-    .enum(["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "friday", "demos", "teleprompter", "crm", "agent_tasks", "intel", "trading"])
+    .enum(["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "friday", "demos", "teleprompter", "crm", "portal", "agent_tasks", "intel", "trading"])
     .describe("Which section of the app to open."),
 });
 
@@ -45,7 +46,7 @@ export const navigationTool: ToolDefinition<z.infer<typeof schema>> = {
     properties: {
       destination: {
         type: "string",
-        enum: ["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "friday", "demos", "teleprompter", "crm", "agent_tasks", "intel", "trading"],
+        enum: ["home", "chat", "tasks", "notes", "memory", "settings", "integrations", "mike", "darwin", "rubin", "ev", "aston", "friday", "demos", "teleprompter", "crm", "portal", "agent_tasks", "intel", "trading"],
       },
     },
     required: ["destination"],

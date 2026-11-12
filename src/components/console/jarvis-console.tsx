@@ -1409,6 +1409,7 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/teleprompter"); }} className="rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Teleprompter</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/jobs"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Agent tasks</button>
                 <button onClick={() => { setMenuOpen(false); router.push("/dashboard/crm"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">CRM</button>
+                <button onClick={() => { setMenuOpen(false); router.push("/dashboard/portal"); }} className="col-span-2 rounded-xl px-3 py-2 text-left text-white/80 transition hover:bg-white/[0.06] hover:text-white">Client Portal</button>
                 <span className="col-span-2 mt-2 px-3 text-[10px] uppercase tracking-[0.25em] text-white/35">Agent chats</span>
                 {ACTIVE_CHAT_AGENTS.map((a) => (
                   <button key={a.id} onClick={() => { setMenuOpen(false); router.push(`/dashboard/chat/${a.id}`); }} className="flex items-center gap-2 rounded-xl px-3 py-2 text-left text-white/70 transition hover:bg-white/[0.06] hover:text-white">

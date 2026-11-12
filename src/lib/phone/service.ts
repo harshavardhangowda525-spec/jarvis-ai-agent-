@@ -90,7 +90,7 @@ export interface PhoneSettingsInput {
 }
 
 export async function saveSettings(userId: string, i: PhoneSettingsInput) {
-  const data: Partial<PhoneLink> = {};
+  const data: Partial<Omit<PhoneLink, "callerStatus">> = {};
   if (i.toNumber !== undefined) {
     const n = i.toNumber ? cleanNumber(i.toNumber) : null;
     if (i.toNumber && !n) throw new PhoneError("That doesn't look like a phone number — use digits with your country code, e.g. +919876543210.");

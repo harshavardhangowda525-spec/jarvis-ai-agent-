@@ -204,7 +204,10 @@ export function CallerApp() {
     try { const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Test.", agent: "jarvis" }) }); set({ label: "JARVIS's voice", ok: r.ok, detail: r.ok ? (r.headers.get("X-Voice")?.startsWith("jarvis-local") ? "JARVIS's own voice (on this PC)" : undefined) : r.status === 503 ? "Not installed yet — restart JARVIS with npm run local (it downloads its own voice once)." : `Failed (${r.status}): ${(await r.json().catch(() => null))?.error ?? "no reason given"}` }); }
     catch { set({ label: "JARVIS's voice", ok: false, detail: "Couldn't reach JARVIS." }); }
     try { await ensureEars(); set({ label: "JARVIS hears the call (speakers)", ok: true }); } catch (e) { set({ label: "JARVIS hears the call (speakers)", ok: false, detail: (e as Error).message }); }
-    return list.every((c) => c.ok);
+    // only the essentials stop calling: the calling app is there and open, and JARVIS has a voice.
+    // Anything else (cable, hearing) is a warning: it still calls, and the dashboard says what's off.
+    const essential = (l: string) => /installed|running|open and linked|JARVIS's voice/i.test(l);
+    return list.filter((c) => essential(c.label)).every((c) => c.ok);
   }, [phone, devices, sink, ensureEars]);
 
   // tell JARVIS what this window is doing (checks, waiting reason, live transcript) so the dashboard shows it
@@ -221,7 +224,7 @@ export function CallerApp() {
   useEffect(() => { const t = setInterval(() => setHear(ears.current ? Math.min(1, ears.current.level() * 12) : 0), 150); return () => clearInterval(t); }, []);
 
   const start = useCallback(async () => {
-    if (!(await runChecks())) { setErr("Fix the red items first — JARVIS doesn't call until the setup checks pass."); return; }
+    if (!(await runChecks())) { setErr("JARVIS can't call yet — fix the red items marked essential (the calling app, or JARVIS's voice). It checks again every minute."); return; }
     stop.current = false; setRunning(true); setLines([]);
     const io: CallerIO = {
       api: post,

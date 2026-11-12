@@ -1,4 +1,6 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
+import { getDb } from "@/lib/db";
 
 /**
  * What JARVIS's Calls window on the laptop is doing right now — its setup
@@ -14,12 +16,22 @@ export interface CallerLive {
 const live = new Map<string, CallerLive>();
 const STALE_MS = 90_000;
 
+const saved = new Map<string, number>();
+/** Also kept in the database (every ~15 s), so it can be checked from anywhere. Never throws. */
+async function persist(userId: string, v: CallerLive) {
+  const last = saved.get(userId) ?? 0;
+  if (v.at - last < 15_000 && !v.lines.length) return;
+  saved.set(userId, v.at);
+  await getDb().phoneLink.updateMany({ where: { userId }, data: { callerStatus: v as unknown as Prisma.InputJsonValue, callerSeenAt: new Date(v.at) } }).catch(() => {});
+}
+
 export function setLive(userId: string, s: Omit<CallerLive, "at">, now = Date.now()) {
   live.set(userId, {
     ...s, at: now,
     checks: s.checks.slice(0, 12).map((c) => ({ label: c.label.slice(0, 80), ok: c.ok, detail: c.detail?.slice(0, 240) })),
     lines: s.lines.slice(-40).map((l) => ({ who: l.who, text: l.text.slice(0, 500), at: l.at })),
   });
+  void persist(userId, live.get(userId)!);
 }
 
 /** null when the Calls window hasn't reported in the last 90 seconds (not open / JARVIS not running on the laptop). */
