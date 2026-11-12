@@ -321,7 +321,9 @@ export async function* runAgent(
       yield timing(cfg);
       return;
     } catch (err) {
-      console.error(`[agent] provider ${cfg.provider} failed:`, err);
+      // one short line (the next provider usually answers); no stack trace / headers dump
+      const why = String((err as { status?: number })?.status ?? "") + " " + String((err as Error)?.message ?? err).replace(/\s+/g, " ").slice(0, 160);
+      console.warn(`[agent] ${cfg.provider} (${cfg.model}) skipped: ${why.trim()}${i + 1 < chain.length ? " — trying the next brain" : ""}`);
       const park = parkFor(err);
       if (park) parkedUntil.set(parkKey(cfg), Date.now() + park);
       failures.push(`${label(cfg.provider)}: ${shortReason(err, cfg.timeoutMs)}`);
