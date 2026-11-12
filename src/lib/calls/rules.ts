@@ -168,3 +168,14 @@ export function manualCallSection(manual: string): string {
   const catalogue = grab(/\n### 3\.2 /) .split(/\n### 3\.4 /)[0];
   return [calling, catalogue].filter(Boolean).join("\n\n").slice(0, 12_000);
 }
+
+/**
+ * Speech-to-text "hears" a few stock phrases in ringing, hold music or line noise ("Thank you.", "Obrigado.",
+ * "Thanks for watching!"). On their own they're not the person talking. Pure (tested).
+ */
+const PHANTOM = /^(thank you( (so|very) much)?|thanks( for watching| for listening)?|obrigad[oa]|gracias|merci|danke|you|bye|okay|so|um+|uh+|hmm+|subtitles by.*|please subscribe.*|\.+)[.!?]*$/i;
+export function isPhantomSpeech(text: string, ms: number): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  return PHANTOM.test(t) && ms < 2500;
+}

@@ -286,3 +286,15 @@ d("prospect calls: plan → your approval → call → CRM (integration)", () =>
     expect((await getDb().prospectCall.findUniqueOrThrow({ where: { id: n3.call!.id } })).status).toBe("failed");
   });
 });
+
+describe("phantom speech on the line", () => {
+  it("ignores 'Thank you.' / 'Obrigado.' made up from ringing, keeps real words", async () => {
+    const { isPhantomSpeech } = await import("@/lib/calls/rules");
+    expect(isPhantomSpeech("Thank you.", 900)).toBe(true);
+    expect(isPhantomSpeech("Obrigado.", 1200)).toBe(true);
+    expect(isPhantomSpeech("Thanks for watching!", 1500)).toBe(true);
+    expect(isPhantomSpeech("Thank you, what time is the meeting?", 2000)).toBe(false);
+    expect(isPhantomSpeech("Thank you.", 4000)).toBe(false); // a long, clear "thank you" is real
+    expect(isPhantomSpeech("what's the problem man", 1500)).toBe(false);
+  });
+});

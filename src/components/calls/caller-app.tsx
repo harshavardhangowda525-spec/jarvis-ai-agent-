@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Phone, PhoneOff, CheckCircle2, XCircle, Loader2, Play, Square } from "lucide-react";
 import { runCaller, type CallerIO } from "@/lib/calls/loop";
-import { splitSentences, normLang, type Lang } from "@/lib/calls/rules";
+import { splitSentences, normLang, isPhantomSpeech, type Lang } from "@/lib/calls/rules";
 
 /**
  * JARVIS — Calls. JARVIS's own helper on your Windows laptop (started with
@@ -96,6 +96,8 @@ function makeEars(stream: MediaStream) {
     const j = r ? await r.json().catch(() => null) : null;
     const text = String(j?.data?.text ?? "").replace(/\[[^\]]*\]|\([^)]*\)|♪/g, " ").replace(/\s+/g, " ").trim();
     lastLang = normLang(j?.data?.language);
+    // ringing / line noise that speech-to-text turns into "Thank you." / "Obrigado." isn't the person talking
+    if (isPhantomSpeech(text, performance.now() - start)) return "";
     return text;
   };
   let lastLang: Lang | null = null;
@@ -196,7 +198,7 @@ export function CallerApp() {
     setVia(app);
     set({ label: `${app} installed`, ok: !!pc.installed, detail: pc.installed ? undefined : pc.error ?? `Install ${app} from the Microsoft Store.` });
     set({ label: wa ? "WhatsApp Desktop open and linked" : "Phone Link running, phone connected", ok: !!pc.running,
-      detail: wa ? (pc.running ? "Linked to the spare phone's WhatsApp (not yours — it can't call itself)." : "Open WhatsApp Desktop and link it to the spare phone's WhatsApp (scan the QR code).")
+      detail: wa ? (pc.running ? "Linked to the spare phone's WhatsApp (not yours — it can't call itself). In WhatsApp → Settings → Video & voice, set Microphone to \"CABLE Output\" so you hear JARVIS." : "Open WhatsApp Desktop and link it to the spare phone's WhatsApp (scan the QR code).")
         : pc.running ? "Make sure Calls are set up in Phone Link (Bluetooth)." : "Open Phone Link and connect your Android phone." });
     set({ label: "VB-Audio virtual cable", ok: !!pc.cable, detail: pc.cable ? undefined : "Install VB-CABLE (vb-audio.com/Cable), then restart." });
     const { cable } = await devices();
