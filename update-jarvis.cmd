@@ -5,7 +5,7 @@ cd /d "%~dp0"
 title JARVIS update
 git pull origin claude/jarvis-ai-agent-1h0a1c || goto :fail
 echo.
-echo JARVIS is up to date. Now double-click start-jarvis.cmd (and start-orb.cmd for calls).
+echo JARVIS is up to date. Now double-click start-jarvis.cmd (calls run inside JARVIS - no orb needed).
 goto :end
 :fail
 echo.

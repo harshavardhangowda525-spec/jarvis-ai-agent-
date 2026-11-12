@@ -5,6 +5,7 @@
  * - transformers.js, which runs Meta's MMS Kannada voice (that model downloads on first use)
  * Everything lands in tools/voice (git-ignored). Anything already there is skipped.
  */
+import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -98,4 +99,11 @@ export async function ensureVoice(root, say = console.log) {
     ? `  JARVIS's own voice is ready (English, Hindi${ready.kannada ? ", Kannada" : ""}).`
     : "  ! JARVIS's own voice isn't fully set up — see the messages above. It tries again next time.");
   return ready;
+}
+
+// run on its own: node scripts/voice-setup.mjs (downloads / repairs JARVIS's voice now)
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+  console.log("Setting up JARVIS's own voice…");
+  ensureVoice(root, (m) => console.log(m)).catch((e) => { console.error(`JARVIS's voice couldn't be set up: ${e.message}`); process.exitCode = 1; });
 }
