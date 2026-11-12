@@ -68,18 +68,30 @@ export async function askVision(system: string, text: string, dataUrl: string): 
   try { configs = getVisionConfigs(); } catch { throw new DesktopError("Controlling the screen needs an AI that can see images — add GEMINI_API_KEY (free) in .env.local."); }
   const raw = dataUrl.slice(dataUrl.indexOf(",") + 1);
   const mime = dataUrl.slice(5, dataUrl.indexOf(";")) || "image/jpeg";
-  let last: unknown = null;
+  const failed: string[] = [];
   for (const cfg of configs) {
     try {
       if (cfg.kind === "anthropic") {
         const m = await getAnthropicClient(cfg).messages.create({ model: cfg.model, max_tokens: 400, system, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mime as "image/jpeg", data: raw } }, { type: "text", text }] }] }, { timeout: 30_000, maxRetries: 0 });
         return m.content.map((b) => (b.type === "text" ? b.text : "")).join("");
       }
-      const r = await getOpenAiClient(cfg).chat.completions.create({ model: cfg.model, max_tokens: 400, messages: [{ role: "system", content: system }, { role: "user", content: [{ type: "text", text }, { type: "image_url", image_url: { url: dataUrl } }] }] }, { timeout: 30_000, maxRetries: 0 });
-      return r.choices[0]?.message?.content ?? "";
-    } catch (e) { last = e; console.error(`[desktop] ${cfg.provider} vision failed:`, (e as Error)?.message); }
+      // Gemini "thinks" a long time by default — finding a button on a screenshot needs little of that
+      const gemini = cfg.provider === "gemini";
+      const r = await getOpenAiClient(cfg).chat.completions.create({
+        model: cfg.model, max_tokens: gemini ? 2048 : 600,
+        ...(gemini ? { reasoning_effort: "low" as const } : {}),
+        messages: [{ role: "system", content: system }, { role: "user", content: [{ type: "text", text }, { type: "image_url", image_url: { url: dataUrl } }] }],
+      }, { timeout: gemini ? 60_000 : 40_000, maxRetries: 0 });
+      const out = r.choices[0]?.message?.content ?? "";
+      if (out.trim()) return out;
+      throw new Error("empty answer");
+    } catch (e) {
+      const m = String((e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 140);
+      failed.push(`${cfg.provider}: ${m}`);
+      console.error(`[desktop] ${cfg.provider} vision failed:`, m);
+    }
   }
-  throw last instanceof Error ? last : new DesktopError("The vision AI didn't answer.");
+  throw new DesktopError(`JARVIS couldn't read the screen — every vision AI failed (${failed.join("; ")}). Check GEMINI_API_KEY in .env.local.`);
 }
 
 /** One step: what to do next on this screen. */

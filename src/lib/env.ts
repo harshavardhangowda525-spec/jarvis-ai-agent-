@@ -515,8 +515,8 @@ const VISION_MODEL: Record<string, string> = {
   anthropic: "claude-sonnet-5", // multimodal
   // OpenRouter: only used if the user pointed OPENROUTER_MODEL at a vision model.
   openrouter: "meta-llama/llama-3.2-90b-vision-instruct:free",
-  // Groq's multimodal Llama 4 (the text default can't see images) — a fast backup for screen control
-  groq: "meta-llama/llama-4-scout-17b-16e-instruct",
+  // Groq: only when you name a current Groq vision model (GROQ_VISION_MODEL) — Groq retires vision models often
+  groq: "",
 };
 
 /**
@@ -530,7 +530,8 @@ export function resolveVisionConfigs(): AiConfig[] {
     const base = buildAiConfig(p);
     if (!base) continue;
     // OpenRouter only joins if the user explicitly set a (vision) model.
-    const model = p === "openrouter" ? (env.openrouterModel || VISION_MODEL.openrouter) : VISION_MODEL[p];
+    const model = p === "openrouter" ? (env.openrouterModel || VISION_MODEL.openrouter) : p === "groq" ? (process.env.GROQ_VISION_MODEL || "").trim() : VISION_MODEL[p];
+    if (!model) continue;
     configs.push({ ...base, model });
   }
   return configs;

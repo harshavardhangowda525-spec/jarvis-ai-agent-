@@ -64,3 +64,4 @@ desktop/*/node_modules
 # JARVIS's own voice (Piper + models), downloaded by npm run local
 /tools/voice/
 /tools/calls-audio/
+.env.local.*
