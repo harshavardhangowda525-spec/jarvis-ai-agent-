@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { getDb, isDbConfigured } from "@/lib/db";
-import { phoneBridge, routeDecision, CallsWindow } from "../operator/src/calls/caller.mjs";
+import { phoneBridge, routeDecision, CallsWindow, waDriver } from "../operator/src/calls/caller.mjs";
 
 type Op = (op: string, arg?: string | null) => Promise<Record<string, unknown>>;
 
@@ -38,6 +38,45 @@ describe("JARVIS's calls without the orb: phone controls", () => {
     expect(routeDecision("http://localhost:3000/calls/live?auto=1", link, true)).toEqual({ action: "continue" });
     expect(routeDecision("https://evil.example/api/x", link, false).action).toBe("abort");
     expect(routeDecision("https://evil.example/", link, true).action).toBe("abort");
+  });
+});
+
+describe("WhatsApp calls by sight (Windows can't see inside WhatsApp)", () => {
+  const screenOps = (log: Record<string, unknown>[]) => async (a: Record<string, unknown>) => {
+    log.push(a);
+    if (a.op === "screenshot") return { ok: true, data: "AA==", w: 1366, h: 768, factor: 1.5 };
+    return { ok: true };
+  };
+  it("opens the chat, finds the call button on the screenshot, clicks it (in real pixels), and checks it's calling", async () => {
+    const log: Record<string, unknown>[] = [];
+    const looks: Record<string, unknown>[] = [];
+    let n = 0;
+    const look = async (b: Record<string, unknown>) => {
+      looks.push(b);
+      if (b.find && String(b.find).includes("voice call button")) return { found: true, x: 1300, y: 60, answer: null, note: "phone icon" };
+      if (b.question) return { found: false, x: null, y: null, answer: ++n >= 1, note: "Calling…" };
+      return { found: false, x: null, y: null, answer: null, note: null };
+    };
+    const wa = waDriver({ ops: screenOps(log), look, sleep: async () => {} });
+    expect(await wa.dial("+919980801231")).toEqual({ ok: true });
+    expect(log[0]).toEqual({ op: "wa-open", to: "+919980801231" });
+    expect(log).toContainEqual({ op: "input", kind: "click", x: 1950, y: 90 }); // 1300×1.5, 60×1.5
+    expect(looks.some((l) => l.question)).toBe(true);
+    // the call loop treats "can't tell" as unknown, never as "the call ended"
+    expect((await wa.state()).ok).toBe(false);
+  });
+  it("says plainly when it can't spot the button", async () => {
+    const wa = waDriver({ ops: screenOps([]), look: async () => ({ found: false, x: null, y: null, answer: null, note: "a chat list, no chat open" }), sleep: async () => {} });
+    expect(await wa.dial("+919980801231")).toMatchObject({ ok: false, error: expect.stringMatching(/couldn't spot its voice-call button.*a chat list/) });
+  });
+  it("the bridge sends WhatsApp calls to it, Phone Link calls to the hands", async () => {
+    const seen: string[] = [];
+    const wa = { dial: async () => { seen.push("wa.dial"); return { ok: true }; }, state: async () => ({ ok: false }), hangup: async () => { seen.push("wa.hangup"); return { ok: true }; } };
+    let via = "whatsapp";
+    const op = phoneBridge({ platform: "win32", via: () => via, wa, runPs: async (a: Record<string, unknown>) => { seen.push(String(a.op)); return { ok: true }; } });
+    await op("dial", "+919980801231"); await op("hangup"); await op("check");
+    via = "phonelink"; await op("dial", "+919980801231");
+    expect(seen).toEqual(["wa.dial", "wa.hangup", "phone-check", "phone-dial"]);
   });
 });
 

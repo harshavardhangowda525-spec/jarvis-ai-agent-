@@ -28,3 +28,13 @@ describe("Client Portal (pure)", () => {
       .toEqual({ action: "Client message — FitZone Gym · FitZone website", result: "Ravi: can we change the colour?" });
   });
 });
+
+describe("looking at the screen (pure)", () => {
+  it("turns the vision AI's box (0–1000) into screenshot pixels, or takes plain x/y", async () => {
+    const { parseLook } = await import("@/lib/desktop/look");
+    expect(parseLook('{"found":true,"box":[40,940,90,980],"note":"phone icon"}', { w: 1366, h: 768 })).toEqual({ found: true, x: 1311, y: 50, answer: null, note: "phone icon" });
+    expect(parseLook('sure {"found":true,"x":100,"y":5000}', { w: 1366, h: 768 })).toMatchObject({ found: true, x: 100, y: 767 });
+    expect(parseLook('{"found":false,"answer":true}', { w: 1366, h: 768 })).toEqual({ found: false, x: null, y: null, answer: true, note: null });
+    expect(parseLook("garbage", { w: 1366, h: 768 }).found).toBe(false);
+  });
+});

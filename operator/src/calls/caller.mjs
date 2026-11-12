@@ -23,10 +23,64 @@ export const CALLS_PROFILE = path.join(ROOT, ".calls-profile");
  */
 
 /**
- * Phone controls for the calling page (Phone Link or WhatsApp Desktop). Pure over `runPs` (tested).
- * @param {{ platform?: string, runPs?: (a: Record<string, unknown>) => Promise<any>, sim?: boolean, via?: () => string }} [o]
+ * WhatsApp calls by sight: Windows can't see inside WhatsApp's window (it's a web page), so JARVIS opens the
+ * chat, takes a screenshot, asks its vision AI where the voice-call button is, and clicks it — like a person.
+ * Pure over `ops` (the laptop's hands) and `look` (the vision AI on JARVIS's server). Tested.
  */
-export function phoneBridge({ platform = process.platform, runPs = runWinPs, sim = false, via = () => "phonelink" } = {}) {
+export function waDriver({ ops, look, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  const shot = async () => {
+    const s = await ops({ op: "screenshot" });
+    return s?.ok && s.data ? { image: `data:image/jpeg;base64,${s.data}`, screen: { w: s.w, h: s.h }, factor: Number(s.factor) || 1 } : { error: s?.error || "no screenshot" };
+  };
+  const click = (p, s) => ops({ op: "input", kind: "click", x: Math.round(p.x * s.factor), y: Math.round(p.y * s.factor) });
+  const CALL_BTN = "the voice call button — a phone handset icon — in the top-right of the open WhatsApp chat's header (NOT the video camera icon)";
+  const CONFIRM = "a button that starts the voice call in a WhatsApp dialog or menu (e.g. 'Voice call', 'Call', 'Start call'), if one is showing";
+  const CALLING = "Is a WhatsApp voice call being placed or in progress on this screen — a 'Calling…' / 'Ringing…' screen, or a call window with a red end-call button?";
+  const END_BTN = "the red end-call (hang up) button of the WhatsApp call";
+  return {
+    async dial(to) {
+      const o = await ops({ op: "wa-open", to });
+      if (!o?.ok) return o;
+      await sleep(2500);
+      let clicked = 0;
+      for (let round = 0; round < 6; round++) {
+        const s = await shot();
+        if (s.error) return { ok: false, error: `I couldn't see the screen: ${s.error}` };
+        if (clicked) {
+          const st = await look({ image: s.image, screen: s.screen, question: CALLING });
+          if (st.answer === true) return { ok: true };
+          const c = await look({ image: s.image, screen: s.screen, find: CONFIRM });
+          if (c.found) { await click(c, s); await sleep(2500); continue; }
+        }
+        if (clicked >= 2) { await sleep(2000); continue; }
+        const f = await look({ image: s.image, screen: s.screen, find: CALL_BTN });
+        if (!f.found) {
+          if (clicked) { await sleep(2000); continue; }
+          return { ok: false, error: `I opened the chat in WhatsApp but couldn't spot its voice-call button on the screen${f.note ? ` (I see: ${f.note})` : ""}. Is this number on WhatsApp?` };
+        }
+        await click(f, s); clicked++;
+        await sleep(3000);
+      }
+      return clicked ? { ok: false, error: "I clicked WhatsApp's call button but no call started." } : { ok: false, error: "I couldn't start the WhatsApp call." };
+    },
+    /** Windows can't see WhatsApp's call screen, so "unknown" — the conversation itself tells when it's over. */
+    async state() { return { ok: false, error: "can't tell" }; },
+    async hangup() {
+      const s = await shot();
+      if (s.error) return { ok: false, error: s.error };
+      const f = await look({ image: s.image, screen: s.screen, find: END_BTN });
+      if (!f.found) return { ok: true, pressed: false };
+      await click(f, s);
+      return { ok: true, pressed: true };
+    },
+  };
+}
+
+/**
+ * Phone controls for the calling page (Phone Link or WhatsApp Desktop). Pure over `runPs` (tested).
+ * @param {{ platform?: string, runPs?: (a: Record<string, unknown>) => Promise<any>, sim?: boolean, via?: () => string, wa?: { dial: (to: string) => Promise<any>, state: () => Promise<any>, hangup: () => Promise<any> } | null }} [o]
+ */
+export function phoneBridge({ platform = process.platform, runPs = runWinPs, sim = false, via = () => "phonelink", wa = null } = {}) {
   let simInCall = false;
   return async (op, arg) => {
     if (sim) {
@@ -40,6 +94,8 @@ export function phoneBridge({ platform = process.platform, runPs = runWinPs, sim
     if (platform !== "win32") return { ok: false, error: "Calls go through Phone Link or WhatsApp Desktop, which run on Windows only." };
     const v = via() === "whatsapp" ? "whatsapp" : "phonelink";
     if (op === "check") return runPs({ op: "phone-check", via: v });
+    if (v === "whatsapp" && wa && op === "state") return wa.state();
+    if (v === "whatsapp" && wa && op === "hangup") return wa.hangup();
     if (op === "state") return runPs({ op: "phone-state", via: v });
     if (op === "hangup") return runPs({ op: "phone-hangup", via: v });
     if (op === "working") return { ok: true }; // the calling window shows what's happening itself
@@ -47,6 +103,7 @@ export function phoneBridge({ platform = process.platform, runPs = runWinPs, sim
       const n = String(arg || "").replace(/[^\d+]/g, "");
       if (!/^\+?\d{8,15}$/.test(n)) return { ok: false, error: "That number isn't dialable." };
       log.info(`[calls] dialling ${n.slice(0, -4).replace(/\d/g, "•")}${n.slice(-4)} (${v === "whatsapp" ? "WhatsApp" : "Phone Link"})`);
+      if (v === "whatsapp" && wa) return wa.dial(n);
       return runPs({ op: "phone-dial", to: n, via: v });
     }
     return { ok: false, error: "Unknown phone action." };
@@ -67,7 +124,8 @@ export function routeDecision(reqUrl, link, isNavigation) {
 export class CallsWindow {
   constructor({ pollMs = 30_000, fetchImpl = fetch, phone = null, launch = launchCallsBrowser } = {}) {
     this.pollMs = pollMs; this.fetch = fetchImpl; this.launch = launch; this.via = "phonelink";
-    this.phone = phone ?? phoneBridge({ runPs: runWinPs, sim: process.env.OPERATOR_CALLS_SIM === "1", via: () => this.via });
+    const wa = waDriver({ ops: runWinPs, look: (b) => this.look(b) });
+    this.phone = phone ?? phoneBridge({ runPs: runWinPs, sim: process.env.OPERATOR_CALLS_SIM === "1", via: () => this.via, wa });
     this.ctx = null; this.page = null; this.timer = null; this.busy = false; this.warned = "";
   }
 
@@ -85,6 +143,18 @@ export class CallsWindow {
     if (r.status === 401) throw new Error("This laptop isn't connected to JARVIS yet — press \"Connect this laptop\" in JARVIS → CRM.");
     if (!r.ok || !j?.ok) throw new Error(j?.error || `JARVIS answered ${r.status}`);
     return j.data;
+  }
+
+  /** Ask JARVIS's vision AI about the screen (laptop key). */
+  async look(body) {
+    const link = readLink();
+    if (!link) return { found: false, answer: null, note: "not connected" };
+    try {
+      const r = await this.fetch(`${link.url}/api/desktop/look`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${link.token}` }, body: JSON.stringify(body), signal: AbortSignal.timeout(40_000) });
+      const j = await r.json().catch(() => null);
+      if (!r.ok || !j?.ok) { log.warn(`[calls] look failed: ${j?.error ?? r.status}`); return { found: false, answer: null, note: j?.error ?? `JARVIS answered ${r.status}` }; }
+      return j.data;
+    } catch (e) { return { found: false, answer: null, note: e.message }; }
   }
 
   isOpen() { return !!this.page && !this.page.isClosed(); }

@@ -61,9 +61,9 @@ export async function recentTasks(userId: string) {
   return db().desktopTask.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 10 });
 }
 
-type AskVision = (system: string, text: string, dataUrl: string) => Promise<string>;
+export type AskVision = (system: string, text: string, dataUrl: string) => Promise<string>;
 
-async function askVision(system: string, text: string, dataUrl: string): Promise<string> {
+export async function askVision(system: string, text: string, dataUrl: string): Promise<string> {
   let configs;
   try { configs = getVisionConfigs(); } catch { throw new DesktopError("Controlling the screen needs an AI that can see images — add GEMINI_API_KEY (free) in .env.local."); }
   const raw = dataUrl.slice(dataUrl.indexOf(",") + 1);

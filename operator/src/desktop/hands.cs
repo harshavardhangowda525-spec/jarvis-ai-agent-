@@ -314,6 +314,7 @@ public static class Hands {
     if (op == "input") return Input(a);
     if (op == "uia") return Uia();
     if (op == "open-app") return OpenApp(S(a, "app"));
+    if (op == "wa-open") return WaOpen(S(a, "to"));
     if (op.StartsWith("phone-")) return Phone(op, S(a, "via") == "whatsapp", S(a, "to"));
     return Err("unknown action " + op);
   }
@@ -431,6 +432,21 @@ public static class Hands {
   }
 
   // ---- calls: Phone Link or WhatsApp Desktop ----
+  /** Open the chat with this number in WhatsApp Desktop, maximised and in front (JARVIS then finds the call button on the screen). */
+  static object WaOpen(string to) {
+    string digits = Regex.Replace(to ?? "", "[^0-9]", "");
+    if (digits.Length == 10) digits = "91" + digits;
+    if (!Regex.IsMatch(digits, "^[0-9]{10,15}$")) return Err("That number is not dialable.");
+    Process.Start("whatsapp://send?phone=" + digits);
+    for (int i = 0; i < 20; i++) {
+      Thread.Sleep(400);
+      Process p = null;
+      foreach (string n in new string[] { "WhatsApp", "WhatsApp.Root" }) foreach (Process x in Process.GetProcessesByName(n)) { try { if (x.MainWindowHandle != IntPtr.Zero) p = x; } catch (Exception) { } }
+      if (p != null) { ShowWindow(p.MainWindowHandle, 3); Thread.Sleep(300); bool f = Front(p); Dictionary<string, object> d = Ok(); d["front"] = f; return d; }
+    }
+    return Err("WhatsApp Desktop did not open. Install it from the Microsoft Store and link it to the spare phone's WhatsApp.");
+  }
+
   static bool HasCable() {
     foreach (string kind in new string[] { "Render", "Capture" }) {
       using (RegistryKey root = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\" + kind)) {
