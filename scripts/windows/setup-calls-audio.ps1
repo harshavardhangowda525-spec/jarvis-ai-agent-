@@ -73,7 +73,8 @@ if ($waApp -and -not (Get-Process -Name WhatsApp, WhatsApp.Root -ErrorAction Sil
   Start-Process 'explorer.exe' "shell:AppsFolder\$($waApp.PackageFamilyName)!App"
   Start-Sleep -Seconds 8
 }
-foreach ($p in @('PhoneExperienceHost.exe', 'YourPhone.exe', 'WhatsApp.exe', 'WhatsApp.Root.exe')) {
+# the new WhatsApp records sound through Microsoft Edge WebView2 (msedgewebview2.exe), so that gets the cable too
+foreach ($p in @('PhoneExperienceHost.exe', 'YourPhone.exe', 'WhatsApp.exe', 'WhatsApp.Root.exe', 'msedgewebview2.exe')) {
   & $svv /SetAppDefault $cableMic all $p | Out-Null
 }
 Start-Sleep -Seconds 1
