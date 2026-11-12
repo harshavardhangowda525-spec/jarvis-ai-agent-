@@ -15,7 +15,7 @@ describe("laptop control in JARVIS's helper (no orb): the on-screen bar", () => 
     const stdout = new PassThrough();
     const proc = Object.assign(new EventEmitter(), { stdout, stderr: new PassThrough(), stdin: { write: (l: string) => written.push(l) }, exitCode: null });
     const onStop = vi.fn();
-    const o = createOverlay({ onStop, platform: "win32", spawnImpl: (() => proc) as never });
+    const o = createOverlay({ onStop, platform: "win32", spawnImpl: (() => proc) as never, build: () => "jarvis-hands.exe" });
     const answer = o.ask("Send this email?", "JARVIS wants to click Send.");
     expect(written.at(-1)).toBe("ask\tq1\tSend this email?\tJARVIS wants to click Send.\n");
     stdout.write("ready\nanswer\tq1\tyes\n");
@@ -34,6 +34,14 @@ describe("laptop control in JARVIS's helper (no orb): the on-screen bar", () => 
     const bad = o.shot();
     stdout.write("shoterr\ts4\tAccess denied\n");
     expect(await bad).toEqual({ ok: false, error: "Access denied" });
+    // every Windows action goes to the same hands program and comes back by id
+    const r = o.op({ op: "input", kind: "type", text: "hi\tthere" });
+    expect(written.at(-1)).toBe('op\to5\t{"op":"input","kind":"type","text":"hi\\tthere"}\n');
+    stdout.write('res\to5\t{"ok":true}\n');
+    expect(await r).toEqual({ ok: true });
+    // can't build the hands → a clear reason, not silence
+    const nb = createOverlay({ platform: "win32", spawnImpl: (() => proc) as never, build: () => { throw new Error("csc.exe not found"); } });
+    expect(await nb.op({ op: "screenshot" })).toEqual({ ok: false, error: "JARVIS couldn't build its hands on this PC: csc.exe not found" });
   });
 });
 

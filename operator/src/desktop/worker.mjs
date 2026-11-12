@@ -1,14 +1,16 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawn, execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { spawn, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { log } from "../log.mjs";
 import { readLink } from "../maps/finder.mjs";
 import { createComputer } from "./computer.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-export const WIN_PS = path.join(__dirname, "win.ps1");
-const OVERLAY_PS = path.join(__dirname, "overlay.ps1");
+const HANDS_CS = path.join(__dirname, "hands.cs");
+const HANDS_DIR = path.resolve(__dirname, "../../.hands");
 
 /**
  * JARVIS working on your laptop (no orb): asks JARVIS for laptop jobs ("open
@@ -17,36 +19,50 @@ const OVERLAY_PS = path.join(__dirname, "overlay.ps1");
  * clicks, and a Yes / No question before anything risky.
  */
 
-/** One fixed Windows operation (win.ps1; the action goes in as data, never as script text). */
-export function runWinPs(a) {
-  return new Promise((resolve) => {
-    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", WIN_PS],
-      { env: { ...process.env, JARVIS_ORB_ARGS: JSON.stringify(a) }, timeout: 45_000, windowsHide: true, maxBuffer: 32 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        const out = String(stdout || "").trim().replace(/^\uFEFF/, "");
-        const why = () => {
-          const e = String(stderr || "").trim().split(/\r?\n/).filter(Boolean).slice(0, 3).join(" ").slice(0, 300);
-          return e || err?.message?.slice(0, 200) || (out ? `unexpected answer: ${out.slice(0, 120)}` : `PowerShell gave no answer (exit ${err?.code ?? 0})`);
-        };
-        let v = null;
-        try { v = JSON.parse(out.split(/\r?\n/).pop() || "null"); } catch { v = null; }
-        if (v === null || typeof v !== "object") { log.warn(`[desktop] Windows op ${a.op} failed: ${why()}`); resolve({ ok: false, error: why() }); }
-        else resolve(v);
-      });
-  });
+/**
+ * JARVIS's hands on Windows: hands.cs, built on this PC with Windows' own C#
+ * compiler (csc.exe from .NET Framework 4, part of Windows) the first time —
+ * and again only when the code changes. Antivirus software blocks a
+ * PowerShell script that clicks, types and reads the screen, so this is a
+ * normal small program instead (and much faster: it stays running).
+ */
+export function buildHands({ platform = process.platform, exec = execFileSync, env = process.env } = {}) {
+  if (platform !== "win32") return null;
+  const hash = createHash("sha1").update(fs.readFileSync(HANDS_CS)).digest("hex").slice(0, 10);
+  const exe = path.join(HANDS_DIR, `jarvis-hands-${hash}.exe`);
+  if (fs.existsSync(exe)) return exe;
+  fs.mkdirSync(HANDS_DIR, { recursive: true });
+  const win = env.WINDIR || env.SystemRoot || "C:\\Windows";
+  const fw = ["Framework64", "Framework"].map((f) => path.join(win, "Microsoft.NET", f, "v4.0.30319")).find((d) => fs.existsSync(path.join(d, "csc.exe")));
+  if (!fw) throw new Error("Windows' C# compiler (csc.exe, part of .NET Framework 4) wasn't found on this PC.");
+  const csc = path.join(fw, "csc.exe");
+  const base = ["/nologo", "/target:winexe", "/optimize+", `/out:${exe}`, "/r:System.Windows.Forms.dll", "/r:System.Drawing.dll"];
+  const uia = ["/define:UIA", ...["UIAutomationClient.dll", "UIAutomationTypes.dll", "WindowsBase.dll"].map((d) => `/r:${path.join(fw, "WPF", d)}`)];
+  log.info("[hands] building JARVIS's hands for this PC (once)…");
+  try { exec(csc, [...base, ...uia, HANDS_CS], { windowsHide: true, stdio: "pipe" }); }
+  catch (e) {
+    log.warn(`[hands] couldn't build with screen reading (${String(e.stdout || e.message).replace(/\s+/g, " ").slice(0, 500)}) — building without it`);
+    exec(csc, [...base, HANDS_CS], { windowsHide: true, stdio: "pipe" });
+  }
+  for (const f of fs.readdirSync(HANDS_DIR)) if (f !== path.basename(exe) && f.endsWith(".exe")) { try { fs.rmSync(path.join(HANDS_DIR, f)); } catch { /* in use */ } }
+  log.info("[hands] ready.");
+  return exe;
 }
 
 /** Overlay commands are one line each, tab separated: text can't break out of its field. Pure (tested). */
 export const overlayLine = (...parts) => parts.map((p) => String(p ?? "").replace(/[\t\r\n]+/g, " ").slice(0, 300)).join("\t") + "\n";
 
 /** The "JARVIS is working" frame + bar (Windows). Elsewhere: quiet no-ops, and risky steps are refused. */
-export function createOverlay({ onStop = () => {}, platform = process.platform, spawnImpl = spawn } = {}) {
-  let p = null, buf = "", n = 0;
-  const waiting = new Map(), shots = new Map();
+export function createOverlay({ onStop = () => {}, platform = process.platform, spawnImpl = spawn, build = buildHands } = {}) {
+  let p = null, buf = "", n = 0, broken = null;
+  const waiting = new Map(), shots = new Map(), ops = new Map();
   const start = () => {
     if (platform !== "win32") return null;
     if (p && p.exitCode === null) return p;
-    p = spawnImpl("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", OVERLAY_PS], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    let exe;
+    try { exe = build(); broken = null; } catch (e) { broken = `JARVIS couldn't build its hands on this PC: ${String(e.stdout || e.message).replace(/\s+/g, " ").slice(0, 300)}`; log.warn(`[hands] ${broken}`); return null; }
+    p = spawnImpl(exe, [], { windowsHide: true, stdio: ["pipe", "pipe", "pipe"] });
+    p.on("error", (e) => { broken = `JARVIS's hands didn't start: ${e.message}`; log.warn(`[hands] ${broken}`); });
     p.stdout.setEncoding("utf8");
     p.stdout.on("data", (d) => {
       buf += d;
@@ -56,14 +72,19 @@ export function createOverlay({ onStop = () => {}, platform = process.platform, 
         const [ev, id, ans] = parts;
         if (ev === "stop") onStop?.();
         if (ev === "answer" && waiting.has(id)) { waiting.get(id)(ans === "yes"); waiting.delete(id); }
+        if (ev === "res" && ops.has(id)) {
+          const r = ops.get(id); ops.delete(id);
+          let v; try { v = JSON.parse(parts.slice(2).join("\t")); } catch { v = { ok: false, error: "garbled answer from JARVIS's hands" }; }
+          r(v);
+        }
         if ((ev === "shot" || ev === "shoterr") && shots.has(id)) {
           const r = shots.get(id); shots.delete(id);
           r(ev === "shot" ? { ok: true, data: parts[5], w: Number(parts[2]), h: Number(parts[3]), factor: Number(parts[4]) } : { ok: false, error: parts[2] || "screenshot failed" });
         }
       }
     });
-    p.stderr.on("data", (d) => log.warn(`[desktop] overlay: ${String(d).trim().slice(0, 200)}`));
-    p.on("exit", () => { p = null; for (const r of waiting.values()) r(false); waiting.clear(); for (const r of shots.values()) r({ ok: false, error: "the overlay closed" }); shots.clear(); });
+    p.stderr.on("data", (d) => log.warn(`[hands] ${String(d).trim().slice(0, 200)}`));
+    p.on("exit", () => { p = null; for (const r of waiting.values()) r(false); waiting.clear(); for (const r of shots.values()) r({ ok: false, error: "the overlay closed" }); shots.clear(); for (const r of ops.values()) r({ ok: false, error: "JARVIS's hands closed" }); ops.clear(); });
     return p;
   };
   const send = (...parts) => { const q = start(); if (q) q.stdin.write(overlayLine(...parts)); };
@@ -79,6 +100,14 @@ export function createOverlay({ onStop = () => {}, platform = process.platform, 
       waiting.set(id, (v) => { clearTimeout(t); resolve(v); });
       send("ask", id, question, detail || "");
     }),
+    /** One action (screenshot, input, uia, open-app, phone-…): the answer, or why not. */
+    op: (a) => new Promise((resolve) => {
+      if (!start()) return resolve({ ok: false, error: broken || "Laptop control works on Windows only." });
+      const id = `o${++n}`;
+      const t = setTimeout(() => { if (ops.has(id)) { ops.delete(id); resolve({ ok: false, error: `JARVIS's hands didn't answer (${a.op})` }); } }, a.op === "phone-dial" ? 30_000 : 20_000);
+      ops.set(id, (v) => { clearTimeout(t); resolve(v); });
+      try { p.stdin.write(`op\t${id}\t${JSON.stringify(a)}\n`); } catch (e) { ops.delete(id); clearTimeout(t); resolve({ ok: false, error: e.message }); }
+    }),
     /** A screenshot taken by the overlay process (fast; no PowerShell start-up each step). */
     shot: () => new Promise((resolve) => {
       if (!start()) return resolve({ ok: false, error: "not on Windows" });
@@ -91,10 +120,19 @@ export function createOverlay({ onStop = () => {}, platform = process.platform, 
   };
 }
 
+// one hands process for everything on this laptop (laptop control and calls)
+let shared = null;
+const stopHandlers = new Set();
+export function hands() { return (shared ??= createOverlay({ onStop: () => { for (const f of stopHandlers) f(); } })); }
+export const onHandsStop = (f) => { stopHandlers.add(f); };
+/** A Windows action, done by JARVIS's hands (kept under this name for the callers). */
+export const runWinPs = (a) => hands().op(a);
+
 export class DesktopWorker {
   constructor({ pollMs = 3000, fetchImpl = fetch, ps = runWinPs, overlay = null, platform = process.platform } = {}) {
     this.pollMs = pollMs; this.fetch = fetchImpl; this.ps = ps; this.platform = platform; this.timer = null; this.busy = false; this.warned = "";
-    this.overlay = overlay ?? createOverlay({ onStop: () => this.stop(), platform });
+    this.overlay = overlay ?? hands();
+    if (!overlay) onHandsStop(() => this.stop());
     this.computer = createComputer({
       capture: () => this.capture(),
       elements: (f) => this.elements(f),
@@ -130,13 +168,8 @@ export class DesktopWorker {
   }
 
   async capture() {
-    // the overlay process first (fast), PowerShell as the backup
-    let r = this.overlay.shot ? await this.overlay.shot().catch((e) => ({ ok: false, error: e.message })) : { ok: false, error: "no overlay" };
-    if (!r?.ok || !r.data) {
-      const first = r?.error;
-      r = await this.ps({ op: "screenshot" });
-      if (!r?.ok || !r.data) return { ok: false, error: `${r?.error || "no screenshot"}${first ? ` (overlay: ${first})` : ""}` };
-    }
+    const r = await this.ps({ op: "screenshot" });
+    if (!r?.ok || !r.data) return { ok: false, error: r?.error || "no screenshot" };
     return { ok: true, dataUrl: `data:image/jpeg;base64,${r.data}`, w: r.w, h: r.h, factor: Number(r.factor) || 1 };
   }
 

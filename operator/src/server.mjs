@@ -33,6 +33,15 @@ export function startServer({ port, session, mgr }) {
   const clients = new Set();
 
   const wss = new WebSocketServer({ host: "127.0.0.1", port });
+  // an old copy of this helper still running (e.g. from before an update) would keep doing the work with old code
+  wss.on("error", (e) => {
+    if (e.code === "EADDRINUSE") {
+      log.warn(`An older JARVIS helper is still running (port ${port} is taken), so this updated one can't start.`);
+      log.warn("Close everything and start again:  taskkill /F /IM node.exe   then  start-jarvis.cmd");
+      process.exit(1);
+    }
+    log.error(e);
+  });
 
   // Session broadcasts every event to all paired clients.
   session.send = (event) => {
