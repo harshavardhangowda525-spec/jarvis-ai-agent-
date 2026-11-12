@@ -34,7 +34,9 @@ export function spokenUpdate(e: { kind: string; text: string }): string {
 }
 
 /** The first thing JARVIS says when you pick up. Pure (tested). */
-export function ownerOpener(events: { kind: string; text: string }[]): string {
+export function ownerOpener(all: { kind: string; text: string }[]): string {
+  // the same update twice (two "call me"s while waiting) is said once
+  const events = all.filter((e, i) => all.findIndex((x) => spokenUpdate(x) === spokenUpdate(e)) === i);
   const items = events.slice(0, 5).map(spokenUpdate);
   const more = events.length > 5 ? ` And ${events.length - 5} more.` : "";
   const head = events.length === 1 ? "Hi, it's JARVIS with an update." : `Hi, it's JARVIS with ${events.length} updates.`;

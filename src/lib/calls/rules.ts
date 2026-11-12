@@ -177,5 +177,7 @@ const PHANTOM = /^(thank you( (so|very) much)?|thanks( for watching| for listeni
 export function isPhantomSpeech(text: string, ms: number): boolean {
   const t = text.trim();
   if (!t) return true;
-  return PHANTOM.test(t) && ms < 2500;
+  // foreign one-word "thanks" on an English/Hindi/Kannada line is always noise; English stock phrases only when short
+  if (/^(obrigad[oa]|gracias|merci|danke|grazie|arigato|spasibo)[.!?]*$/i.test(t)) return true;
+  return PHANTOM.test(t) && ms < 3500;
 }

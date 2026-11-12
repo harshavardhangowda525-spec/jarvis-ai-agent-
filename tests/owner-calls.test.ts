@@ -103,3 +103,10 @@ d("'JARVIS, call me' (integration)", () => {
     await getDb().user.delete({ where: { id: other } });
   });
 });
+
+describe("the opening line", () => {
+  it("says the same update once", () => {
+    const e = { kind: "test", text: "You asked me to call you - test call" };
+    expect(ownerOpener([e, e])).toBe("Hi, it's JARVIS with an update. You asked me to call you about: test call.");
+  });
+});
