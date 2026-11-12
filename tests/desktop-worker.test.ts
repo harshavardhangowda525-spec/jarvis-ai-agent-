@@ -26,6 +26,14 @@ describe("laptop control in JARVIS's helper (no orb): the on-screen bar", () => 
     await new Promise((r) => setTimeout(r, 5));
     expect(onStop).toHaveBeenCalledOnce();
     expect(await createOverlay({ platform: "linux" }).ask("Pay?", "")).toBe(false);
+    // screenshots come from the overlay process (fast), with a clear error when it can't
+    const shot = o.shot();
+    expect(written.at(-1)).toBe("shot\ts3\n");
+    stdout.write("shot\ts3\t1366\t768\t1.5\tAAAA\n");
+    expect(await shot).toEqual({ ok: true, data: "AAAA", w: 1366, h: 768, factor: 1.5 });
+    const bad = o.shot();
+    stdout.write("shoterr\ts4\tAccess denied\n");
+    expect(await bad).toEqual({ ok: false, error: "Access denied" });
   });
 });
 

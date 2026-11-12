@@ -23,9 +23,15 @@ export function runWinPs(a) {
     execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", WIN_PS],
       { env: { ...process.env, JARVIS_ORB_ARGS: JSON.stringify(a) }, timeout: 45_000, windowsHide: true, maxBuffer: 32 * 1024 * 1024 },
       (err, stdout, stderr) => {
-        const out = String(stdout || "").trim().replace(/^﻿/, "");
-        try { resolve(JSON.parse(out.split(/\r?\n/).pop() || "null") ?? { ok: false, error: "Windows didn't answer." }); }
-        catch { resolve({ ok: false, error: String(stderr || err?.message || "Windows didn't answer").trim().slice(0, 200) }); }
+        const out = String(stdout || "").trim().replace(/^\uFEFF/, "");
+        const why = () => {
+          const e = String(stderr || "").trim().split(/\r?\n/).filter(Boolean).slice(0, 3).join(" ").slice(0, 300);
+          return e || err?.message?.slice(0, 200) || (out ? `unexpected answer: ${out.slice(0, 120)}` : `PowerShell gave no answer (exit ${err?.code ?? 0})`);
+        };
+        let v = null;
+        try { v = JSON.parse(out.split(/\r?\n/).pop() || "null"); } catch { v = null; }
+        if (v === null || typeof v !== "object") { log.warn(`[desktop] Windows op ${a.op} failed: ${why()}`); resolve({ ok: false, error: why() }); }
+        else resolve(v);
       });
   });
 }
@@ -36,7 +42,7 @@ export const overlayLine = (...parts) => parts.map((p) => String(p ?? "").replac
 /** The "JARVIS is working" frame + bar (Windows). Elsewhere: quiet no-ops, and risky steps are refused. */
 export function createOverlay({ onStop = () => {}, platform = process.platform, spawnImpl = spawn } = {}) {
   let p = null, buf = "", n = 0;
-  const waiting = new Map();
+  const waiting = new Map(), shots = new Map();
   const start = () => {
     if (platform !== "win32") return null;
     if (p && p.exitCode === null) return p;
@@ -46,13 +52,18 @@ export function createOverlay({ onStop = () => {}, platform = process.platform, 
       buf += d;
       let i;
       while ((i = buf.indexOf("\n")) >= 0) {
-        const [ev, id, ans] = buf.slice(0, i).trim().split("\t"); buf = buf.slice(i + 1);
+        const parts = buf.slice(0, i).trim().split("\t"); buf = buf.slice(i + 1);
+        const [ev, id, ans] = parts;
         if (ev === "stop") onStop?.();
         if (ev === "answer" && waiting.has(id)) { waiting.get(id)(ans === "yes"); waiting.delete(id); }
+        if ((ev === "shot" || ev === "shoterr") && shots.has(id)) {
+          const r = shots.get(id); shots.delete(id);
+          r(ev === "shot" ? { ok: true, data: parts[5], w: Number(parts[2]), h: Number(parts[3]), factor: Number(parts[4]) } : { ok: false, error: parts[2] || "screenshot failed" });
+        }
       }
     });
     p.stderr.on("data", (d) => log.warn(`[desktop] overlay: ${String(d).trim().slice(0, 200)}`));
-    p.on("exit", () => { p = null; for (const r of waiting.values()) r(false); waiting.clear(); });
+    p.on("exit", () => { p = null; for (const r of waiting.values()) r(false); waiting.clear(); for (const r of shots.values()) r({ ok: false, error: "the overlay closed" }); shots.clear(); });
     return p;
   };
   const send = (...parts) => { const q = start(); if (q) q.stdin.write(overlayLine(...parts)); };
@@ -67,6 +78,14 @@ export function createOverlay({ onStop = () => {}, platform = process.platform, 
       const t = setTimeout(() => { if (waiting.has(id)) { waiting.delete(id); send("hide"); resolve(false); } }, 120_000);
       waiting.set(id, (v) => { clearTimeout(t); resolve(v); });
       send("ask", id, question, detail || "");
+    }),
+    /** A screenshot taken by the overlay process (fast; no PowerShell start-up each step). */
+    shot: () => new Promise((resolve) => {
+      if (!start()) return resolve({ ok: false, error: "not on Windows" });
+      const id = `s${++n}`;
+      const t = setTimeout(() => { if (shots.has(id)) { shots.delete(id); resolve({ ok: false, error: "the overlay didn't send a screenshot within 15 s" }); } }, 15_000);
+      shots.set(id, (v) => { clearTimeout(t); resolve(v); });
+      send("shot", id);
     }),
     close: () => { if (p) { try { p.stdin.write("exit\n"); } catch { /* gone */ } } },
   };
@@ -111,8 +130,13 @@ export class DesktopWorker {
   }
 
   async capture() {
-    const r = await this.ps({ op: "screenshot" });
-    if (!r?.ok || !r.data) return { ok: false, error: r?.error || "no screenshot" };
+    // the overlay process first (fast), PowerShell as the backup
+    let r = this.overlay.shot ? await this.overlay.shot().catch((e) => ({ ok: false, error: e.message })) : { ok: false, error: "no overlay" };
+    if (!r?.ok || !r.data) {
+      const first = r?.error;
+      r = await this.ps({ op: "screenshot" });
+      if (!r?.ok || !r.data) return { ok: false, error: `${r?.error || "no screenshot"}${first ? ` (overlay: ${first})` : ""}` };
+    }
     return { ok: true, dataUrl: `data:image/jpeg;base64,${r.data}`, w: r.w, h: r.h, factor: Number(r.factor) || 1 };
   }
 

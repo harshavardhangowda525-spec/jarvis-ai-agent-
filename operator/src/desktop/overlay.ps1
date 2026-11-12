@@ -3,8 +3,8 @@
 # is doing with a Stop button, a ripple wherever it clicks, and Yes / No questions before risky steps.
 # Everything fades in and out. Stop also works with Ctrl+Alt+Backspace from anywhere.
 # Commands arrive on stdin, one per line, tab separated (fixed commands; text is only ever shown):
-#   show<TAB>text | hide | ripple<TAB>x<TAB>y | ask<TAB>id<TAB>question<TAB>detail | exit
-# Events go to stdout: ready | stop | answer<TAB>id<TAB>yes|no
+#   show<TAB>text | hide | ripple<TAB>x<TAB>y | ask<TAB>id<TAB>question<TAB>detail | shot<TAB>id | exit
+# Events go to stdout: ready | stop | answer<TAB>id<TAB>yes|no | shot<TAB>id<TAB>w<TAB>h<TAB>factor<TAB>base64-jpeg | shoterr<TAB>id<TAB>why
 $ErrorActionPreference = 'Stop'
 [Console]::InputEncoding = [Text.Encoding]::UTF8
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -12,6 +12,8 @@ $src = @"
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -133,12 +135,36 @@ public static class JvOverlay {
     if (vis) { pill.Opacity = Math.Min(0.97, level); pill.Dot.Visible = (tick / 12) % 2 == 0; pill.TopMost = true; }
   }
 
+  /** What's on the screen (real pixels), shrunk for the AI: a JPEG at most 1366 wide. */
+  static void Shot(string id) {
+    try {
+      Rectangle b = Screen.PrimaryScreen.Bounds;
+      using (Bitmap full = new Bitmap(b.Width, b.Height)) {
+        using (Graphics g = Graphics.FromImage(full)) g.CopyFromScreen(b.X, b.Y, 0, 0, full.Size);
+        int w = Math.Min(1366, b.Width); int h = (int)Math.Round((double)b.Height * w / b.Width);
+        using (Bitmap img = new Bitmap(w, h)) {
+          using (Graphics g2 = Graphics.FromImage(img)) { g2.InterpolationMode = InterpolationMode.HighQualityBicubic; g2.DrawImage(full, 0, 0, w, h); }
+          ImageCodecInfo enc = null;
+          foreach (ImageCodecInfo c in ImageCodecInfo.GetImageEncoders()) if (c.MimeType == "image/jpeg") enc = c;
+          EncoderParameters ps = new EncoderParameters(1);
+          ps.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 72L);
+          using (MemoryStream ms = new MemoryStream()) {
+            img.Save(ms, enc, ps);
+            string f = ((double)b.Width / w).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Emit("shot\t" + id + "\t" + w + "\t" + h + "\t" + f + "\t" + Convert.ToBase64String(ms.ToArray()));
+          }
+        }
+      }
+    } catch (Exception ex) { Emit("shoterr\t" + id + "\t" + ex.Message.Replace("\t", " ").Replace("\r", " ").Replace("\n", " ")); }
+  }
+
   static void Read() {
     string line;
     while ((line = Console.In.ReadLine()) != null) {
       string[] p = line.Split('\t');
       string cmd = p[0];
       if (cmd == "exit") break;
+      if (cmd == "shot") { Shot(p.Length > 1 ? p[1] : "s"); continue; }
       pill.BeginInvoke((MethodInvoker)delegate { Handle(cmd, p); });
     }
     pill.BeginInvoke((MethodInvoker)delegate { Application.Exit(); });
