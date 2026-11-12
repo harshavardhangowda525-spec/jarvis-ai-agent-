@@ -42,7 +42,7 @@ import { darwinFollowUpTool } from "./darwin/followup";
 import { darwinOutreachTool } from "./darwin/outreach";
 import { darwinMessageTool } from "./darwin/message";
 import { darwinMapTool } from "./darwin/map";
-import { crmFindLeadsTool, crmLeadsTool, crmUpdateTool, crmAddTool, crmPlanCallsTool } from "./crm";
+import { crmFindLeadsTool, crmLeadsTool, crmUpdateTool, crmAddTool, crmPlanCallsTool, callMeTool } from "./crm";
 import { niosTool } from "./nios";
 import { tradingReviewTool } from "./trading";
 import { businessIntelTool } from "./intel";
@@ -106,6 +106,7 @@ const ALL_TOOLS: ToolDefinition[] = [
   crmUpdateTool as ToolDefinition,
   crmAddTool as ToolDefinition,
   crmPlanCallsTool as ToolDefinition,
+  callMeTool as ToolDefinition,
   niosTool as ToolDefinition,
   activityTool as ToolDefinition,
   mikeAnalyzeTool as ToolDefinition,

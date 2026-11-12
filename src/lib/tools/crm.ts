@@ -156,3 +156,29 @@ export const crmPlanCallsTool: ToolDefinition<z.infer<typeof planSchema>> = {
     return { data: { planned: r.calls.map((c) => c.name), skipped: r.skipped.slice(0, 15), note }, summary: r.batchId ? `Planned ${r.calls.length} call${r.calls.length === 1 ? "" : "s"} — approve them in CRM → Calls.` : "No leads can be called right now." };
   },
 };
+
+const callMeSchema = z.object({
+  about: z.string().max(200).optional().describe("Optional: what the call is about, if the user said (e.g. 'today's status')."),
+});
+export const callMeTool: ToolDefinition<z.infer<typeof callMeSchema>> = {
+  name: "call_me",
+  description:
+    "Phone the USER now: 'give me a test call', 'call me', 'ring me', 'call me and tell me the status'. Uses how they set up Phone calls in Settings " +
+    "(through the laptop = JARVIS talks with them on the call; spare Android = WhatsApp message + call; spare iPhone = email + Shortcut call). Never for calling anyone else.",
+  schema: callMeSchema,
+  inputSchema: { type: "object", properties: { about: { type: "string" } } },
+  agentScope: "jarvis",
+  activityLabel: "Calling you",
+  async execute(i, ctx) {
+    const { queueCallMe, PhoneError } = await import("@/lib/phone/service");
+    let r;
+    try { r = await queueCallMe(ctx.userId, i.about ?? null); }
+    catch (e) { if (e instanceof PhoneError) throw new ToolError(`${e.message} (Settings → Phone calls)`); throw e; }
+    const how = r.mode === "laptop"
+      ? "The laptop rings them through Phone Link within about 20 seconds — they should say hello and JARVIS talks. It needs the orb's Prospect calls window running (Start calling)."
+      : r.mode === "iphone"
+        ? "JARVIS emails the spare iPhone within a minute and its Shortcut rings them."
+        : r.online ? "The spare phone rings them within about 15 seconds." : "The spare phone isn't checking in right now, so the call waits until it does (Termux script running, Wireless debugging on).";
+    return { data: { queued: true, mode: r.mode, enabled: r.enabled, note: r.enabled ? how : "Phone calls are switched off in Settings → Phone calls — turn them on." }, summary: "Calling you." };
+  },
+};

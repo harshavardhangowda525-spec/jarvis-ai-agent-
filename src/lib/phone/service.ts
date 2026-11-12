@@ -141,6 +141,18 @@ export async function queueTest(userId: string) {
   await db().phoneEvent.create({ data: { userId, key: `test:${Date.now()}`, kind: "test", text: "Test call - JARVIS can reach you." } });
 }
 
+/** "JARVIS, call me" — a call you asked for: it goes out at once (no 2-minute gap, not held by quiet hours). */
+export async function queueCallMe(userId: string, reason?: string | null) {
+  await queueTest(userId);
+  if (reason?.trim()) {
+    const e = await db().phoneEvent.findFirst({ where: { userId, kind: "test", status: "queued" }, orderBy: { createdAt: "desc" } });
+    if (e) await db().phoneEvent.update({ where: { id: e.id }, data: { text: `You asked me to call you - ${clip(reason.trim(), 120)}` } });
+  }
+  await db().phoneLink.update({ where: { userId }, data: { lastCallAt: null } });
+  const link = await getLink(userId);
+  return { mode: (link?.mode ?? "android") as "android" | "iphone" | "laptop", online: !!link?.lastSeenAt && Date.now() - link.lastSeenAt.getTime() < ONLINE_MS, enabled: !!link?.enabled };
+}
+
 /** Turn what really happened since `since` into queued events (each thing once). */
 export async function collect(userId: string, link: PhoneLink) {
   const rows: { key: string; kind: string; text: string }[] = [];

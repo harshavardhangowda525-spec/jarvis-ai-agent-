@@ -80,3 +80,26 @@ d("JARVIS calling you through the laptop (integration)", () => {
     expect(await db.phoneEvent.findFirstOrThrow({ where: { userId, kind: "test", status: { not: "sent" } } })).toMatchObject({ status: "queued", error: "You didn't pick up." });
   });
 });
+
+d("'JARVIS, call me' (integration)", () => {
+  let userId = "";
+  beforeAll(async () => { userId = (await getDb().user.create({ data: { email: `call-me-${Date.now()}@example.com`, passwordHash: "x" } })).id; });
+  afterAll(async () => { await getDb().user.deleteMany({ where: { id: userId } }).catch(() => {}); });
+  it("rings you right away, even just after another call, and says why", async () => {
+    const P = await import("@/lib/phone/service");
+    const C = await import("@/lib/calls/service");
+    await P.saveSettings(userId, { enabled: true, mode: "laptop", toNumber: "+919980801231" });
+    await getDb().phoneLink.update({ where: { userId }, data: { lastCallAt: new Date() } }); // a call a moment ago
+    const r = await P.queueCallMe(userId, "today's status");
+    expect(r).toMatchObject({ mode: "laptop", enabled: true });
+    const n = await C.callerNext(userId);
+    if (!n.call) throw new Error(n.wait);
+    expect(n.call.opener).toBe("Hi, it's JARVIS with an update. You asked me to call you about: today's status.");
+  });
+  it("tells you what's missing", async () => {
+    const P = await import("@/lib/phone/service");
+    const other = (await getDb().user.create({ data: { email: `call-me-none-${Date.now()}@example.com`, passwordHash: "x" } })).id;
+    await expect(P.queueCallMe(other)).rejects.toThrow(/Add your phone number first/);
+    await getDb().user.delete({ where: { id: other } });
+  });
+});
