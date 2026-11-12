@@ -132,5 +132,13 @@ d("computer use: jobs on the server (integration)", () => {
     const recent = await S.recentTasks(userId);
     expect(recent.find((r) => r.id === b.id)).toMatchObject({ status: "done", result: "Opened it." });
     expect((recent.find((r) => r.id === a.id)?.steps as unknown[]).length).toBe(2);
+
+    // laptop control only counts as available while the laptop's JARVIS helper checks in
+    const P = await import("@/lib/prospects/service");
+    expect(await S.laptopOnline(userId)).toBe(false);
+    await P.pairFinder(userId);
+    await getDb().mapsFinder.update({ where: { userId }, data: { lastSeenAt: new Date() } });
+    expect(await S.laptopOnline(userId)).toBe(true);
+    expect(await S.laptopOnline(userId, new Date(Date.now() + 5 * 60_000))).toBe(false);
   });
 });

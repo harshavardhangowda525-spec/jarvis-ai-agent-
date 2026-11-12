@@ -55,6 +55,9 @@ import { AstonViewer } from "@/components/aston/viewer";
 import { astonPreviewCommand, buildCommand, isAstonActivation, teleprompterCommand } from "@/lib/aston/intent";
 import { fridayCommand, isFridayActivation, modeCommand } from "@/lib/friday/intent";
 
+/** "in Chrome …", "type …", "click …" — something to do on the laptop screen. */
+const LAPTOP_ACTION = /\b(?:in|on|using)\s+(?:chrome|edge|firefox|the browser|excel|word|notepad|whatsapp|vs ?code|file explorer|settings)\b|^\s*(?:(?:hey |ok )?jarvis[,!.\s]+)?(?:please\s+)?(?:type|click|scroll|fill|press)\b/i;
+
 // Weather intents ("what's the weather", "forecast for Tokyo", "will it rain").
 const WEATHER_RE = /\b(weather|forecast|temperature|humidity|how (hot|cold|warm)|(will|is|does|gonna) it (be )?(going to |gonna )?(rain|raining|snow|snowing|sunny|cloudy|cold|hot|windy|storm)|need an umbrella)\b/i;
 
@@ -338,6 +341,14 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
   // "open Spotify" → the installed app on this PC (via ULTRON); "open YouTube"
   // → a new tab. Which one is decided instantly from the installed-app list, so
   // a website's tab opens inside the keypress that allows it.
+  const laptopLive = useRef(false);
+  useEffect(() => {
+    let alive = true;
+    const check = () => fetch("/api/desktop/tasks?status=1").then((r) => r.json()).then((j) => { if (alive) laptopLive.current = !!j?.data?.online; }).catch(() => {});
+    check();
+    const t = setInterval(check, 60_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
   const openAppsRef = useRef<(said: string, names: string[], o?: { strong?: boolean; fallback?: () => void }) => Promise<void>>(async () => {});
   openAppsRef.current = async (said, names, o = {}) => {
     const strong = o.strong ?? true;
@@ -810,6 +821,9 @@ export function JarvisConsole({ userName }: { assistantName: string; userName: s
         else { const msg = "There's no link in our conversation yet — tell me the site or paste the address."; agent.appendLocalExchange(t, msg); sayRef.current(msg); }
         return;
       }
+      // JARVIS's helper on the laptop is online: opening apps and doing things on the
+      // screen go to laptop control (it opens the app in front, with the working frame)
+      if (laptopLive.current && (parseOpenApp(t) || LAPTOP_ACTION.test(t))) { agent.send(t); return; }
       const apps = parseOpenApp(t);
       if (apps) {
         const strong = !/^\s*(?:(?:hey |ok |okay )?jarvis[,!.\s]+)?(?:please\s+)?(?:(?:can|could|would) you\s+)?(?:please\s+)?(?:start|run)\b/i.test(t);

@@ -51,6 +51,12 @@ export async function stopTask(userId: string, id: string) {
   await db().desktopTask.updateMany({ where: { id, userId, status: { in: ["queued", "running"] } }, data: { status: "stopped", finishedAt: new Date(), result: "Stopped." } });
 }
 
+/** Is JARVIS's helper on the laptop running and connected? (it checks in every ~20 s) */
+export async function laptopOnline(userId: string, now = new Date()) {
+  const f = await db().mapsFinder.findUnique({ where: { userId }, select: { tokenHash: true, lastSeenAt: true } });
+  return !!f?.tokenHash && !!f.lastSeenAt && now.getTime() - f.lastSeenAt.getTime() < 2 * 60_000;
+}
+
 export async function recentTasks(userId: string) {
   return db().desktopTask.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 10 });
 }

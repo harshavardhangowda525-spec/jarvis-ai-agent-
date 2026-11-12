@@ -16,7 +16,8 @@ export const openAppTool: ToolDefinition<z.infer<typeof schema>> = {
   name: "open_app",
   description:
     "Open an app installed on the user's own computer — Spotify, WhatsApp, VS Code, Word, Excel, Calculator, File Explorer, " +
-    "Settings, Discord, Steam, Photoshop… Use this (not open_link) whenever the user asks to open, launch or start an app or program. " +
+    "Settings, Discord, Steam, Photoshop… Prefer computer_task for anything on the laptop (it opens the app in front of the user and keeps going); " +
+    "use open_app only if computer_task says the laptop helper isn't online. Use this (not open_link) for apps. " +
     "Use open_link only for websites, or when they explicitly ask for the website.",
   schema,
   inputSchema: {

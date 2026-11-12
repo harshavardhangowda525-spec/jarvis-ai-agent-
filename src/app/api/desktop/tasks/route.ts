@@ -2,14 +2,18 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { callerUser } from "@/lib/calls/device-auth";
 import { ok, fail, handleError } from "@/lib/api";
-import { DesktopError, nextTask, queueTask, recentTasks, reportTask, stopTask } from "@/lib/desktop/service";
+import { DesktopError, laptopOnline, nextTask, queueTask, recentTasks, reportTask, stopTask } from "@/lib/desktop/service";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Recent laptop jobs. */
-export async function GET() {
-  try { const user = await requireUser(); return ok(await recentTasks(user.id)); }
+/** Recent laptop jobs (?status=1: is the laptop's JARVIS helper online?). */
+export async function GET(req: Request) {
+  try {
+    const user = await requireUser();
+    if (new URL(req.url).searchParams.get("status")) return ok({ online: await laptopOnline(user.id) });
+    return ok(await recentTasks(user.id));
+  }
   catch (e) { return handleError(e); }
 }
 

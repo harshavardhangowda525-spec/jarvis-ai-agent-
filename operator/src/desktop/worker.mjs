@@ -126,7 +126,7 @@ export class DesktopWorker {
   async poll() {
     if (this.busy || this.computer.busy()) return;
     this.link = readLink();
-    if (!this.link) return;
+    if (!this.link) { this.warn("[desktop] This laptop isn't connected to JARVIS, so laptop jobs can't reach it — open JARVIS → CRM → Google Maps finder → \"Connect this laptop\"."); return; }
     const { task } = await this.api("/api/desktop/tasks", { action: "next" });
     this.warned = "";
     if (!task) return;

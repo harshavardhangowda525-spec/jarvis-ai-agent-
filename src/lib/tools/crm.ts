@@ -198,7 +198,8 @@ export const computerTaskTool: ToolDefinition<z.infer<typeof computerSchema>> = 
   agentScope: "jarvis",
   activityLabel: "Working on your laptop",
   async execute(i, ctx) {
-    const { queueTask, DesktopError } = await import("@/lib/desktop/service");
+    const { queueTask, laptopOnline, DesktopError } = await import("@/lib/desktop/service");
+    if (!(await laptopOnline(ctx.userId))) throw new ToolError("JARVIS's helper on the laptop isn't online, so I can't work on the screen. Start JARVIS on the laptop (start-jarvis.cmd) and make sure it's connected (CRM → Google Maps finder → Connect this laptop).");
     try {
       const t = await queueTask(ctx.userId, i.goal);
       return { data: { taskId: t.id, note: "Started on your laptop — JARVIS picks it up within a few seconds and works on screen (Stop on the bar or Ctrl+Alt+Backspace stops it). If nothing happens, JARVIS isn't running on the laptop (start-jarvis.cmd) or the laptop isn't connected (CRM → Connect this laptop)." }, summary: "Working on your laptop." };
