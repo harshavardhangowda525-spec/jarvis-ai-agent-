@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth/session";
+import { callerUser } from "@/lib/calls/device-auth";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { DesktopError, nextStep } from "@/lib/desktop/service";
 
@@ -18,7 +18,7 @@ const Body = z.object({
 /** The orb, mid-job: here's the screen — what's the next step? */
 export async function POST(req: Request) {
   try {
-    const user = await requireUser();
+    const user = await callerUser(req);
     if (!rateLimit(`desktop-act:${user.id}`, 60, 60_000).allowed) return fail("Too many steps — slow down.", 429);
     const b = Body.parse(await req.json());
     return ok(await nextStep(user.id, b.id, b));

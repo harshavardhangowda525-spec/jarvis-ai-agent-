@@ -1,6 +1,6 @@
 @echo off
 rem Double-click to free disk space JARVIS has piled up (caches and leftovers only).
-rem Close JARVIS and the orb first, so their caches aren't in use.
+rem Close JARVIS first, so their caches aren't in use.
 setlocal
 cd /d "%~dp0"
 title JARVIS clean-up

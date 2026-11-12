@@ -1,11 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { createRequire } from "node:module";
 vi.mock("server-only", () => ({}));
 import { getDb, isDbConfigured } from "@/lib/db";
 import { parseStep, stepPrompt, type UiElement } from "@/lib/desktop/act";
 
-const req = createRequire(import.meta.url);
-const { createComputer, xdoKeys } = req("../desktop/jarvis-orb/computer.cjs");
+import { createComputer } from "../operator/src/desktop/computer.mjs";
 
 const screen = { w: 1366, h: 768 };
 const els: UiElement[] = [
@@ -46,12 +44,6 @@ describe("computer use: the safe-step rules", () => {
     expect(p).toContain("1. Opened Start");
     expect(p).toContain('3: Edit "Password"');
     expect(p).toContain("[password field]");
-  });
-  it("maps keys for xdotool", () => {
-    expect(xdoKeys("ctrl+l")).toBe("ctrl+l");
-    expect(xdoKeys("Enter")).toBe("Return");
-    expect(xdoKeys("alt+F4")).toBe("alt+F4");
-    expect(xdoKeys("win + up")).toBe("super+Up");
   });
 });
 

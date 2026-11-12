@@ -7,7 +7,7 @@ import { splitSentences, normLang, type Lang } from "@/lib/calls/rules";
 
 /**
  * JARVIS — Calls. JARVIS's own helper on your Windows laptop (started with
- * JARVIS, no orb needed) opens this window by itself and starts calling.
+ * JARVIS) opens this window by itself and starts calling.
  * JARVIS dials through Phone Link (your own number), speaks into the call
  * through the VB-Audio virtual cable, and hears the other side from the
  * speakers.
@@ -20,9 +20,9 @@ interface Phone {
   working: (text: string | null) => void;
 }
 type PhoneOp = (op: string, arg?: string | null) => Promise<Record<string, unknown>>;
-declare global { interface Window { jarvisDesktop?: { phone?: Phone; onEvent?: (cb: (e: { type: string }) => void) => () => void }; __jarvisPhone?: PhoneOp } }
+declare global { interface Window { __jarvisPhone?: PhoneOp } }
 
-/** The phone controls: from JARVIS's helper on the laptop (or, on older setups, the desktop orb). */
+/** The phone controls, from JARVIS's helper on the laptop. */
 function getPhone(): Phone | undefined {
   if (typeof window === "undefined") return undefined;
   const op = window.__jarvisPhone;
@@ -35,7 +35,7 @@ function getPhone(): Phone | undefined {
       working: (text) => { void op("working", text).catch(() => {}); },
     };
   }
-  return window.jarvisDesktop?.phone;
+  return undefined;
 }
 
 type Check = { label: string; ok: boolean | null; detail?: string };
@@ -117,7 +117,6 @@ export function CallerApp() {
   const ears = useRef<ReturnType<typeof makeEars> | null>(null);
 
   useEffect(() => { try { setSink(localStorage.getItem(LS) ?? ""); } catch { /* none */ } }, []);
-  useEffect(() => window.jarvisDesktop?.onEvent?.((e) => { if (e.type === "stop") { stop.current = true; void phone?.hangup(); } }), [phone]);
 
   const devices = useCallback(async () => {
     // labels need one microphone grant (audio only); the track is closed straight away

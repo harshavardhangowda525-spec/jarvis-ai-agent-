@@ -6,7 +6,7 @@ import { parseStep, systemPrompt, stepPrompt, MAX_STEPS, type UiElement, type St
 
 /**
  * Jobs JARVIS does on your laptop's screen. You (or JARVIS in chat) queue one;
- * the orb on the laptop picks it up, and for every step sends a screenshot +
+ * JARVIS's helper on the laptop picks it up, and for every step sends a screenshot +
  * the on-screen elements here; a vision model picks the next step.
  */
 const db = () => getDb();
@@ -21,9 +21,9 @@ export async function queueTask(userId: string, goal: string) {
   return db().desktopTask.create({ data: { userId, goal: g } });
 }
 
-/** The orb asks for the next job (and closes jobs whose orb went quiet). */
+/** The laptop asks for the next job (and closes jobs whose laptop went quiet). */
 export async function nextTask(userId: string, now = new Date()) {
-  await db().desktopTask.updateMany({ where: { userId, status: "running", heartbeatAt: { lt: new Date(now.getTime() - STALE_MS) } }, data: { status: "failed", result: "The orb stopped answering in the middle of this job.", finishedAt: now } });
+  await db().desktopTask.updateMany({ where: { userId, status: "running", heartbeatAt: { lt: new Date(now.getTime() - STALE_MS) } }, data: { status: "failed", result: "The laptop stopped answering in the middle of this job.", finishedAt: now } });
   if (await db().desktopTask.findFirst({ where: { userId, status: "running" } })) return null;
   const t = await db().desktopTask.findFirst({ where: { userId, status: "queued" }, orderBy: { createdAt: "asc" } });
   if (!t) return null;

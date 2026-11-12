@@ -94,7 +94,7 @@ export function PhoneSettings() {
             <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
               <li>Pair the phone that should call you (e.g. the spare POCO, with a recharge) in <b className="text-foreground">Phone Link</b> and turn on <b className="text-foreground">Calls</b>. Make one call from Phone Link by hand.</li>
               <li>Install <b className="text-foreground">VB-Audio Virtual Cable</b>, and set Phone Link&apos;s microphone to <b className="text-foreground">CABLE Output</b> (Windows Sound → Volume mixer).</li>
-              <li>Start the orb (<code className="text-accent">npm run orb</code>) → tray icon → <b className="text-foreground">Prospect calls…</b> → <b className="text-foreground">Run check</b> → <b className="text-foreground">Start calling</b>, and leave that window open. Calls to you go out even when calling leads is off.</li>
+              <li>Connect this laptop once (CRM → Google Maps finder → <b className="text-foreground">Connect this laptop</b>) and keep JARVIS running (<code className="text-accent">start-jarvis.cmd</code>). JARVIS opens its <b className="text-foreground">Calls</b> window by itself and keeps it ready. Calls to you go out even when calling leads is off.</li>
               <li>Enter your number below, Save, and press <b className="text-foreground">Test call</b>.</li>
             </ol>
           </div>
@@ -176,7 +176,7 @@ export function PhoneSettings() {
 
       <div className="mt-5 flex flex-wrap gap-2">
         {!iphone && !laptop && <Button variant="outline" onClick={doPair} disabled={busy === "pair"}>{l?.paired ? "Pair again (new token)" : "Pair the spare phone"}</Button>}
-        <Button variant="outline" onClick={() => call("POST", { action: "test" }, "test", laptop ? "Test call queued. The Prospect calls window on the laptop rings you within about 20 seconds — say hello and talk to JARVIS." : iphone ? "Test call queued. Within a minute JARVIS emails the iPhone, and its Shortcut calls you." : "Test call queued. The phone picks it up at its next check-in, within about 15 seconds.")} disabled={busy === "test" || (laptop ? !l?.toNumber : iphone ? !l?.iphoneEmail : !l?.paired || !l?.toNumber)}>Test call</Button>
+        <Button variant="outline" onClick={() => call("POST", { action: "test" }, "test", laptop ? "Test call queued. JARVIS's Calls window on the laptop rings you within about 20 seconds — pick up and JARVIS talks to you." : iphone ? "Test call queued. Within a minute JARVIS emails the iPhone, and its Shortcut calls you." : "Test call queued. The phone picks it up at its next check-in, within about 15 seconds.")} disabled={busy === "test" || (laptop ? !l?.toNumber : iphone ? !l?.iphoneEmail : !l?.paired || !l?.toNumber)}>Test call</Button>
       </div>
 
       {laptop && !!st?.ownerCalls?.length && (

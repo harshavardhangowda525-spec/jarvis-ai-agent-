@@ -189,10 +189,10 @@ const computerSchema = z.object({
 export const computerTaskTool: ToolDefinition<z.infer<typeof computerSchema>> = {
   name: "computer_task",
   description:
-    "Do something on the user's LAPTOP SCREEN for them: JARVIS (through the desktop orb) looks at the screen and clicks / types / scrolls in any app or the browser, step by step, " +
+    "Do something on the user's LAPTOP SCREEN for them: JARVIS (its helper on the laptop) looks at the screen and clicks / types / scrolls in any app or the browser, step by step, " +
     "with a 'JARVIS is working' frame on screen and a Stop button. Use for 'in Chrome, search YouTube for lo-fi and play the first video', 'open Notepad and write …', " +
     "'go to my Gmail and open the latest email from Ravi', 'change the wallpaper', 'in Excel, add a column…'. It asks the user before sending, posting, paying or deleting, " +
-    "and never types passwords or OTPs. Needs the orb running on the laptop with control allowed.",
+    "and never types passwords or OTPs. Needs JARVIS running on the Windows laptop.",
   schema: computerSchema,
   inputSchema: { type: "object", properties: { goal: { type: "string" } }, required: ["goal"] },
   agentScope: "jarvis",
@@ -201,7 +201,7 @@ export const computerTaskTool: ToolDefinition<z.infer<typeof computerSchema>> = 
     const { queueTask, DesktopError } = await import("@/lib/desktop/service");
     try {
       const t = await queueTask(ctx.userId, i.goal);
-      return { data: { taskId: t.id, note: "Started on your laptop — the orb picks it up within a few seconds and works on screen (Stop or Ctrl+Alt+Backspace stops it). If nothing happens, the orb isn't running (start-orb.cmd)." }, summary: "Working on your laptop." };
+      return { data: { taskId: t.id, note: "Started on your laptop — JARVIS picks it up within a few seconds and works on screen (Stop on the bar or Ctrl+Alt+Backspace stops it). If nothing happens, JARVIS isn't running on the laptop (start-jarvis.cmd) or the laptop isn't connected (CRM → Connect this laptop)." }, summary: "Working on your laptop." };
     } catch (e) { if (e instanceof DesktopError) throw new ToolError(e.message); throw e; }
   },
 };

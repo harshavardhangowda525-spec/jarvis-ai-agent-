@@ -1,13 +1,13 @@
 import path from "node:path";
-import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { log } from "../log.mjs";
 import { readLink } from "../maps/finder.mjs";
+import { runWinPs } from "../desktop/worker.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
-const WIN_PS = path.resolve(ROOT, "../desktop/jarvis-orb/win.ps1");
+
 export const CALLS_PROFILE = path.join(ROOT, ".calls-profile");
 
 /**
@@ -47,19 +47,6 @@ export function phoneBridge({ platform = process.platform, runPs = runWinPs, sim
     }
     return { ok: false, error: "Unknown phone action." };
   };
-}
-
-/** Run one fixed Windows operation (win.ps1; the action goes in as data, never as script text). */
-export function runWinPs(a) {
-  return new Promise((resolve) => {
-    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", WIN_PS],
-      { env: { ...process.env, JARVIS_ORB_ARGS: JSON.stringify(a) }, timeout: 30_000, windowsHide: true },
-      (err, stdout, stderr) => {
-        const out = String(stdout || "").trim().replace(/^﻿/, "");
-        try { resolve(JSON.parse(out.split(/\r?\n/).pop() || "null") ?? { ok: false, error: "Windows didn't answer." }); }
-        catch { resolve({ ok: false, error: (String(stderr || err?.message || "Windows didn't answer")).trim().slice(0, 200) }); }
-      });
-  });
 }
 
 /** Requests from the calling window: only JARVIS's own site; its API calls carry this laptop's key. Pure (tested). */

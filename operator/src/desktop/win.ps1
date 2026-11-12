@@ -1,4 +1,4 @@
-﻿# JARVIS 2.0 - window control on Windows (run by executor.cjs with the action as JSON in $env:JARVIS_ORB_ARGS).
+﻿# JARVIS - laptop control on Windows (run by JARVIS's helper with the action as JSON in $env:JARVIS_ORB_ARGS).
 # Fixed code; the action and its arguments arrive as data, never as script text.
 # Lists windows (and which one is in front), brings one to the front, minimises / maximises /
 # restores / closes it, puts two side by side, or sends keys to it. Closing and typing only ever
@@ -16,6 +16,7 @@ public static class JarvisW {
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int hh, bool repaint);
   [DllImport("user32.dll")] public static extern void keybd_event(byte b, byte s, uint f, UIntPtr e);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 }
 "@
 function ForegroundPid { $fp = 0; [JarvisW]::GetWindowThreadProcessId([JarvisW]::GetForegroundWindow(), [ref]$fp) | Out-Null; [int]$fp }
@@ -44,6 +45,43 @@ if ($a.op -eq 'arrange') {
   [JarvisW]::MoveWindow($l.MainWindowHandle, $wa.X, $wa.Y, $half, $wa.Height, $true) | Out-Null
   [JarvisW]::MoveWindow($r.MainWindowHandle, $wa.X + $half, $wa.Y, $wa.Width - $half, $wa.Height, $true) | Out-Null
   '{"ok":true}'; exit
+}
+# ---- what's on the screen (real pixels), shrunk for the AI: a JPEG at most 1366 wide ----
+if ($a.op -eq 'screenshot') {
+  [JarvisW]::SetProcessDPIAware() | Out-Null
+  Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+  $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $full = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+  $g = [System.Drawing.Graphics]::FromImage($full); $g.CopyFromScreen($b.X, $b.Y, 0, 0, $full.Size); $g.Dispose()
+  $w = [Math]::Min(1366, $b.Width); $h = [int][Math]::Round($b.Height * $w / $b.Width)
+  $img = New-Object System.Drawing.Bitmap $w, $h
+  $g = [System.Drawing.Graphics]::FromImage($img); $g.InterpolationMode = 'HighQualityBicubic'; $g.DrawImage($full, 0, 0, $w, $h); $g.Dispose(); $full.Dispose()
+  $enc = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
+  $ps = New-Object System.Drawing.Imaging.EncoderParameters 1
+  $ps.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), 72L
+  $ms = New-Object System.IO.MemoryStream; $img.Save($ms, $enc, $ps); $img.Dispose()
+  ConvertTo-Json -Compress -InputObject @{ ok = $true; data = [Convert]::ToBase64String($ms.ToArray()); w = $w; h = $h; factor = ($b.Width / $w) }; exit
+}
+# ---- open an app from the Start menu (or switch to it if it's already open), and bring it in front of you ----
+if ($a.op -eq 'open-app') {
+  $q = ([string]$a.app).Trim()
+  if (-not $q -or $q.Length -gt 80) { '{"ok":false,"error":"Say which app."}'; exit }
+  $like = '*' + [System.Management.Automation.WildcardPattern]::Escape($q) + '*'
+  function Find-Open { @(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and ($_.MainWindowTitle -like $like -or $_.ProcessName -like $like) }) | Select-Object -First 1 }
+  $open = Find-Open
+  if ($open) { $ok = Front $open; ConvertTo-Json -Compress -InputObject @{ ok = $true; name = $open.MainWindowTitle; already = $true; front = $ok }; exit }
+  $apps = @(Get-StartApps | Where-Object { $_.Name -like $like })
+  $app = @($apps | Where-Object { $_.Name -eq $q }) + $apps | Select-Object -First 1
+  if (-not $app) { ConvertTo-Json -Compress -InputObject @{ ok = $false; error = "I couldn't find an app called '$q' in the Start menu." }; exit }
+  Start-Process "shell:AppsFolder\$($app.AppID)"
+  $like = '*' + [System.Management.Automation.WildcardPattern]::Escape($app.Name.Split(' ')[0]) + '*'
+  for ($i = 0; $i -lt 20; $i++) {
+    Start-Sleep -Milliseconds 400
+    $p = Find-Open
+    if (-not $p) { $fp = ForegroundPid; if ($fp) { $p = Get-Process -Id $fp -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.StartTime -gt (Get-Date).AddSeconds(-15) } } }
+    if ($p) { $ok = Front $p; ConvertTo-Json -Compress -InputObject @{ ok = $true; name = $app.Name; front = $ok }; exit }
+  }
+  ConvertTo-Json -Compress -InputObject @{ ok = $true; name = $app.Name; front = $false }; exit
 }
 # ---- JARVIS working on the screen: mouse / keyboard input, and what's clickable in the front window ----
 if ($a.op -eq 'input' -or $a.op -eq 'uia') {

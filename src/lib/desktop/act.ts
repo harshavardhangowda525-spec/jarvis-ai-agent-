@@ -1,6 +1,6 @@
 /**
  * JARVIS controlling the laptop ("computer use") — the safe-action rules, pure
- * and tested. The orb sends a screenshot + the clickable things Windows lists
+ * and tested. JARVIS's helper on the laptop sends a screenshot + the clickable things Windows lists
  * on screen; a vision model picks ONE next step; this file turns its answer
  * into a validated action and decides what needs your OK and what is never
  * allowed.

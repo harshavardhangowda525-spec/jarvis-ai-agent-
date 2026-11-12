@@ -20,6 +20,7 @@ import { hasProvider, providerName } from "./src/provider.mjs";
 import { log } from "./src/log.mjs";
 import { MapsFinder } from "./src/maps/finder.mjs";
 import { CallsWindow } from "./src/calls/caller.mjs";
+import { DesktopWorker } from "./src/desktop/worker.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -48,13 +49,17 @@ if (process.env.OPERATOR_MAPS !== "off") finder.start();
 // JARVIS's calls (to you and to leads): its own small window, opened by itself when calling is on — no orb
 const calls = new CallsWindow();
 if (process.env.OPERATOR_CALLS !== "off") calls.start();
+// JARVIS on your laptop: opening apps and working on the screen (no orb)
+const desktop = new DesktopWorker();
+if (process.env.OPERATOR_DESKTOP !== "off") desktop.start();
 // the Stop button on the "JARVIS is working" label stops whatever JARVIS is doing
-mgr.onUserStop = () => { session.stop(); finder.stop(); };
+mgr.onUserStop = () => { session.stop(); finder.stop(); desktop.stop(); };
 
 // Graceful shutdown — keep the browser open on Ctrl+C? No: close cleanly.
 for (const sig of ["SIGINT", "SIGTERM"]) {
   process.on(sig, async () => {
     log.info("Shutting down…");
+    desktop.stopLoop();
     await calls.close();
     await mgr.close();
     process.exit(0);
