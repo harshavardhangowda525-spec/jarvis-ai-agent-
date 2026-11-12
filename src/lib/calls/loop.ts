@@ -52,7 +52,7 @@ export async function runOneCall(io: CallerIO, c: CallJob): Promise<string> {
   };
   const say = async (text: string, l: Lang) => { io.log({ who: "jarvis", text }); return io.speak(text, l); };
   io.label(`Calling ${c.name}`);
-  io.log({ who: "info", text: `Dialling ${c.name} (${c.to}) through Phone Link…` });
+  io.log({ who: "info", text: `Dialling ${c.name} (${c.to}) from the laptop…` });
   const d = await io.dial(c.to);
   if (!d.ok) return finish("failed", d.error ?? "Phone Link couldn't place the call.");
   const started = io.now();

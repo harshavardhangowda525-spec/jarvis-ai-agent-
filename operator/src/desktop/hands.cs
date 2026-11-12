@@ -454,24 +454,34 @@ public static class Hands {
     }
 #if UIA
     Regex endRe = wa ? new Regex("^(end call|end|leave call|hang up)$", RegexOptions.IgnoreCase) : new Regex("^(End call|Hang up|End|Call end)$");
-    if (op == "phone-state") { Dictionary<string, object> d = Ok(); d["inCall"] = InCall(names, endRe); return d; }
-    if (op == "phone-hangup") { Dictionary<string, object> d = Ok(); d["pressed"] = Press(Windows(names), endRe); return d; }
+    if (op == "phone-state") { Dictionary<string, object> d = Ok(); d["inCall"] = InCallNamed(names, wa) || InCall(names, endRe); return d; }
+    if (op == "phone-hangup") {
+      List<AutomationElement> ws = Windows(names);
+      Dictionary<string, object> d = Ok(); d["pressed"] = PressNamed(ws, wa ? new string[] { "End call", "Leave call", "Hang up", "End" } : new string[] { "End call", "Hang up", "End", "Call end" }) || Press(ws, endRe); return d;
+    }
     if (op == "phone-dial") {
       string digits = Regex.Replace(to ?? "", "[^0-9]", "");
       if (wa) {
         if (digits.Length == 10) digits = "91" + digits;
         if (!Regex.IsMatch(digits, "^[0-9]{10,15}$")) return Err("That number is not dialable.");
       } else if (!Regex.IsMatch(to ?? "", "^\\+?[0-9]{8,15}$")) return Err("That number is not dialable.");
-      if (InCall(names, endRe)) return Err((wa ? "WhatsApp" : "Phone Link") + " is already on a call.");
+      if (InCallNamed(names, wa)) return Err((wa ? "WhatsApp" : "Phone Link") + " is already on a call.");
       Process.Start(wa ? "whatsapp://send?phone=" + digits : "tel:" + to);
       Regex callRe = wa ? new Regex("^(voice call|audio call)", RegexOptions.IgnoreCase) : new Regex("^(Call|Start call|Dial)$");
       Regex confirmRe = new Regex("^(call|start call|start voice call)$", RegexOptions.IgnoreCase);
+      string[] callNames = wa ? new string[] { "Voice call", "Audio call", "Start voice call" } : new string[] { "Call", "Start call", "Dial" };
+      string[] confirmNames = { "Call", "Start call", "Start voice call" };
       bool pressed = false;
-      for (int i = 0; i < 30; i++) {
-        Thread.Sleep(500);
-        if (InCall(names, endRe)) { Dictionary<string, object> d = Ok(); d["pressed"] = pressed; return d; }
+      Stopwatch sw = Stopwatch.StartNew();
+      int round = 0;
+      while (sw.ElapsedMilliseconds < 40000) {
+        Thread.Sleep(600); round++;
+        if (pressed && InCall(names, endRe)) { Dictionary<string, object> d = Ok(); d["pressed"] = true; return d; }
         List<AutomationElement> ws = Windows(names);
-        if (!pressed) pressed = Press(ws, callRe); else if (wa) Press(ws, confirmRe);
+        // ask for the button by its name (fast); the full scan only now and then
+        if (!pressed) pressed = PressNamed(ws, callNames) || (round % 4 == 0 && Press(ws, callRe));
+        else if (wa) { if (!PressNamed(ws, confirmNames) && round % 4 == 0) Press(ws, confirmRe); }
+        if (pressed && round > 2 && InCallNamed(names, wa)) { Dictionary<string, object> d = Ok(); d["pressed"] = true; return d; }
       }
       if (Windows(names).Count == 0) return Err(wa ? "WhatsApp Desktop did not open. Install it from the Microsoft Store and link it to the spare phone's WhatsApp." : "Phone Link did not open. Open Phone Link, make sure your phone is connected and Calls are set up.");
       if (!pressed) return Err(wa ? "WhatsApp opened the chat but I couldn't find its voice-call button - is this number on WhatsApp?" : "Phone Link opened but the call didn't start. Check that Calls is set up in Phone Link (Bluetooth paired).");
@@ -506,6 +516,28 @@ public static class Hands {
         if (re.IsMatch(b.Current.Name ?? "") && b.Current.IsEnabled) { ((InvokePattern)b.GetCurrentPattern(InvokePattern.Pattern)).Invoke(); return true; }
       } catch (Exception) { }
     }
+    return false;
+  }
+  static Condition NamedButtons(string[] labels) {
+    Condition[] byName = new Condition[labels.Length];
+    for (int i = 0; i < labels.Length; i++) byName[i] = new PropertyCondition(AutomationElement.NameProperty, labels[i], PropertyConditionFlags.IgnoreCase);
+    Condition names = labels.Length == 1 ? byName[0] : new OrCondition(byName);
+    return new AndCondition(new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button), names);
+  }
+  /** Press the first button with one of these names (asked of Windows directly — fast). */
+  static bool PressNamed(List<AutomationElement> ws, string[] labels) {
+    Condition c = NamedButtons(labels);
+    foreach (AutomationElement w in ws) {
+      try {
+        AutomationElement b = w.FindFirst(TreeScope.Descendants, c);
+        if (b != null && b.Current.IsEnabled) { ((InvokePattern)b.GetCurrentPattern(InvokePattern.Pattern)).Invoke(); return true; }
+      } catch (Exception) { }
+    }
+    return false;
+  }
+  static bool InCallNamed(string[] names, bool wa) {
+    Condition c = NamedButtons(wa ? new string[] { "End call", "Leave call", "Hang up", "End" } : new string[] { "End call", "Hang up", "End", "Call end" });
+    foreach (AutomationElement w in Windows(names)) { try { if (w.FindFirst(TreeScope.Descendants, c) != null) return true; } catch (Exception) { } }
     return false;
   }
   static bool InCall(string[] names, Regex endRe) {
