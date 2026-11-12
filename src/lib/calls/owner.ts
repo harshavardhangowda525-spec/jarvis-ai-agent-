@@ -27,7 +27,7 @@ const agentName = (a: string) => JOB_AGENT_NAME[a as JobAgent] ?? a.toUpperCase(
 /** "Done - ASTON: Build the café site" → "ASTON finished: Build the café site". Pure (tested). */
 export function spokenUpdate(e: { kind: string; text: string }): string {
   const m = e.text.match(/^(?:Done|Failed|Needs your approval) - ([^:]+): (.*)$/);
-  if (e.kind === "test") return e.text.startsWith("You asked me to call you - ") ? `You asked me to call you about: ${e.text.slice(27)}.` : "This is a test call — I can reach you through the laptop.";
+  if (e.kind === "test") return e.text.startsWith("You asked me to call you - ") ? `You asked me to call you about: ${e.text.slice(27)}.` : "This is a test call, and I'm live. I can hear you — say something and I'll answer.";
   if (!m) return e.text;
   const [, who, what] = m;
   return e.kind === "completed" ? `${who} finished: ${what}.` : e.kind === "failed" ? `${who} couldn't finish: ${what}.` : `${who} needs your approval: ${what}.`;

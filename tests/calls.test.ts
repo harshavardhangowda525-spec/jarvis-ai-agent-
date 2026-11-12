@@ -110,6 +110,20 @@ describe("prospect calls: the caller's loop (fakes)", () => {
     expect(f.api.at(-1)).toMatchObject({ action: "finish", reason: "no_answer" });
     expect(f.hung()).toBe(1); expect(f.labels.at(-1)).toBeNull();
   });
+  it("a call to YOU: you pick up and stay quiet → JARVIS speaks up by itself, then talks with you", async () => {
+    const own = { ...job, id: "own_t1", name: "you (updates)" };
+    const server = (b: Record<string, unknown>) => b.opener ? { say: "Hi, it's JARVIS with an update. This is a test call, and I'm live." } : b.action === "turn" ? { say: "All good here.", end: String(b.heard).includes("bye") } : {};
+    const f = fakeIO({ heard: [null, "Nice, how are things?", "ok bye"], server });
+    expect(await runOneCall(f.io, own)).toBe("ended");
+    expect(f.said[0]).toMatch(/test call, and I'm live/);
+    expect(f.api.filter((b) => b.opener)).toHaveLength(1); // the opener once, not again after you talk
+    expect(f.api.find((b) => b.action === "turn" && !b.opener)).toMatchObject({ heard: "Nice, how are things?" });
+    expect(f.api.some((b) => b.state === "answered")).toBe(true);
+    // a prospect's call still waits for their hello
+    const g = fakeIO({ heard: [null] });
+    expect(await runOneCall(g.io, job)).toBe("no_answer");
+    expect(g.said).toEqual([]);
+  });
   it("hello → opener → conversation → JARVIS ends it → reported", async () => {
     const f = fakeIO({ heard: ["Hello?", "", "Yes tell me", "Ok, Thursday 4 pm works"], server: (b) => b.opener ? { say: "Hi, is this Iron Den? …an AI assistant…" } : b.action === "turn" ? (String(b.heard).includes("Thursday") ? { say: "Lovely, see you then!", end: true } : { say: "We'd love to make you a free demo website." }) : {} });
     expect(await runOneCall(f.io, job)).toBe("ended");

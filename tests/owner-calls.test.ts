@@ -9,7 +9,7 @@ describe("JARVIS calling you (pure)", () => {
     expect(spokenUpdate({ kind: "failed", text: "Failed - EV: Post the reel (Instagram offline)" })).toBe("EV couldn't finish: Post the reel (Instagram offline).");
     expect(spokenUpdate({ kind: "approval", text: "Needs your approval - EV: Publish today's post" })).toBe("EV needs your approval: Publish today's post.");
     expect(ownerOpener([{ kind: "approval", text: "Needs your approval - EV: Publish today's post" }])).toBe("Hi, it's JARVIS with an update. EV needs your approval: Publish today's post. Do you want me to approve it, or hold off?");
-    expect(ownerOpener([{ kind: "test", text: "Test call - JARVIS can reach you." }])).toBe("Hi, it's JARVIS with an update. This is a test call — I can reach you through the laptop.");
+    expect(ownerOpener([{ kind: "test", text: "Test call - JARVIS can reach you." }])).toBe("Hi, it's JARVIS with an update. This is a test call, and I'm live. I can hear you — say something and I'll answer.");
   });
   it("only a clear yes approves; a clear no rejects", () => {
     expect(saidYes("yes, approve it")).toBe(true);

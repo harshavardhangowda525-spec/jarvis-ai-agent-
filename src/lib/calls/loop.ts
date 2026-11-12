@@ -38,6 +38,8 @@ export const RING_MS = 45_000;
 export const SILENCE_MS = 12_000;
 /** If the answer isn't ready by then, say a short filler first. */
 export const FILLER_AFTER_MS = 700;
+/** On a call to you: if you pick up and say nothing for this long, JARVIS speaks first. */
+export const OWNER_SPEAK_AFTER_MS = 6_000;
 
 export async function runOneCall(io: CallerIO, c: CallJob): Promise<string> {
   let lang: Lang = "en";
@@ -55,32 +57,51 @@ export async function runOneCall(io: CallerIO, c: CallJob): Promise<string> {
   if (!d.ok) return finish("failed", d.error ?? "Phone Link couldn't place the call.");
   const started = io.now();
 
-  // 1. ringing: wait for a person to say something
-  let first: string | null = null;
+  // 1. ringing: wait for a person to say something. On a call TO YOU, JARVIS
+  // speaks up by itself after a few quiet seconds (you may pick up and just listen).
+  const toOwner = c.id.startsWith("own_");
+  let first: string | null = null, spoke = 0, interrupted = false;
+  const opener = async (heard: string) => {
+    const open = await io.api({ action: "turn", id: c.id, heard, opener: true, lang });
+    if (open.end || !open.say) return false; // an operator message / voicemail
+    if (!spoke) await io.api({ action: "event", id: c.id, state: "answered" }).catch(() => ({}));
+    io.label(`On a call with ${c.name}`);
+    spoke++;
+    interrupted = (await say(String(open.say), "en")).interrupted;
+    return true;
+  };
   while (io.now() - started < RING_MS) {
     if (io.stopped()) return finish("stopped");
-    const heard = await io.listen(Math.max(1000, RING_MS - (io.now() - started)));
-    if (heard === null) break;
+    const left = Math.max(1000, RING_MS - (io.now() - started));
+    const heard = await io.listen(toOwner ? Math.min(OWNER_SPEAK_AFTER_MS, left) : left);
+    if (heard === null) {
+      if (!toOwner) break;
+      if ((await io.inCall()) === false && io.now() - started > 5000) return finish(spoke ? "hung_up" : "no_answer");
+      if (spoke < 2 && !(await opener(""))) return finish("ended");
+      continue;
+    }
     if (heard.trim()) { first = heard.trim(); break; }
-    if ((await io.inCall()) === false && io.now() - started > 5000) return finish("no_answer");
+    if ((await io.inCall()) === false && io.now() - started > 5000) return finish(spoke ? "hung_up" : "no_answer");
   }
-  if (!first) return finish("no_answer");
-  io.log({ who: "them", text: first });
-  lang = io.heardLang?.() ?? detectLang(first);
+  if (!first && !spoke) return finish("no_answer");
 
-  // 2. the opening line (the server writes it: it always says JARVIS is an AI)
-  const open = await io.api({ action: "turn", id: c.id, heard: first, opener: true, lang });
-  if (open.end || !open.say) return finish("ended"); // an operator message / voicemail
-  await io.api({ action: "event", id: c.id, state: "answered" }).catch(() => ({}));
-  io.label(`On a call with ${c.name}`);
-  let interrupted = (await say(String(open.say), "en")).interrupted;
+  // 2. the opening line (the server writes it: it always says JARVIS is an AI).
+  // If JARVIS already spoke first, what you said is your first turn instead.
+  let carry: string | null = null;
+  if (first && spoke) carry = first;
+  else if (first) {
+    io.log({ who: "them", text: first });
+    lang = io.heardLang?.() ?? detectLang(first);
+    if (!(await opener(first))) return finish("ended");
+  }
 
   // 3. the conversation
   let silences = 0, fillers = 0;
   for (let turn = 0; turn < c.maxTurns; turn++) {
     if (io.stopped()) return finish("stopped");
     if (io.now() - started > c.maxMs) { await say(LINES[lang].bye, lang); return finish("timeout"); }
-    const heard = await io.listen(SILENCE_MS);
+    const heard = carry ?? await io.listen(SILENCE_MS);
+    carry = null;
     if (heard === null) {
       if ((await io.inCall()) === false) return finish("hung_up");
       silences++;
