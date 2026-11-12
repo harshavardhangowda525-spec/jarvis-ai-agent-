@@ -8,6 +8,8 @@
  * Always visible: the "JARVIS is working" frame + pill with Stop, a ripple
  * where it clicks. Never: typing passwords / OTPs (the server blocks them too).
  */
+const BROWSER = /\b(chrome|edge|firefox|brave|opera|browser)\b/i;
+
 export function createComputer(deps) {
   const d = { sleep: (ms) => new Promise((r) => setTimeout(r, ms)), log: () => {}, onStep: () => {}, maxSteps: 30, settleMs: 700, ...deps };
   let stopped = false, running = null;
@@ -20,10 +22,18 @@ export function createComputer(deps) {
       case "click": case "double_click": case "right_click":
         d.ripple?.(P(a.x), P(a.y));
         return d.input({ kind: a.type === "click" ? "click" : a.type === "double_click" ? "double" : "right", x: P(a.x), y: P(a.y) });
-      case "type": return d.input({ kind: "type", text: a.text, enter: !!a.enter });
+      case "type":
+        // a field was named: click into it first, so the text lands there
+        if (Number.isFinite(a.x) && Number.isFinite(a.y)) { d.ripple?.(P(a.x), P(a.y)); await d.input({ kind: "click", x: P(a.x), y: P(a.y) }); await d.sleep(250); }
+        return d.input({ kind: "type", text: a.text, enter: !!a.enter });
       case "key": return d.input({ kind: "key", keys: a.keys });
       case "scroll": return d.input({ kind: "scroll", direction: a.direction, amount: a.amount });
-      case "open_app": return d.openApp(a.app);
+      case "open_app": {
+        const r = await d.openApp(a.app);
+        // a browser that was already open (maybe showing JARVIS itself): work in a fresh tab
+        if (r && r.ok !== false && BROWSER.test(a.app)) { await d.sleep(600); await d.input({ kind: "key", keys: "ctrl+t" }); }
+        return r;
+      }
       case "wait": await d.sleep(a.seconds * 1000); return { ok: true };
       default: return { ok: true };
     }

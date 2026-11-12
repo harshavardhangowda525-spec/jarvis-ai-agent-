@@ -30,6 +30,7 @@ describe("computer use: the safe-step rules", () => {
     expect(parseStep('{"action":"type","element":1,"text":"4111 1111 1111 1111"}', els, screen).blocked).toMatch(/never type/);
     expect(parseStep('{"action":"type","element":1,"text":"my otp is 482913"}', els, screen).blocked).toMatch(/never type/);
     expect(parseStep('{"action":"type","element":1,"text":"bakeries in Bangalore","enter":true}', els, screen).blocked).toBeNull();
+    expect(parseStep('{"action":"type","element":1,"text":"bakeries","enter":true}', els, screen).action).toEqual({ type: "type", text: "bakeries", enter: true, target: "Search", x: 200, y: 65 });
   });
   it("refuses lock / wipe keys and junk keys; bad JSON becomes a clean fail", () => {
     expect(parseStep('{"action":"key","keys":"win+l"}', els, screen).blocked).toMatch(/don't press/);
@@ -78,6 +79,15 @@ describe("computer use: the orb's loop", () => {
     expect(log.labels.at(0)).toBe("write hi");
     expect(log.labels.at(-1)).toBeNull(); // the "JARVIS is working" label goes away
     expect(log.reports.at(-1)).toEqual({ status: "done", result: "Wrote hi." });
+  });
+  it("works in a new tab when it opens a browser, and clicks a field before typing into it", async () => {
+    const { deps, log } = fakes([step({ type: "open_app", app: "Google Chrome" }), step({ type: "type", text: "hi world", enter: true, target: "Address bar", x: 400, y: 40 }), step({ type: "done", summary: "Searched." })]);
+    expect((await createComputer(deps).run({ id: "t9", goal: "search hi world" })).status).toBe("done");
+    expect(log.input).toEqual([
+      { kind: "key", keys: "ctrl+t" },
+      { kind: "click", x: 600, y: 60 },
+      { kind: "type", text: "hi world", enter: true },
+    ]);
   });
   it("stops on a blocked step without touching anything", async () => {
     const { deps, log } = fakes([step({ type: "type", text: "pw" }, { blocked: "I never type passwords" })]);
