@@ -63,6 +63,39 @@ export function cleanForSpeech(text: string): string {
   return text.replace(/[*_`#>~|]+/g, " ").replace(/https?:\/\/\S+/g, "").replace(/[\u0000-\u001F\u007F]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 1200);
 }
 
+/**
+ * How JARVIS speaks on Piper: a touch slower and less "breathy" than Piper's default, which is
+ * clearer down a phone line (WhatsApp squeezes the sound). PIPER_LENGTH_SCALE (e.g. 1.0 faster, 1.15 slower) overrides the pace.
+ */
+export const PIPER_STYLE = ["--length_scale", process.env.PIPER_LENGTH_SCALE || "1.06", "--noise_scale", "0.5", "--noise_w", "0.6", "--sentence_silence", "0.12"];
+
+/**
+ * Even loudness: raise a quiet 16-bit PCM WAV so its loudest moment sits just under full scale (at most ×4),
+ * so every sentence reaches the call at the same, clear level. Anything that isn't 16-bit PCM is returned as is. Pure (tested).
+ */
+export function louder(wav: Buffer, target = 0.89, maxGain = 4): Buffer {
+  if (wav.length < 44 || wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") return wav;
+  let off = 12, fmtOk = false;
+  while (off + 8 <= wav.length) {
+    const id = wav.toString("ascii", off, off + 4), size = wav.readUInt32LE(off + 4), body = off + 8;
+    if (id === "fmt ") fmtOk = wav.readUInt16LE(body) === 1 && wav.readUInt16LE(body + 14) === 16;
+    if (id === "data") {
+      if (!fmtOk) return wav;
+      const end = Math.min(wav.length, body + size) & ~1;
+      let peak = 0;
+      for (let i = body; i < end; i += 2) peak = Math.max(peak, Math.abs(wav.readInt16LE(i)));
+      if (!peak) return wav;
+      const gain = Math.min(maxGain, (target * 32767) / peak);
+      if (gain <= 1.05) return wav;
+      const out = Buffer.from(wav);
+      for (let i = body; i < end; i += 2) out.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(wav.readInt16LE(i) * gain))), i);
+      return out;
+    }
+    off = body + size + (size & 1);
+  }
+  return wav;
+}
+
 const tmp = () => path.join(os.tmpdir(), `jarvis-voice-${process.pid}-${randomBytes(6).toString("hex")}.wav`);
 const readAndDrop = (f: string) => { const b = fs.readFileSync(f); fs.rm(f, { force: true }, () => {}); return b; };
 
@@ -76,7 +109,7 @@ class PiperWorker {
 
   private start() {
     if (this.proc && !this.proc.killed && this.proc.exitCode === null) return this.proc;
-    const p = spawn(piperExe(), ["--model", modelPath(this.lang), "--json-input"], { cwd: path.dirname(piperExe()), windowsHide: true });
+    const p = spawn(piperExe(), ["--model", modelPath(this.lang), ...PIPER_STYLE, "--json-input"], { cwd: path.dirname(piperExe()), windowsHide: true });
     p.stdout.setEncoding("utf8");
     p.stdout.on("data", (d: string) => {
       this.buf += d;
@@ -116,7 +149,7 @@ const workers: Partial<Record<"en" | "hi", PiperWorker>> = {};
 function piperOnce(lang: "en" | "hi", text: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const file = tmp();
-    const p = spawn(piperExe(), ["--model", modelPath(lang), "--output_file", file], { cwd: path.dirname(piperExe()), windowsHide: true });
+    const p = spawn(piperExe(), ["--model", modelPath(lang), ...PIPER_STYLE, "--output_file", file], { cwd: path.dirname(piperExe()), windowsHide: true });
     let err = "";
     p.stderr.on("data", (d) => { err += String(d); });
     const t = setTimeout(() => { p.kill(); reject(new Error("JARVIS's voice took too long.")); }, 30_000);
@@ -153,11 +186,11 @@ export async function localTts(text: string, lang?: VoiceLang): Promise<Buffer> 
   if (l === "kn") {
     if (!localVoiceAvailable("kn")) throw new Error("JARVIS's Kannada voice isn't installed yet — run npm run local once (it downloads it).");
     const out = await (await kannadaVoice())(t);
-    return wavFromFloat32(out.audio, out.sampling_rate);
+    return louder(wavFromFloat32(out.audio, out.sampling_rate));
   }
   const voice: "en" | "hi" = l === "hi" && localVoiceAvailable("hi") ? "hi" : "en";
   if (!localVoiceAvailable(voice)) throw new Error("JARVIS's own voice isn't installed yet — run npm run local once (it downloads it).");
   const w = (workers[voice] ??= new PiperWorker(voice));
-  if (!w.broken) { const b = await w.speak(t); if (b) return b; }
-  return piperOnce(voice, t);
+  if (!w.broken) { const b = await w.speak(t); if (b) return louder(b); }
+  return louder(await piperOnce(voice, t));
 }
