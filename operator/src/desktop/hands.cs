@@ -286,6 +286,7 @@ public static class Hands {
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] static extern void keybd_event(byte b, byte s, uint f, UIntPtr e);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint msg, UIntPtr wParam, string lParam, uint flags, uint timeout, out UIntPtr result);
 
   [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
   [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
@@ -444,6 +445,22 @@ public static class Hands {
     }
     return false;
   }
+  /** Turn on WebView2's accessibility for this Windows user (WebView2's documented WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
+      setting), so apps built on it — like WhatsApp — show Windows their buttons. Nothing else changes. */
+  static bool EnsureWebViewAccessibility() {
+    const string name = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", flag = "--force-renderer-accessibility";
+    string now;
+    using (RegistryKey k = Registry.CurrentUser.CreateSubKey("Environment")) {
+      string cur = (k.GetValue(name) as string) ?? "";
+      if (cur.IndexOf(flag, StringComparison.OrdinalIgnoreCase) >= 0) return false;
+      now = (cur + " " + flag).Trim();
+      k.SetValue(name, now, RegistryValueKind.String);
+    }
+    Environment.SetEnvironmentVariable(name, now);
+    UIntPtr r; SendMessageTimeout((IntPtr)0xffff, 0x001A, UIntPtr.Zero, "Environment", 2, 3000, out r); // tell Windows the environment changed
+    return true;
+  }
+
   static object Phone(string op, bool wa, string to) {
     string[] names = wa ? new string[] { "WhatsApp", "WhatsApp.Root" } : new string[] { "PhoneExperienceHost", "YourPhone" };
     bool running = false; foreach (string n in names) if (Process.GetProcessesByName(n).Length > 0) running = true;
@@ -471,11 +488,22 @@ public static class Hands {
       Regex confirmRe = new Regex("^(call|start call|start voice call)$", RegexOptions.IgnoreCase);
       string[] callNames = wa ? new string[] { "Voice call", "Audio call", "Start voice call" } : new string[] { "Call", "Start call", "Dial" };
       string[] confirmNames = { "Call", "Start call", "Start voice call" };
-      bool pressed = false;
+      bool pressed = false, retried = false;
       Stopwatch sw = Stopwatch.StartNew();
       int round = 0;
-      while (sw.ElapsedMilliseconds < 40000) {
+      while (sw.ElapsedMilliseconds < 60000) {
         Thread.Sleep(600); round++;
+        // WhatsApp (a web page in WebView2) shows Windows only its title-bar buttons until accessibility is on:
+        // switch WebView2's own accessibility flag on for this user, restart WhatsApp once, and look again
+        if (wa && !pressed && !retried && round == 6 && OnlyTitleButtons(names)) {
+          retried = true;
+          EnsureWebViewAccessibility();
+          foreach (string n in names) foreach (Process p in Process.GetProcessesByName(n)) { try { p.Kill(); } catch (Exception) { } }
+          Thread.Sleep(2000);
+          Process.Start("whatsapp://send?phone=" + digits);
+          Thread.Sleep(4000);
+          continue;
+        }
         if (pressed && InCall(names, endRe)) { Dictionary<string, object> d = Ok(); d["pressed"] = true; return d; }
         List<AutomationElement> ws = Windows(names);
         // ask for the button by its name (fast); the full scan only now and then
@@ -517,6 +545,12 @@ public static class Hands {
       } catch (Exception) { }
     }
     return false;
+  }
+  static bool OnlyTitleButtons(string[] names) {
+    foreach (AutomationElement b in Buttons(Windows(names))) {
+      try { string n = (b.Current.Name ?? "").Trim(); if (n != "" && n != "Minimize" && n != "Maximize" && n != "Restore" && n != "Close") return false; } catch (Exception) { }
+    }
+    return true;
   }
   /** The names of the buttons in the app's windows (to see what it calls things). */
   static string ButtonNames(string[] names) {
