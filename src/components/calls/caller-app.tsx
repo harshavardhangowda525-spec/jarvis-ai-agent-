@@ -13,7 +13,7 @@ import { splitSentences, normLang, type Lang } from "@/lib/calls/rules";
  * speakers.
  */
 interface Phone {
-  check: () => Promise<{ ok: boolean; installed?: boolean; running?: boolean; cable?: boolean; simulated?: boolean; error?: string }>;
+  check: () => Promise<{ ok: boolean; app?: string; installed?: boolean; running?: boolean; cable?: boolean; simulated?: boolean; error?: string }>;
   dial: (to: string) => Promise<{ ok: boolean; error?: string }>;
   hangup: () => Promise<unknown>;
   state: () => Promise<{ ok: boolean; inCall?: boolean }>;
@@ -190,11 +190,14 @@ export function CallerApp() {
     const set = (c: Check) => { list.push(c); setChecks([...list]); };
     if (!phone) { set({ label: "JARVIS on your laptop", ok: false, detail: "JARVIS opens this window by itself on your Windows laptop when calling is switched on (start JARVIS with npm run local)." }); return false; }
     const pc: Awaited<ReturnType<Phone["check"]>> = await phone.check().catch((e) => ({ ok: false, error: (e as Error).message }));
-    set({ label: "Phone Link installed", ok: !!pc.installed, detail: pc.installed ? undefined : pc.error ?? "Install Phone Link from the Microsoft Store." });
-    set({ label: "Phone Link running, phone connected", ok: !!pc.running, detail: pc.running ? "Make sure Calls are set up in Phone Link (Bluetooth)." : "Open Phone Link and connect your Android phone." });
+    const app = pc.app ?? "Phone Link", wa = /whatsapp/i.test(app);
+    set({ label: `${app} installed`, ok: !!pc.installed, detail: pc.installed ? undefined : pc.error ?? `Install ${app} from the Microsoft Store.` });
+    set({ label: wa ? "WhatsApp Desktop open and linked" : "Phone Link running, phone connected", ok: !!pc.running,
+      detail: wa ? (pc.running ? "Linked to the spare phone's WhatsApp (not yours — it can't call itself)." : "Open WhatsApp Desktop and link it to the spare phone's WhatsApp (scan the QR code).")
+        : pc.running ? "Make sure Calls are set up in Phone Link (Bluetooth)." : "Open Phone Link and connect your Android phone." });
     set({ label: "VB-Audio virtual cable", ok: !!pc.cable, detail: pc.cable ? undefined : "Install VB-CABLE (vb-audio.com/Cable), then restart." });
     const { cable } = await devices();
-    set({ label: "JARVIS speaks into: CABLE Input", ok: !!(sink || cable), detail: sink || cable ? "In Windows Sound settings, set Phone Link's microphone (input) to \"CABLE Output\"." : "Pick the CABLE Input speaker below." });
+    set({ label: "JARVIS speaks into: CABLE Input", ok: !!(sink || cable), detail: sink || cable ? `${app}'s microphone must be "CABLE Output" (run scripts\\windows\\setup-calls-audio.ps1 once).` : "Pick the CABLE Input speaker below." });
     try { const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Test.", agent: "jarvis" }) }); set({ label: "JARVIS's voice", ok: r.ok, detail: r.ok ? (r.headers.get("X-Voice")?.startsWith("jarvis-local") ? "JARVIS's own voice (on this PC)" : undefined) : r.status === 503 ? "Not installed yet — restart JARVIS with npm run local (it downloads its own voice once)." : `Failed (${r.status}): ${(await r.json().catch(() => null))?.error ?? "no reason given"}` }); }
     catch { set({ label: "JARVIS's voice", ok: false, detail: "Couldn't reach JARVIS." }); }
     try { await ensureEars(); set({ label: "JARVIS hears the call (speakers)", ok: true }); } catch (e) { set({ label: "JARVIS hears the call (speakers)", ok: false, detail: (e as Error).message }); }

@@ -156,8 +156,11 @@ public static class JarvisIn {
 if ($a.op -like 'phone-*') {
   Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
   $AE = [System.Windows.Automation.AutomationElement]; $TS = [System.Windows.Automation.TreeScope]
+  # calls go through Phone Link, or through WhatsApp Desktop ($a.via = 'whatsapp')
+  $wa = ([string]$a.via -eq 'whatsapp')
+  $procNames = if ($wa) { @('WhatsApp', 'WhatsApp.Root') } else { @('PhoneExperienceHost', 'YourPhone') }
   function PLWindows {
-    $ids = @(Get-Process -Name PhoneExperienceHost, YourPhone -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
+    $ids = @(Get-Process -Name $procNames -ErrorAction SilentlyContinue | ForEach-Object { $_.Id })
     if (-not $ids.Count) { return @() }
     $all = $AE::RootElement.FindAll($TS::Children, [System.Windows.Automation.Condition]::TrueCondition)
     return @($all | Where-Object { $ids -contains $_.Current.ProcessId })
@@ -174,14 +177,37 @@ if ($a.op -like 'phone-*') {
     }
     return $false
   }
-  $endRe = '^(End call|Hang up|End|Call end)$'
+  $endRe = if ($wa) { '(?i)^(end call|end|leave call|hang up)$' } else { '^(End call|Hang up|End|Call end)$' }
   function InCall { return [bool](@(Buttons (PLWindows) | Where-Object { $_.Current.Name -match $endRe }).Count) }
+  if ($wa -and $a.op -eq 'phone-check') {
+    $installed = [bool](Get-AppxPackage -Name '*WhatsAppDesktop*' -ErrorAction SilentlyContinue) -or (Test-Path "$env:LOCALAPPDATA\WhatsApp\WhatsApp.exe")
+    $running = [bool](Get-Process -Name $procNames -ErrorAction SilentlyContinue)
+    $cable = [bool](Get-CimInstance Win32_SoundDevice -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'VB-Audio|CABLE' })
+    ConvertTo-Json -Compress -InputObject @{ ok = $true; app = 'WhatsApp Desktop'; installed = $installed; running = $running; cable = $cable }; exit
+  }
+  if ($wa -and $a.op -eq 'phone-dial') {
+    $d = ([string]$a.to) -replace '[^0-9]', ''
+    if ($d.Length -eq 10) { $d = '91' + $d }   # an Indian number without the country code
+    if ($d -notmatch '^\d{10,15}$') { '{"ok":false,"error":"That number is not dialable."}'; exit }
+    if (InCall) { '{"ok":false,"error":"WhatsApp is already on a call."}'; exit }
+    Start-Process "whatsapp://send?phone=$d"
+    $pressed = $false
+    for ($i = 0; $i -lt 30; $i++) {
+      Start-Sleep -Milliseconds 500
+      if (InCall) { ConvertTo-Json -Compress -InputObject @{ ok = $true; pressed = $pressed }; exit }
+      if (-not $pressed) { $pressed = Press (PLWindows) '(?i)^(voice call|audio call)' }
+      else { Press (PLWindows) '(?i)^(call|start call|start voice call)$' | Out-Null }  # "Start voice call?" confirmation, if shown
+    }
+    if (-not @(PLWindows).Count) { '{"ok":false,"error":"WhatsApp Desktop did not open. Install it from the Microsoft Store and link it to the spare phone''s WhatsApp."}'; exit }
+    if (-not $pressed) { ConvertTo-Json -Compress -InputObject @{ ok = $false; error = "WhatsApp opened the chat but I couldn't find its voice-call button - is this number on WhatsApp?" }; exit }
+    ConvertTo-Json -Compress -InputObject @{ ok = $false; error = "I pressed WhatsApp's call button but the call didn't start." }; exit
+  }
   switch ($a.op) {
     'phone-check' {
       $installed = [bool](Get-AppxPackage -Name Microsoft.YourPhone -ErrorAction SilentlyContinue)
       $running = [bool](Get-Process -Name PhoneExperienceHost, YourPhone -ErrorAction SilentlyContinue)
       $cable = [bool](Get-CimInstance Win32_SoundDevice -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'VB-Audio|CABLE' })
-      ConvertTo-Json -Compress -InputObject @{ ok = $true; installed = $installed; running = $running; cable = $cable }; exit
+      ConvertTo-Json -Compress -InputObject @{ ok = $true; app = 'Phone Link'; installed = $installed; running = $running; cable = $cable }; exit
     }
     'phone-dial' {
       $to = [string]$a.to

@@ -14,16 +14,19 @@ export const CALLS_PROFILE = path.join(ROOT, ".calls-profile");
  * JARVIS's calls, run by JARVIS's own helper (no orb). When calling is
  * switched on (calls to you through the laptop, or calling leads), it opens a
  * small "JARVIS — Calls" window by itself, signed in with this laptop's JARVIS
- * key, which dials through Phone Link, talks through the virtual cable and
- * listens to the speakers. Switched off → the window closes (never mid-call).
+ * key, which dials through Phone Link or WhatsApp Desktop, talks through the
+ * virtual cable and listens to the speakers. Switched off → the window closes (never mid-call).
  *
  * The window is a separate browser profile that only ever loads JARVIS's own
  * pages: it is the only one allowed to use the microphone / hear the
  * speakers, so no website you browse can.
  */
 
-/** Phone Link controls for the calling page. Pure over `runPs` (tested). */
-export function phoneBridge({ platform = process.platform, runPs = runWinPs, sim = false } = {}) {
+/**
+ * Phone controls for the calling page (Phone Link or WhatsApp Desktop). Pure over `runPs` (tested).
+ * @param {{ platform?: string, runPs?: (a: Record<string, unknown>) => Promise<any>, sim?: boolean, via?: () => string }} [o]
+ */
+export function phoneBridge({ platform = process.platform, runPs = runWinPs, sim = false, via = () => "phonelink" } = {}) {
   let simInCall = false;
   return async (op, arg) => {
     if (sim) {
@@ -34,16 +37,17 @@ export function phoneBridge({ platform = process.platform, runPs = runWinPs, sim
       if (op === "working") return { ok: true };
       return { ok: false, error: "Unknown phone action." };
     }
-    if (platform !== "win32") return { ok: false, error: "Calls go through Phone Link, which is on Windows only." };
-    if (op === "check") return runPs({ op: "phone-check" });
-    if (op === "state") return runPs({ op: "phone-state" });
-    if (op === "hangup") return runPs({ op: "phone-hangup" });
+    if (platform !== "win32") return { ok: false, error: "Calls go through Phone Link or WhatsApp Desktop, which run on Windows only." };
+    const v = via() === "whatsapp" ? "whatsapp" : "phonelink";
+    if (op === "check") return runPs({ op: "phone-check", via: v });
+    if (op === "state") return runPs({ op: "phone-state", via: v });
+    if (op === "hangup") return runPs({ op: "phone-hangup", via: v });
     if (op === "working") return { ok: true }; // the calling window shows what's happening itself
     if (op === "dial") {
       const n = String(arg || "").replace(/[^\d+]/g, "");
       if (!/^\+?\d{8,15}$/.test(n)) return { ok: false, error: "That number isn't dialable." };
-      log.info(`[calls] dialling ${n.slice(0, -4).replace(/\d/g, "•")}${n.slice(-4)}`);
-      return runPs({ op: "phone-dial", to: n });
+      log.info(`[calls] dialling ${n.slice(0, -4).replace(/\d/g, "•")}${n.slice(-4)} (${v === "whatsapp" ? "WhatsApp" : "Phone Link"})`);
+      return runPs({ op: "phone-dial", to: n, via: v });
     }
     return { ok: false, error: "Unknown phone action." };
   };
@@ -61,8 +65,9 @@ export function routeDecision(reqUrl, link, isNavigation) {
 }
 
 export class CallsWindow {
-  constructor({ pollMs = 30_000, fetchImpl = fetch, phone = phoneBridge({ runPs: runWinPs, sim: process.env.OPERATOR_CALLS_SIM === "1" }), launch = launchCallsBrowser } = {}) {
-    this.pollMs = pollMs; this.fetch = fetchImpl; this.phone = phone; this.launch = launch;
+  constructor({ pollMs = 30_000, fetchImpl = fetch, phone = null, launch = launchCallsBrowser } = {}) {
+    this.pollMs = pollMs; this.fetch = fetchImpl; this.launch = launch; this.via = "phonelink";
+    this.phone = phone ?? phoneBridge({ runPs: runWinPs, sim: process.env.OPERATOR_CALLS_SIM === "1", via: () => this.via });
     this.ctx = null; this.page = null; this.timer = null; this.busy = false; this.warned = "";
   }
 
@@ -92,6 +97,7 @@ export class CallsWindow {
     try {
       const w = await this.wanted(link);
       this.warned = "";
+      if (w.via) this.via = w.via;
       if (w.on && !this.isOpen()) await this.open(link);
       else if (!w.on && this.isOpen()) {
         const s = await this.phone("state").catch(() => null);

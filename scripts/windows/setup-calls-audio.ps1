@@ -1,6 +1,6 @@
-# JARVIS - sets up the audio for calls through Phone Link (run once, as administrator).
+﻿# JARVIS - sets up the audio for calls through Phone Link or WhatsApp Desktop (run once, as administrator).
 #  1. installs VB-Audio Virtual Cable (free) if it isn't there
-#  2. sets Phone Link's microphone to "CABLE Output" (only Phone Link - nothing else changes)
+#  2. sets Phone Link's and WhatsApp Desktop's microphone to "CABLE Output" (only those two - nothing else changes)
 # Phone Link's speaker output stays on your normal speakers, so JARVIS can hear the other person.
 # Usage (from the JARVIS folder):  powershell -ExecutionPolicy Bypass -File scripts\windows\setup-calls-audio.ps1
 $ErrorActionPreference = 'Stop'
@@ -66,13 +66,20 @@ if (-not (Get-Process -Name PhoneExperienceHost -ErrorAction SilentlyContinue)) 
   Start-Sleep -Seconds 8
 }
 $cableMic = 'VB-Audio Virtual Cable\Device\CABLE Output\Capture'
-foreach ($p in @('PhoneExperienceHost.exe', 'YourPhone.exe')) {
+# WhatsApp Desktop too (JARVIS can call through it instead of Phone Link)
+$waApp = Get-AppxPackage -Name '*WhatsAppDesktop*' -ErrorAction SilentlyContinue
+if ($waApp -and -not (Get-Process -Name WhatsApp, WhatsApp.Root -ErrorAction SilentlyContinue)) {
+  Say 'Starting WhatsApp Desktop...'
+  Start-Process 'explorer.exe' "shell:AppsFolder\$($waApp.PackageFamilyName)!App"
+  Start-Sleep -Seconds 8
+}
+foreach ($p in @('PhoneExperienceHost.exe', 'YourPhone.exe', 'WhatsApp.exe', 'WhatsApp.Root.exe')) {
   & $svv /SetAppDefault $cableMic all $p | Out-Null
 }
 Start-Sleep -Seconds 1
 Say ''
 Say 'Done:' Green
-Say '  - Phone Link''s microphone is now "CABLE Output" (JARVIS''s voice goes into calls).'
+Say '  - Phone Link''s and WhatsApp Desktop''s microphone is now "CABLE Output" (JARVIS''s voice goes into calls).'
 Say '  - Your normal microphone and speakers are unchanged; Phone Link still plays calls on your speakers.'
 Say ''
 Say 'Next:' Cyan

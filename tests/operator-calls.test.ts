@@ -10,12 +10,23 @@ describe("JARVIS's calls without the orb: phone controls", () => {
     const seen: unknown[] = [];
     const op: Op = phoneBridge({ platform: "win32", runPs: async (a: unknown) => { seen.push(a); return { ok: true }; } });
     expect(await op("dial", "+91 99808-01231")).toEqual({ ok: true });
-    expect(seen.at(-1)).toEqual({ op: "phone-dial", to: "+919980801231" });
+    expect(seen.at(-1)).toEqual({ op: "phone-dial", to: "+919980801231", via: "phonelink" });
     expect(await op("dial", "call me; rm -rf")).toMatchObject({ ok: false });
     expect(await op("state")).toEqual({ ok: true });
-    expect(seen.at(-1)).toEqual({ op: "phone-state" });
+    expect(seen.at(-1)).toEqual({ op: "phone-state", via: "phonelink" });
     expect(await op("format-disk")).toMatchObject({ ok: false });
     expect(seen).toHaveLength(2);
+  });
+  it("calls through WhatsApp Desktop when that's the chosen way", async () => {
+    const seen: Record<string, unknown>[] = [];
+    let via = "phonelink";
+    const op: Op = phoneBridge({ platform: "win32", via: () => via, runPs: async (a: Record<string, unknown>) => { seen.push(a); return { ok: true }; } });
+    await op("dial", "+91 99808 01231");
+    expect(seen.at(-1)).toEqual({ op: "phone-dial", to: "+919980801231", via: "phonelink" });
+    via = "whatsapp";
+    await op("dial", "+91 99808 01231");
+    await op("state");
+    expect(seen.slice(-2)).toEqual([{ op: "phone-dial", to: "+919980801231", via: "whatsapp" }, { op: "phone-state", via: "whatsapp" }]);
   });
   it("says plainly that calling needs Windows (Phone Link)", async () => {
     const op: Op = phoneBridge({ platform: "linux", runPs: async () => ({ ok: true }) });
@@ -46,7 +57,7 @@ describe("JARVIS's calls without the orb: opening and closing the window", () =>
       let on = true, inCall = false;
       const f = fakeCtx();
       const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true, data: { on } }), { status: 200 }));
-      const w = new CallsWindow({ fetchImpl, launch: async () => f.ctx as never, phone: async (op: string) => (op === "state" ? { ok: true, inCall } : { ok: true }) });
+      const w = new CallsWindow({ fetchImpl, launch: async () => f.ctx as never, phone: (async (op: string) => (op === "state" ? { ok: true, inCall } : { ok: true })) as never });
       await w.poll();
       expect(f.page.url).toBe("http://localhost:3999/calls/live?auto=1");
       expect(Object.keys(f.ctx.bindings)).toEqual(["__jarvisPhone"]);
@@ -81,6 +92,10 @@ d("JARVIS's calls without the orb: the laptop key (integration)", () => {
     expect(await C.callsWanted(userId)).toMatchObject({ on: false });
     await Ph.saveSettings(userId, { enabled: true, mode: "laptop", toNumber: "+91 99808 01231" });
     expect(await C.callsWanted(userId)).toMatchObject({ on: true, toYou: true, leads: false });
+    await Ph.saveSettings(userId, { callMethod: "normal" });
+    expect((await C.callsWanted(userId)).via).toBe("phonelink");
+    await Ph.saveSettings(userId, { callMethod: "whatsapp" });
+    expect((await C.callsWanted(userId)).via).toBe("whatsapp");
     const { GET } = await import("@/app/api/calls/device/route");
     const r = await GET(new Request("http://x/api/calls/device", { headers: { authorization: `Bearer ${token}` } }));
     expect(await r.json()).toMatchObject({ ok: true, data: { on: true } });

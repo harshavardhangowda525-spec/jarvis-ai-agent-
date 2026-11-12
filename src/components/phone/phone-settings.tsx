@@ -148,6 +148,20 @@ export function PhoneSettings() {
       <p className="mt-1.5 text-[11px] text-muted-foreground">During quiet hours, calls wait until the quiet hours end. Times are in your timezone from Profile.</p>
       <Button className="mt-3" onClick={save} disabled={busy === "save"}>{busy === "save" ? "Saving…" : "Save"}</Button>
 
+      {l && laptop && (
+        <div className="mt-5">
+          <div className="mb-1.5 text-sm">How the laptop calls (you and leads)</div>
+          <div className="flex gap-2">
+            {([["normal", "Normal call (Phone Link)"], ["whatsapp", "WhatsApp call (WhatsApp Desktop)"]] as const).map(([m, label]) => (
+              <button key={m} type="button" onClick={() => call("PATCH", { callMethod: m }, "method")} className={cn("rounded-lg border px-3 py-1.5 text-sm", l.callMethod === m ? "border-accent text-accent" : "border-border text-muted-foreground")}>{label}</button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{l.callMethod === "whatsapp"
+            ? "JARVIS calls from WhatsApp Desktop on this laptop — link it to the spare phone's WhatsApp (it can't call its own number). JARVIS's voice goes in through the virtual cable. The person needs WhatsApp."
+            : "A normal call from the phone paired with Phone Link (needs Phone Link → Calls set up over Bluetooth)."}</p>
+        </div>
+      )}
+
       {l && !iphone && !laptop && (
         <div className="mt-5">
           <div className="mb-1.5 text-sm">How the spare phone calls you</div>

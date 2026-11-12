@@ -123,9 +123,11 @@ export async function callsBoard(userId: string, now = new Date()) {
 /** Should JARVIS's calling window be running on the laptop? */
 export async function callsWanted(userId: string) {
   const s = await getSettings(userId);
-  const link = await db().phoneLink.findUnique({ where: { userId }, select: { mode: true, enabled: true } });
+  const link = await db().phoneLink.findUnique({ where: { userId }, select: { mode: true, enabled: true, callMethod: true } });
   const toYou = !!link?.enabled && link.mode === "laptop";
-  return { on: s.enabled || toYou, leads: s.enabled, toYou };
+  // on the laptop, calls go through Phone Link (normal calls) or WhatsApp Desktop
+  const via = link?.mode === "laptop" && link.callMethod === "whatsapp" ? "whatsapp" : "phonelink";
+  return { on: s.enabled || toYou, leads: s.enabled, toYou, via };
 }
 
 export async function callerNext(userId: string, now = new Date()) {
