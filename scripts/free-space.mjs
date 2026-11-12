@@ -9,8 +9,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
-const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1")), "..");
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const home = os.homedir();
 const local = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
 const win = process.env.WINDIR || "C:\\Windows";
