@@ -13,6 +13,7 @@ import { allowNullOptionals, dropNullArgs, isToolCallRejection, VALIDATES_TOOL_A
 import { env } from "@/lib/env";
 import { buildSystemPrompt } from "./prompt";
 import { availableTools, getTool } from "@/lib/tools/registry";
+import { pickTools, stripSchema } from "./tool-pick";
 import type { ToolContext, ToolDefinition } from "@/lib/tools/types";
 import { ToolError } from "@/lib/tools/types";
 import { getDb } from "@/lib/db";
@@ -230,8 +231,12 @@ export async function* runAgent(
     system += memoryPromptBlock(await memoriesLookup,
       `# What you know about ${input.displayName || "the user"} (shared memory with JARVIS — use it to personalise; never contradict it)`);
   }
-  system += await operatorPromptFor(input.userId, isEv ? "EV" : isDarwin ? "DARWIN" : isMike ? "MIKE" : isRobin ? "ROBIN" : isAston ? "ASTON" : isFriday ? "FRIDAY" : (input.assistantName || "JARVIS")).catch((e) => { console.error("[agent] operating manual failed:", e); return ""; });
+  const manualName = isEv ? "EV" : isDarwin ? "DARWIN" : isMike ? "MIKE" : isRobin ? "ROBIN" : isAston ? "ASTON" : isFriday ? "FRIDAY" : (input.assistantName || "JARVIS");
+  const systemBase = system;
+  system += await operatorPromptFor(input.userId, manualName).catch((e) => { console.error("[agent] operating manual failed:", e); return ""; });
   system += memoryNote;
+  // small-allowance plans (Groq free: 8,000 tokens a minute) get the manual's core instead of all of it
+  const systemLean = systemBase + (await operatorPromptFor(input.userId, manualName, { compact: true }).catch(() => "")) + memoryNote;
 
   const brain = await brainLookup;
   const brainPick = agentConfigs(isEv ? "ev" : isDarwin ? "darwin" : isMike ? "mike" : isRobin ? "robin" : isAston ? "aston" : isFriday ? "friday" : "jarvis", brain, input.preferredProvider);
@@ -255,8 +260,10 @@ export async function* runAgent(
   // Skip providers that just rate-limited us / rejected the key — retrying them
   // on every message only adds a wasted round trip before the one that answers.
   const now = Date.now();
-  const available = configs.filter((c) => (parkedUntil.get(parkKey(c)) ?? 0) <= now);
-  const chain = available.length ? available : configs;
+  // Gemini models run out of the day's free quota or get overloaded one by one: line up its other models too
+  const withBackups = configs.flatMap((c) => c.provider !== "gemini" ? [c] : [...new Set([c.model, ...geminiTextBackups()])].map((model) => ({ ...c, model })));
+  const available = withBackups.filter((c) => (parkedUntil.get(parkKey(c)) ?? 0) <= now);
+  const chain = available.length ? available : withBackups;
   let setupMs = -1;
   let firstWordAt: number | null = null;
   const timing = (cfg: AiConfig): AgentEvent => ({
@@ -270,15 +277,20 @@ export async function* runAgent(
     // (but still bounded) window: less to read = a faster first word and fewer
     // free-tier "tokens per minute" rate limits.
     const local = cfg.provider === "ollama";
+    // Groq's free plan allows ~8,000 tokens a minute: the manual's core, short tool descriptions, less history
+    const tight = cfg.provider === "groq" && env.groqTight;
     const total = input.historyTotal ?? input.history.length;
     const s: SharedCtx = {
-      system, tools, ctx, activityQueue, model: cfg.model, provider: cfg.provider,
+      system: tight ? systemLean : system,
+      tools: tight ? pickTools(tools, input.message, input.history.filter((m) => m.role === "user").map((m) => String(m.content))) : tools,
+      tight, ctx, activityQueue, model: cfg.model, provider: cfg.provider,
       // Spoken answers are short; a CPU writes only a few tokens a second.
-      maxTokens: local ? 512 : 2048,
+      // Groq free counts the reserved answer space against its 8,000 tokens a minute too
+      maxTokens: local ? 512 : tight ? 900 : 2048,
       // Headers arrive at once from the gateway, so the limit JARVIS enforces is
       // "time until the FIRST WORD" — then it falls back to the cloud.
       firstTokenMs: local ? cfg.timeoutMs : undefined,
-      leanTools: local,
+      leanTools: local || tight,
       // gpt-oss "thinks" before answering; a low effort keeps the first word quick.
       reasoningEffort: /gpt-oss/i.test(cfg.model) && ["groq", "cerebras"].includes(cfg.provider) && !["none", "off", "default"].includes(env.reasoningEffort)
         ? env.reasoningEffort : undefined,
@@ -287,6 +299,7 @@ export async function* runAgent(
       ...input,
       history: local
         ? trimHistoryForLocal(input.history, env.ollamaHistory, 1200, total)
+        : tight ? trimHistoryForLocal(input.history, 4, 800, total)
         : trimHistoryForLocal(input.history, 16, 2000, total),
     };
     let committed = false;
@@ -381,6 +394,11 @@ export function agentConfigs(
 // provider+model → time until which it's skipped (per server instance).
 const parkedUntil = new Map<string, number>();
 const parkKey = (c: AiConfig) => `${c.provider}:${c.model}`;
+/** Other Gemini models for chat when the main one is out of quota / overloaded (GEMINI_FALLBACK_MODELS=a,b). */
+export function geminiTextBackups(e: NodeJS.ProcessEnv = process.env): string[] {
+  const own = (e.GEMINI_FALLBACK_MODELS || "").split(/[\s,]+/).filter(Boolean);
+  return own.length ? own : ["gemini-flash-latest", "gemini-flash-lite-latest"];
+}
 
 /** How long to skip a provider after this error (0 = don't). */
 function parkFor(err: unknown): number {
@@ -389,6 +407,8 @@ function parkFor(err: unknown): number {
   const retryAfter = Number(typeof h?.get === "function" ? h.get("retry-after") : h?.["retry-after"]);
   if (e?.status === 429) return Math.min(Math.max(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 20_000, 5_000), 10 * 60_000);
   if (e?.status === 401 || e?.status === 403 || e?.status === 404) return 10 * 60_000; // bad key / model gone
+  if (e?.status === 503) return 2 * 60_000; // overloaded right now
+  if (e?.status === 413) return 60_000; // this request is too big for the plan's per-minute allowance
   if (e?.status === 402) return 30 * 60_000; // needs billing
   return 0;
 }
@@ -409,6 +429,8 @@ interface SharedCtx {
   firstTokenMs?: number;
   /** Shorter tool descriptions — less for a local model to read each turn. */
   leanTools?: boolean;
+  /** a small per-minute allowance (Groq free): parameter descriptions are left out too */
+  tight?: boolean;
   /** reasoning_effort for reasoning models (e.g. gpt-oss on Groq/Cerebras). */
   reasoningEffort?: string;
   /** Which provider is answering (some validate tool arguments themselves). */
@@ -595,9 +617,10 @@ async function* openaiLoop(
     function: {
       name: t.name,
       description: s.leanTools ? firstSentence(t.description) : t.description,
-      parameters: VALIDATES_TOOL_ARGS.has(s.provider ?? "")
-        ? allowNullOptionals(t.inputSchema as Record<string, unknown>)
-        : (t.inputSchema as Record<string, unknown>),
+      parameters: (() => {
+        const schema = (s.tight ? stripSchema(t.inputSchema) : t.inputSchema) as Record<string, unknown>;
+        return VALIDATES_TOOL_ARGS.has(s.provider ?? "") ? allowNullOptionals(schema) : schema;
+      })(),
     },
   }));
   let toolRetry = false; // one retry when the provider rejects a malformed tool call

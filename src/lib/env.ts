@@ -294,6 +294,8 @@ export const env = {
   niosRegionalCentres: read("NIOS_REGIONAL_CENTRES"),
   niosExtraUrls: read("NIOS_EXTRA_URLS"),
   cronSecret: read("CRON_SECRET"),
+  /** Groq's free plan (8,000 tokens a minute): send it shorter requests. GROQ_TIGHT=0 if you're on a paid Groq plan. */
+  groqTight: !["0", "false", "no", "off"].includes(read("GROQ_TIGHT").toLowerCase()),
   // Your trading playbook app's Supabase project (read-only). Either sign in as
   // you (anon key + the playbook account's email/password — row-level security
   // limits reads to your own documents) or use the service key + your user id.

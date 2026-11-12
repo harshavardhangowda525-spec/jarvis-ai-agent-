@@ -68,7 +68,18 @@ export async function saveOperator(userId: string, patch: { content?: string; en
 }
 
 /** What an agent's brain gets this turn ("" when the manual is off or empty). */
-export async function operatorPromptFor(userId: string, agentName: string): Promise<string> {
+export async function operatorPromptFor(userId: string, agentName: string, o: { compact?: boolean } = {}): Promise<string> {
   const op = await loadOperator(userId);
-  return op.enabled ? operatorBlock(op.content, agentName) : "";
+  if (!op.enabled) return "";
+  return operatorBlock(o.compact ? compactManual(op.content) : op.content, agentName);
+}
+
+/**
+ * The manual's core — who you are, personality, the golden rules and hard stops (its Parts 0–2) — for AI plans
+ * with a small per-minute allowance (Groq's free tier refuses a request with the whole manual). Pure (tested).
+ */
+export function compactManual(content: string): string {
+  const cut = content.search(/\n#{1,3}\s*PART\s+3\b/i);
+  if (cut <= 0) return content.slice(0, 6000);
+  return `${content.slice(0, cut).trim()}\n\n(The rest of the manual — business catalogue, prices, modules, reports — is left out of this short request. Never invent a price or detail from it: say you'll check.)`;
 }
