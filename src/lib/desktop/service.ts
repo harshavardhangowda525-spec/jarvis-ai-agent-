@@ -66,8 +66,10 @@ export type AskVision = (system: string, text: string, dataUrl: string) => Promi
 /** Other Gemini models that can see images (GEMINI_VISION_MODELS=a,b to choose your own). */
 export function geminiBackups(env: NodeJS.ProcessEnv = process.env): string[] {
   const own = (env.GEMINI_VISION_MODELS || "").split(/[\s,]+/).filter(Boolean);
-  return own.length ? own : ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"];
+  return own.length ? own : ["gemini-flash-latest", "gemini-flash-lite-latest"];
 }
+/** The Gemini model that answered last — tried first next time (busy / out-of-quota ones are skipped for 15 minutes). */
+const geminiState = { good: null as string | null, bad: new Map<string, number>() };
 
 export async function askVision(system: string, text: string, dataUrl: string): Promise<string> {
   let configs;
@@ -76,8 +78,13 @@ export async function askVision(system: string, text: string, dataUrl: string): 
   const mime = dataUrl.slice(5, dataUrl.indexOf(";")) || "image/jpeg";
   const failed: string[] = [];
   // Gemini models get overloaded at Google now and then ("503 high demand"): try its other Flash models too
-  const expanded = configs.flatMap((cfg) => cfg.provider !== "gemini" ? [cfg]
-    : [...new Set([cfg.model, ...geminiBackups()])].map((model) => ({ ...cfg, model })));
+  const now = Date.now();
+  const expanded = configs.flatMap((cfg) => {
+    if (cfg.provider !== "gemini") return [cfg];
+    const all = [...new Set([...(geminiState.good ? [geminiState.good] : []), cfg.model, ...geminiBackups()])];
+    const fresh = all.filter((m) => (geminiState.bad.get(m) ?? 0) < now);
+    return (fresh.length ? fresh : all).map((model) => ({ ...cfg, model }));
+  });
   for (const cfg of expanded) {
     try {
       if (cfg.kind === "anthropic") {
@@ -92,11 +99,13 @@ export async function askVision(system: string, text: string, dataUrl: string): 
         messages: [{ role: "system", content: system }, { role: "user", content: [{ type: "text", text }, { type: "image_url", image_url: { url: dataUrl } }] }],
       }, { timeout: gemini ? 60_000 : 40_000, maxRetries: 0 });
       const out = r.choices[0]?.message?.content ?? "";
-      if (out.trim()) return out;
+      if (out.trim()) { if (gemini) { geminiState.good = cfg.model; geminiState.bad.delete(cfg.model); } return out; }
       throw new Error("empty answer");
     } catch (e) {
       const m = String((e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 140);
       failed.push(`${cfg.provider}${cfg.provider === "gemini" ? ` ${cfg.model}` : ""}: ${m}`);
+      // busy (503), out of quota (429) or gone (404): skip that Gemini model for a while
+      if (cfg.provider === "gemini" && /\b(429|503|404)\b|quota|high demand|no longer available|timed out/i.test(m)) { geminiState.bad.set(cfg.model, now + 15 * 60_000); if (geminiState.good === cfg.model) geminiState.good = null; }
       console.error(`[desktop] ${cfg.provider} vision failed:`, m);
     }
   }

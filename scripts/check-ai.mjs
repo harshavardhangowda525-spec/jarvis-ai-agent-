@@ -36,7 +36,7 @@ async function groq() {
 async function gemini() {
   const k = env.GEMINI_API_KEY; if (!k) return say("Gemini", false, "no GEMINI_API_KEY in .env.local (needed for laptop control / calls by sight)");
   // the same models JARVIS tries for seeing the screen, in the same order
-  const models = [env.GEMINI_MODEL || "gemini-3.6-flash", ...((env.GEMINI_VISION_MODELS || "").split(/[\s,]+/).filter(Boolean).length ? env.GEMINI_VISION_MODELS.split(/[\s,]+/).filter(Boolean) : ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"])];
+  const models = [env.GEMINI_MODEL || "gemini-3.6-flash", ...((env.GEMINI_VISION_MODELS || "").split(/[\s,]+/).filter(Boolean).length ? env.GEMINI_VISION_MODELS.split(/[\s,]+/).filter(Boolean) : ["gemini-flash-latest", "gemini-flash-lite-latest"])];
   const lines = [];
   let any = false;
   for (const model of [...new Set(models)]) {
