@@ -63,13 +63,22 @@ export async function recentTasks(userId: string) {
 
 export type AskVision = (system: string, text: string, dataUrl: string) => Promise<string>;
 
+/** Other Gemini models that can see images (GEMINI_VISION_MODELS=a,b to choose your own). */
+export function geminiBackups(env: NodeJS.ProcessEnv = process.env): string[] {
+  const own = (env.GEMINI_VISION_MODELS || "").split(/[\s,]+/).filter(Boolean);
+  return own.length ? own : ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"];
+}
+
 export async function askVision(system: string, text: string, dataUrl: string): Promise<string> {
   let configs;
   try { configs = getVisionConfigs(); } catch { throw new DesktopError("Controlling the screen needs an AI that can see images — add GEMINI_API_KEY (free) in .env.local."); }
   const raw = dataUrl.slice(dataUrl.indexOf(",") + 1);
   const mime = dataUrl.slice(5, dataUrl.indexOf(";")) || "image/jpeg";
   const failed: string[] = [];
-  for (const cfg of configs) {
+  // Gemini models get overloaded at Google now and then ("503 high demand"): try its other Flash models too
+  const expanded = configs.flatMap((cfg) => cfg.provider !== "gemini" ? [cfg]
+    : [...new Set([cfg.model, ...geminiBackups()])].map((model) => ({ ...cfg, model })));
+  for (const cfg of expanded) {
     try {
       if (cfg.kind === "anthropic") {
         const m = await getAnthropicClient(cfg).messages.create({ model: cfg.model, max_tokens: 400, system, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mime as "image/jpeg", data: raw } }, { type: "text", text }] }] }, { timeout: 30_000, maxRetries: 0 });
@@ -87,7 +96,7 @@ export async function askVision(system: string, text: string, dataUrl: string): 
       throw new Error("empty answer");
     } catch (e) {
       const m = String((e as Error)?.message ?? e).replace(/\s+/g, " ").slice(0, 140);
-      failed.push(`${cfg.provider}: ${m}`);
+      failed.push(`${cfg.provider}${cfg.provider === "gemini" ? ` ${cfg.model}` : ""}: ${m}`);
       console.error(`[desktop] ${cfg.provider} vision failed:`, m);
     }
   }

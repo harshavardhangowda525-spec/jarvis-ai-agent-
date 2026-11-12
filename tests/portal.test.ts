@@ -38,3 +38,11 @@ describe("looking at the screen (pure)", () => {
     expect(parseLook("garbage", { w: 1366, h: 768 }).found).toBe(false);
   });
 });
+
+describe("seeing the screen when a Gemini model is overloaded", () => {
+  it("has backup Gemini models, or yours from GEMINI_VISION_MODELS", async () => {
+    const { geminiBackups } = await import("@/lib/desktop/service");
+    expect(geminiBackups({} as NodeJS.ProcessEnv)[0]).toBe("gemini-flash-latest");
+    expect(geminiBackups({ GEMINI_VISION_MODELS: "a, b" } as unknown as NodeJS.ProcessEnv)).toEqual(["a", "b"]);
+  });
+});

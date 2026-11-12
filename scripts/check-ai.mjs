@@ -35,9 +35,17 @@ async function groq() {
 }
 async function gemini() {
   const k = env.GEMINI_API_KEY; if (!k) return say("Gemini", false, "no GEMINI_API_KEY in .env.local (needed for laptop control / calls by sight)");
-  const r = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${k}`, "Content-Type": "application/json" }, signal: t(60000), body: JSON.stringify({ model: env.GEMINI_MODEL || "gemini-3.6-flash", max_tokens: 50, reasoning_effort: "low", messages: [{ role: "user", content: "Say OK" }] }) });
-  if (!r.ok) return say("Gemini", false, `${r.status} ${(await r.text()).slice(0, 200)}`);
-  say("Gemini", true, "key works (laptop control / calls by sight use it)");
+  // the same models JARVIS tries for seeing the screen, in the same order
+  const models = [env.GEMINI_MODEL || "gemini-3.6-flash", ...((env.GEMINI_VISION_MODELS || "").split(/[\s,]+/).filter(Boolean).length ? env.GEMINI_VISION_MODELS.split(/[\s,]+/).filter(Boolean) : ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest", "gemini-2.5-flash-lite"])];
+  const lines = [];
+  let any = false;
+  for (const model of [...new Set(models)]) {
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", { method: "POST", headers: { Authorization: `Bearer ${k}`, "Content-Type": "application/json" }, signal: t(60000), body: JSON.stringify({ model, max_tokens: 50, messages: [{ role: "user", content: "Say OK" }] }) }).catch((e) => ({ ok: false, status: 0, text: async () => e.message }));
+    if (r.ok) { any = true; lines.push(`${model}: works`); }
+    else lines.push(`${model}: ${r.status} ${(await r.text()).replace(/\s+/g, " ").match(/"message":\s*"([^"]+)/)?.[1]?.slice(0, 90) ?? ""}`);
+  }
+  say("Gemini", any, any ? "key works — JARVIS uses the first working model below to see the screen" : "no Gemini model answered right now");
+  for (const l of lines) console.log(`      ${l}`);
 }
 async function openrouter() {
   const k = env.OPENROUTER_API_KEY; if (!k) return say("OpenRouter", true, "not set (optional)");
