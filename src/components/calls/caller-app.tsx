@@ -201,7 +201,11 @@ export function CallerApp() {
       detail: wa ? (pc.running ? "Linked to the spare phone's WhatsApp (not yours — it can't call itself). In WhatsApp → Settings → Video & voice, set Microphone to \"CABLE Output\" so you hear JARVIS." : "Open WhatsApp Desktop and link it to the spare phone's WhatsApp (scan the QR code).")
         : pc.running ? "Make sure Calls are set up in Phone Link (Bluetooth)." : "Open Phone Link and connect your Android phone." });
     set({ label: "VB-Audio virtual cable", ok: !!pc.cable, detail: pc.cable ? undefined : "Install VB-CABLE (vb-audio.com/Cable), then restart." });
-    const { cable } = await devices();
+    const { cable, all: outs } = await devices();
+    // VB-Cable often makes itself Windows' default speaker: then the call's sound goes into the cable and the
+    // person hears their own voice back (echo). Real speakers must be the default.
+    const def = outs.find((d) => d.deviceId === "default");
+    if (def?.label) set({ label: "Default speaker isn't the cable (no echo)", ok: !/CABLE/i.test(def.label), detail: /CABLE/i.test(def.label) ? "Windows' default speaker is \"CABLE Input\" — the caller would hear their own voice. Sounds → Playback → right-click your real speakers → Set as Default Device (and Default Communication Device)." : undefined });
     set({ label: "JARVIS speaks into: CABLE Input", ok: !!(sink || cable), detail: sink || cable ? `${app}'s microphone must be "CABLE Output" (run scripts\\windows\\setup-calls-audio.ps1 once).` : "Pick the CABLE Input speaker below." });
     try { const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Test.", agent: "jarvis" }) }); set({ label: "JARVIS's voice", ok: r.ok, detail: r.ok ? (r.headers.get("X-Voice")?.startsWith("jarvis-local") ? "JARVIS's own voice (on this PC)" : undefined) : r.status === 503 ? "Not installed yet — restart JARVIS with npm run local (it downloads its own voice once)." : `Failed (${r.status}): ${(await r.json().catch(() => null))?.error ?? "no reason given"}` }); }
     catch { set({ label: "JARVIS's voice", ok: false, detail: "Couldn't reach JARVIS." }); }
