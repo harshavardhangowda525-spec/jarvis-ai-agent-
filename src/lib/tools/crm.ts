@@ -182,3 +182,26 @@ export const callMeTool: ToolDefinition<z.infer<typeof callMeSchema>> = {
     return { data: { queued: true, mode: r.mode, enabled: r.enabled, note: r.enabled ? how : "Phone calls are switched off in Settings → Phone calls — turn them on." }, summary: "Calling you." };
   },
 };
+
+const computerSchema = z.object({
+  goal: z.string().min(3).max(1000).describe("Exactly what to do on the laptop, with the details the user gave (app, site, words to type)."),
+});
+export const computerTaskTool: ToolDefinition<z.infer<typeof computerSchema>> = {
+  name: "computer_task",
+  description:
+    "Do something on the user's LAPTOP SCREEN for them: JARVIS (through the desktop orb) looks at the screen and clicks / types / scrolls in any app or the browser, step by step, " +
+    "with a 'JARVIS is working' frame on screen and a Stop button. Use for 'in Chrome, search YouTube for lo-fi and play the first video', 'open Notepad and write …', " +
+    "'go to my Gmail and open the latest email from Ravi', 'change the wallpaper', 'in Excel, add a column…'. It asks the user before sending, posting, paying or deleting, " +
+    "and never types passwords or OTPs. Needs the orb running on the laptop with control allowed.",
+  schema: computerSchema,
+  inputSchema: { type: "object", properties: { goal: { type: "string" } }, required: ["goal"] },
+  agentScope: "jarvis",
+  activityLabel: "Working on your laptop",
+  async execute(i, ctx) {
+    const { queueTask, DesktopError } = await import("@/lib/desktop/service");
+    try {
+      const t = await queueTask(ctx.userId, i.goal);
+      return { data: { taskId: t.id, note: "Started on your laptop — the orb picks it up within a few seconds and works on screen (Stop or Ctrl+Alt+Backspace stops it). If nothing happens, the orb isn't running (start-orb.cmd)." }, summary: "Working on your laptop." };
+    } catch (e) { if (e instanceof DesktopError) throw new ToolError(e.message); throw e; }
+  },
+};

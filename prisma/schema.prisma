@@ -69,6 +69,7 @@ model User {
   prospectCalls       ProspectCall[]
   callSettings        CallSettings?
   ownerCalls          OwnerCall[]
+  desktopTasks        DesktopTask[]
   phoneEvents         PhoneEvent[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
@@ -1930,6 +1931,26 @@ model OwnerCall {
   answeredAt  DateTime?
   heartbeatAt DateTime?
   endedAt     DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+}
+
+/// A job JARVIS does on your laptop's screen (the orb clicks and types for you), step by step.
+model DesktopTask {
+  id          String    @id @default(cuid())
+  userId      String
+  goal        String    @db.Text
+  /// queued | running | done | failed | stopped
+  status      String    @default("queued")
+  /// [{ at, say, action }]
+  steps       Json      @default("[]")
+  result      String?   @db.Text
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  heartbeatAt DateTime?
+  finishedAt  DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

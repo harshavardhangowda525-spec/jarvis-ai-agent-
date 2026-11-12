@@ -21,6 +21,8 @@ type Desktop = {
   getSettings: () => Promise<OrbSettings | null>; setSettings: (p: Partial<OrbSettings>) => Promise<boolean>;
   setMode: (m: "orb" | "popup") => void; setInteractive: (on: boolean) => void; dragStart: () => void; dragEnd: () => void; hide: () => void; quit: () => void;
   onEvent: (cb: (e: { type: string; [k: string]: unknown }) => void) => () => void;
+  /** JARVIS working on the screen (a job from the server's queue). */
+  computer?: (task: { id: string; goal: string; maxSteps: number }) => Promise<{ ok: boolean; status?: string; say?: string }>;
 };
 type RunResult = { handled: boolean; reply?: string; clarify?: string; pending?: string | null; wake?: boolean; ok?: boolean; launcher?: string[]; control?: string; results?: { ok: boolean; say?: string; verified?: boolean | null }[] };
 type OrbSettings = { projects: { name: string; path: string }[]; sites: { name: string; url: string }[]; searchRoots: string[]; projectsRoot: string; wakePhrase: string; voiceMode: VoiceMode; volume: number; rate: number; micId: string; language: string; floating: boolean };
@@ -77,6 +79,7 @@ export function OrbApp() {
       else if (e.type === "ptt") { openPopup(true); if (voiceRef.current.pushToTalk()) add({ who: "jarvis", text: "Listening…", tone: "info" }); }
       else if (e.type === "stop") stopAll("Emergency stop — everything halted.");
       else if (e.type === "paused") setPaused(!!e.paused);
+      else if (e.type === "computer-step") setProgress({ index: Number(e.n) || 1, total: 30, text: String(e.say ?? "") });
       else if (e.type === "progress") {
         const total = Number(e.total) || 1, index = Number(e.index) || 0;
         if (e.state === "running") setProgress({ index, total, text: `${String(e.kind).replace("_", " ")}${e.target ? ` · ${e.target}` : ""}` });
@@ -86,6 +89,34 @@ export function OrbApp() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { const el = listRef.current; if (el) el.scrollTop = el.scrollHeight; }, [msgs, progress]);
+
+  // ---------- jobs on the laptop's screen (asked for here, on the dashboard or from the phone) ----------
+  useEffect(() => {
+    if (!hasDesktop) return;
+    let stop = false, busy = false;
+    const tick = async () => {
+      const d = D.current;
+      if (stop || busy || !d?.computer) return;
+      busy = true;
+      try {
+        const r = await fetch("/api/desktop/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "next" }) });
+        const j = await r.json().catch(() => null);
+        const task = j?.ok ? j.data?.task : null;
+        if (task) {
+          add({ who: "jarvis", text: `On it — working on your screen: ${task.goal}`, tone: "info" });
+          const res = await d.computer({ id: task.id, goal: task.goal, maxSteps: task.maxSteps ?? 30 });
+          setProgress(null);
+          const say = res.say || (res.ok ? "Done." : "I couldn't finish that.");
+          add({ who: "jarvis", text: say, tone: res.ok ? "ok" : res.status === "stopped" ? "info" : "err" });
+          flashState(res.ok ? "success" : "error");
+          void voiceRef.current.speak(say);
+        }
+      } catch { /* offline — next tick */ } finally { busy = false; }
+    };
+    const t = setInterval(() => void tick(), 3000);
+    void tick();
+    return () => { stop = true; clearInterval(t); };
+  }, [hasDesktop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function openPopup(on: boolean) {
     setOpen(on);

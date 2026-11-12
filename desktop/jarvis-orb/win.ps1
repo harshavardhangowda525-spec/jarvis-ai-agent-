@@ -45,6 +45,75 @@ if ($a.op -eq 'arrange') {
   [JarvisW]::MoveWindow($r.MainWindowHandle, $wa.X + $half, $wa.Y, $wa.Width - $half, $wa.Height, $true) | Out-Null
   '{"ok":true}'; exit
 }
+# ---- JARVIS working on the screen: mouse / keyboard input, and what's clickable in the front window ----
+if ($a.op -eq 'input' -or $a.op -eq 'uia') {
+  Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class JarvisIn {
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint dx, uint dy, int data, UIntPtr extra);
+  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public UIntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Explicit)] public struct INPUT { [FieldOffset(0)] public uint type; [FieldOffset(8)] public KEYBDINPUT ki; [FieldOffset(32)] public ulong pad; }
+  [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint n, INPUT[] inputs, int size);
+  static void Send(ushort vk, ushort scan, uint flags) { var i = new INPUT[1]; i[0].type = 1; i[0].ki.wVk = vk; i[0].ki.wScan = scan; i[0].ki.dwFlags = flags; SendInput(1, i, Marshal.SizeOf(typeof(INPUT))); }
+  public static void Key(ushort vk, bool up) { Send(vk, 0, up ? 2u : 0u); }
+  public static void Text(string s) { foreach (char c in s) { Send(0, c, 4); Send(0, c, 4 | 2); System.Threading.Thread.Sleep(8); } }
+}
+"@
+  [JarvisIn]::SetProcessDPIAware() | Out-Null
+  if ($a.op -eq 'input') {
+    $vk = @{ ctrl = 0x11; control = 0x11; alt = 0x12; shift = 0x10; win = 0x5B; windows = 0x5B; enter = 0x0D; return = 0x0D; tab = 0x09; esc = 0x1B; escape = 0x1B; space = 0x20; backspace = 0x08; delete = 0x2E; del = 0x2E; up = 0x26; down = 0x28; left = 0x25; right = 0x27; home = 0x24; end = 0x23; pageup = 0x21; pagedown = 0x22 }
+    function VkOf([string]$k) {
+      if ($vk.ContainsKey($k)) { return [uint16]$vk[$k] }
+      if ($k -match '^f([1-9]|1[0-2])$') { return [uint16](0x6F + [int]$Matches[1]) }
+      if ($k.Length -eq 1) { $c = [char]::ToUpper($k[0]); if (($c -ge 'A' -and $c -le 'Z') -or ($c -ge '0' -and $c -le '9')) { return [uint16][int]$c } }
+      return $null
+    }
+    switch ($a.kind) {
+      { $_ -in 'click', 'double', 'right' } {
+        [JarvisIn]::SetCursorPos([int]$a.x, [int]$a.y) | Out-Null; Start-Sleep -Milliseconds 60
+        $down = 0x02; $up = 0x04; if ($a.kind -eq 'right') { $down = 0x08; $up = 0x10 }
+        $times = 1; if ($a.kind -eq 'double') { $times = 2 }
+        for ($i = 0; $i -lt $times; $i++) { [JarvisIn]::mouse_event($down, 0, 0, 0, [UIntPtr]::Zero); [JarvisIn]::mouse_event($up, 0, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 70 }
+      }
+      'type' { [JarvisIn]::Text([string]$a.text); if ($a.enter) { Start-Sleep -Milliseconds 80; [JarvisIn]::Key(0x0D, $false); [JarvisIn]::Key(0x0D, $true) } }
+      'key' {
+        $codes = @(); foreach ($k in ([string]$a.keys).ToLower().Split('+')) { $c = VkOf $k.Trim(); if ($null -eq $c) { ConvertTo-Json -Compress -InputObject @{ ok = $false; error = "unknown key $k" }; exit }; $codes += $c }
+        foreach ($c in $codes) { [JarvisIn]::Key($c, $false) }
+        [array]::Reverse($codes); foreach ($c in $codes) { [JarvisIn]::Key($c, $true) }
+      }
+      'scroll' { $d = 120; if ($a.direction -eq 'down') { $d = -120 }; for ($i = 0; $i -lt [int]$a.amount; $i++) { [JarvisIn]::mouse_event(0x0800, 0, 0, $d, [UIntPtr]::Zero); Start-Sleep -Milliseconds 30 } }
+    }
+    '{"ok":true}'; exit
+  }
+  # uia: the clickable things in the window in front (names, kinds, where they are)
+  Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+  $AE = [System.Windows.Automation.AutomationElement]; $CT = [System.Windows.Automation.ControlType]
+  $out = @()
+  try {
+    $f = $AE::FocusedElement; $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker; $top = $f
+    while ($top -and ($p2 = $walker.GetParent($top)) -and -not $p2.Equals($AE::RootElement)) { $top = $p2 }
+    $types = @($CT::Button, $CT::Edit, $CT::Hyperlink, $CT::MenuItem, $CT::ListItem, $CT::TabItem, $CT::CheckBox, $CT::RadioButton, $CT::ComboBox, $CT::TreeItem, $CT::SplitButton, $CT::Document)
+    $conds = $types | ForEach-Object { New-Object System.Windows.Automation.PropertyCondition($AE::ControlTypeProperty, $_) }
+    $or = New-Object System.Windows.Automation.OrCondition([System.Windows.Automation.Condition[]]$conds)
+    $all = $top.FindAll([System.Windows.Automation.TreeScope]::Descendants, $or)
+    foreach ($e in $all) {
+      if ($out.Count -ge 150) { break }
+      try {
+        $c = $e.Current
+        if ($c.IsOffscreen) { continue }
+        $r = $c.BoundingRectangle
+        if ($r.IsEmpty -or $r.Width -lt 3 -or $r.Height -lt 3) { continue }
+        $name = [string]$c.Name; if (-not $name) { $name = [string]$c.HelpText }
+        if (-not $name -and $c.ControlType -ne $CT::Edit) { continue }
+        $out += [pscustomobject]@{ name = $name.Substring(0, [Math]::Min(120, $name.Length)); role = $c.ControlType.ProgrammaticName.Replace('ControlType.', ''); x = [int]$r.X; y = [int]$r.Y; w = [int]$r.Width; h = [int]$r.Height; password = [bool]$c.IsPassword }
+      } catch { }
+    }
+  } catch { }
+  ConvertTo-Json -Compress -InputObject @($out); exit
+}
+
 # ---- Phone Link (prospect calls from your own number). The number arrives as data and is checked here too. ----
 if ($a.op -like 'phone-*') {
   Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes

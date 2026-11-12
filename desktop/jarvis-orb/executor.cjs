@@ -183,6 +183,8 @@ function createExecutor(deps) {
         if (!r.ok) return { ok: false, say: `${hit.app.name} didn't start: ${r.error}.` };
         if (!W() && !d.listWindows) return { ok: true, verified: null, say: `Opened ${hit.app.name}.` };
         const w = await waitForWindow(hit.app.name);
+        // bring it in front of you (apps often open behind the window you're in)
+        if (w) await focusWindow(w).catch(() => null);
         return w ? { ok: true, verified: true, say: `Opened ${hit.app.name}.` } : { ok: true, verified: false, say: `Started ${hit.app.name}, but its window hasn't appeared yet.` };
       }
       case "focus": {

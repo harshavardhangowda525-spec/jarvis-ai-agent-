@@ -506,7 +506,7 @@ export function resolveAiConfig(): AiConfig | null {
  * model can actually see an image — swapping in a known vision model where the
  * provider's text default wouldn't work.
  */
-const VISION_PRIORITY = ["gemini", "openai", "anthropic", "openrouter"];
+const VISION_PRIORITY = ["gemini", "openai", "anthropic", "openrouter", "groq"];
 
 /** Known vision-capable model per provider (overrides the text default). */
 const VISION_MODEL: Record<string, string> = {
@@ -515,6 +515,8 @@ const VISION_MODEL: Record<string, string> = {
   anthropic: "claude-sonnet-5", // multimodal
   // OpenRouter: only used if the user pointed OPENROUTER_MODEL at a vision model.
   openrouter: "meta-llama/llama-3.2-90b-vision-instruct:free",
+  // Groq's multimodal Llama 4 (the text default can't see images) — a fast backup for screen control
+  groq: "meta-llama/llama-4-scout-17b-16e-instruct",
 };
 
 /**

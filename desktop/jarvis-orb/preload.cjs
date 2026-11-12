@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld("jarvisDesktop", {
   hide: () => ipcRenderer.send("orb:hide"),
   quit: () => ipcRenderer.send("orb:quit"),
   retry: () => ipcRenderer.send("orb:retry"),
+  /** JARVIS working on the screen: a job from JARVIS's queue (the main process plans each step with JARVIS and asks before risky ones). */
+  computer: (task) => ipcRenderer.invoke("orb:computer", task && typeof task === "object" ? { id: String(task.id), goal: String(task.goal), maxSteps: Number(task.maxSteps) || 30 } : null),
   /** Prospect calls (only the "Prospect calls" window may use these; the main process checks). */
   phone: {
     check: () => ipcRenderer.invoke("phone:check"),

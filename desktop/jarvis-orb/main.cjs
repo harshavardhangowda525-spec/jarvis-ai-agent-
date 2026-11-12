@@ -18,6 +18,7 @@ const { app, BrowserWindow, Tray, Menu, globalShortcut, screen, ipcMain, nativeI
 const L = require("./lib.cjs");
 const { createExecutor } = require("./executor.cjs");
 const { createWorkingLabel } = require("./working.cjs");
+const { createComputer, xdoKeys } = require("./computer.cjs");
 
 const QUIT = process.argv.includes("--quit");
 process.on("uncaughtException", (e) => log(`error: ${e && e.stack || e}`));
@@ -241,10 +242,18 @@ ipcMain.on("phone:working", (e, text) => { if (!fromCaller(e)) return; if (text)
 const sendCaller = (type) => { if (callerAlive()) callerWin.webContents.send("orb:event", { type }); };
 
 // ---------------- the hands ----------------
+/** Ask you (native dialog) before something risky. */
+async function executor_confirm(question, detail) {
+  const parent = alive() ? orb : undefined;
+  const o = { type: "question", buttons: ["Yes, do it", "No"], defaultId: 1, cancelId: 1, noLink: true, title: "JARVIS", message: question, detail: detail || "" };
+  const r = parent ? await dialog.showMessageBox(parent, o) : await dialog.showMessageBox(o);
+  log({ confirm: question, answer: r.response === 0 ? "yes" : "no" });
+  return r.response === 0;
+}
 let paused = false;
 // "JARVIS is working": screen frame + pill with Stop, while JARVIS controls the laptop
 let workingLabel = null;
-const working = () => (workingLabel ??= createWorkingLabel({ onStop: () => { executor.stop(); log({ action: "stop (working label)" }); send("stop"); sendCaller("stop"); workingLabel?.hide(0); } }));
+const working = () => (workingLabel ??= createWorkingLabel({ onStop: () => { executor.stop(); computer?.stop(); log({ action: "stop (working label)" }); send("stop"); sendCaller("stop"); workingLabel?.hide(0); } }));
 const stepText = (p) => p.say || [String(p.step.kind || "").replace(/_/g, " "), p.step.app || p.step.folder || p.step.query || p.step.name || p.step.site || ""].filter(Boolean).join(" ");
 const executor = createExecutor({
   platform: process.platform,
@@ -259,13 +268,7 @@ const executor = createExecutor({
   listWindows: process.platform === "linux" ? async () => (linuxWm ? linuxWin({ op: "list" }) : []) : undefined,
   activate: process.platform === "darwin" ? async (name) => { const r = await run("osascript", ["-e", "on run argv", "-e", "tell application (item 1 of argv) to activate", "-e", "end run", name]); return { ok: r.ok, error: r.stderr.trim() }; } : undefined,
   selfPids: [process.pid],
-  confirm: async (question, detail) => {
-    const parent = alive() ? orb : undefined;
-    const o = { type: "question", buttons: ["Yes, do it", "No"], defaultId: 1, cancelId: 1, noLink: true, title: "JARVIS", message: question, detail: detail || "" };
-    const r = parent ? await dialog.showMessageBox(parent, o) : await dialog.showMessageBox(o);
-    log({ confirm: question, answer: r.response === 0 ? "yes" : "no" });
-    return r.response === 0;
-  },
+  confirm: (question, detail) => executor_confirm(question, detail),
   exists: (p) => fs.existsSync(p), readdir: (p) => fs.readdirSync(p, { withFileTypes: true }), stat: (p) => fs.statSync(p), mkdir: (p) => fs.mkdirSync(p),
   openPath: (p) => shell.openPath(p), openExternal: (u) => shell.openExternal(u),
   safeWebUrl: (u) => appsMod ? appsMod.safeWebUrl(u) : (/^https?:\/\/[^\s]+$/.test(u) ? u : null),
@@ -275,6 +278,66 @@ const executor = createExecutor({
   onProgress: (p) => { if (workingLabel && p.state === "running") workingLabel.show(stepText(p)); progress(p); },
 });
 const progress = (p) => send("progress", { index: p.index, total: p.total, state: p.state, say: p.say || null, kind: p.step.kind, target: p.step.app || p.step.folder || p.step.query || p.step.name || p.step.site || null });
+
+// ---------------- JARVIS working on the screen ("computer use") ----------------
+/** JARVIS's server, signed in as you (the orb's own session cookies). */
+async function jarvisApi(p, body) {
+  const r = await session.defaultSession.fetch(`${settings.url}${p}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => null);
+  if (!r.ok || !j?.ok) throw new Error(j?.error || `JARVIS answered ${r.status}`);
+  return j.data;
+}
+async function captureForAi() {
+  try {
+    const d = screen.getPrimaryDisplay();
+    const physW = Math.round(d.size.width * d.scaleFactor), physH = Math.round(d.size.height * d.scaleFactor);
+    const [src] = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: physW, height: physH } });
+    if (!src) return { ok: false, error: "no screen to capture" };
+    let img = src.thumbnail;
+    const w = Math.min(1366, img.getSize().width || physW);
+    if (img.getSize().width > w) img = img.resize({ width: w, quality: "good" });
+    const size = img.getSize();
+    return { ok: true, dataUrl: `data:image/jpeg;base64,${img.toJPEG(72).toString("base64")}`, w: size.width, h: size.height, factor: physW / size.width };
+  } catch (e) { return { ok: false, error: e.message }; }
+}
+async function uiElements(factor) {
+  if (process.platform !== "win32") return [];
+  const list = await winPs({ op: "uia" });
+  if (!Array.isArray(list)) return [];
+  return list.map((e, i) => ({ id: i + 1, name: String(e.name || ""), role: String(e.role || ""), x: Math.round(e.x / factor), y: Math.round(e.y / factor), w: Math.round(e.w / factor), h: Math.round(e.h / factor), password: !!e.password }));
+}
+async function sendInput(a) {
+  if (process.platform === "win32") return winPs({ op: "input", ...a });
+  if (!(await has("xdotool"))) return { ok: false, error: "xdotool isn't installed" };
+  const x = (args) => run("xdotool", args).then((r) => ({ ok: r.ok, error: r.stderr.trim() }));
+  if (a.kind === "click" || a.kind === "double" || a.kind === "right") return x(["mousemove", String(a.x), String(a.y), "click", ...(a.kind === "double" ? ["--repeat", "2"] : []), a.kind === "right" ? "3" : "1"]);
+  if (a.kind === "type") { const t = await x(["type", "--delay", "12", "--", a.text]); return a.enter ? x(["key", "Return"]) : t; }
+  if (a.kind === "key") return x(["key", xdoKeys(a.keys)]);
+  if (a.kind === "scroll") return x(["click", "--repeat", String(a.amount), a.direction === "up" ? "4" : "5"]);
+  return { ok: false, error: "unknown input" };
+}
+const computer = createComputer({
+  capture: captureForAi,
+  elements: uiElements,
+  act: (b) => jarvisApi("/api/desktop/act", b),
+  report: (id, b) => jarvisApi("/api/desktop/tasks", { action: "report", id, ...b }),
+  input: sendInput,
+  openApp: async (name) => { await appsModule(); return executor.step({ kind: "open_app", app: String(name).slice(0, 80) }); },
+  confirm: (q, detail) => executor_confirm(q, detail),
+  label: (t) => { if (t) working().show(t); else working().hide(); },
+  ripple: (x, y) => working().ripple(x, y),
+  onStep: (s) => { send("computer-step", s); log({ computer: s.say, action: s.action }); },
+});
+ipcMain.handle("orb:computer", async (e, task) => {
+  if (!fromOrb(e) || !task || typeof task.id !== "string" || typeof task.goal !== "string") return { ok: false };
+  if (executor.isPaused()) return { ok: false, say: "Automation is paused." };
+  if (!(await askControl())) {
+    await jarvisApi("/api/desktop/tasks", { action: "report", id: task.id, status: "failed", result: "Control of this computer is off — allow it from the orb's tray icon." }).catch(() => {});
+    return { ok: false, say: "Desktop control is off — allow it from the tray icon." };
+  }
+  log({ computer_task: task.goal });
+  return computer.run({ id: task.id, goal: String(task.goal).slice(0, 1000), maxSteps: Number(task.maxSteps) || 30 });
+});
 
 async function askControl() {
   if (settings.control) return true;
@@ -319,7 +382,7 @@ ipcMain.handle("orb:open-app", async (e, name) => {
     return r;
   } finally { working().hide(); }
 });
-ipcMain.on("orb:stop", (e) => { if (fromOrb(e)) { executor.stop(); log({ action: "stop (button)" }); } });
+ipcMain.on("orb:stop", (e) => { if (fromOrb(e)) { executor.stop(); computer?.stop(); log({ action: "stop (button)" }); } });
 ipcMain.on("orb:pause", (e, on) => { if (fromOrb(e)) { executor.setPaused(!!on); paused = !!on; updateTray(); send("paused", { paused }); } });
 ipcMain.handle("orb:state", (e) => (fromOrb(e) ? { paused: executor.isPaused(), control: settings.control, platform: process.platform, floating: settings.floating, shortcuts: SHORTCUTS } : null));
 ipcMain.handle("orb:settings:get", (e) => (fromOrb(e) ? { projects: settings.projects, sites: settings.sites, searchRoots: settings.searchRoots, projectsRoot: settings.projectsRoot, wakePhrase: settings.wakePhrase, voiceMode: settings.voiceMode, volume: settings.volume, rate: settings.rate, micId: settings.micId, language: settings.language, floating: settings.floating } : null));
@@ -364,7 +427,7 @@ function registerShortcuts() {
   const reg = (acc, fn) => { try { if (!globalShortcut.register(acc, fn)) log(`shortcut ${acc} is taken by another app`); } catch { log(`shortcut ${acc} couldn't be registered`); } };
   reg(SHORTCUTS.chat, () => { if (show()) { setMode(mode === "popup" ? "orb" : "popup"); send(mode === "popup" ? "open" : "close"); } });
   reg(SHORTCUTS.talk, () => { if (show()) send("ptt"); });
-  reg(SHORTCUTS.stop, () => { executor.stop(); log({ action: "emergency stop (shortcut)" }); send("stop"); sendCaller("stop"); });
+  reg(SHORTCUTS.stop, () => { executor.stop(); computer?.stop(); log({ action: "emergency stop (shortcut)" }); send("stop"); sendCaller("stop"); });
   reg(SHORTCUTS.pause, () => { paused = !executor.isPaused(); executor.setPaused(paused); send("paused", { paused }); updateTray(); });
 }
 
