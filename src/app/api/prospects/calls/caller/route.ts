@@ -3,6 +3,7 @@ import { callerUser } from "@/lib/calls/device-auth";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { CallError, callerEvent, callerFinish, callerNext, callerTurn } from "@/lib/calls/service";
 import { setLive } from "@/lib/calls/live";
+import { isPersonalCall, personalEvent, personalFinish, personalTurn, PersonalCallError } from "@/lib/calls/personal";
 import { isOwnerCall, ownerEvent, ownerFinish, ownerTurn } from "@/lib/calls/owner";
 
 export const runtime = "nodejs";
@@ -28,9 +29,10 @@ export async function POST(req: Request) {
     if (b.action === "next") return ok(await callerNext(user.id));
     if (b.action === "status") { setLive(user.id, { running: b.running, via: b.via ?? null, wait: b.wait ?? null, error: b.error ?? null, checks: b.checks, lines: b.lines }); return ok({ saved: true }); }
     // calls to you (laptop mode) and calls to leads share the caller, told apart by id
-    const own = isOwnerCall(b.id);
-    if (b.action === "event") return ok(own ? await ownerEvent(user.id, b.id, b.state) : await callerEvent(user.id, b.id, b.state));
-    if (b.action === "turn") { const o = { opener: b.opener, lang: b.lang ?? null, interrupted: b.interrupted }; return ok(own ? await ownerTurn(user.id, b.id, b.heard, o) : await callerTurn(user.id, b.id, b.heard, o)); }
-    return ok(own ? await ownerFinish(user.id, b.id, { reason: b.reason, error: b.error }) : await callerFinish(user.id, b.id, { reason: b.reason, error: b.error }));
-  } catch (e) { return e instanceof CallError ? fail(e.message) : handleError(e); }
+    const own = isOwnerCall(b.id), per = isPersonalCall(b.id);
+    if (b.action === "event") return ok(own ? await ownerEvent(user.id, b.id, b.state) : per ? await personalEvent(user.id, b.id, b.state) : await callerEvent(user.id, b.id, b.state));
+    if (b.action === "turn") { const o = { opener: b.opener, lang: b.lang ?? null, interrupted: b.interrupted }; return ok(own ? await ownerTurn(user.id, b.id, b.heard, o) : per ? await personalTurn(user.id, b.id, b.heard, o) : await callerTurn(user.id, b.id, b.heard, o)); }
+    const fin = { reason: b.reason, error: b.error };
+    return ok(own ? await ownerFinish(user.id, b.id, fin) : per ? await personalFinish(user.id, b.id, fin) : await callerFinish(user.id, b.id, fin));
+  } catch (e) { return e instanceof CallError || e instanceof PersonalCallError ? fail(e.message) : handleError(e); }
 }

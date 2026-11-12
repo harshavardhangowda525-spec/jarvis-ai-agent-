@@ -59,7 +59,8 @@ export async function runOneCall(io: CallerIO, c: CallJob): Promise<string> {
 
   // 1. ringing: wait for a person to say something. On a call TO YOU, JARVIS
   // speaks up by itself after a few quiet seconds (you may pick up and just listen).
-  const toOwner = c.id.startsWith("own_");
+  // calls to you, and calls you asked for to people you know ("call Mom…"), don't wait forever for a hello
+  const toOwner = c.id.startsWith("own_") || c.id.startsWith("per_");
   let first: string | null = null, spoke = 0, interrupted = false;
   const opener = async (heard: string) => {
     const open = await io.api({ action: "turn", id: c.id, heard, opener: true, lang });

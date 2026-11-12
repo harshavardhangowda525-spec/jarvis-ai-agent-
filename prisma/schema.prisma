@@ -70,6 +70,8 @@ model User {
   callSettings        CallSettings?
   ownerCalls          OwnerCall[]
   desktopTasks        DesktopTask[]
+  contacts            Contact[]
+  personalCalls       PersonalCall[]
   phoneEvents         PhoneEvent[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
@@ -1951,6 +1953,50 @@ model DesktopTask {
   startedAt   DateTime?
   heartbeatAt DateTime?
   finishedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+}
+
+/// People JARVIS can call for you ("call Mom and tell her…"): a name, other names you use for them, and their number.
+model Contact {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  /// other names you call them by: ["amma", "mother"]
+  aliases   String[] @default([])
+  relation  String?
+  phone     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+}
+
+/// A call JARVIS makes for you to someone you know, to pass on a message and hear their answer.
+model PersonalCall {
+  id          String    @id
+  userId      String
+  contactId   String?
+  name        String
+  toNumber    String
+  /// what to tell them, as JARVIS says it ("Harsha will be late tonight")
+  message     String
+  /// queued | dialing | in_call | completed | no_answer | failed | cancelled
+  status      String    @default("queued")
+  /// [{ who: "jarvis" | "them", text, at }]
+  transcript  Json      @default("[]")
+  /// what they said / asked, for you
+  summary     String?
+  error       String?
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  answeredAt  DateTime?
+  heartbeatAt DateTime?
+  endedAt     DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

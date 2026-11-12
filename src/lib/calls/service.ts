@@ -9,6 +9,7 @@ import { loadOperator } from "@/lib/ai/operator";
 import { localParts } from "@/lib/prospects/rules";
 import { event, updateProspect, CrmError } from "@/lib/prospects/service";
 import { ownerNext, ownerTick } from "./owner";
+import { personalNext } from "./personal";
 import {
   inCallingWindow, cantCall, dialable, openerText, isMachine, saysDoNotCall, parseTurn, crmPatchFor, manualCallSection,
   OUTCOMES, MAX_TURNS, MAX_CALL_MS, LINES, detectLang, type Outcome, type Turn, type Lang,
@@ -135,10 +136,14 @@ export async function callerNext(userId: string, now = new Date()) {
   const s = await getSettings(userId);
   await closeStale(now, userId);
   // calls to YOU (laptop mode) come first, whatever the lead-calling settings and hours
-  const busy = (await db().prospectCall.findFirst({ where: { userId, status: { in: ["dialing", "in_call"] } } })) || (await db().ownerCall.findFirst({ where: { userId, status: { in: ["dialing", "in_call"] } } }));
+  const busy = (await db().prospectCall.findFirst({ where: { userId, status: { in: ["dialing", "in_call"] } } })) || (await db().ownerCall.findFirst({ where: { userId, status: { in: ["dialing", "in_call"] } } }))
+    || (await db().personalCall.findFirst({ where: { userId, status: { in: ["dialing", "in_call"] }, heartbeatAt: { gte: new Date(now.getTime() - 10 * 60_000) } } }));
   if (busy) return { call: null, wait: "A call is already in progress." };
   const own = await ownerNext(userId, now);
   if (own) return { call: own };
+  // calls you asked for ("call Mom and tell her…") — any time, not tied to lead-calling hours
+  const per = await personalNext(userId, now);
+  if (per) return { call: per };
   if (!s.enabled) return { call: null, wait: "Calling leads is switched off in the CRM (calls to you still go out)." };
   if (!inCallingWindow(s, now, tz)) return { call: null, wait: `Outside calling hours (${s.hoursFrom}–${s.hoursTo}, ${s.days.map((d) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d]).join(" ")}).` };
   if (await db().prospectCall.findFirst({ where: { userId, status: { in: ["dialing", "in_call"] } } })) return { call: null, wait: "A call is already in progress." };
