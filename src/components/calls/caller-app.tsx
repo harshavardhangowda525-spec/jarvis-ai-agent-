@@ -208,7 +208,7 @@ export function CallerApp() {
         <span className={`ml-auto rounded-full border px-2 py-0.5 text-xs ${running ? "border-cyan-400/50 text-cyan-200" : "border-white/15 text-white/55"}`}>{running ? "Calling on" : "Off"}</span>
       </div>
       <p className="mb-3 text-xs text-white/55">
-        JARVIS calls only the leads you approved in the CRM, from your own number through Phone Link, inside your calling hours. It always says it&apos;s an AI assistant, and stops for good if someone asks not to be called.
+        JARVIS calls only the leads you approved in the CRM, through Phone Link, inside your calling hours. It always says it&apos;s an AI assistant, and stops for good if someone asks not to be called. With Settings → Phone calls → <b>Through the laptop</b>, it also calls <b>you</b> from here when work is done or needs your OK, and talks with you.
       </p>
 
       <div className="mb-3 rounded-xl border border-white/10 p-3">

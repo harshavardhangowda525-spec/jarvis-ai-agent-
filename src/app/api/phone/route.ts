@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError } from "@/lib/api";
-import { PhoneError, pair, phoneStatus, queueTest, saveSettings, unpair } from "@/lib/phone/service";
+import { PhoneError, pair, phoneStatus as baseStatus, queueTest, saveSettings, unpair } from "@/lib/phone/service";
+import { recentOwnerCalls } from "@/lib/calls/owner";
+
+/** Settings + live state, plus the recent calls JARVIS made to you through the laptop. */
+const phoneStatus = async (userId: string, port?: string) => ({ ...(await baseStatus(userId, port)), ownerCalls: await recentOwnerCalls(userId).catch(() => []) });
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +24,7 @@ export async function GET(req: Request) {
 
 const hhmm = z.string().max(5).nullable().optional();
 const Settings = z.object({
-  mode: z.enum(["android", "iphone"]).optional(), callMethod: z.enum(["normal", "whatsapp"]).optional(), iphoneEmail: z.string().max(200).nullable().optional(),
+  mode: z.enum(["android", "iphone", "laptop"]).optional(), callMethod: z.enum(["normal", "whatsapp"]).optional(), iphoneEmail: z.string().max(200).nullable().optional(),
   enabled: z.boolean().optional(), toNumber: z.string().max(24).nullable().optional(), jarvisNumber: z.string().max(24).nullable().optional(),
   onCompleted: z.boolean().optional(), onFailed: z.boolean().optional(), onApproval: z.boolean().optional(),
   quietFrom: hhmm, quietTo: hhmm,

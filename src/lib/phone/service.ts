@@ -24,7 +24,7 @@ export const CALL_GAP_MS = 2 * 60_000;
 export const POLL_SECONDS = 15;
 /** A batch the phone took but never confirmed goes back in the queue after this. */
 const CLAIM_TIMEOUT_MS = 5 * 60_000;
-const MAX_ATTEMPTS = 2;
+export const MAX_ATTEMPTS = 2;
 const ONLINE_MS = 90_000;
 
 export const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
@@ -60,7 +60,7 @@ export async function phoneStatus(userId: string, port?: string) {
   const events = await db().phoneEvent.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 8 });
   return {
     link: link && {
-      mode: link.mode as "android" | "iphone", iphoneEmail: link.iphoneEmail, callMethod: (link.callMethod === "normal" ? "normal" : "whatsapp") as "normal" | "whatsapp",
+      mode: link.mode as "android" | "iphone" | "laptop", iphoneEmail: link.iphoneEmail, callMethod: (link.callMethod === "normal" ? "normal" : "whatsapp") as "normal" | "whatsapp",
       enabled: link.enabled, toNumber: link.toNumber, jarvisNumber: link.jarvisNumber, paired: !!link.tokenHash,
       onCompleted: link.onCompleted, onFailed: link.onFailed, onApproval: link.onApproval,
       quietFrom: link.quietFrom, quietTo: link.quietTo,
@@ -83,7 +83,7 @@ export function lanUrls(port = "3000") {
 }
 
 export interface PhoneSettingsInput {
-  mode?: "android" | "iphone"; iphoneEmail?: string | null; callMethod?: "normal" | "whatsapp";
+  mode?: "android" | "iphone" | "laptop"; iphoneEmail?: string | null; callMethod?: "normal" | "whatsapp";
   enabled?: boolean; toNumber?: string | null; jarvisNumber?: string | null;
   onCompleted?: boolean; onFailed?: boolean; onApproval?: boolean;
   quietFrom?: string | null; quietTo?: string | null;
@@ -106,7 +106,7 @@ export async function saveSettings(userId: string, i: PhoneSettingsInput) {
     data[k] = i[k] || null;
   }
   for (const k of ["onCompleted", "onFailed", "onApproval"] as const) if (i[k] !== undefined) data[k] = i[k];
-  if (i.mode !== undefined) data.mode = i.mode === "iphone" ? "iphone" : "android";
+  if (i.mode !== undefined) data.mode = i.mode === "iphone" ? "iphone" : i.mode === "laptop" ? "laptop" : "android";
   if (i.callMethod !== undefined) data.callMethod = i.callMethod === "normal" ? "normal" : "whatsapp";
   if (i.iphoneEmail !== undefined) {
     const e = (i.iphoneEmail ?? "").trim().toLowerCase();
@@ -136,7 +136,7 @@ export async function queueTest(userId: string) {
   if (link?.mode === "iphone") { if (!link.iphoneEmail) throw new PhoneError("Add the iPhone's email address first."); }
   else {
     if (!link?.toNumber) throw new PhoneError("Add your phone number first.");
-    if (!link.tokenHash) throw new PhoneError("Pair the spare phone first.");
+    if (link.mode !== "laptop" && !link.tokenHash) throw new PhoneError("Pair the spare phone first.");
   }
   await db().phoneEvent.create({ data: { userId, key: `test:${Date.now()}`, kind: "test", text: "Test call - JARVIS can reach you." } });
 }
@@ -183,14 +183,14 @@ export async function deviceNext(token: string, device: string | null, now = new
   if (!link) return { authorized: false as const };
   await db().phoneLink.update({ where: { id: link.id }, data: { lastSeenAt: now, ...(device ? { device: clip(device, 80) } : {}) } });
   const out = { authorized: true as const, pollSeconds: POLL_SECONDS, call: null as null | { id: string; to: string; message: string; method: "normal" | "whatsapp" } };
-  if (!link.enabled || !link.toNumber || link.mode === "iphone") return out;
+  if (!link.enabled || !link.toNumber || link.mode !== "android") return out;
   const b = await claimBatch(link, now);
   if (b) out.call = { id: b.batchId, to: link.toNumber, message: messageText(b.events), method: link.callMethod === "normal" ? "normal" : "whatsapp" };
   return out;
 }
 
 /** What's due for one call now (grouped, spaced, quiet hours respected) — claimed so it's never sent twice. */
-async function claimBatch(link: PhoneLink, now: Date) {
+export async function claimBatch(link: PhoneLink, now: Date) {
   // batches the phone took but never confirmed (it lost power mid-call): back in the queue, or give up
   const stale = new Date(now.getTime() - CLAIM_TIMEOUT_MS);
   await db().phoneEvent.updateMany({ where: { userId: link.userId, status: "sending", sentAt: { lt: stale }, attempts: { gte: MAX_ATTEMPTS } }, data: { status: "failed", error: "The phone never confirmed the call." } });

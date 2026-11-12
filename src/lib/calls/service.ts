@@ -8,6 +8,7 @@ import { completeWithFallback } from "@/lib/ai/complete";
 import { loadOperator } from "@/lib/ai/operator";
 import { localParts } from "@/lib/prospects/rules";
 import { event, updateProspect, CrmError } from "@/lib/prospects/service";
+import { ownerNext, ownerTick } from "./owner";
 import {
   inCallingWindow, cantCall, dialable, openerText, isMachine, saysDoNotCall, parseTurn, crmPatchFor, manualCallSection,
   OUTCOMES, MAX_TURNS, MAX_CALL_MS, LINES, detectLang, type Outcome, type Turn, type Lang,
@@ -123,7 +124,12 @@ export async function callerNext(userId: string, now = new Date()) {
   const tz = await tzOf(userId);
   const s = await getSettings(userId);
   await closeStale(now, userId);
-  if (!s.enabled) return { call: null, wait: "Calling is switched off in the CRM." };
+  // calls to YOU (laptop mode) come first, whatever the lead-calling settings and hours
+  const busy = (await db().prospectCall.findFirst({ where: { userId, status: { in: ["dialing", "in_call"] } } })) || (await db().ownerCall.findFirst({ where: { userId, status: { in: ["dialing", "in_call"] } } }));
+  if (busy) return { call: null, wait: "A call is already in progress." };
+  const own = await ownerNext(userId, now);
+  if (own) return { call: own };
+  if (!s.enabled) return { call: null, wait: "Calling leads is switched off in the CRM (calls to you still go out)." };
   if (!inCallingWindow(s, now, tz)) return { call: null, wait: `Outside calling hours (${s.hoursFrom}–${s.hoursTo}, ${s.days.map((d) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d]).join(" ")}).` };
   if (await db().prospectCall.findFirst({ where: { userId, status: { in: ["dialing", "in_call"] } } })) return { call: null, wait: "A call is already in progress." };
   const made = await db().prospectCall.count({ where: { userId, startedAt: { gte: dayStart(now, tz) } } });
@@ -283,4 +289,4 @@ async function closeStale(now: Date, userId?: string) {
   for (const c of stale) await db().prospectCall.update({ where: { id: c.id }, data: { status: "failed", endedAt: now, error: "The caller on the laptop stopped answering in the middle of this call." } });
   return stale.length;
 }
-export const callsTick = (now = new Date()) => closeStale(now);
+export const callsTick = async (now = new Date()) => (await closeStale(now)) + (await ownerTick(now));

@@ -68,6 +68,7 @@ model User {
   mapsSearches        MapsSearch[]
   prospectCalls       ProspectCall[]
   callSettings        CallSettings?
+  ownerCalls          OwnerCall[]
   phoneEvents         PhoneEvent[]
   darwinSeen          DarwinSeen[]
   robinSettings       RobinSettings?
@@ -1665,7 +1666,8 @@ model PhoneLink {
   id           String    @id @default(cuid())
   userId       String    @unique
   enabled      Boolean   @default(true)
-  /// "android" (Termux + WhatsApp, the phone polls JARVIS) or "iphone" (JARVIS emails the iPhone; a Shortcuts automation calls you).
+  /// "android" (Termux + WhatsApp, the phone polls JARVIS), "iphone" (JARVIS emails the iPhone; a Shortcuts automation calls you)
+  /// or "laptop" (JARVIS calls you through Phone Link on the laptop and talks with you).
   mode         String    @default("android")
   /// Android mode: "normal" = a regular phone call from the spare phone's SIM (needs a recharge), "whatsapp" = a WhatsApp call over Wi-Fi.
   callMethod   String    @default("whatsapp")
@@ -1909,4 +1911,27 @@ model CallSettings {
   updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// JARVIS calling YOU through Phone Link (laptop mode) with what happened — a real conversation.
+model OwnerCall {
+  id          String    @id
+  userId      String
+  batchId     String
+  toNumber    String
+  /// dialing | in_call | completed | no_answer | failed
+  status      String    @default("dialing")
+  /// [{ who: "jarvis" | "them", text, at }]
+  transcript  Json      @default("[]")
+  /// what you decided on the call: [{ type: "approve" | "reject", kind, id, title, ok, detail }]
+  actions     Json      @default("[]")
+  error       String?
+  createdAt   DateTime  @default(now())
+  answeredAt  DateTime?
+  heartbeatAt DateTime?
+  endedAt     DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
 }

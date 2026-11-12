@@ -7,14 +7,15 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 interface Link {
-  mode: "android" | "iphone"; iphoneEmail: string | null; callMethod: "normal" | "whatsapp";
+  mode: "android" | "iphone" | "laptop"; iphoneEmail: string | null; callMethod: "normal" | "whatsapp";
   enabled: boolean; toNumber: string | null; jarvisNumber: string | null; paired: boolean;
   onCompleted: boolean; onFailed: boolean; onApproval: boolean;
   quietFrom: string | null; quietTo: string | null;
   lastSeenAt: string | null; device: string | null; online: boolean; lastCallAt: string | null;
 }
 interface Ev { id: string; kind: string; text: string; status: string; error: string | null; at: string }
-interface Status { link: Link | null; events: Ev[]; lanUrls: string[] }
+interface OwnerCall { id: string; status: string; transcript: { who: string; text: string }[]; actions: { type: string; title: string; ok: boolean }[]; error: string | null; createdAt: string }
+interface Status { link: Link | null; events: Ev[]; lanUrls: string[]; ownerCalls?: OwnerCall[] }
 
 const ago = (iso: string | null) => {
   if (!iso) return "never";
@@ -61,8 +62,9 @@ export function PhoneSettings() {
     return j.data;
   };
   const iphone = st?.link?.mode === "iphone";
+  const laptop = st?.link?.mode === "laptop";
   const save = () => call("PATCH", { toNumber: to || null, jarvisNumber: jn || null, quietFrom: qf || null, quietTo: qt || null, ...(iphone ? { iphoneEmail: mail || null } : {}), ...(st?.link ? {} : { enabled: true }) }, "save", "Saved.");
-  const setMode = (mode: "android" | "iphone") => call("PATCH", { mode, ...(st?.link ? {} : { enabled: true }) }, "mode");
+  const setMode = (mode: "android" | "iphone" | "laptop") => call("PATCH", { mode, ...(st?.link ? {} : { enabled: true }) }, "mode");
   const flag = (k: keyof Link, v: boolean) => call("PATCH", { [k]: v }, k);
   const doPair = async () => { const d = await call("POST", { action: "pair" }, "pair"); if (d?.token) setToken(d.token); };
 
@@ -78,11 +80,26 @@ export function PhoneSettings() {
     <section className="glass rounded-2xl p-5" id="phone">
       <h2 className="mb-1 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground"><PhoneCall className="h-4 w-4" /> Phone calls</h2>
       <div className="mb-3 inline-flex rounded-xl bg-muted/40 p-1 text-xs">
-        {(["iphone", "android"] as const).map((m) => (
-          <button key={m} type="button" onClick={() => void setMode(m)} className={cn("rounded-lg px-3 py-1.5", (st?.link?.mode ?? "android") === m ? "bg-accent text-accent-foreground" : "text-muted-foreground")}>{m === "iphone" ? "Spare iPhone" : "Spare Android"}</button>
+        {(["laptop", "iphone", "android"] as const).map((m) => (
+          <button key={m} type="button" onClick={() => void setMode(m)} className={cn("rounded-lg px-3 py-1.5", (st?.link?.mode ?? "android") === m ? "bg-accent text-accent-foreground" : "text-muted-foreground")}>{m === "laptop" ? "Through the laptop (talks with you)" : m === "iphone" ? "Spare iPhone" : "Spare Android"}</button>
         ))}
       </div>
-      {iphone ? (
+      {laptop ? (
+        <>
+          <p className="mb-3 text-[12px] leading-relaxed text-muted-foreground">
+            JARVIS <b className="text-foreground">calls you through Phone Link on this laptop and talks with you</b>: it tells you what finished, failed or needs your OK, answers your questions, and approves or rejects waiting work when you clearly say so. It uses the phone paired with Phone Link (calls come from that phone&apos;s number — and so do JARVIS&apos;s calls to leads).
+          </p>
+          <div className="mb-4 rounded-xl border border-accent/30 bg-accent/5 p-3 text-[12px] leading-relaxed">
+            <div className="mb-2 font-medium text-foreground">One-time setup</div>
+            <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
+              <li>Pair the phone that should call you (e.g. the spare POCO, with a recharge) in <b className="text-foreground">Phone Link</b> and turn on <b className="text-foreground">Calls</b>. Make one call from Phone Link by hand.</li>
+              <li>Install <b className="text-foreground">VB-Audio Virtual Cable</b>, and set Phone Link&apos;s microphone to <b className="text-foreground">CABLE Output</b> (Windows Sound → Volume mixer).</li>
+              <li>Start the orb (<code className="text-accent">npm run orb</code>) → tray icon → <b className="text-foreground">Prospect calls…</b> → <b className="text-foreground">Run check</b> → <b className="text-foreground">Start calling</b>, and leave that window open. Calls to you go out even when calling leads is off.</li>
+              <li>Enter your number below, Save, and press <b className="text-foreground">Test call</b>.</li>
+            </ol>
+          </div>
+        </>
+      ) : iphone ? (
         <>
           <p className="mb-4 text-[12px] leading-relaxed text-muted-foreground">
             The <b className="text-foreground">spare iPhone on Wi-Fi</b> is JARVIS&apos;s phone. You don&apos;t need a SIM plan. When something happens, JARVIS emails it (from your connected Gmail) with the subject <b className="text-foreground">JARVIS CALL</b>, and a Shortcuts automation on that iPhone <b className="text-foreground">calls you with FaceTime Audio or WhatsApp</b>. The email holds the details.
@@ -108,7 +125,7 @@ export function PhoneSettings() {
       )}
 
       {/* the real link state */}
-      {!iphone && <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl bg-muted/40 px-3 py-2.5 text-sm">
+      {!iphone && !laptop && <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl bg-muted/40 px-3 py-2.5 text-sm">
         <Smartphone className="h-4 w-4 text-muted-foreground" />
         {!l?.paired ? <span className="text-muted-foreground">No phone paired yet.</span>
           : l.online ? <span><span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-success" />Phone connected{l.device ? ` (${l.device.replace(/\+/g, " ")})` : ""}. Last check-in {ago(l.lastSeenAt)}.</span>
@@ -118,10 +135,10 @@ export function PhoneSettings() {
 
       <div className="grid gap-3 sm:grid-cols-2">
         {!iphone && <>
-        <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Your WhatsApp number (JARVIS calls this)</span>
+        <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">{laptop ? "Your number (JARVIS calls this)" : "Your WhatsApp number (JARVIS calls this)"}</span>
           <Input value={to} onChange={(e) => setTo(e.target.value)} placeholder="+919876543210" inputMode="tel" /></label>
-        <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">JARVIS&apos;s WhatsApp number (on the spare phone)</span>
-          <Input value={jn} onChange={(e) => setJn(e.target.value)} placeholder="+91…" inputMode="tel" /></label>
+        {!laptop && <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">JARVIS&apos;s WhatsApp number (on the spare phone)</span>
+          <Input value={jn} onChange={(e) => setJn(e.target.value)} placeholder="+91…" inputMode="tel" /></label>}
         </>}
         <label className="block"><span className="mb-1.5 block text-xs font-medium text-muted-foreground">Quiet hours from (optional)</span>
           <Input value={qf} onChange={(e) => setQf(e.target.value)} placeholder="23:00" /></label>
@@ -131,7 +148,7 @@ export function PhoneSettings() {
       <p className="mt-1.5 text-[11px] text-muted-foreground">During quiet hours, calls wait until the quiet hours end. Times are in your timezone from Profile.</p>
       <Button className="mt-3" onClick={save} disabled={busy === "save"}>{busy === "save" ? "Saving…" : "Save"}</Button>
 
-      {l && !iphone && (
+      {l && !iphone && !laptop && (
         <div className="mt-5">
           <div className="mb-1.5 text-sm">How the spare phone calls you</div>
           <div className="flex gap-2">
@@ -158,9 +175,21 @@ export function PhoneSettings() {
       )}
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {!iphone && <Button variant="outline" onClick={doPair} disabled={busy === "pair"}>{l?.paired ? "Pair again (new token)" : "Pair the spare phone"}</Button>}
-        <Button variant="outline" onClick={() => call("POST", { action: "test" }, "test", iphone ? "Test call queued. Within a minute JARVIS emails the iPhone, and its Shortcut calls you." : "Test call queued. The phone picks it up at its next check-in, within about 15 seconds.")} disabled={busy === "test" || (iphone ? !l?.iphoneEmail : !l?.paired || !l?.toNumber)}>Test call</Button>
+        {!iphone && !laptop && <Button variant="outline" onClick={doPair} disabled={busy === "pair"}>{l?.paired ? "Pair again (new token)" : "Pair the spare phone"}</Button>}
+        <Button variant="outline" onClick={() => call("POST", { action: "test" }, "test", laptop ? "Test call queued. The Prospect calls window on the laptop rings you within about 20 seconds — say hello and talk to JARVIS." : iphone ? "Test call queued. Within a minute JARVIS emails the iPhone, and its Shortcut calls you." : "Test call queued. The phone picks it up at its next check-in, within about 15 seconds.")} disabled={busy === "test" || (laptop ? !l?.toNumber : iphone ? !l?.iphoneEmail : !l?.paired || !l?.toNumber)}>Test call</Button>
       </div>
+
+      {laptop && !!st?.ownerCalls?.length && (
+        <div className="mt-5 space-y-2">
+          <div className="text-sm">Recent calls from JARVIS</div>
+          {st.ownerCalls.map((c) => (
+            <details key={c.id} className="rounded-lg border border-border p-2 text-[12px]">
+              <summary className="cursor-pointer text-muted-foreground">{new Date(c.createdAt).toLocaleString()} — {c.status.replace(/_/g, " ")}{c.actions.length ? ` · ${c.actions.map((a) => `${a.ok ? "" : "couldn't "}${a.type === "approve" ? "approved" : "rejected"} ${a.title}`).join("; ")}` : ""}{c.error ? ` · ${c.error}` : ""}</summary>
+              <ul className="mt-1.5 space-y-0.5">{c.transcript.map((t, i) => <li key={i} className={t.who === "jarvis" ? "text-accent" : ""}>{t.who === "jarvis" ? "JARVIS" : "You"}: {t.text}</li>)}</ul>
+            </details>
+          ))}
+        </div>
+      )}
 
       {token && (
         <div className="mt-4 rounded-xl border border-accent/30 bg-accent/5 p-3 text-[12px] leading-relaxed">

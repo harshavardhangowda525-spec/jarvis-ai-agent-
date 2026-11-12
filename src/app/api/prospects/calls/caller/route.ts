@@ -2,6 +2,7 @@ import { z } from "zod";
 import { requireUser } from "@/lib/auth/session";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { CallError, callerEvent, callerFinish, callerNext, callerTurn } from "@/lib/calls/service";
+import { isOwnerCall, ownerEvent, ownerFinish, ownerTurn } from "@/lib/calls/owner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,8 +22,10 @@ export async function POST(req: Request) {
     if (!rateLimit(`caller:${user.id}`, 240, 60_000).allowed) return fail("Too many requests.", 429);
     const b = Body.parse(await req.json());
     if (b.action === "next") return ok(await callerNext(user.id));
-    if (b.action === "event") return ok(await callerEvent(user.id, b.id, b.state));
-    if (b.action === "turn") return ok(await callerTurn(user.id, b.id, b.heard, { opener: b.opener, lang: b.lang ?? null, interrupted: b.interrupted }));
-    return ok(await callerFinish(user.id, b.id, { reason: b.reason, error: b.error }));
+    // calls to you (laptop mode) and calls to leads share the caller, told apart by id
+    const own = isOwnerCall(b.id);
+    if (b.action === "event") return ok(own ? await ownerEvent(user.id, b.id, b.state) : await callerEvent(user.id, b.id, b.state));
+    if (b.action === "turn") { const o = { opener: b.opener, lang: b.lang ?? null, interrupted: b.interrupted }; return ok(own ? await ownerTurn(user.id, b.id, b.heard, o) : await callerTurn(user.id, b.id, b.heard, o)); }
+    return ok(own ? await ownerFinish(user.id, b.id, { reason: b.reason, error: b.error }) : await callerFinish(user.id, b.id, { reason: b.reason, error: b.error }));
   } catch (e) { return e instanceof CallError ? fail(e.message) : handleError(e); }
 }
