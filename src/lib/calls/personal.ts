@@ -195,7 +195,7 @@ export async function personalFinish(userId: string, id: string, i: { reason: st
       if (s) summary = s;
     } catch { /* keep the plain line */ }
   }
-  await db().personalCall.update({ where: { id }, data: { status, endedAt: now, summary, error: i.error?.slice(0, 400) ?? null } });
+  await db().personalCall.update({ where: { id }, data: { status, endedAt: now, summary, error: i.error?.slice(0, 1500) ?? null } });
   await recordActivity(userId, { category: "communication", agent: "JARVIS", action: `Called ${c.name}`, result: summary, status: status === "completed" ? "success" : "failed", importance: 4, source: "personal-call", metadata: { callId: id } });
   return { status, summary };
 }

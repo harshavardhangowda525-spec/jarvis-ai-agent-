@@ -153,7 +153,7 @@ export async function ownerFinish(userId: string, id: string, i: { reason: strin
   if (!["dialing", "in_call"].includes(c.status)) return { status: c.status };
   const spoke = !!c.answeredAt;
   const status = spoke ? "completed" : i.reason === "failed" ? "failed" : "no_answer";
-  await db().ownerCall.update({ where: { id }, data: { status, endedAt: now, error: i.error?.slice(0, 400) ?? null } });
+  await db().ownerCall.update({ where: { id }, data: { status, endedAt: now, error: i.error?.slice(0, 1500) ?? null } });
   if (spoke) await db().phoneEvent.updateMany({ where: { batchId: c.batchId, status: "sending" }, data: { status: "sent", error: null, sentAt: now } });
   else await requeue(c.batchId, i.error || (status === "failed" ? "The laptop couldn't place the call." : "You didn't pick up."));
   return { status };

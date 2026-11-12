@@ -484,8 +484,8 @@ public static class Hands {
         if (pressed && round > 2 && InCallNamed(names, wa)) { Dictionary<string, object> d = Ok(); d["pressed"] = true; return d; }
       }
       if (Windows(names).Count == 0) return Err(wa ? "WhatsApp Desktop did not open. Install it from the Microsoft Store and link it to the spare phone's WhatsApp." : "Phone Link did not open. Open Phone Link, make sure your phone is connected and Calls are set up.");
-      if (!pressed) return Err(wa ? "WhatsApp opened the chat but I couldn't find its voice-call button - is this number on WhatsApp?" : "Phone Link opened but the call didn't start. Check that Calls is set up in Phone Link (Bluetooth paired).");
-      return Err("I pressed the call button but the call didn't start.");
+      if (!pressed) return Err((wa ? "WhatsApp opened the chat but I couldn't find its voice-call button - is this number on WhatsApp?" : "Phone Link opened but the call didn't start. Check that Calls is set up in Phone Link (Bluetooth paired).") + " Buttons I can see: " + ButtonNames(names));
+      return Err("I pressed the call button but the call didn't start. Buttons I can see now: " + ButtonNames(names));
     }
     return Err("Unknown phone action.");
 #else
@@ -517,6 +517,15 @@ public static class Hands {
       } catch (Exception) { }
     }
     return false;
+  }
+  /** The names of the buttons in the app's windows (to see what it calls things). */
+  static string ButtonNames(string[] names) {
+    List<string> seen = new List<string>();
+    foreach (AutomationElement b in Buttons(Windows(names))) {
+      try { string n = (b.Current.Name ?? "").Trim(); if (n.Length > 0 && n.Length < 60 && !seen.Contains(n)) seen.Add(n); } catch (Exception) { }
+      if (seen.Count >= 45) break;
+    }
+    return seen.Count > 0 ? string.Join(" | ", seen.ToArray()) : "(none - Windows can't read this app's buttons)";
   }
   static Condition NamedButtons(string[] labels) {
     Condition[] byName = new Condition[labels.Length];

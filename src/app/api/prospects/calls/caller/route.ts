@@ -17,7 +17,7 @@ const Body = z.discriminatedUnion("action", [
     lines: z.array(z.object({ who: z.enum(["jarvis", "them", "info"]), text: z.string().max(2000), at: z.number() })).max(60) }),
   z.object({ action: z.literal("event"), id: z.string().min(1).max(40), state: z.enum(["answered", "heartbeat"]) }),
   z.object({ action: z.literal("turn"), id: z.string().min(1).max(40), heard: z.string().max(2000), opener: z.boolean().optional(), lang: z.enum(["en", "hi", "kn"]).nullable().optional(), interrupted: z.boolean().optional() }),
-  z.object({ action: z.literal("finish"), id: z.string().min(1).max(40), reason: z.enum(["ended", "hung_up", "no_answer", "failed", "stopped", "timeout"]), error: z.string().max(400).nullable().optional() }),
+  z.object({ action: z.literal("finish"), id: z.string().min(1).max(40), reason: z.enum(["ended", "hung_up", "no_answer", "failed", "stopped", "timeout"]), error: z.string().max(2000).nullable().optional() }),
 ]);
 
 /** The caller in the JARVIS desktop orb (signed in as you): next call · answered/heartbeat · one exchange · call over. */
