@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { scriptLang, wavFromFloat32, cleanForSpeech, PIPER_VOICES } from "@/lib/voice/local-tts";
-import { piperAsset, VOICE_FILES } from "../scripts/voice-setup.mjs";
+import { piperAsset, VOICE_FILES, voiceFits } from "../scripts/voice-setup.mjs";
 
 describe("JARVIS's own voice (pure parts)", () => {
   it("picks the voice by the text's script", () => {
@@ -21,6 +21,12 @@ describe("JARVIS's own voice (pure parts)", () => {
   });
   it("gives Piper one clean line", () => {
     expect(cleanForSpeech("**Hi!**\nVisit https://x.com now\t ok")).toBe("Hi! Visit now ok");
+  });
+  it("only installs voices the voice program can read (newer ones crash it: \"aɪ\" is not a single codepoint)", () => {
+    expect(voiceFits(JSON.stringify({ phoneme_id_map: { a: [14], "ɪ": [74], " ": [3] } }))).toBe(true);
+    expect(voiceFits(JSON.stringify({ phoneme_id_map: { a: [14], "aɪ": [161] } }))).toBe(false);
+    expect(voiceFits("not json")).toBe(false);
+    expect(PIPER_VOICES.en).toBe("en_GB-alan-medium");
   });
   it("downloads the right engine for the PC, and the voices the app expects", () => {
     expect(piperAsset("win32", "x64")).toBe("piper_windows_amd64.zip");

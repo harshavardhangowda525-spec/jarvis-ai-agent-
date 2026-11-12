@@ -22,7 +22,7 @@ export type VoiceLang = "en" | "hi" | "kn";
 
 export const VOICE_DIR = process.env.JARVIS_VOICE_DIR || path.join(process.cwd(), "tools", "voice");
 /** The Piper voices `npm run local` fetches (scripts/voice-setup.mjs keeps the same list). */
-export const PIPER_VOICES: Record<"en" | "hi", string> = { en: "en_GB-cori-medium", hi: "hi_IN-priyamvada-medium" };
+export const PIPER_VOICES: Record<"en" | "hi", string> = { en: "en_GB-alan-medium", hi: "hi_IN-priyamvada-medium" };
 export const KANNADA_MODEL = "onnx-community/mms-tts-kan-ONNX";
 // installed into tools/voice by npm run local, not part of JARVIS's own packages — kept out of the bundler's sight
 const TRANSFORMERS = ["@huggingface", "transformers"].join("/");

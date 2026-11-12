@@ -13,10 +13,15 @@ const PIPER_RELEASE = "https://github.com/rhasspy/piper/releases/download/2023.1
 const VOICES = "https://huggingface.co/rhasspy/piper-voices/resolve/main";
 /** Same voices as src/lib/voice/local-tts.ts (PIPER_VOICES). */
 export const VOICE_FILES = [
-  "en/en_GB/cori/medium/en_GB-cori-medium",
+  "en/en_GB/alan/medium/en_GB-alan-medium",
   "hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium",
 ];
 export const TRANSFORMERS_VERSION = "3.8.1";
+
+/** Can this Piper build read the voice? (newer voices use multi-letter sounds it rejects: "is not a single codepoint"). Pure (tested). */
+export function voiceFits(configJson) {
+  try { return Object.keys(JSON.parse(configJson).phoneme_id_map ?? {}).every((k) => [...k].length === 1); } catch { return false; }
+}
 
 /** Which Piper build this PC needs, or null. Pure (tested). */
 export function piperAsset(platform = process.platform, arch = process.arch) {
@@ -74,6 +79,11 @@ export async function ensureVoice(root, say = console.log) {
   for (const v of VOICE_FILES) {
     const name = path.basename(v);
     const ok = (await download(`${VOICES}/${v}.onnx`, path.join(dir, "models", `${name}.onnx`), say)) && (await download(`${VOICES}/${v}.onnx.json`, path.join(dir, "models", `${name}.onnx.json`), say));
+    if (ok && !voiceFits(fs.readFileSync(path.join(dir, "models", `${name}.onnx.json`), "utf8"))) {
+      say(`  ! The voice ${name} is newer than JARVIS's voice program — skipped.`);
+      fs.rmSync(path.join(dir, "models", `${name}.onnx`), { force: true });
+      continue;
+    }
     if (ok) ready.voices++;
   }
   // 3. Kannada: transformers.js in its own folder (kept out of JARVIS's main packages)
