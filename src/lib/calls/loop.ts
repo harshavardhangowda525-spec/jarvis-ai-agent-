@@ -1,7 +1,7 @@
 /**
- * The caller's loop — runs in the JARVIS desktop orb on your laptop. Pure
+ * The caller's loop — runs in JARVIS's own calls window on your laptop. Pure
  * logic over an IO interface (Phone Link, the virtual audio cable, JARVIS's
- * server), so it is tested with fakes; the /orb/caller page wires the real IO.
+ * server), so it is tested with fakes; the /calls/live page wires the real IO.
  *
  * One call: dial → wait for them to say "hello" (that's how we know a person
  * answered; ringing and silence aren't words) → JARVIS's opening line (it says

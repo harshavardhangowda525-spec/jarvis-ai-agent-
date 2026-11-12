@@ -410,7 +410,6 @@ function updateTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: alive() && orb.isVisible() ? "Hide the orb" : "Show the orb", click: () => { if (!alive()) return; if (orb.isVisible()) orb.hide(); else orb.showInactive(); updateTray(); } },
     { label: "Open chat", accelerator: SHORTCUTS.chat, click: () => { if (show()) { setMode("popup"); send("open"); } } },
-    { label: "Prospect calls (Phone Link)…", click: () => openCaller() },
     { label: "Move back to the bottom-right corner", click: () => { settings.anchor = null; save(); setMode(mode); } },
     { type: "separator" },
     { label: "Pause all automation", type: "checkbox", accelerator: SHORTCUTS.pause, checked: paused, click: (i) => { executor.setPaused(i.checked); paused = i.checked; send("paused", { paused }); updateTray(); } },
@@ -460,7 +459,8 @@ app.whenReady().then(async () => {
   } catch (e) { log(`no tray icon here: ${e.message}`); }
   updateTray();
   registerShortcuts();
-  if (settings.callsOpen || process.argv.includes("--calls")) openCaller();
+  // calls are no longer the orb's job: JARVIS's own helper (npm run local) runs them
+  if (settings.callsOpen) { settings.callsOpen = false; save(); }
   const reclamp = () => setMode(mode);
   screen.on("display-added", reclamp); screen.on("display-removed", reclamp); screen.on("display-metrics-changed", reclamp);
   powerMonitor.on("resume", () => (onJarvis ? send("refresh") : load()));

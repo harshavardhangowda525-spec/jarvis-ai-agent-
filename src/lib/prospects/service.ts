@@ -281,6 +281,13 @@ export interface Listing {
   rating?: number | null; reviews?: number | null; mapsUrl: string; hours?: string | null; instagram?: string | null; facebook?: string | null;
 }
 
+/** Whose laptop is this? (the operator's jmf_ key — also lets JARVIS's own calling window on that laptop act for you) */
+export async function finderUserId(token: string | null | undefined): Promise<string | null> {
+  if (!token || !token.startsWith("jmf_")) return null;
+  const f = await db().mapsFinder.findUnique({ where: { tokenHash: hash(token) }, select: { userId: true } });
+  return f?.userId ?? null;
+}
+
 type DeviceOut = { authorized: false } | ({ authorized: true } & Record<string, unknown>);
 
 /** The operator on your laptop: next search · which places are already known · one listing · progress. */

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth/session";
+import { callerUser } from "@/lib/calls/device-auth";
 import { getVoiceProvider } from "@/lib/voice/elevenlabs";
 import { VoiceNotConfiguredError, VoiceProviderError } from "@/lib/voice/provider";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
@@ -11,7 +11,7 @@ export const maxDuration = 30;
 /** Speech-to-text: accepts a recorded audio blob, returns the transcript. */
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await callerUser(req);
     const rl = rateLimit(`stt:${user.id}`, 60, 60_000);
     if (!rl.allowed) return fail("Slow down — too many voice requests.", 429);
 

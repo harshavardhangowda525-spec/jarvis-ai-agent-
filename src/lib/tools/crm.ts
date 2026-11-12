@@ -151,7 +151,7 @@ export const crmPlanCallsTool: ToolDefinition<z.infer<typeof planSchema>> = {
     const r = await planCalls(ctx.userId, { prospectIds: ids, limit: i.limit });
     const s = await getSettings(ctx.userId);
     const note = r.batchId
-      ? `Waiting for the user's approval in CRM → Calls.${s.enabled ? "" : " Calling is switched off there too — they need to turn it on."} Then the caller on the laptop (orb tray → Prospect calls → Start calling) dials during ${s.hoursFrom}–${s.hoursTo}.`
+      ? `Waiting for the user's approval in CRM → Calls.${s.enabled ? "" : " Calling is switched off there too — they need to turn it on."} Then JARVIS's calls window on the laptop (it opens by itself) dials during ${s.hoursFrom}–${s.hoursTo}.`
       : "Nothing to call.";
     return { data: { planned: r.calls.map((c) => c.name), skipped: r.skipped.slice(0, 15), note }, summary: r.batchId ? `Planned ${r.calls.length} call${r.calls.length === 1 ? "" : "s"} — approve them in CRM → Calls.` : "No leads can be called right now." };
   },
@@ -175,7 +175,7 @@ export const callMeTool: ToolDefinition<z.infer<typeof callMeSchema>> = {
     try { r = await queueCallMe(ctx.userId, i.about ?? null); }
     catch (e) { if (e instanceof PhoneError) throw new ToolError(`${e.message} (Settings → Phone calls)`); throw e; }
     const how = r.mode === "laptop"
-      ? "The laptop rings them through Phone Link within about 20 seconds — they should say hello and JARVIS talks. It needs the orb's Prospect calls window running (Start calling)."
+      ? "The laptop rings them through Phone Link within about 20 seconds — JARVIS speaks first if they stay quiet. JARVIS opens its Calls window on the laptop by itself (JARVIS must be running there)."
       : r.mode === "iphone"
         ? "JARVIS emails the spare iPhone within a minute and its Shortcut rings them."
         : r.online ? "The spare phone rings them within about 15 seconds." : "The spare phone isn't checking in right now, so the call waits until it does (Termux script running, Wireless debugging on).";

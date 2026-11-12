@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requireUser } from "@/lib/auth/session";
+import { callerUser } from "@/lib/calls/device-auth";
 import { ok, fail, handleError, rateLimit } from "@/lib/api";
 import { CallError, callerEvent, callerFinish, callerNext, callerTurn } from "@/lib/calls/service";
 import { isOwnerCall, ownerEvent, ownerFinish, ownerTurn } from "@/lib/calls/owner";
@@ -18,7 +18,7 @@ const Body = z.discriminatedUnion("action", [
 /** The caller in the JARVIS desktop orb (signed in as you): next call · answered/heartbeat · one exchange · call over. */
 export async function POST(req: Request) {
   try {
-    const user = await requireUser();
+    const user = await callerUser(req);
     if (!rateLimit(`caller:${user.id}`, 240, 60_000).allowed) return fail("Too many requests.", 429);
     const b = Body.parse(await req.json());
     if (b.action === "next") return ok(await callerNext(user.id));

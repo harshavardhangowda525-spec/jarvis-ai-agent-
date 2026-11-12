@@ -19,6 +19,7 @@ import { startServer } from "./src/server.mjs";
 import { hasProvider, providerName } from "./src/provider.mjs";
 import { log } from "./src/log.mjs";
 import { MapsFinder } from "./src/maps/finder.mjs";
+import { CallsWindow } from "./src/calls/caller.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,6 +45,9 @@ startServer({ port, session, mgr });
 // JARVIS CRM: the Google Maps lead finder (searches JARVIS queues run here, in the visible browser)
 const finder = new MapsFinder({ mgr });
 if (process.env.OPERATOR_MAPS !== "off") finder.start();
+// JARVIS's calls (to you and to leads): its own small window, opened by itself when calling is on — no orb
+const calls = new CallsWindow();
+if (process.env.OPERATOR_CALLS !== "off") calls.start();
 // the Stop button on the "JARVIS is working" label stops whatever JARVIS is doing
 mgr.onUserStop = () => { session.stop(); finder.stop(); };
 
@@ -51,6 +55,7 @@ mgr.onUserStop = () => { session.stop(); finder.stop(); };
 for (const sig of ["SIGINT", "SIGTERM"]) {
   process.on(sig, async () => {
     log.info("Shutting down…");
+    await calls.close();
     await mgr.close();
     process.exit(0);
   });

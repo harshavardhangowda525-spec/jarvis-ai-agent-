@@ -72,7 +72,7 @@ export function CallsPanel({ onChanged }: { onChanged: () => void }) {
           <ul className="grid gap-1 sm:grid-cols-2">{calls.map((c) => <li key={c.id} className="flex items-center gap-2"><span className="truncate text-white">{c.name}</span><span className="text-white/45">{c.to}</span><button type="button" title="Leave this one out" className="ml-auto text-white/40 hover:text-red-300" onClick={() => act({ action: "cancel", id: c.id })}><X className="h-3 w-3" /></button></li>)}</ul>
         </div>
       ))}
-      {queued > 0 && <div className="text-cyan-200">{queued} approved call{queued === 1 ? "" : "s"} waiting for the laptop. On the laptop: orb tray icon → <b>Prospect calls</b> → <b>Start calling</b>.</div>}
+      {queued > 0 && <div className="text-cyan-200">{queued} approved call{queued === 1 ? "" : "s"} waiting for the laptop. JARVIS opens its <b>Calls</b> window on the laptop by itself and dials them (JARVIS must be running there).</div>}
 
       {done.length > 0 && (
         <ul className="max-h-72 space-y-1 overflow-y-auto">

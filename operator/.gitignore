@@ -4,3 +4,4 @@ browser-data/
 *.log
 .finder.json
 screenshots/
+.calls-profile/

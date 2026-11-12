@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth/session";
+import { callerUser } from "@/lib/calls/device-auth";
 import { getVoiceProvider } from "@/lib/voice/elevenlabs";
 import { VoiceNotConfiguredError, VoiceProviderError } from "@/lib/voice/provider";
 import { getDb } from "@/lib/db";
@@ -22,7 +22,7 @@ export const runtime = "nodejs";
  */
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireUser();
+    const user = await callerUser(req);
     const rl = rateLimit(`tts:${user.id}`, 150, 60_000); // calls speak sentence by sentence
     if (!rl.allowed) return fail("Slow down — too many voice requests.", 429);
 

@@ -6,10 +6,11 @@ import { runCaller, type CallerIO } from "@/lib/calls/loop";
 import { splitSentences, normLang, type Lang } from "@/lib/calls/rules";
 
 /**
- * JARVIS — Prospect calls. Runs inside the JARVIS desktop orb on your Windows
- * laptop (tray → "Prospect calls"). JARVIS dials approved calls through Phone
- * Link (your own number), speaks into the call through the VB-Audio virtual
- * cable, and hears the other side from the speakers.
+ * JARVIS — Calls. JARVIS's own helper on your Windows laptop (started with
+ * JARVIS, no orb needed) opens this window by itself and starts calling.
+ * JARVIS dials through Phone Link (your own number), speaks into the call
+ * through the VB-Audio virtual cable, and hears the other side from the
+ * speakers.
  */
 interface Phone {
   check: () => Promise<{ ok: boolean; installed?: boolean; running?: boolean; cable?: boolean; simulated?: boolean; error?: string }>;
@@ -18,7 +19,24 @@ interface Phone {
   state: () => Promise<{ ok: boolean; inCall?: boolean }>;
   working: (text: string | null) => void;
 }
-declare global { interface Window { jarvisDesktop?: { phone?: Phone; onEvent?: (cb: (e: { type: string }) => void) => () => void } } }
+type PhoneOp = (op: string, arg?: string | null) => Promise<Record<string, unknown>>;
+declare global { interface Window { jarvisDesktop?: { phone?: Phone; onEvent?: (cb: (e: { type: string }) => void) => () => void }; __jarvisPhone?: PhoneOp } }
+
+/** The phone controls: from JARVIS's helper on the laptop (or, on older setups, the desktop orb). */
+function getPhone(): Phone | undefined {
+  if (typeof window === "undefined") return undefined;
+  const op = window.__jarvisPhone;
+  if (op) {
+    return {
+      check: () => op("check") as ReturnType<Phone["check"]>,
+      dial: (to) => op("dial", to) as ReturnType<Phone["dial"]>,
+      hangup: () => op("hangup"),
+      state: () => op("state") as ReturnType<Phone["state"]>,
+      working: (text) => { void op("working", text).catch(() => {}); },
+    };
+  }
+  return window.jarvisDesktop?.phone;
+}
 
 type Check = { label: string; ok: boolean | null; detail?: string };
 type Line = { who: "jarvis" | "them" | "info"; text: string; at: number };
@@ -85,7 +103,7 @@ function makeEars(stream: MediaStream) {
 }
 
 export function CallerApp() {
-  const phone = typeof window !== "undefined" ? window.jarvisDesktop?.phone : undefined;
+  const [phone] = useState(getPhone);
   const [checks, setChecks] = useState<Check[]>([]);
   const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([]);
   const [sink, setSink] = useState<string>("");
@@ -113,9 +131,18 @@ export function CallerApp() {
 
   const ensureEars = useCallback(async () => {
     if (ears.current && stream.current?.getAudioTracks().some((t) => t.readyState === "live")) return ears.current;
-    const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-    s.getVideoTracks().forEach((t) => t.stop());
-    if (!s.getAudioTracks().length) throw new Error("JARVIS couldn't hear the computer's sound (no loopback audio).");
+    let s: MediaStream | null = null;
+    try {
+      s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, systemAudio: "include" } as DisplayMediaStreamOptions);
+      s.getVideoTracks().forEach((t) => t.stop());
+      if (!s.getAudioTracks().length) s = null;
+    } catch { s = null; }
+    if (!s) {
+      // backup: the laptop's own "Stereo Mix" recording device (the speakers' sound), if Windows has it switched on
+      const mix = (await navigator.mediaDevices.enumerateDevices()).find((d) => d.kind === "audioinput" && /stereo mix|what u hear|wave out|loopback/i.test(d.label));
+      if (mix) s = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: mix.deviceId }, echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).catch(() => null);
+    }
+    if (!s || !s.getAudioTracks().length) throw new Error("JARVIS couldn't hear the computer's sound. In Windows Sound settings → Recording, right-click → Show disabled devices → enable \"Stereo Mix\", then restart JARVIS.");
     stream.current = s; ears.current = makeEars(s);
     return ears.current;
   }, []);
@@ -162,7 +189,7 @@ export function CallerApp() {
     setErr(null);
     const list: Check[] = [];
     const set = (c: Check) => { list.push(c); setChecks([...list]); };
-    if (!phone) { set({ label: "JARVIS desktop orb", ok: false, detail: "Open this from the orb on your Windows laptop: tray icon → Prospect calls." }); return false; }
+    if (!phone) { set({ label: "JARVIS on your laptop", ok: false, detail: "JARVIS opens this window by itself on your Windows laptop when calling is switched on (start JARVIS with npm run local)." }); return false; }
     const pc: Awaited<ReturnType<Phone["check"]>> = await phone.check().catch((e) => ({ ok: false, error: (e as Error).message }));
     set({ label: "Phone Link installed", ok: !!pc.installed, detail: pc.installed ? undefined : pc.error ?? "Install Phone Link from the Microsoft Store." });
     set({ label: "Phone Link running, phone connected", ok: !!pc.running, detail: pc.running ? "Make sure Calls are set up in Phone Link (Bluetooth)." : "Open Phone Link and connect your Android phone." });
@@ -198,13 +225,23 @@ export function CallerApp() {
     try { await runCaller(io, { onWait: setWait }); } catch (e) { setErr((e as Error).message); } finally { setRunning(false); phone?.working(null); }
   }, [runChecks, phone, speak, ensureEars]);
 
+  // opened by JARVIS (?auto=1): start by itself; if a check fails, look again every minute
+  const auto = useRef(false);
+  useEffect(() => {
+    if (auto.current || !phone || typeof window === "undefined" || new URLSearchParams(window.location.search).get("auto") !== "1") return;
+    auto.current = true;
+    let alive = true;
+    void (async () => { while (alive && !stop.current) { await start(); if (!alive || stop.current) break; await sleep(60_000); } })();
+    return () => { alive = false; };
+  }, [phone, start]);
+
   const halt = () => { stop.current = true; void phone?.hangup(); phone?.working(null); };
 
   return (
     <div className="min-h-dvh bg-[#06101a] p-4 text-sm text-white/85">
       <div className="mb-3 flex items-center gap-2">
         <Phone className="h-5 w-5 text-cyan-300" />
-        <h1 className="text-base font-semibold text-white">Prospect calls</h1>
+        <h1 className="text-base font-semibold text-white">JARVIS — Calls</h1>
         <span className={`ml-auto rounded-full border px-2 py-0.5 text-xs ${running ? "border-cyan-400/50 text-cyan-200" : "border-white/15 text-white/55"}`}>{running ? "Calling on" : "Off"}</span>
       </div>
       <p className="mb-3 text-xs text-white/55">

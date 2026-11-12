@@ -17,7 +17,7 @@ import {
 /**
  * Prospect calls through Windows Phone Link (your own number). JARVIS plans,
  * YOU approve (a batch approval covers that batch only), and the caller on your
- * laptop (the desktop orb) dials, talks and reports back. The CRM is updated
+ * laptop (JARVIS's own calls window) dials, talks and reports back. The CRM is updated
  * after every call, with the transcript and a short summary.
  */
 const db = () => getDb();
@@ -120,6 +120,14 @@ export async function callsBoard(userId: string, now = new Date()) {
 // ───────────────────────── the caller on your laptop ─────────────────────────
 
 /** The next approved call the caller may dial now, or why not. */
+/** Should JARVIS's calling window be running on the laptop? */
+export async function callsWanted(userId: string) {
+  const s = await getSettings(userId);
+  const link = await db().phoneLink.findUnique({ where: { userId }, select: { mode: true, enabled: true } });
+  const toYou = !!link?.enabled && link.mode === "laptop";
+  return { on: s.enabled || toYou, leads: s.enabled, toYou };
+}
+
 export async function callerNext(userId: string, now = new Date()) {
   const tz = await tzOf(userId);
   const s = await getSettings(userId);
