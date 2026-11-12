@@ -18,6 +18,7 @@ interface Phone {
   hangup: () => Promise<unknown>;
   state: () => Promise<{ ok: boolean; inCall?: boolean }>;
   working: (text: string | null) => void;
+  front?: () => void;
 }
 type PhoneOp = (op: string, arg?: string | null) => Promise<Record<string, unknown>>;
 declare global { interface Window { __jarvisPhone?: PhoneOp } }
@@ -33,6 +34,7 @@ function getPhone(): Phone | undefined {
       hangup: () => op("hangup"),
       state: () => op("state") as ReturnType<Phone["state"]>,
       working: (text) => { void op("working", text).catch(() => {}); },
+      front: () => { void op("front").catch(() => {}); },
     };
   }
   return undefined;
@@ -191,6 +193,7 @@ export function CallerApp() {
     if (!phone) { set({ label: "JARVIS on your laptop", ok: false, detail: "JARVIS opens this window by itself on your Windows laptop when calling is switched on (start JARVIS with npm run local)." }); return false; }
     const pc: Awaited<ReturnType<Phone["check"]>> = await phone.check().catch((e) => ({ ok: false, error: (e as Error).message }));
     const app = pc.app ?? "Phone Link", wa = /whatsapp/i.test(app);
+    setVia(app);
     set({ label: `${app} installed`, ok: !!pc.installed, detail: pc.installed ? undefined : pc.error ?? `Install ${app} from the Microsoft Store.` });
     set({ label: wa ? "WhatsApp Desktop open and linked" : "Phone Link running, phone connected", ok: !!pc.running,
       detail: wa ? (pc.running ? "Linked to the spare phone's WhatsApp (not yours — it can't call itself)." : "Open WhatsApp Desktop and link it to the spare phone's WhatsApp (scan the QR code).")
@@ -203,6 +206,16 @@ export function CallerApp() {
     try { await ensureEars(); set({ label: "JARVIS hears the call (speakers)", ok: true }); } catch (e) { set({ label: "JARVIS hears the call (speakers)", ok: false, detail: (e as Error).message }); }
     return list.every((c) => c.ok);
   }, [phone, devices, sink, ensureEars]);
+
+  // tell JARVIS what this window is doing (checks, waiting reason, live transcript) so the dashboard shows it
+  const [via, setVia] = useState<string | null>(null);
+  const snapshot = useRef<Record<string, unknown>>({});
+  snapshot.current = { action: "status", running, via, wait: wait || null, error: err, checks: checks.map((c) => ({ label: c.label, ok: c.ok, ...(c.detail ? { detail: c.detail } : {}) })), lines: lines.slice(-40) };
+  useEffect(() => {
+    const t = setTimeout(() => { void post(snapshot.current).catch(() => {}); }, 700);
+    return () => clearTimeout(t);
+  }, [running, via, wait, err, checks, lines]);
+  useEffect(() => { const t = setInterval(() => { void post(snapshot.current).catch(() => {}); }, 30_000); return () => clearInterval(t); }, []);
 
   // live "can it hear?" meter
   useEffect(() => { const t = setInterval(() => setHear(ears.current ? Math.min(1, ears.current.level() * 12) : 0), 150); return () => clearInterval(t); }, []);
@@ -218,7 +231,7 @@ export function CallerApp() {
       speak,
       listen: async (ms) => (await ensureEars()).listen(ms, () => stop.current),
       heardLang: () => ears.current?.heardLang() ?? null,
-      label: (t) => phone!.working(t),
+      label: (t) => { phone!.working(t); if (t && /^On a call/.test(t)) phone!.front?.(); },
       log: (l) => setLines((x) => [...x.slice(-80), { ...l, at: Date.now() }]),
       sleep: async (ms) => { const end = Date.now() + ms; while (Date.now() < end && !stop.current) await sleep(Math.min(500, end - Date.now())); },
       now: () => Date.now(),

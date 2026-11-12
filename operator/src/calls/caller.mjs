@@ -121,12 +121,33 @@ export class CallsWindow {
     // the phone controls, only for JARVIS's own page
     await this.ctx.exposeBinding("__jarvisPhone", async (src, op, arg) => {
       try { if (new URL(src.frame.url()).origin !== origin) return { ok: false, error: "Not JARVIS." }; } catch { return { ok: false }; }
+      if (String(op) === "front") { await this.toFront(); return { ok: true }; }
       return this.phone(String(op), arg == null ? null : String(arg));
     });
     this.ctx.on("close", () => { this.ctx = null; this.page = null; });
     this.page = this.ctx.pages()[0] || (await this.ctx.newPage());
     this.page.on("close", () => { void this.phone("hangup").catch(() => {}); });
     await this.page.goto(`${link.url}/calls/live?auto=1`, { waitUntil: "domcontentloaded" }).catch((e) => this.warn(`[calls] ${e.message}`));
+    await this.dock().catch(() => {});
+  }
+
+  /** Keep the Calls window on the right side of the screen (next to WhatsApp / Phone Link). */
+  async dock() {
+    if (!this.isOpen() || !this.ctx?.newCDPSession) return;
+    const s = await this.page.evaluate(() => ({ w: screen.availWidth, h: screen.availHeight, x: screen.availLeft || 0, y: screen.availTop || 0 }));
+    const width = Math.min(520, Math.round(s.w * 0.36));
+    const cs = await this.ctx.newCDPSession(this.page);
+    const { windowId } = await cs.send("Browser.getWindowForTarget");
+    await cs.send("Browser.setWindowBounds", { windowId, bounds: { windowState: "normal" } });
+    await cs.send("Browser.setWindowBounds", { windowId, bounds: { left: s.x + s.w - width, top: s.y, width, height: s.h } });
+    await cs.detach().catch(() => {});
+  }
+
+  /** A call started: show the Calls window (live conversation) in front, on the right. */
+  async toFront() {
+    if (!this.isOpen()) return;
+    await this.dock().catch(() => {});
+    await this.page.bringToFront().catch(() => {});
   }
 
   async close(why) {

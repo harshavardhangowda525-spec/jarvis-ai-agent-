@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PhoneCall, Smartphone, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LiveCaller } from "@/components/calls/live-caller";
 import { cn } from "@/lib/utils";
 
 interface Link {
@@ -147,6 +148,8 @@ export function PhoneSettings() {
       </div>
       <p className="mt-1.5 text-[11px] text-muted-foreground">During quiet hours, calls wait until the quiet hours end. Times are in your timezone from Profile.</p>
       <Button className="mt-3" onClick={save} disabled={busy === "save"}>{busy === "save" ? "Saving…" : "Save"}</Button>
+
+      {l && laptop && <div className="mt-5"><LiveCaller /></div>}
 
       {l && laptop && (
         <div className="mt-5">

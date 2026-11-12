@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Phone, Check, X, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LiveCaller } from "@/components/calls/live-caller";
 import { cn } from "@/lib/utils";
 
 interface Settings { enabled: boolean; dailyCap: number; hoursFrom: string; hoursTo: string; days: number[]; recordingNotice: boolean; callerName: string; company: string; ownerName: string; city: string }
@@ -55,11 +56,12 @@ export function CallsPanel({ onChanged }: { onChanged: () => void }) {
     <div className="glass space-y-3 rounded-2xl p-3 text-xs text-white/75">
       <div className="flex flex-wrap items-center gap-2">
         <Phone className="h-4 w-4 text-cyan-300" /><b className="text-sm text-white">Calls</b>
-        <span className="text-white/50">from your number via Phone Link · {b.callsToday}/{s.dailyCap} today · {s.hoursFrom}–{s.hoursTo} {s.days.map((d) => DAYS[d]).join(" ")} · {b.windowOpen ? "calling hours now" : "outside calling hours"}</span>
+        <span className="text-white/50">from the laptop (Phone Link or WhatsApp) · {b.callsToday}/{s.dailyCap} today · {s.hoursFrom}–{s.hoursTo} {s.days.map((d) => DAYS[d]).join(" ")} · {b.windowOpen ? "calling hours now" : "outside calling hours"}</span>
         <label className="ml-auto flex items-center gap-1.5 text-white"><input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => void act({ action: "settings", enabled: e.target.checked }, e.target.checked ? "Calling is on — approved calls go out from the laptop during calling hours." : "Calling is off.")} /> Calling on</label>
         <Button size="sm" variant="outline" onClick={() => setShowSettings((v) => !v)}>Settings</Button>
         <Button size="sm" disabled={busy} onClick={() => act({ action: "plan" }, "Planned — check the list and approve it below.")}>Plan today&apos;s calls</Button>
       </div>
+      <LiveCaller compact />
       {msg && <div className={msg.ok ? "text-emerald-300" : "text-red-300"}>{msg.text}</div>}
       {showSettings && <CallSettingsForm s={s} onSave={(x) => act({ action: "settings", ...x }, "Saved.")} />}
 
