@@ -7,6 +7,11 @@ import { ttsSchema } from "@/lib/validation";
 import { env } from "@/lib/env";
 import { fail, handleError, rateLimit } from "@/lib/api";
 import { robinVoiceFor } from "@/lib/robin/voice";
+import { localTts, localVoiceAvailable, scriptLang } from "@/lib/voice/local-tts";
+
+// short lines repeat a lot (fillers, "Hello? Can you hear me?") — keep the last few ready
+const cache = new Map<string, Buffer>();
+const remember = (k: string, b: Buffer) => { if (b.length > 600_000) return; cache.set(k, b); if (cache.size > 60) cache.delete(cache.keys().next().value as string); };
 
 export const runtime = "nodejs";
 
@@ -18,14 +23,27 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
-    const rl = rateLimit(`tts:${user.id}`, 60, 60_000);
+    const rl = rateLimit(`tts:${user.id}`, 150, 60_000); // calls speak sentence by sentence
     if (!rl.allowed) return fail("Slow down — too many voice requests.", 429);
 
-    const { text, agent } = ttsSchema.parse(await req.json());
+    const { text, agent, lang } = ttsSchema.parse(await req.json());
 
     const provider = getVoiceProvider();
-    if (!provider.isConfigured()) {
-      return fail("JARVIS voice is not configured.", 503);
+    const l = lang ?? scriptLang(text);
+    // JARVIS's own voice (free, on this PC): when ElevenLabs isn't set up, when you choose it
+    // (JARVIS_VOICE=local), and always for Kannada
+    if (!provider.isConfigured() || process.env.JARVIS_VOICE === "local" || l === "kn") {
+      if (!localVoiceAvailable(l) && !localVoiceAvailable("en")) {
+        return fail("JARVIS's own voice isn't installed yet — run npm run local once on this PC (it downloads it, about 150 MB).", 503);
+      }
+      const key = `${l}|${text}`;
+      let wav = cache.get(key);
+      if (!wav) {
+        try { wav = await localTts(text, localVoiceAvailable(l) ? l : "en"); }
+        catch (e) { return fail((e as Error).message || "JARVIS's voice failed.", 502); }
+        if (text.length <= 80) remember(key, wav);
+      }
+      return new Response(new Uint8Array(wav), { headers: { "Content-Type": "audio/wav", "Cache-Control": "no-store", "X-Voice": `jarvis-local-${l}` } });
     }
 
     // Per-user voice override (applies to JARVIS). Each internal agent uses its

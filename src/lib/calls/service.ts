@@ -10,7 +10,7 @@ import { localParts } from "@/lib/prospects/rules";
 import { event, updateProspect, CrmError } from "@/lib/prospects/service";
 import {
   inCallingWindow, cantCall, dialable, openerText, isMachine, saysDoNotCall, parseTurn, crmPatchFor, manualCallSection,
-  OUTCOMES, MAX_TURNS, MAX_CALL_MS, type Outcome, type Turn,
+  OUTCOMES, MAX_TURNS, MAX_CALL_MS, LINES, detectLang, type Outcome, type Turn, type Lang,
 } from "./rules";
 
 /**
@@ -161,7 +161,7 @@ async function defaultAsk(userId: string): Promise<Ask> {
   const brain = await getLiveBrain(userId).catch(() => null);
   const pick = agentConfigs("jarvis", brain);
   if (!pick.configs.length) throw new CallError(pick.missing ?? "No AI provider is configured for calls.");
-  return (system, user) => completeWithFallback(pick.configs, system, user, { maxTokens: 400, timeoutMs: 15_000 });
+  return (system, user) => completeWithFallback(pick.configs, system, user, { maxTokens: 260, timeoutMs: 9_000 });
 }
 
 function leadFacts(p: { businessName: string; category: string | null; area: string | null; city: string | null; rating: number | null; reviews: number | null; websiteStatus: string; website: string | null; instagram: string | null; signals: string[]; contactPerson: string | null }) {
@@ -172,12 +172,16 @@ function leadFacts(p: { businessName: string; category: string | null; area: str
 }
 
 /** One exchange: what they said → what JARVIS says next. */
-export async function callerTurn(userId: string, id: string, heard: string, opts: { ask?: Ask; now?: Date; opener?: boolean } = {}): Promise<Turn> {
+export async function callerTurn(userId: string, id: string, heard: string, opts: { ask?: Ask; now?: Date; opener?: boolean; lang?: Lang | null; interrupted?: boolean } = {}): Promise<Turn> {
   const now = opts.now ?? new Date();
   const c = await mine(userId, id);
-  if (!["dialing", "in_call"].includes(c.status)) return { say: "", end: true, outcome: null, callbackAt: null, notes: null };
-  const lines = (c.transcript as Line[]) ?? [];
   const text = heard.replace(/\s+/g, " ").trim().slice(0, 1000);
+  const lang: Lang = opts.lang ?? detectLang(text);
+  const L = LINES[lang];
+  if (!["dialing", "in_call"].includes(c.status)) return { say: "", end: true, outcome: null, callbackAt: null, notes: null, lang };
+  const lines = (c.transcript as Line[]) ?? [];
+  // they talked over JARVIS: mark where it was cut off, so the brain knows they didn't hear the rest
+  if (opts.interrupted && lines.length && lines[lines.length - 1].who === "jarvis") lines[lines.length - 1] = { ...lines[lines.length - 1], text: `${lines[lines.length - 1].text} [interrupted]` };
   const push = async (t: Turn) => {
     const add: Line[] = [...(text ? [{ who: "them" as const, text, at: now.toISOString() }] : []), ...(t.say ? [{ who: "jarvis" as const, text: t.say, at: now.toISOString() }] : [])];
     const lastOutcome = t.outcome ?? (c.outcome as Outcome | null);
@@ -185,19 +189,21 @@ export async function callerTurn(userId: string, id: string, heard: string, opts
     return t;
   };
   if (opts.opener) {
-    if (isMachine(text)) return push({ say: "", end: true, outcome: "not_reachable", callbackAt: null, notes: "Operator message / voicemail" });
-    return push({ say: openerText(await getSettings(userId), c.prospect.businessName, c.prospect.contactPerson), end: false, outcome: null, callbackAt: null, notes: null });
+    if (isMachine(text)) return push({ say: "", end: true, outcome: "not_reachable", callbackAt: null, notes: "Operator message / voicemail", lang });
+    // the opener is always in English (it carries the AI disclosure); JARVIS follows their language after it
+    return push({ say: openerText(await getSettings(userId), c.prospect.businessName, c.prospect.contactPerson), end: false, outcome: null, callbackAt: null, notes: null, lang: "en" });
   }
-  if (isMachine(text) && !lines.some((l) => l.who === "them" && !isMachine(l.text))) return push({ say: "", end: true, outcome: "not_reachable", callbackAt: null, notes: "Operator message / voicemail" });
-  if (saysDoNotCall(text)) return push({ say: "Of course — I'll make sure we don't call you again. Sorry for the trouble, and have a good day!", end: true, outcome: "do_not_call", callbackAt: null, notes: "Asked not to be called again" });
+  if (isMachine(text) && !lines.some((l) => l.who === "them" && !isMachine(l.text))) return push({ say: "", end: true, outcome: "not_reachable", callbackAt: null, notes: "Operator message / voicemail", lang });
+  if (saysDoNotCall(text)) return push({ say: L.dnc, end: true, outcome: "do_not_call", callbackAt: null, notes: "Asked not to be called again", lang });
   const theirTurns = lines.filter((l) => l.who === "them").length;
-  if (theirTurns + 1 >= MAX_TURNS) return push({ say: `Thank you so much for your time! ${(await getSettings(userId)).ownerName} will follow up with you on WhatsApp. Have a great day!`, end: true, outcome: null, callbackAt: null, notes: null });
+  if (theirTurns + 1 >= MAX_TURNS) return push({ say: L.bye, end: true, outcome: null, callbackAt: null, notes: null, lang });
 
   const s = await getSettings(userId);
   const tz = await tzOf(userId);
   const manual = manualCallSection((await loadOperator(userId).catch(() => ({ content: "" }))).content);
   const l = localParts(now, tz);
-  const system = `You are ${s.callerName}, an AI assistant phoning a local business for ${s.company} (${s.city}) on behalf of ${s.ownerName}. You speak on a live phone call: short, warm, natural spoken sentences (1–3 per turn), Indian English, no lists, no markdown, no emojis.
+  const system = `You are ${s.callerName}, an AI assistant phoning a local business for ${s.company} (${s.city}) on behalf of ${s.ownerName}. You speak on a live phone call: short, warm, natural spoken sentences (1–2 short sentences per turn — it's a phone call, keep it brisk), no lists, no markdown, no emojis.
+Language: answer in the language they last spoke — English, Hindi or Kannada (their last line looks like ${lang === "hi" ? "Hindi" : lang === "kn" ? "Kannada" : "English"}). Write Hindi in Devanagari and Kannada in Kannada script (it is read aloud), keep brand and service names in English, and switch whenever they switch. Set "lang" to "en", "hi" or "kn".
 Hard rules (they win over everything else):
 - You are an AI assistant. Never claim or imply you're human. If asked, say so honestly and carry on.
 - If they say not to call again, apologise, confirm, and end (outcome do_not_call).
@@ -210,12 +216,12 @@ Local time now: ${l.date} ${l.hhmm} (${tz}).
 The user's call playbook (follow its flow and objection answers; the hard rules above still win):
 ${manual || "(no playbook — use the flow: open, hook about their missing website, ask how customers find them, offer a free demo, book 15 minutes)"}
 
-Reply with ONLY a JSON object: {"say": "<your next words>", "end": <true when the call should end after this line>, "outcome": <null or one of ${OUTCOMES.join(", ")}>, "callbackAt": <null or ISO date-time with offset>, "notes": <null or a short note for the CRM>}`;
+${opts.interrupted ? 'They interrupted your last line (marked [interrupted]): they did not hear the rest. Answer what they just said; repeat a cut-off point only if it still matters.\n' : ""}Reply with ONLY a JSON object: {"say": "<your next words>", "lang": "en" | "hi" | "kn", "end": <true when the call should end after this line>, "outcome": <null or one of ${OUTCOMES.join(", ")}>, "callbackAt": <null or ISO date-time with offset>, "notes": <null or a short note for the CRM>}`;
   const user = `About this lead:\n${leadFacts(c.prospect)}\n\nCall so far:\n${lines.map((x) => `${x.who === "jarvis" ? "You" : "Them"}: ${x.text}`).join("\n") || "(you just said the opening line)"}\nThem: ${text || "(silence)"}\n\nYour next turn as JSON:`;
   const ask = opts.ask ?? (await defaultAsk(userId));
   let raw = "";
-  try { raw = await ask(system, user); } catch (e) { console.error("[calls] brain failed:", (e as Error).message); raw = JSON.stringify({ say: `Sorry, I'm having a little trouble on my side. ${s.ownerName} will call you back personally. Thank you!`, end: true, outcome: "callback" }); }
-  return push(parseTurn(raw, text));
+  try { raw = await ask(system, user); } catch (e) { console.error("[calls] brain failed:", (e as Error).message); raw = JSON.stringify({ say: lang === "en" ? `Sorry, I'm having a little trouble on my side. ${s.ownerName} will call you back personally. Thank you!` : L.bye, end: true, outcome: "callback", lang }); }
+  return push(parseTurn(raw, text, lang));
 }
 
 /** The call is over: summary, outcome, CRM update, transcript kept. */

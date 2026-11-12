@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 import { retireOldUltronProvider, stopPort, probeDatabase, pendingMigrations, repairDatabase, describeDbError, cloudAiKeys, prismaClientMatches, resolveKeys, pruneBuildCache } from "./local-helpers.mjs";
 import { ensureSecret, searxngAnswers, startDocker } from "./searxng.mjs";
 import { tuneDatabaseUrl } from "./db-url.mjs";
+import { ensureVoice } from "./voice-setup.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OPERATOR = path.join(ROOT, "operator");
@@ -435,6 +436,11 @@ else if (ultronFirst && !new RegExp(`^${ultronFirst}\\b`, "i").test(String(runni
     if (fs.existsSync(path.join(OPERATOR, "node_modules", "playwright", "package.json"))) start("operator", ["run.mjs"], { cwd: OPERATOR, env: {} });
     else say("  ! The JARVIS Operator couldn't be installed — Google Maps lead search needs it (see the output above).");
   }
+}
+
+// ---- 5c. JARVIS's own voice (free, on this PC: English, Hindi, Kannada) — one-time download ----
+if (process.env.JARVIS_VOICE_SETUP !== "off") {
+  try { await ensureVoice(ROOT, say); } catch (e) { say(`  ! JARVIS's own voice couldn't be set up: ${e.message}`); }
 }
 
 // ---- 6. the web app (every agent) ------------------------------------------------------------------

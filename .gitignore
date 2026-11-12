@@ -60,3 +60,6 @@ AstonProjects/
 
 # desktop apps install their own Electron
 desktop/*/node_modules
+
+# JARVIS's own voice (Piper + models), downloaded by npm run local
+/tools/voice/

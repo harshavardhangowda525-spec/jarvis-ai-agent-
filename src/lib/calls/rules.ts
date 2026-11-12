@@ -58,35 +58,90 @@ export function shortName(name: string): string {
 const MACHINE = /(the number you (have )?(dialled|dialed|are trying|are calling)|is (currently )?(not reachable|switched off|unreachable|busy|out of coverage)|not available right now|please try (again )?later|leave (a|your) message|after the (tone|beep)|voice ?mail|mailbox|subscriber you have|jis number par|abhi uplabdh nahi|vyast hai|band hai|ಸ್ವಿಚ್ ಆಫ್|ಲಭ್ಯವಿಲ್ಲ|ನೀವು ಕರೆ ಮಾಡಿದ)/i;
 export const isMachine = (heard: string) => MACHINE.test(heard);
 
-const DNC = /\b(don'?t|do not|never|stop) (ever )?(call|calling|ring|contact)(ing)? (me|us|this number|here|again)\b|\bremove (my|this|our) number\b|\bnot interested,? (and )?don'?t call\b|\bput (me|us) on (your )?(dnd|do not call)\b/i;
+const DNC = /\b(don'?t|do not|never|stop) (ever )?(call|calling|ring|contact)(ing)? (me|us|this number|here|again)\b|\bremove (my|this|our) number\b|\bnot interested,? (and )?don'?t call\b|\bput (me|us) on (your )?(dnd|do not call)\b|\b(call|phone|fone) (mat|na) (karo|karna|kariye|kijiye|kare)\b|(फ़ोन|फोन|कॉल|काल) (मत|ना|न) (करो|करना|करें|कीजिए|करिए)|दोबारा (फ़ोन|फोन|कॉल) मत|(ಕಾಲ್|ಫೋನ್|ಕರೆ) ಮಾಡ(ಬೇಡಿ|ಬೇಡ)|\b(call|phone) madbedi\b/i;
 export const saysDoNotCall = (heard: string) => DNC.test(heard);
 
-const ASKS_AI = /\b(are you (a |an )?(bot|robot|ai|machine|computer|real( person)?|human)|is this (a |an )?(bot|robot|recording|ai|machine)|am i (talking|speaking) to (a |an )?(bot|robot|machine|computer|real person|human))\b/i;
+const ASKS_AI = /\b(are you (a |an )?(bot|robot|ai|machine|computer|real( person)?|human)|is this (a |an )?(bot|robot|recording|ai|machine)|am i (talking|speaking) to (a |an )?(bot|robot|machine|computer|real person|human)|(kya )?(aap|tum) (robot|bot|machine|ai|insaan|insan) ho)\b|क्या (आप|तुम) (रोबोट|मशीन|एआई|इंसान)|(ನೀವು|ನೀನು) (ರೋಬೋಟ್|ಯಂತ್ರ|ಮನುಷ್ಯ)|\bneevu robot\b/i;
 export const asksIfAi = (heard: string) => ASKS_AI.test(heard);
 
-const CLAIMS_HUMAN = /\b(i'?m|i am) (a )?(real )?(human|person|not (a |an )?(bot|robot|ai|machine))\b/i;
+const CLAIMS_HUMAN = /\b(i'?m|i am) (a )?(real )?(human|person|not (a |an )?(bot|robot|ai|machine))\b|मैं (एक )?(इंसान|असली व्यक्ति) हूँ|मैं रोबोट नहीं|ನಾನು (ಒಬ್ಬ )?ಮನುಷ್ಯ|ನಾನು ರೋಬೋಟ್ ಅಲ್ಲ/i;
 const PAYMENT = /\b(card number|cvv|otp|upi pin|bank (account|details)|pay (now|me|us)|send (the )?money|transfer)\b/i;
 
 export const OUTCOMES = ["interested", "demo_booked", "callback", "not_interested", "do_not_call", "has_vendor", "wrong_number", "not_reachable", "called"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 
-export interface Turn { say: string; end: boolean; outcome: Outcome | null; callbackAt: string | null; notes: string | null }
+export type Lang = "en" | "hi" | "kn";
+export const LANGS: readonly Lang[] = ["en", "hi", "kn"];
+
+/** Which language a line is in, from its script (Whisper writes Hindi in Devanagari, Kannada in Kannada script). Pure (tested). */
+export function detectLang(text: string): Lang {
+  const kn = (text.match(/[\u0C80-\u0CFF]/g) ?? []).length;
+  const hi = (text.match(/[\u0900-\u097F]/g) ?? []).length;
+  if (kn && kn >= hi) return "kn";
+  if (hi) return "hi";
+  return "en";
+}
+/** Speech-to-text's language name or code → ours (null when it's none of the three). */
+export function normLang(x: string | null | undefined): Lang | null {
+  const v = (x ?? "").toLowerCase();
+  return /^(en|english)/.test(v) ? "en" : /^(hi|hindi)/.test(v) ? "hi" : /^(kn|kannada)/.test(v) ? "kn" : null;
+}
+
+/** JARVIS's fixed lines on a call, in each language. */
+export const LINES: Record<Lang, { dnc: string; hello: string; bye: string; aiYes: string; noPay: string; again: string; human: string; fillers: string[] }> = {
+  en: {
+    dnc: "Of course — I'll make sure we don't call you again. Sorry for the trouble, and have a good day!",
+    hello: "Hello? Can you hear me?",
+    bye: "I'll let you go now — thank you so much for your time! We'll follow up on WhatsApp. Have a great day!",
+    aiYes: "Yes, I'm an AI assistant.", human: "I'm an AI assistant, to be honest — but I'm here to help.",
+    noPay: "There's nothing to pay now — the demo is free. Harshavardhan will go through everything with you.",
+    again: "Sorry, could you say that again?", fillers: ["Mm-hmm,", "Right,", "Okay,", "Sure,"],
+  },
+  hi: {
+    dnc: "बिल्कुल — हम आपको दोबारा कॉल नहीं करेंगे। तकलीफ़ के लिए माफ़ी, आपका दिन शुभ हो!",
+    hello: "हैलो? क्या आप मुझे सुन पा रहे हैं?",
+    bye: "मैं आपका ज़्यादा समय नहीं लूँगी — बहुत धन्यवाद! हम WhatsApp पर आगे बात करेंगे। आपका दिन शुभ हो!",
+    aiYes: "जी हाँ, मैं एक AI असिस्टेंट हूँ।", human: "सच कहूँ तो मैं एक AI असिस्टेंट हूँ — पर आपकी मदद के लिए हूँ।",
+    noPay: "अभी कुछ भी भुगतान नहीं करना है — डेमो बिल्कुल फ़्री है। हर्षवर्धन आपको सब कुछ समझा देंगे।",
+    again: "माफ़ कीजिए, क्या आप फिर से बोल सकते हैं?", fillers: ["हाँ जी,", "अच्छा,", "ठीक है,", "जी,"],
+  },
+  kn: {
+    dnc: "ಖಂಡಿತ — ನಾವು ನಿಮಗೆ ಮತ್ತೆ ಕರೆ ಮಾಡುವುದಿಲ್ಲ. ತೊಂದರೆಗೆ ಕ್ಷಮಿಸಿ, ನಿಮ್ಮ ದಿನ ಶುಭವಾಗಲಿ!",
+    hello: "ಹಲೋ? ನನ್ನ ಮಾತು ಕೇಳಿಸುತ್ತಿದೆಯೇ?",
+    bye: "ನಿಮ್ಮ ಸಮಯಕ್ಕೆ ತುಂಬಾ ಧನ್ಯವಾದಗಳು! ನಾವು WhatsApp ನಲ್ಲಿ ಮುಂದುವರಿಸುತ್ತೇವೆ. ಶುಭ ದಿನ!",
+    aiYes: "ಹೌದು, ನಾನು ಒಂದು AI ಸಹಾಯಕ.", human: "ನಿಜ ಹೇಳಬೇಕೆಂದರೆ ನಾನು ಒಂದು AI ಸಹಾಯಕ — ಆದರೆ ನಿಮಗೆ ಸಹಾಯ ಮಾಡಲು ಇದ್ದೇನೆ.",
+    noPay: "ಈಗ ಏನನ್ನೂ ಪಾವತಿಸಬೇಕಿಲ್ಲ — ಡೆಮೋ ಉಚಿತ. ಹರ್ಷವರ್ಧನ್ ಎಲ್ಲವನ್ನೂ ವಿವರಿಸುತ್ತಾರೆ.",
+    again: "ಕ್ಷಮಿಸಿ, ಇನ್ನೊಮ್ಮೆ ಹೇಳುತ್ತೀರಾ?", fillers: ["ಹೌದು,", "ಸರಿ,", "ಓಕೆ,"],
+  },
+};
+
+/** "Hello there. How are you? Good." → speakable chunks, so the first can play while the rest are made. Pure (tested). */
+export function splitSentences(text: string): string[] {
+  const parts = text.replace(/\s+/g, " ").trim().split(/(?<=[.!?।…])\s+/).filter(Boolean);
+  const out: string[] = [];
+  for (const p of parts) { if (out.length && out[out.length - 1].length < 18) out[out.length - 1] += ` ${p}`; else out.push(p); }
+  return out.length ? out : text.trim() ? [text.trim()] : [];
+}
+
+export interface Turn { say: string; end: boolean; outcome: Outcome | null; callbackAt: string | null; notes: string | null; lang: Lang }
 
 /** The brain's reply → a safe turn. Never claims to be human, never asks for payment, never too long. Pure (tested). */
-export function parseTurn(raw: string, heard: string): Turn {
+export function parseTurn(raw: string, heard: string, heardLang: Lang = detectLang(heard)): Turn {
   let j: Record<string, unknown> = {};
   const m = raw.match(/\{[\s\S]*\}/);
   try { j = m ? JSON.parse(m[0]) : {}; } catch { j = {}; }
   let say = String(j.say ?? (m ? "" : raw)).replace(/\s+/g, " ").trim();
   const outcome = (OUTCOMES as readonly string[]).includes(String(j.outcome)) ? (j.outcome as Outcome) : null;
   let end = j.end === true || j.end === "true";
-  if (CLAIMS_HUMAN.test(say)) say = "I'm an AI assistant, to be honest — but I'm here to help.";
-  if (asksIfAi(heard) && !/\b(ai|artificial|assistant|automated|bot)\b/i.test(say)) say = `Yes, I'm an AI assistant. ${say}`.trim();
-  if (PAYMENT.test(say)) say = "There's nothing to pay now — the demo is free. Harshavardhan will go through everything with you.";
-  if (!say) { say = "Sorry, could you say that again?"; end = false; }
+  const lang: Lang = (LANGS as readonly string[]).includes(String(j.lang)) ? (j.lang as Lang) : say ? detectLang(say) : heardLang;
+  const L = LINES[lang];
+  if (CLAIMS_HUMAN.test(say)) say = L.human;
+  if (asksIfAi(heard) && !/\b(ai|artificial|assistant|automated|bot)\b|एआई|ಎಐ|असिस्टेंट|ಸಹಾಯಕ/i.test(say)) say = `${L.aiYes} ${say}`.trim();
+  if (PAYMENT.test(say)) say = L.noPay;
+  if (!say) { say = L.again; end = false; }
   if (say.length > 420) say = `${say.slice(0, 417).replace(/\s+\S*$/, "")}…`;
   const cb = typeof j.callbackAt === "string" && !Number.isNaN(Date.parse(j.callbackAt)) ? new Date(j.callbackAt).toISOString() : null;
-  return { say, end, outcome, callbackAt: cb, notes: typeof j.notes === "string" ? j.notes.slice(0, 500) : null };
+  return { say, end, outcome, callbackAt: cb, notes: typeof j.notes === "string" ? j.notes.slice(0, 500) : null, lang };
 }
 
 /** How a call's outcome moves the lead in the CRM (manual 6.5 + 5.2). */

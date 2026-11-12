@@ -55,4 +55,6 @@ export const ttsSchema = z.object({
   // Which agent is speaking — selects a distinct voice. Defaults to JARVIS.
   // "edith" = ULTRON's former name (still accepted from open tabs).
   agent: z.enum(["jarvis", "ultron", "edith", "ev", "darwin", "mike", "robin", "aston", "friday"]).optional(),
+  // JARVIS's own voice: which language to speak (en / hi / kn); by default, from the text's script.
+  lang: z.enum(["en", "hi", "kn"]).optional(),
 });

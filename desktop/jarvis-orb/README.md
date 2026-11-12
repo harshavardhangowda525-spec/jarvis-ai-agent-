@@ -53,8 +53,10 @@ the CRM after every call (outcome, 3-line summary, transcript, next action).
 3. Windows **Settings → System → Sound → Volume mixer → Phone Link**: set its
    **input (microphone) to "CABLE Output"**. Leave its output on your speakers or
    headphones (that's how JARVIS hears the other person, and how you can listen in).
-4. JARVIS's voice must be configured (ElevenLabs key in JARVIS) — the phone
-   voice uses it.
+4. JARVIS speaks with **its own voice** — free, on this PC, no API key.
+   `npm run local` downloads it once (about 150 MB into `tools/voice`): Piper
+   with an English and a Hindi voice, plus Meta's MMS voice for Kannada (that
+   model downloads the first time JARVIS speaks Kannada).
 5. Orb tray icon → **Prospect calls…** → **Run check** (all green), choose
    **CABLE Input** as where JARVIS's voice goes, then **Start calling**.
 
@@ -79,8 +81,11 @@ On a call with …". **Stop** (or Ctrl+Alt+Backspace) hangs up at once.
 with Windows UI Automation (the English button names "Call" / "End call"), so a
 Phone Link update or another language can break dialling — the setup check and
 the call log will say so. JARVIS hears the call through your speakers' sound,
-so mute other audio (music, videos, notifications) while it calls. There's a
-1–3 second pause before each reply (speech-to-text → JARVIS → voice).
+so mute other audio (music, videos, notifications) while it calls. Replies take
+about a second or two (speech-to-text → JARVIS → voice); when one takes longer,
+JARVIS says a short "Mm-hmm," first. People can **talk over JARVIS** — it stops
+and listens. It answers in the language they speak: **English, Hindi or
+Kannada** (the opening line is always English, with the AI disclosure).
 
 ## Permissions you grant
 

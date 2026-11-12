@@ -6,7 +6,13 @@
  * One call: dial → wait for them to say "hello" (that's how we know a person
  * answered; ringing and silence aren't words) → JARVIS's opening line (it says
  * it's an AI) → listen / answer until the call ends → hang up → report.
+ *
+ * Feels quicker on the phone: if the answer takes a moment, JARVIS says a
+ * short "Mm-hmm," first; they can talk over JARVIS (it stops and listens); and
+ * it answers in their language (English, Hindi, Kannada).
  */
+import { LINES, detectLang, type Lang } from "./rules";
+
 export interface CallJob { id: string; to: string; name: string; maxMs: number; maxTurns: number }
 
 export interface CallerIO {
@@ -15,10 +21,12 @@ export interface CallerIO {
   hangup: () => Promise<void>;
   /** Is Phone Link still on a call? null = can't tell. */
   inCall: () => Promise<boolean | null>;
-  /** Speak into the call (the virtual cable is Phone Link's microphone). */
-  speak: (text: string) => Promise<void>;
+  /** Speak into the call (the virtual cable is Phone Link's microphone). Stops early if they talk over it. */
+  speak: (text: string, lang: Lang) => Promise<{ interrupted: boolean }>;
   /** The next thing said on the call: text, "" (noise / no words), or null (nothing within maxWaitMs). */
   listen: (maxWaitMs: number) => Promise<string | null>;
+  /** The language speech-to-text heard in the last thing said (null = go by the script). */
+  heardLang?: () => Lang | null;
   label: (text: string | null) => void;
   log: (line: { who: "jarvis" | "them" | "info"; text: string }) => void;
   sleep: (ms: number) => Promise<void>;
@@ -28,8 +36,11 @@ export interface CallerIO {
 
 export const RING_MS = 45_000;
 export const SILENCE_MS = 12_000;
+/** If the answer isn't ready by then, say a short filler first. */
+export const FILLER_AFTER_MS = 700;
 
 export async function runOneCall(io: CallerIO, c: CallJob): Promise<string> {
+  let lang: Lang = "en";
   const finish = async (reason: string, error?: string) => {
     await io.hangup().catch(() => {});
     io.label(null);
@@ -37,6 +48,7 @@ export async function runOneCall(io: CallerIO, c: CallJob): Promise<string> {
     io.log({ who: "info", text: `Call ended (${reason})${r.outcome ? ` — ${String(r.outcome).replace(/_/g, " ")}` : ""}.` });
     return reason;
   };
+  const say = async (text: string, l: Lang) => { io.log({ who: "jarvis", text }); return io.speak(text, l); };
   io.label(`Calling ${c.name}`);
   io.log({ who: "info", text: `Dialling ${c.name} (${c.to}) through Phone Link…` });
   const d = await io.dial(c.to);
@@ -54,39 +66,46 @@ export async function runOneCall(io: CallerIO, c: CallJob): Promise<string> {
   }
   if (!first) return finish("no_answer");
   io.log({ who: "them", text: first });
+  lang = io.heardLang?.() ?? detectLang(first);
 
   // 2. the opening line (the server writes it: it always says JARVIS is an AI)
-  const open = await io.api({ action: "turn", id: c.id, heard: first, opener: true });
+  const open = await io.api({ action: "turn", id: c.id, heard: first, opener: true, lang });
   if (open.end || !open.say) return finish("ended"); // an operator message / voicemail
   await io.api({ action: "event", id: c.id, state: "answered" }).catch(() => ({}));
   io.label(`On a call with ${c.name}`);
-  io.log({ who: "jarvis", text: String(open.say) });
-  await io.speak(String(open.say));
+  let interrupted = (await say(String(open.say), "en")).interrupted;
 
   // 3. the conversation
-  let silences = 0;
+  let silences = 0, fillers = 0;
   for (let turn = 0; turn < c.maxTurns; turn++) {
     if (io.stopped()) return finish("stopped");
-    if (io.now() - started > c.maxMs) {
-      const bye = "I'll let you go now — thank you so much for your time! We'll follow up on WhatsApp. Have a great day!";
-      io.log({ who: "jarvis", text: bye }); await io.speak(bye);
-      return finish("timeout");
-    }
+    if (io.now() - started > c.maxMs) { await say(LINES[lang].bye, lang); return finish("timeout"); }
     const heard = await io.listen(SILENCE_MS);
     if (heard === null) {
       if ((await io.inCall()) === false) return finish("hung_up");
       silences++;
       if (silences >= 2) return finish("hung_up");
-      const again = "Hello? Can you hear me?";
-      io.log({ who: "jarvis", text: again }); await io.speak(again);
+      interrupted = (await say(LINES[lang].hello, lang)).interrupted;
       continue;
     }
     if (!heard.trim()) { turn--; if ((await io.inCall()) === false) return finish("hung_up"); continue; }
     silences = 0;
     io.log({ who: "them", text: heard });
-    const t = await io.api({ action: "turn", id: c.id, heard });
-    if (t.say) { io.log({ who: "jarvis", text: String(t.say) }); await io.speak(String(t.say)); }
-    if (t.end) { await io.sleep(700); return finish("ended"); }
+    lang = io.heardLang?.() ?? detectLang(heard);
+    // ask JARVIS's brain; if it takes a moment, a short "Mm-hmm," fills the gap (not every turn)
+    let answer: Record<string, unknown> | null = null;
+    const pending = io.api({ action: "turn", id: c.id, heard, lang, interrupted }).then((r) => (answer = r));
+    interrupted = false;
+    await Promise.race([pending, io.sleep(FILLER_AFTER_MS)]);
+    if (!answer && fillers < Math.ceil((turn + 1) / 2)) {
+      fillers++;
+      const f = LINES[lang].fillers;
+      await io.speak(f[turn % f.length], lang);
+    }
+    const t = (await pending) as Record<string, unknown>;
+    const tl = (["en", "hi", "kn"] as const).includes(t.lang as Lang) ? (t.lang as Lang) : lang;
+    if (t.say) interrupted = (await say(String(t.say), tl)).interrupted;
+    if (t.end && !interrupted) { await io.sleep(700); return finish("ended"); }
   }
   return finish("ended");
 }

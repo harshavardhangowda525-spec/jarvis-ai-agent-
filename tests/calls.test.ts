@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { getDb, isDbConfigured } from "@/lib/db";
-import { inCallingWindow, cantCall, dialable, openerText, shortName, isMachine, saysDoNotCall, asksIfAi, parseTurn, crmPatchFor, manualCallSection } from "@/lib/calls/rules";
+import { inCallingWindow, cantCall, dialable, openerText, shortName, isMachine, saysDoNotCall, asksIfAi, parseTurn, crmPatchFor, manualCallSection, detectLang, normLang, splitSentences } from "@/lib/calls/rules";
 import { runOneCall, type CallerIO } from "@/lib/calls/loop";
 import { INFINITY_TEMPLATE } from "@/lib/ai/operator";
 
@@ -45,6 +45,22 @@ describe("prospect calls: rules (pure)", () => {
     expect(saysDoNotCall("call me later")).toBe(false);
     expect(asksIfAi("wait, are you a robot?")).toBe(true);
   });
+  it("English, Hindi and Kannada: detection, 'don't call', 'are you a robot?', sentences", () => {
+    expect(detectLang("Hello there")).toBe("en");
+    expect(detectLang("हाँ बोलिए")).toBe("hi");
+    expect(detectLang("ಹೌದು ಹೇಳಿ")).toBe("kn");
+    expect(normLang("hindi")).toBe("hi"); expect(normLang("Kannada")).toBe("kn"); expect(normLang("en")).toBe("en"); expect(normLang("tamil")).toBeNull();
+    expect(saysDoNotCall("मुझे दोबारा फोन मत करना")).toBe(true);
+    expect(saysDoNotCall("please call mat karo")).toBe(true);
+    expect(saysDoNotCall("ದಯವಿಟ್ಟು ಕಾಲ್ ಮಾಡಬೇಡಿ")).toBe(true);
+    expect(asksIfAi("क्या आप रोबोट हैं?")).toBe(true);
+    expect(asksIfAi("kya aap robot ho")).toBe(true);
+    expect(parseTurn(`{"say":"हम डेमो बना सकते हैं।","lang":"hi"}`, "क्या आप रोबोट हैं?").say).toMatch(/^जी हाँ, मैं एक AI असिस्टेंट हूँ।/);
+    expect(parseTurn(`{"say":"मैं इंसान हूँ, भरोसा कीजिए।"}`, "x").say).toMatch(/AI असिस्टेंट/);
+    expect(parseTurn(`{"say":"ok","lang":"kn"}`, "y").lang).toBe("kn");
+    expect(splitSentences("Hi! We build websites. Want a free demo? Great.")).toEqual(["Hi! We build websites.", "Want a free demo? Great."]); // short bits ride along with the one before
+    expect(splitSentences("नमस्ते। हम वेबसाइट बनाते हैं।")).toEqual(["नमस्ते। हम वेबसाइट बनाते हैं।"]);
+  });
   it("the brain's reply is made safe", () => {
     expect(parseTurn(`{"say":"Sure! When would suit you?","end":false,"outcome":null}`, "maybe")).toMatchObject({ say: "Sure! When would suit you?", end: false });
     expect(parseTurn(`{"say":"No no, I'm a real human calling you.","end":false}`, "hello").say).toMatch(/AI assistant/);
@@ -71,19 +87,19 @@ describe("prospect calls: rules (pure)", () => {
 });
 
 /** A phone + audio + server double for the call loop. */
-function fakeIO(script: { dial?: { ok: boolean; error?: string }; heard: (string | null)[]; inCall?: boolean[]; server?: (b: Record<string, unknown>) => Record<string, unknown> }) {
-  const said: string[] = []; const api: Record<string, unknown>[] = []; const labels: (string | null)[] = [];
+function fakeIO(script: { dial?: { ok: boolean; error?: string }; heard: (string | null)[]; inCall?: boolean[]; server?: (b: Record<string, unknown>) => Record<string, unknown>; slowBrain?: boolean; cutOn?: string }) {
+  const said: string[] = []; const langs: string[] = []; const api: Record<string, unknown>[] = []; const labels: (string | null)[] = [];
   let t = 0; let hung = 0; let i = 0; let j = 0;
   const io: CallerIO = {
-    api: async (b) => { api.push(b); return script.server?.(b) ?? {}; },
+    api: async (b) => { api.push(b); if (script.slowBrain && b.action === "turn" && !b.opener) await new Promise((r) => setTimeout(r, 30)); return script.server?.(b) ?? {}; },
     dial: async () => script.dial ?? { ok: true },
     hangup: async () => { hung++; },
     inCall: async () => (script.inCall ? script.inCall[Math.min(j++, script.inCall.length - 1)] : true),
-    speak: async (x) => { said.push(x); t += 3000; },
+    speak: async (x, l) => { said.push(x); langs.push(l); t += 3000; return { interrupted: !!script.cutOn && x.includes(script.cutOn) }; },
     listen: async (ms) => { const h = i < script.heard.length ? script.heard[i++] : null; t += h === null ? ms : 2000; return h; },
-    label: (x) => labels.push(x), log: () => {}, sleep: async (ms) => { t += ms; }, now: () => t, stopped: () => false,
+    label: (x) => labels.push(x), log: () => {}, sleep: async (ms) => { t += ms; await new Promise((r) => setTimeout(r, 1)); }, now: () => t, stopped: () => false,
   };
-  return { io, said, api, labels, hung: () => hung };
+  return { io, said, langs, api, labels, hung: () => hung };
 }
 const job = { id: "c1", to: "+919845011111", name: "Iron Den Gym", maxMs: 240_000, maxTurns: 16 };
 
@@ -111,6 +127,23 @@ describe("prospect calls: the caller's loop (fakes)", () => {
     expect(await runOneCall(f.io, job)).toBe("hung_up");
     expect(f.said).toEqual(["Hi!", "Hello? Can you hear me?"]);
   });
+  it("a slow answer gets a short filler first; they can talk over JARVIS; it follows their language", async () => {
+    const f = fakeIO({ slowBrain: true, cutOn: "AI assistant", heard: ["Hello?", "हाँ बोलिए, क्या बात है?", "नहीं, अभी नहीं"],
+      server: (b) => b.opener ? { say: "Hi! This is Jarvis, an AI assistant calling…" } : b.action === "turn" ? (String(b.heard).includes("नहीं") ? { say: "कोई बात नहीं, धन्यवाद!", end: true, lang: "hi" } : { say: "हम आपके लिए एक फ़्री डेमो वेबसाइट बनाना चाहते हैं।", lang: "hi" }) : {} });
+    expect(await runOneCall(f.io, job)).toBe("ended");
+    const turns = f.api.filter((a) => a.action === "turn" && !a.opener);
+    expect(turns[0]).toMatchObject({ lang: "hi", interrupted: true }); // the opener was cut off
+    expect(turns[1]).toMatchObject({ lang: "hi", interrupted: false });
+    expect(f.said[1]).toBe("हाँ जी,"); // filler, in Hindi
+    expect(f.langs.slice(1)).toEqual(["hi", "hi", "hi"]);
+    expect(f.said).toContain("कोई बात नहीं, धन्यवाद!");
+  });
+  it("a quick answer needs no filler", async () => {
+    const f = fakeIO({ heard: ["Hello", "Yes?"], server: (b) => (b.opener ? { say: "Hi!" } : b.action === "turn" ? { say: "Thanks, bye!", end: true } : {}) });
+    await runOneCall(f.io, job);
+    expect(f.said).toEqual(["Hi!", "Thanks, bye!"]);
+  });
+
   it("Phone Link can't dial → failed with its reason", async () => {
     const f = fakeIO({ dial: { ok: false, error: "Phone Link did not open." }, heard: [] });
     expect(await runOneCall(f.io, job)).toBe("failed");
@@ -193,6 +226,24 @@ d("prospect calls: plan → your approval → call → CRM (integration)", () =>
     const p = await getDb().prospect.findUniqueOrThrow({ where: { id: x.id } });
     expect(p).toMatchObject({ doNotContact: true, status: "lost", lostReason: "not_interested" });
     expect((await C.planCalls(userId, { prospectIds: [x.id] })).skipped[0]).toMatchObject({ reason: "marked do-not-contact" });
+  });
+
+  it("Hindi on the call: 'फोन मत करना' gets a Hindi goodbye; an interrupted line is marked for the brain", async () => {
+    const x = await P.createProspect(userId, { businessName: "Sharma Sweets", phone: "+91 90000 66666" }, "jarvis");
+    await C.approveBatch(userId, (await C.planCalls(userId, { prospectIds: [x.id] })).batchId!);
+    const n = await C.callerNext(userId);
+    const id = n.call!.id;
+    await C.callerTurn(userId, id, "हैलो?", { opener: true, lang: "hi" });
+    await C.callerEvent(userId, id, "answered");
+    let seen = "";
+    await C.callerTurn(userId, id, "हाँ, बोलिए", { lang: "hi", interrupted: true, ask: async (sys, user) => { seen = `${sys}\n${user}`; return JSON.stringify({ say: "हम आपके लिए फ़्री डेमो बनाना चाहते हैं।", lang: "hi" }); } });
+    expect(seen).toMatch(/\[interrupted\]/);
+    expect(seen).toMatch(/looks like Hindi/);
+    const t = await C.callerTurn(userId, id, "दोबारा फोन मत करना", { lang: "hi" });
+    expect(t).toMatchObject({ end: true, outcome: "do_not_call", lang: "hi" });
+    expect(t.say).toMatch(/दोबारा कॉल नहीं/);
+    await C.callerFinish(userId, id, { reason: "ended" }, { ask: async () => JSON.stringify({ summary: "Asked not to be called.", outcome: "not_interested" }) });
+    expect((await getDb().prospect.findUniqueOrThrow({ where: { id: x.id } })).doNotContact).toBe(true);
   });
 
   it("no answer → Not reachable; a failed dial is recorded; daily cap; a silent caller's call is closed", async () => {

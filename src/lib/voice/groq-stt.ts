@@ -14,7 +14,7 @@ export async function groqTranscribe(audio: Blob, fetchImpl: typeof fetch = fetc
   const form = new FormData();
   form.append("file", audio, "audio.webm");
   form.append("model", process.env.GROQ_STT_MODEL || "whisper-large-v3-turbo");
-  form.append("response_format", "json");
+  form.append("response_format", "verbose_json"); // includes the language it heard (English / Hindi / Kannada on calls)
   let res: Response;
   try {
     res = await fetchImpl("https://api.groq.com/openai/v1/audio/transcriptions", {

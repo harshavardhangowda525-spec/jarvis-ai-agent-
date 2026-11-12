@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Phone, PhoneOff, CheckCircle2, XCircle, Loader2, Play, Square } from "lucide-react";
 import { runCaller, type CallerIO } from "@/lib/calls/loop";
+import { splitSentences, normLang, type Lang } from "@/lib/calls/rules";
 
 /**
  * JARVIS — Prospect calls. Runs inside the JARVIS desktop orb on your Windows
@@ -66,7 +67,7 @@ function makeEars(stream: MediaStream) {
       await sleep(30);
       const now = performance.now(), dt = now - last; last = now;
       if (level() > Math.max(0.009, floor * 2.2)) silent = 0; else silent += dt;
-      if (silent > 900) break;
+      if (silent > 650) break; // a short pause ends their turn — quicker replies
     }
     rec.stop(); await done;
     if (performance.now() - start < 350) return "";
@@ -74,9 +75,13 @@ function makeEars(stream: MediaStream) {
     const r = await fetch("/api/voice/stt", { method: "POST", body: f }).catch(() => null);
     const j = r ? await r.json().catch(() => null) : null;
     const text = String(j?.data?.text ?? "").replace(/\[[^\]]*\]|\([^)]*\)|♪/g, " ").replace(/\s+/g, " ").trim();
+    lastLang = normLang(j?.data?.language);
     return text;
   };
-  return { listen, level, close: () => void ctx.close().catch(() => {}) };
+  let lastLang: Lang | null = null;
+  // talking over JARVIS: louder than the room for a moment (JARVIS's own voice goes into the cable, not the speakers)
+  const bargeThr = () => Math.max(0.025, floor * 4);
+  return { listen, level, bargeThr, heardLang: () => lastLang, close: () => void ctx.close().catch(() => {}) };
 }
 
 export function CallerApp() {
@@ -115,14 +120,42 @@ export function CallerApp() {
     return ears.current;
   }, []);
 
-  const speak = useCallback(async (text: string) => {
-    const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, agent: "jarvis" }) });
-    if (!r.ok) throw new Error(r.status === 503 ? "JARVIS's voice isn't configured (ElevenLabs) — it can't speak on calls." : `JARVIS's voice failed (${r.status}).`);
-    const url = URL.createObjectURL(await r.blob());
-    const el = new Audio(url) as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
-    if (sink && el.setSinkId) await el.setSinkId(sink);
-    await new Promise<void>((res) => { el.onended = () => res(); el.onerror = () => res(); el.play().catch(() => res()); });
-    URL.revokeObjectURL(url);
+  /** JARVIS's own voice into the call, sentence by sentence (the next one is made while this one plays); stops if they talk over it. */
+  const speak = useCallback(async (text: string, lang: Lang): Promise<{ interrupted: boolean }> => {
+    const make = async (part: string) => {
+      const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: part, agent: "jarvis", lang }) });
+      if (!r.ok) { const j = await r.json().catch(() => null); throw new Error(j?.error ?? `JARVIS's voice failed (${r.status}).`); }
+      return URL.createObjectURL(await r.blob());
+    };
+    const parts = splitSentences(text);
+    const ear = ears.current;
+    let next: Promise<string> | null = parts.length ? make(parts[0]) : null;
+    try {
+      for (let i = 0; i < parts.length; i++) {
+        const url = await next!;
+        next = i + 1 < parts.length ? make(parts[i + 1]) : null;
+        const el = new Audio(url) as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
+        if (sink && el.setSinkId) await el.setSinkId(sink);
+        const cut = await new Promise<boolean>((res) => {
+          let talk = 0, last = performance.now(), done = false;
+          const end = (v: boolean) => { if (done) return; done = true; clearInterval(iv); res(v); };
+          const iv = setInterval(() => {
+            const now = performance.now(), dt = now - last; last = now;
+            if (stop.current) { el.pause(); end(true); return; }
+            if (!ear) return;
+            if (ear.level() > ear.bargeThr()) { talk += dt; if (talk > 300) { el.pause(); end(true); } } else talk = Math.max(0, talk - dt / 2);
+          }, 30);
+          el.onended = () => end(false); el.onerror = () => end(false); el.play().catch(() => end(false));
+        });
+        URL.revokeObjectURL(url);
+        if (cut) { next?.then((u) => URL.revokeObjectURL(u)).catch(() => {}); return { interrupted: !stop.current }; }
+      }
+      return { interrupted: false };
+    } catch (e) {
+      // no voice = JARVIS can't talk on the call: stop calling and say why
+      setErr((e as Error).message); stop.current = true;
+      return { interrupted: false };
+    }
   }, [sink]);
 
   const runChecks = useCallback(async (): Promise<boolean> => {
@@ -136,7 +169,7 @@ export function CallerApp() {
     set({ label: "VB-Audio virtual cable", ok: !!pc.cable, detail: pc.cable ? undefined : "Install VB-CABLE (vb-audio.com/Cable), then restart." });
     const { cable } = await devices();
     set({ label: "JARVIS speaks into: CABLE Input", ok: !!(sink || cable), detail: sink || cable ? "In Windows Sound settings, set Phone Link's microphone (input) to \"CABLE Output\"." : "Pick the CABLE Input speaker below." });
-    try { const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Test.", agent: "jarvis" }) }); set({ label: "JARVIS's voice", ok: r.ok, detail: r.ok ? undefined : r.status === 503 ? "Not configured — add the ElevenLabs key in JARVIS." : `Failed (${r.status}).` }); }
+    try { const r = await fetch("/api/voice/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "Test.", agent: "jarvis" }) }); set({ label: "JARVIS's voice", ok: r.ok, detail: r.ok ? (r.headers.get("X-Voice")?.startsWith("jarvis-local") ? "JARVIS's own voice (on this PC)" : undefined) : r.status === 503 ? "Not installed yet — restart JARVIS with npm run local (it downloads its own voice once)." : `Failed (${r.status}).` }); }
     catch { set({ label: "JARVIS's voice", ok: false, detail: "Couldn't reach JARVIS." }); }
     try { await ensureEars(); set({ label: "JARVIS hears the call (speakers)", ok: true }); } catch (e) { set({ label: "JARVIS hears the call (speakers)", ok: false, detail: (e as Error).message }); }
     return list.every((c) => c.ok);
@@ -155,6 +188,7 @@ export function CallerApp() {
       inCall: async () => { const s = await phone!.state().catch(() => null); return s?.ok ? !!s.inCall : null; },
       speak,
       listen: async (ms) => (await ensureEars()).listen(ms, () => stop.current),
+      heardLang: () => ears.current?.heardLang() ?? null,
       label: (t) => phone!.working(t),
       log: (l) => setLines((x) => [...x.slice(-80), { ...l, at: Date.now() }]),
       sleep: async (ms) => { const end = Date.now() + ms; while (Date.now() < end && !stop.current) await sleep(Math.min(500, end - Date.now())); },
