@@ -178,6 +178,6 @@ export function isPhantomSpeech(text: string, ms: number): boolean {
   const t = text.trim();
   if (!t) return true;
   // foreign one-word "thanks" on an English/Hindi/Kannada line is always noise; English stock phrases only when short
-  if (/^(obrigad[oa]|gracias|merci|danke|grazie|arigato|spasibo)[.!?]*$/i.test(t)) return true;
+  if (/^(obrigad[oa]|gracias|merci|danke|grazie|arigato|spasibo|спасибо|дякую|شكرا|شكراً|谢谢|謝謝|ありがとう(ございます)?|감사합니다|teşekkürler|dziękuję)[.!?。！]*$/i.test(t)) return true;
   return PHANTOM.test(t) && ms < 3500;
 }

@@ -102,7 +102,8 @@ function makeEars(stream: MediaStream) {
   };
   let lastLang: Lang | null = null;
   // talking over JARVIS: louder than the room for a moment (JARVIS's own voice goes into the cable, not the speakers)
-  const bargeThr = () => Math.max(0.025, floor * 4);
+  // talking over JARVIS must be clearly louder than the line's own noise / echo
+  const bargeThr = () => Math.max(0.04, floor * 5);
   return { listen, level, bargeThr, heardLang: () => lastLang, close: () => void ctx.close().catch(() => {}) };
 }
 
@@ -173,7 +174,7 @@ export function CallerApp() {
             const now = performance.now(), dt = now - last; last = now;
             if (stop.current) { el.pause(); end(true); return; }
             if (!ear) return;
-            if (ear.level() > ear.bargeThr()) { talk += dt; if (talk > 300) { el.pause(); end(true); } } else talk = Math.max(0, talk - dt / 2);
+            if (ear.level() > ear.bargeThr()) { talk += dt; if (talk > 700) { el.pause(); end(true); } } else talk = Math.max(0, talk - dt / 2);
           }, 30);
           el.onended = () => end(false); el.onerror = () => end(false); el.play().catch(() => end(false));
         });

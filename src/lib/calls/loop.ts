@@ -127,7 +127,8 @@ export async function runOneCall(io: CallerIO, c: CallJob): Promise<string> {
     const t = (await pending) as Record<string, unknown>;
     const tl = (["en", "hi", "kn"] as const).includes(t.lang as Lang) ? (t.lang as Lang) : lang;
     if (t.say) interrupted = (await say(String(t.say), tl)).interrupted;
-    if (t.end && !interrupted) { await io.sleep(700); return finish("ended"); }
+    // JARVIS said goodbye: the call ends — even if a noise cut the goodbye short (it used to keep listening)
+    if (t.end) { await io.sleep(interrupted ? 300 : 700); return finish("ended"); }
   }
   return finish("ended");
 }

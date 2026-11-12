@@ -292,9 +292,18 @@ describe("phantom speech on the line", () => {
     const { isPhantomSpeech } = await import("@/lib/calls/rules");
     expect(isPhantomSpeech("Thank you.", 900)).toBe(true);
     expect(isPhantomSpeech("Obrigado.", 1200)).toBe(true);
+    expect(isPhantomSpeech("Спасибо.", 5000)).toBe(true);
     expect(isPhantomSpeech("Thanks for watching!", 1500)).toBe(true);
     expect(isPhantomSpeech("Thank you, what time is the meeting?", 2000)).toBe(false);
     expect(isPhantomSpeech("Thank you.", 4000)).toBe(false); // a long, clear "thank you" is real
     expect(isPhantomSpeech("what's the problem man", 1500)).toBe(false);
+  });
+});
+
+describe("ending the call", () => {
+  it("hangs up after its goodbye even when a noise cut the goodbye short", async () => {
+    const f = fakeIO({ heard: ["Hello?", "okay end it, thanks"], cutOn: "Take care", server: (b) => b.opener ? { say: "Hi, it's JARVIS…" } : b.action === "turn" ? { say: "Sure, ending the call now. Take care!", end: true } : {} });
+    expect(await runOneCall(f.io, job)).toBe("ended");
+    expect(f.hung()).toBe(1);
   });
 });
