@@ -100,15 +100,25 @@ wa_call() {
 
 # A normal phone call from this phone's SIM (needs a recharge with outgoing calls)
 in_call() { ash dumpsys telephony.registry | grep -q 'mCallState=2'; }
+pick_sim() { tap 'text="(SIM ?1|SIM1|Sim 1|SIM card 1)' >/dev/null 2>&1 && sleep 3; }
 normal_call() {
   local tel="$1"
+  # 1. Android's direct call
   ash am start -a android.intent.action.CALL -d "tel:$tel" >/dev/null
-  sleep 3
-  in_call && return 0
-  # dual-SIM phones may ask which SIM to use: take SIM 1
-  tap 'text="(SIM ?1|SIM1|Sim 1)' >/dev/null 2>&1 && sleep 3
-  in_call && return 0
-  echo "the phone didn't start the call (check the SIM has a recharge with outgoing calls, and that the Phone app has permission)"
+  sleep 3; in_call && return 0
+  pick_sim; in_call && return 0
+  # 2. Xiaomi / Oppo / Realme / Vivo and others ignore that from Wireless debugging:
+  #    open the dialer with the number and press its Call button instead
+  ash am start -a android.intent.action.DIAL -d "tel:$tel" >/dev/null
+  sleep 2
+  ash input keyevent KEYCODE_CALL
+  sleep 3; in_call && return 0
+  pick_sim; in_call && return 0
+  tap '(resource-id="[^"]*(dialpad_floating_action_button|call_button|dial_button|btn_call|dialButton|call_btn)[^"]*"|content-desc="(Call|Dial|Voice call|Make call)")' >/dev/null 2>&1
+  sleep 3; in_call && return 0
+  pick_sim; in_call && return 0
+  ash input keyevent KEYCODE_HOME
+  echo "the phone didn't start the call (dial your number by hand once from the spare phone: if that fails too, the SIM needs a recharge with outgoing calls)"
   return 1
 }
 
