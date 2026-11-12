@@ -280,7 +280,8 @@ public static class Json {
 public static class Hands {
   [DllImport("user32.dll")] static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] static extern void mouse_event(uint f, uint dx, uint dy, int data, UIntPtr extra);
-  [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int c);
+  // ShowWindowAsync, never ShowWindow: ShowWindow waits for the other app to answer, and a busy app (WhatsApp loading a chat) freezes us
+  [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr h, int c);
   [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
   [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
@@ -376,7 +377,7 @@ public static class Hands {
   // ---- windows and apps ----
   static bool Front(Process p) {
     IntPtr h = p.MainWindowHandle; if (h == IntPtr.Zero) return false;
-    if (IsIconic(h)) ShowWindow(h, 9);
+    if (IsIconic(h)) ShowWindowAsync(h, 9);
     keybd_event(0x12, 0, 0, UIntPtr.Zero); SetForegroundWindow(h); keybd_event(0x12, 0, 2, UIntPtr.Zero);
     Thread.Sleep(150);
     return GetForegroundWindow() == h;
@@ -442,7 +443,7 @@ public static class Hands {
       Thread.Sleep(400);
       Process p = null;
       foreach (string n in new string[] { "WhatsApp", "WhatsApp.Root" }) foreach (Process x in Process.GetProcessesByName(n)) { try { if (x.MainWindowHandle != IntPtr.Zero) p = x; } catch (Exception) { } }
-      if (p != null) { ShowWindow(p.MainWindowHandle, 3); Thread.Sleep(300); bool f = Front(p); Dictionary<string, object> d = Ok(); d["front"] = f; return d; }
+      if (p != null) { ShowWindowAsync(p.MainWindowHandle, 3); Thread.Sleep(300); bool f = Front(p); Dictionary<string, object> d = Ok(); d["front"] = f; return d; }
     }
     return Err("WhatsApp Desktop did not open. Install it from the Microsoft Store and link it to the spare phone's WhatsApp.");
   }

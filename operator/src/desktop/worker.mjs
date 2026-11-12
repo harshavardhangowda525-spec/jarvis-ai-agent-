@@ -104,7 +104,7 @@ export function createOverlay({ onStop = () => {}, platform = process.platform, 
     op: (a) => new Promise((resolve) => {
       if (!start()) return resolve({ ok: false, error: broken || "Laptop control works on Windows only." });
       const id = `o${++n}`;
-      const t = setTimeout(() => { if (ops.has(id)) { ops.delete(id); resolve({ ok: false, error: `JARVIS's hands didn't answer (${a.op})` }); } }, a.op === "phone-dial" ? 95_000 : a.op === "open-app" ? 30_000 : 25_000);
+      const t = setTimeout(() => { if (ops.has(id)) { ops.delete(id); resolve({ ok: false, error: `JARVIS's hands didn't answer (${a.op})` }); } }, a.op === "phone-dial" ? 95_000 : a.op === "open-app" || a.op === "wa-open" ? 35_000 : 25_000);
       ops.set(id, (v) => { clearTimeout(t); resolve(v); });
       try { p.stdin.write(`op\t${id}\t${JSON.stringify(a)}\n`); } catch (e) { ops.delete(id); clearTimeout(t); resolve({ ok: false, error: e.message }); }
     }),
