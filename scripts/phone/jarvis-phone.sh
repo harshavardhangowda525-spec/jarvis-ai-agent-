@@ -47,10 +47,19 @@ connect_adb() {
   for t in $(timeout 10 adb mdns services 2>/dev/null | awk '/_adb-tls-connect/ {print $NF}') $(timeout 5 adb devices 2>/dev/null | awk 'NR>1 && $2=="device" {print $1}'); do
     timeout 10 adb connect "$t" >/dev/null 2>&1
     ADB_TARGET="$t"
-    if adb_ok; then echo "$(now) Android control connected ($t)"; return 0; fi
+    if adb_ok; then echo "$(now) Android control connected ($t)"; check_input; return 0; fi
   done
   ADB_TARGET=""
   return 1
+}
+
+# Xiaomi/Redmi/POCO, Oppo/Realme/OnePlus and some others block button presses over Wireless debugging
+INPUT_BLOCKED=""
+BLOCK_HELP="the phone blocks button presses from Wireless debugging. Xiaomi/Redmi/POCO: Developer options > turn on 'USB debugging (Security settings)'. Oppo/Realme/OnePlus: Developer options > turn on 'Disable permission monitoring'. Then turn Wireless debugging off and on"
+check_input() {
+  if timeout 15 adb -s "$ADB_TARGET" shell input keyevent KEYCODE_UNKNOWN 2>&1 | grep -q INJECT_EVENTS; then
+    INPUT_BLOCKED=1; echo "$(now) ! Calls can't start yet: $BLOCK_HELP."
+  else INPUT_BLOCKED=""; fi
 }
 
 # tap the first on-screen element whose XML matches a pattern
@@ -94,6 +103,7 @@ wa_call() {
   # some WhatsApp versions ask "Call X?" first
   tap 'text="(Call|CALL|Voice call)"' >/dev/null 2>&1 && sleep 2
   if ash dumpsys window | grep -E 'mCurrentFocus|mFocusedApp' | grep -qi 'voip'; then return 0; fi
+  if [ -n "$INPUT_BLOCKED" ]; then echo "$BLOCK_HELP"; return 1; fi
   echo "WhatsApp didn't open the call screen (keep the spare phone's screen lock set to None)"
   return 1
 }
@@ -103,6 +113,7 @@ in_call() { ash dumpsys telephony.registry | grep -q 'mCallState=2'; }
 pick_sim() { tap 'text="(SIM ?1|SIM1|Sim 1|SIM card 1)' >/dev/null 2>&1 && sleep 3; }
 normal_call() {
   local tel="$1"
+  [ -n "$INPUT_BLOCKED" ] && check_input
   # 1. Android's direct call
   ash am start -a android.intent.action.CALL -d "tel:$tel" >/dev/null
   sleep 3; in_call && return 0
@@ -118,6 +129,7 @@ normal_call() {
   sleep 3; in_call && return 0
   pick_sim; in_call && return 0
   ash input keyevent KEYCODE_HOME
+  if [ -n "$INPUT_BLOCKED" ]; then echo "$BLOCK_HELP"; return 1; fi
   echo "the phone didn't start the call (dial your number by hand once from the spare phone: if that fails too, the SIM needs a recharge with outgoing calls)"
   return 1
 }
