@@ -30,8 +30,8 @@ export function createComputer(deps) {
       case "scroll": return d.input({ kind: "scroll", direction: a.direction, amount: a.amount });
       case "open_app": {
         const r = await d.openApp(a.app);
-        // a browser that was already open (maybe showing JARVIS itself): work in a fresh tab
-        if (r && r.ok !== false && BROWSER.test(a.app)) { await d.sleep(600); await d.input({ kind: "key", keys: "ctrl+t" }); }
+        // a browser: JARVIS works in its OWN new window in front (never in your tabs or JARVIS's page)
+        if (r && r.ok !== false && BROWSER.test(a.app)) { await d.sleep(600); await d.input({ kind: "key", keys: "ctrl+n" }); await d.sleep(500); await d.input({ kind: "key", keys: "win+up" }); }
         return r;
       }
       case "wait": await d.sleep(a.seconds * 1000); return { ok: true };

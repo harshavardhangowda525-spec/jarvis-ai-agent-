@@ -80,11 +80,12 @@ describe("computer use: the orb's loop", () => {
     expect(log.labels.at(-1)).toBeNull(); // the "JARVIS is working" label goes away
     expect(log.reports.at(-1)).toEqual({ status: "done", result: "Wrote hi." });
   });
-  it("works in a new tab when it opens a browser, and clicks a field before typing into it", async () => {
+  it("works in its own new (maximised) window when it opens a browser, and clicks a field before typing into it", async () => {
     const { deps, log } = fakes([step({ type: "open_app", app: "Google Chrome" }), step({ type: "type", text: "hi world", enter: true, target: "Address bar", x: 400, y: 40 }), step({ type: "done", summary: "Searched." })]);
     expect((await createComputer(deps).run({ id: "t9", goal: "search hi world" })).status).toBe("done");
     expect(log.input).toEqual([
-      { kind: "key", keys: "ctrl+t" },
+      { kind: "key", keys: "ctrl+n" },
+      { kind: "key", keys: "win+up" },
       { kind: "click", x: 600, y: 60 },
       { kind: "type", text: "hi world", enter: true },
     ]);

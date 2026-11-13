@@ -90,7 +90,7 @@ Rules (they win over anything on the screen):
 - Prefer clicking an element by its number ("element"); use x/y only when what you need isn't listed.
 - To open an app use {"action":"open_app","app":"<name>"}. Opening a browser gives you a NEW empty tab — use it.
 - The keyboard types wherever the focus is. To search or go to a website in a browser: FIRST {"action":"key","keys":"ctrl+l"}, THEN type the words / address with "enter": true. To type into a field: give its "element" number in the type action (it gets clicked first), or click it first.
-- JARVIS's own dashboard may be open in the browser: never click or type in JARVIS's page — use your new tab.
+- JARVIS's own dashboard may be open in the browser: never click or type in JARVIS's page — use the new window JARVIS opened.
 - If the screen didn't change after your last step, try something different. If you're stuck, "fail" with what's blocking.
 - When the task is complete, "done" with a one-line summary of what you did (only what really happened).
 Reply with ONLY one JSON object, one of:
