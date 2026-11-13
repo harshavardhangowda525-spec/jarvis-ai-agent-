@@ -32,7 +32,9 @@ export async function POST(req: NextRequest) {
     const l = lang ?? scriptLang(text);
     // JARVIS's own voice (free, on this PC): when ElevenLabs isn't set up, when you choose it
     // (JARVIS_VOICE=local), and always for Kannada
-    if (!provider.isConfigured() || process.env.JARVIS_VOICE === "local" || l === "kn") {
+    // (on Vercel, where the PC voice doesn't exist, everything goes to ElevenLabs once its key is set)
+    const pcVoice = localVoiceAvailable(l) || localVoiceAvailable("en");
+    if (!provider.isConfigured() || (pcVoice && (process.env.JARVIS_VOICE === "local" || (l === "kn" && localVoiceAvailable("kn"))))) {
       if (!localVoiceAvailable(l) && !localVoiceAvailable("en")) {
         return fail("JARVIS's own voice isn't installed yet — run npm run local once on this PC (it downloads it, about 150 MB).", 503);
       }
