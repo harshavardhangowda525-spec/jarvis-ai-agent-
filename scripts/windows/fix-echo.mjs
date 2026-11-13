@@ -127,7 +127,13 @@ async function restartWhatsApp() {
   await sleep(9000); // let it open so Windows applies its per-app sound settings
 }
 
+/** Where JARVIS is: operator/.env (JARVIS on Vercel) wins, else the pairing file (JARVIS on this laptop). */
 function link() {
+  try {
+    const env = Object.fromEntries(fs.readFileSync(path.join(ROOT, "operator", ".env"), "utf8").split(/\r?\n/)
+      .map((l) => l.match(/^\s*([A-Z_]+)\s*=\s*"?([^"]*)"?\s*$/)).filter(Boolean).map((m) => [m[1], m[2]]));
+    if (env.JARVIS_URL && env.JARVIS_FINDER_TOKEN) return { url: env.JARVIS_URL.replace(/\/+$/, ""), token: env.JARVIS_FINDER_TOKEN };
+  } catch { /* no operator/.env */ }
   try { const j = JSON.parse(fs.readFileSync(path.join(ROOT, "operator", ".finder.json"), "utf8")); return j?.url && j?.token ? j : null; } catch { return null; }
 }
 
@@ -179,7 +185,7 @@ async function main() {
   if (!l) { say("     JARVIS isn't paired on this laptop yet (start JARVIS once), so no test call. The sound is fixed anyway."); return; }
   if (!(await jarvisUp(l.url))) {
     say("     JARVIS isn't running - starting it (a new window opens)...");
-    spawn("cmd.exe", ["/c", "start", "JARVIS", path.join(ROOT, "start-jarvis.cmd")], { detached: true, stdio: "ignore", cwd: ROOT }).unref();
+    spawn("cmd.exe", ["/c", "start", "JARVIS", path.join(ROOT, /^https?:\/\/(localhost|127\.)/.test(l.url) ? "start-jarvis.cmd" : "start-helper.cmd")], { detached: true, stdio: "ignore", cwd: ROOT }).unref();
     for (let i = 0; i < 36 && !(await jarvisUp(l.url)); i++) await sleep(5000);
   }
   try {

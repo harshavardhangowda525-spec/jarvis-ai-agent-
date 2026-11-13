@@ -21,6 +21,7 @@ import { log } from "./src/log.mjs";
 import { MapsFinder } from "./src/maps/finder.mjs";
 import { CallsWindow } from "./src/calls/caller.mjs";
 import { DesktopWorker } from "./src/desktop/worker.mjs";
+import { RemoteTicks } from "./src/ticks.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -52,6 +53,8 @@ if (process.env.OPERATOR_CALLS !== "off") calls.start();
 // JARVIS on your laptop: opening apps and working on the screen (no orb)
 const desktop = new DesktopWorker();
 if (process.env.OPERATOR_DESKTOP !== "off") desktop.start();
+// JARVIS on Vercel: its every-minute background jobs run from here (off when JARVIS runs on this laptop)
+new RemoteTicks().start();
 // the Stop button on the "JARVIS is working" label stops whatever JARVIS is doing
 mgr.onUserStop = () => { session.stop(); finder.stop(); desktop.stop(); };
 
