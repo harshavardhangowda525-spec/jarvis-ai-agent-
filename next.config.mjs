@@ -28,7 +28,8 @@ const nextConfig = {
       "/api/trading/export": ["./assets/fonts/**"],
       "/api/intel/export": ["./assets/fonts/**"],
       // the database self-repair compares the real tables with these (src/lib/schema)
-      "/api/**": ["./prisma/migrations/**"],
+      // satori (images with text) loads HarfBuzz's WebAssembly when it's first imported — ship it with every API function
+      "/api/**": ["./prisma/migrations/**", "./node_modules/harfbuzzjs/*.wasm"],
       "/dashboard/**": ["./prisma/migrations/**"],
     },
   },
