@@ -10,7 +10,7 @@ describe("helper runs JARVIS's every-minute jobs when JARVIS is on Vercel", () =
   });
   it("calls Vercel with the cron secret", async () => {
     const fetchImpl = vi.fn(async () => new Response("{}"));
-    const t = new RemoteTicks({ env: { JARVIS_CRON_SECRET: "s3" }, fetchImpl, link: link("https://jarvis.vercel.app") });
+    const t = new RemoteTicks({ env: { JARVIS_CRON_SECRET: "s3" } as never, fetchImpl, link: link("https://jarvis.vercel.app") });
     await t.tick(); await t.tick();
     const calls = fetchImpl.mock.calls as unknown as [string, RequestInit][];
     expect(calls.map((c) => c[0])).toContain("https://jarvis.vercel.app/api/cron/prospects");
@@ -18,9 +18,9 @@ describe("helper runs JARVIS's every-minute jobs when JARVIS is on Vercel", () =
   });
   it("stays off for a JARVIS on this laptop, or without the secret", async () => {
     const fetchImpl = vi.fn();
-    expect(await new RemoteTicks({ env: { JARVIS_CRON_SECRET: "s3" }, fetchImpl, link: link("http://127.0.0.1:3000") }).tick()).toEqual([]);
-    expect(await new RemoteTicks({ env: {}, fetchImpl, link: link("https://jarvis.vercel.app") }).tick()).toEqual([]);
-    expect(new RemoteTicks({ env: {}, fetchImpl, link: () => null }).start()).toBe(false);
+    expect(await new RemoteTicks({ env: { JARVIS_CRON_SECRET: "s3" } as never, fetchImpl, link: link("http://127.0.0.1:3000") }).tick()).toEqual([]);
+    expect(await new RemoteTicks({ env: {} as never, fetchImpl, link: link("https://jarvis.vercel.app") }).tick()).toEqual([]);
+    expect(new RemoteTicks({ env: {} as never, fetchImpl, link: () => null }).start()).toBe(false);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
